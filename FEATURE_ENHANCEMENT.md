@@ -578,7 +578,363 @@ export interface PDFLocation {
 
 **技术方案**:
 
-#### 3.1 RAG 搜索管道
+> 📚 **业界最佳实践 (2024-2025)**
+>
+> 本方案整合了 Anthropic、Cohere、RAGFlow 等业界领先的 RAG 技术研究：
+> - **Contextual Retrieval** (Anthropic) — 检索失败率降低 49%
+> - **Reranking** (Cohere) — 额外降低 18% 失败率
+> - **HyDE** — 解决 Query-Document 语义鸿沟
+> - **Multi-Query** — 多角度查询扩展
+
+#### 3.1 架构概览
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Advanced RAG Pipeline                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────┐    ┌──────────────┐    ┌─────────────┐            │
+│  │  Query   │ -> │ Query Expand │ -> │   Hybrid    │            │
+│  │          │    │ (Multi-Query)│    │   Search    │            │
+│  └──────────┘    └──────────────┘    └──────┬──────┘            │
+│                                              │                   │
+│                                              v                   │
+│              ┌───────────────────────────────────────┐           │
+│              │  Vector Search + BM25 + RRF Fusion    │           │
+│              │           (Top 100 Candidates)        │           │
+│              └───────────────────┬───────────────────┘           │
+│                                  │                               │
+│                                  v                               │
+│                        ┌─────────────────┐                       │
+│                        │   Reranking     │                       │
+│                        │ (Cross-Encoder) │                       │
+│                        │   (Top 20)      │                       │
+│                        └────────┬────────┘                       │
+│                                 │                                │
+│                                 v                                │
+│                        ┌─────────────────┐                       │
+│                        │   LLM Context   │                       │
+│                        └─────────────────┘                       │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+
+Offline Processing:
+┌─────────────────────────────────────────────────────────────────┐
+│  Document -> Chunking -> Contextualize -> Embed -> Store        │
+│                         (Anthropic)                              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 3.2 Contextual Retrieval（核心增强）
+
+**问题**：分块后语义丢失
+
+```
+原 chunk: "公司收入增长了 3%"
+问题: 哪个公司？哪个季度？
+```
+
+**Anthropic 方案**：用 LLM 为每个 chunk 添加上下文
+
+```typescript
+// src/lib/rag/contextual-retrieval.ts
+
+/**
+ * Contextual Retrieval - Anthropic 2024
+ * 检索失败率降低 49%
+ */
+export class ContextualRetrieval {
+  private llm: LLMService;
+  
+  /**
+   * 为 chunk 添加文档上下文
+   * 成本: $1.02 / 百万 token (使用 Prompt Caching)
+   */
+  async contextualizeChunk(
+    wholeDocument: string,
+    chunk: string,
+    options?: { maxContextTokens?: number }
+  ): Promise<{ context: string; contextualizedChunk: string }> {
+    const prompt = `<document> 
+${wholeDocument.slice(0, 10000)} 
+</document> 
+Here is the chunk we want to situate within the whole document 
+<chunk> 
+${chunk} 
+</chunk> 
+Please give a short succinct context to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk. Answer only with the succinct context and nothing else.`;
+
+    const context = await this.llm.complete(prompt, {
+      maxTokens: options?.maxContextTokens || 100,
+    });
+    
+    return {
+      context,
+      contextualizedChunk: context + "\n" + chunk,
+    };
+  }
+  
+  /**
+   * 批量处理文档 chunks
+   */
+  async contextualizeDocument(
+    document: string,
+    chunks: string[],
+    onProgress?: (progress: number) => void
+  ): Promise<string[]> {
+    const results: string[] = [];
+    
+    for (let i = 0; i < chunks.length; i++) {
+      const { contextualizedChunk } = await this.contextualizeChunk(
+        document,
+        chunks[i]
+      );
+      results.push(contextualizedChunk);
+      onProgress?.((i + 1) / chunks.length);
+    }
+    
+    return results;
+  }
+}
+```
+
+#### 3.3 Reranking 精排
+
+```typescript
+// src/lib/rag/reranker.ts
+
+/**
+ * Reranking - 使用 Cross-Encoder 精确打分
+ * 额外降低 18% 失败率
+ */
+export interface RerankerOptions {
+  provider: 'cohere' | 'voyage' | 'local';
+  apiKey?: string;
+  topN: number;
+}
+
+export class Reranker {
+  private options: RerankerOptions;
+  
+  constructor(options: RerankerOptions) {
+    this.options = options;
+  }
+  
+  /**
+   * 对候选结果重排序
+   */
+  async rerank(
+    query: string,
+    candidates: SearchResult[],
+    topN?: number
+  ): Promise<SearchResult[]> {
+    if (candidates.length === 0) return [];
+    
+    switch (this.options.provider) {
+      case 'cohere':
+        return this.rerankWithCohere(query, candidates, topN);
+      case 'voyage':
+        return this.rerankWithVoyage(query, candidates, topN);
+      case 'local':
+        return this.rerankLocal(query, candidates, topN);
+      default:
+        return candidates.slice(0, topN || this.options.topN);
+    }
+  }
+  
+  private async rerankWithCohere(
+    query: string,
+    candidates: SearchResult[],
+    topN?: number
+  ): Promise<SearchResult[]> {
+    const response = await fetch('https://api.cohere.ai/v1/rerank', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.options.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'rerank-multilingual-v3.0',
+        query,
+        documents: candidates.map(c => c.chunk.content),
+        top_n: topN || this.options.topN,
+      }),
+    });
+    
+    const data = await response.json();
+    
+    return data.results.map((r: any) => ({
+      ...candidates[r.index],
+      score: r.relevance_score,
+      matchType: 'reranked' as const,
+    }));
+  }
+  
+  /**
+   * 本地 Reranking (使用小模型)
+   */
+  private async rerankLocal(
+    query: string,
+    candidates: SearchResult[],
+    topN?: number
+  ): Promise<SearchResult[]> {
+    // 使用 cross-encoder 模型
+    // 可以部署在本地或使用 Hugging Face Inference API
+    const scores = await Promise.all(
+      candidates.map(async (c) => {
+        const score = await this.computeRelevanceScore(query, c.chunk.content);
+        return { ...c, score };
+      })
+    );
+    
+    return scores
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topN || this.options.topN);
+  }
+  
+  private async computeRelevanceScore(query: string, doc: string): Promise<number> {
+    // 使用本地 cross-encoder 或调用 LLM 打分
+    // 简化实现：使用 cosine similarity
+    return 0.5; // placeholder
+  }
+}
+```
+
+#### 3.4 HyDE 假设文档嵌入
+
+```typescript
+// src/lib/rag/hyde.ts
+
+/**
+ * HyDE - Hypothetical Document Embeddings
+ * 解决 Query 与 Document 的语义鸿沟
+ */
+export class HyDERetriever {
+  private llm: LLMService;
+  private embeddingService: EmbeddingService;
+  private searchPipeline: RAGSearchPipeline;
+  
+  /**
+   * 生成假设答案并检索
+   */
+  async retrieve(
+    query: string,
+    bookId: string,
+    topK: number = 10
+  ): Promise<SearchResult[]> {
+    // 1. 生成假设文档
+    const hypotheticalDoc = await this.generateHypotheticalDocument(query);
+    
+    // 2. 用假设文档 embedding 检索
+    const embedding = await this.embeddingService.embed(hypotheticalDoc);
+    const results = await this.searchPipeline.vectorSearchByEmbedding(
+      embedding,
+      bookId,
+      topK
+    );
+    
+    return results;
+  }
+  
+  private async generateHypotheticalDocument(query: string): Promise<string> {
+    const prompt = `Please write a detailed passage that could answer the following question. Be specific and informative.
+
+Question: ${query}
+
+Passage:`;
+    
+    return await this.llm.complete(prompt, { maxTokens: 500 });
+  }
+}
+```
+
+#### 3.5 Multi-Query 多查询扩展
+
+```typescript
+// src/lib/rag/multi-query.ts
+
+/**
+ * Multi-Query - 从多个角度检索
+ * 提高召回率 15-25%
+ */
+export class MultiQueryRetriever {
+  private llm: LLMService;
+  private searchPipeline: RAGSearchPipeline;
+  
+  /**
+   * 生成多个相关查询并检索
+   */
+  async retrieve(
+    query: string,
+    bookId: string,
+    options?: {
+      numQueries?: number;
+      topKPerQuery?: number;
+      finalTopK?: number;
+    }
+  ): Promise<SearchResult[]> {
+    const numQueries = options?.numQueries || 3;
+    const topKPerQuery = options?.topKPerQuery || 10;
+    const finalTopK = options?.finalTopK || 20;
+    
+    // 1. 生成多个查询
+    const queries = await this.generateQueries(query, numQueries);
+    queries.unshift(query); // 包含原查询
+    
+    // 2. 并行检索
+    const allResults = await Promise.all(
+      queries.map(q => 
+        this.searchPipeline.hybridSearch(q, bookId, topKPerQuery)
+      )
+    );
+    
+    // 3. RRF 融合
+    return this.rrfFusion(allResults, finalTopK);
+  }
+  
+  private async generateQueries(
+    originalQuery: string,
+    numQueries: number
+  ): Promise<string[]> {
+    const prompt = `You are an AI language model assistant. Your task is to generate ${numQueries} different versions of the given user question to retrieve relevant documents from a vector database. 
+By generating multiple perspectives on the user question, your goal is to help the user overcome some of the limitations of distance-based similarity search.
+
+Provide these alternative questions separated by newlines.
+
+Original question: ${originalQuery}`;
+
+    const response = await this.llm.complete(prompt);
+    return response.split('\n').filter(q => q.trim().length > 0);
+  }
+  
+  private rrfFusion(
+    resultSets: SearchResult[][],
+    topK: number,
+    k: number = 60
+  ): SearchResult[] {
+    const scores = new Map<string, { result: SearchResult; score: number }>();
+    
+    resultSets.forEach(results => {
+      results.forEach((r, i) => {
+        const id = r.chunk.id;
+        const existing = scores.get(id);
+        if (existing) {
+          existing.score += 1 / (k + i + 1);
+        } else {
+          scores.set(id, { result: r, score: 1 / (k + i + 1) });
+        }
+      });
+    });
+    
+    return Array.from(scores.values())
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK)
+      .map(s => ({ ...s.result, score: s.score, matchType: 'multi-query' as const }));
+  }
+}
+```
+
+#### 3.6 增强型搜索管道
 
 ```typescript
 // src/lib/rag/search-pipeline.ts
@@ -590,56 +946,117 @@ export interface SearchPipeline {
   hybridSearch(query: string, bookId: string, topK: number): Promise<SearchResult[]>;
   vectorSearch(query: string, bookId: string, topK: number): Promise<SearchResult[]>;
   bm25Search(query: string, bookId: string, topK: number): Promise<SearchResult[]>;
+  advancedSearch(query: string, bookId: string, options?: AdvancedSearchOptions): Promise<SearchResult[]>;
 }
 
+export interface AdvancedSearchOptions {
+  useHyDE?: boolean;
+  useMultiQuery?: boolean;
+  useReranking?: boolean;
+  numQueries?: number;
+  candidateMultiplier?: number; // 候选数量倍数
+}
+
+/**
+ * 增强型 RAG 搜索管道
+ * 整合业界最佳实践
+ */
 export class RAGSearchPipeline implements SearchPipeline {
   private db: Database;
   private embeddingService: EmbeddingService;
+  private reranker: Reranker;
+  private hydeRetriever: HyDERetriever;
+  private multiQueryRetriever: MultiQueryRetriever;
   
-  constructor(db: Database, embeddingService: EmbeddingService) {
+  constructor(
+    db: Database,
+    embeddingService: EmbeddingService,
+    reranker: Reranker
+  ) {
     this.db = db;
     this.embeddingService = embeddingService;
+    this.reranker = reranker;
+    this.hydeRetriever = new HyDERetriever(embeddingService, this);
+    this.multiQueryRetriever = new MultiQueryRetriever(this);
   }
   
-  async search(query: SearchQuery): Promise<SearchResult[]> {
-    switch (query.mode) {
-      case 'vector':
-        return this.vectorSearch(query.query, query.bookId, query.topK);
-      case 'bm25':
-        return this.bm25Search(query.query, query.bookId, query.topK);
-      case 'hybrid':
-      default:
-        return this.hybridSearch(query.query, query.bookId, query.topK);
+  /**
+   * 高级搜索 - 整合所有优化技术
+   */
+  async advancedSearch(
+    query: string,
+    bookId: string,
+    options: AdvancedSearchOptions = {}
+  ): Promise<SearchResult[]> {
+    const {
+      useHyDE = false,
+      useMultiQuery = true,
+      useReranking = true,
+      numQueries = 3,
+      candidateMultiplier = 5,
+    } = options;
+    
+    const finalTopK = 20;
+    const candidateCount = finalTopK * candidateMultiplier;
+    
+    let candidates: SearchResult[];
+    
+    // 阶段 1: 召回 (Recall)
+    if (useMultiQuery) {
+      // Multi-Query 召回
+      candidates = await this.multiQueryRetriever.retrieve(query, bookId, {
+        numQueries,
+        topKPerQuery: Math.ceil(candidateCount / numQueries),
+        finalTopK: candidateCount,
+      });
+    } else if (useHyDE) {
+      // HyDE 召回
+      candidates = await this.hydeRetriever.retrieve(query, bookId, candidateCount);
+    } else {
+      // 标准 Hybrid 召回
+      candidates = await this.hybridSearch(query, bookId, candidateCount);
     }
+    
+    // 阶段 2: 精排 (Precision)
+    if (useReranking && candidates.length > finalTopK) {
+      candidates = await this.reranker.rerank(query, candidates, finalTopK);
+    }
+    
+    return candidates;
   }
   
+  /**
+   * 标准 Hybrid Search
+   */
   async hybridSearch(query: string, bookId: string, topK: number): Promise<SearchResult[]> {
-    // 并行执行向量搜索和 BM25 搜索
     const [vectorResults, bm25Results] = await Promise.all([
       this.vectorSearch(query, bookId, topK * 2),
       this.bm25Search(query, bookId, topK * 2),
     ]);
     
-    // Reciprocal Rank Fusion (RRF) 合并
     return this.rrfFusion(vectorResults, bm25Results, topK);
   }
   
   async vectorSearch(query: string, bookId: string, topK: number): Promise<SearchResult[]> {
-    // 生成查询向量
     const queryEmbedding = await this.embeddingService.embed(query);
-    
-    // 从数据库获取该书的所有 chunks
+    return this.vectorSearchByEmbedding(queryEmbedding, bookId, topK);
+  }
+  
+  async vectorSearchByEmbedding(
+    embedding: number[],
+    bookId: string,
+    topK: number
+  ): Promise<SearchResult[]> {
     const chunks = await this.db.getChunksByBook(bookId);
     
-    // 计算相似度
     const results = chunks
       .filter(c => c.embedding)
       .map(chunk => ({
         chunk,
-        score: this.cosineSimilarity(queryEmbedding, chunk.embedding!),
+        score: this.cosineSimilarity(embedding, chunk.embedding!),
         matchType: 'vector' as const,
       }))
-      .filter(r => r.score > 0.5) // 阈值过滤
+      .filter(r => r.score > 0.3)
       .sort((a, b) => b.score - a.score)
       .slice(0, topK);
     
@@ -647,18 +1064,14 @@ export class RAGSearchPipeline implements SearchPipeline {
   }
   
   async bm25Search(query: string, bookId: string, topK: number): Promise<SearchResult[]> {
-    // 简化的 BM25 实现
     const terms = this.tokenize(query);
     const chunks = await this.db.getChunksByBook(bookId);
     
-    const results = chunks.map(chunk => {
-      const score = this.bm25Score(terms, chunk.content, chunks);
-      return {
-        chunk,
-        score,
-        matchType: 'bm25' as const,
-      };
-    })
+    const results = chunks.map(chunk => ({
+      chunk,
+      score: this.bm25Score(terms, chunk.content, chunks),
+      matchType: 'bm25' as const,
+    }))
     .filter(r => r.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, topK);
@@ -666,11 +1079,17 @@ export class RAGSearchPipeline implements SearchPipeline {
     return results;
   }
   
+  async search(query: SearchQuery): Promise<SearchResult[]> {
+    return this.advancedSearch(query.query, query.bookId, {
+      useReranking: true,
+      useMultiQuery: true,
+    });
+  }
+  
+  // ... 工具方法
   private cosineSimilarity(a: number[], b: number[]): number {
     if (a.length !== b.length) return 0;
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
+    let dotProduct = 0, normA = 0, normB = 0;
     for (let i = 0; i < a.length; i++) {
       dotProduct += a[i] * b[i];
       normA += a[i] * a[i];
@@ -687,19 +1106,14 @@ export class RAGSearchPipeline implements SearchPipeline {
   ): SearchResult[] {
     const scores = new Map<string, number>();
     
-    // 向量结果排名
     vectorResults.forEach((r, i) => {
-      const id = r.chunk.id;
-      scores.set(id, (scores.get(id) || 0) + 1 / (k + i + 1));
+      scores.set(r.chunk.id, (scores.get(r.chunk.id) || 0) + 1 / (k + i + 1));
     });
     
-    // BM25 结果排名
     bm25Results.forEach((r, i) => {
-      const id = r.chunk.id;
-      scores.set(id, (scores.get(id) || 0) + 1 / (k + i + 1));
+      scores.set(r.chunk.id, (scores.get(r.chunk.id) || 0) + 1 / (k + i + 1));
     });
     
-    // 合并并排序
     const allChunks = new Map<string, SearchResult>();
     [...vectorResults, ...bm25Results].forEach(r => {
       allChunks.set(r.chunk.id, r);
@@ -723,9 +1137,7 @@ export class RAGSearchPipeline implements SearchPipeline {
   }
   
   private bm25Score(terms: string[], doc: string, allDocs: Chunk[]): number {
-    // 简化 BM25: k1=1.5, b=0.75
-    const k1 = 1.5;
-    const b = 0.75;
+    const k1 = 1.5, b = 0.75;
     const avgdl = allDocs.reduce((sum, c) => sum + c.tokenCount, 0) / allDocs.length;
     const docTokens = this.tokenize(doc);
     const docLen = docTokens.length;
@@ -919,19 +1331,31 @@ function skillToTool(skill: Skill): ToolDefinition {
 
 **技术方案**:
 
+> 📚 **核心增强: Contextual Retrieval**
+>
+> 在向量化阶段为每个 chunk 添加文档上下文，解决分块后语义丢失问题。
+> - 检索失败率降低 49%
+> - 成本: $1.02 / 百万 token (Prompt Caching)
+
 #### 4.1 Embedding 服务
 
 ```typescript
 // src/lib/rag/embedding-service.ts
 
 export interface EmbeddingConfig {
-  provider: 'openai' | 'local' | 'custom';
+  provider: 'openai' | 'voyage' | 'gemini' | 'local';
   model: string;
   apiKey?: string;
   baseUrl?: string;
   batchSize: number;
 }
 
+/**
+ * 推荐模型 (2024-2025):
+ * - OpenAI: text-embedding-3-small (性价比), text-embedding-3-large (精度)
+ * - Voyage: voyage-3 (Anthropic 推荐)
+ * - Gemini: text-embedding-004 (高性价比)
+ */
 export class EmbeddingService {
   private config: EmbeddingConfig;
   
@@ -974,13 +1398,14 @@ export class EmbeddingService {
 }
 ```
 
-#### 4.2 向量化管道
+#### 4.2 增强型向量化管道
 
 ```typescript
 // src/lib/rag/vectorize-pipeline.ts
 
 import { chunkContent } from './chunker';
 import { EmbeddingService } from './embedding-service';
+import { ContextualRetrieval } from './contextual-retrieval';
 import type { Chunk, VectorizeProgress } from '@/types';
 import type { Database } from '@/lib/db/database';
 
@@ -988,20 +1413,37 @@ export interface VectorizeOptions {
   bookId: string;
   content: string;
   chapterTitle: string;
+  enableContextualRetrieval?: boolean; // 是否启用上下文增强
   onProgress?: (progress: VectorizeProgress) => void;
 }
 
+/**
+ * 增强型向量化管道
+ * 支持 Contextual Retrieval
+ */
 export class VectorizePipeline {
   private db: Database;
   private embeddingService: EmbeddingService;
+  private contextualRetrieval: ContextualRetrieval;
   
-  constructor(db: Database, embeddingService: EmbeddingService) {
+  constructor(
+    db: Database,
+    embeddingService: EmbeddingService,
+    llmService: LLMService
+  ) {
     this.db = db;
     this.embeddingService = embeddingService;
+    this.contextualRetrieval = new ContextualRetrieval(llmService);
   }
   
   async vectorize(options: VectorizeOptions): Promise<Chunk[]> {
-    const { bookId, content, chapterTitle, onProgress } = options;
+    const { 
+      bookId, 
+      content, 
+      chapterTitle, 
+      enableContextualRetrieval = true,
+      onProgress 
+    } = options;
     
     // 1. 分块
     onProgress?.({
@@ -1013,6 +1455,38 @@ export class VectorizePipeline {
     
     const chunks = chunkContent(content, bookId, 0, chapterTitle);
     
+    // 2. Contextual Retrieval (可选)
+    let textsToEmbed: string[];
+    
+    if (enableContextualRetrieval) {
+      onProgress?.({
+        bookId,
+        totalChunks: chunks.length,
+        processedChunks: 0,
+        status: 'contextualizing', // 新状态
+      });
+      
+      textsToEmbed = [];
+      
+      for (let i = 0; i < chunks.length; i++) {
+        const { contextualizedChunk, context } = 
+          await this.contextualRetrieval.contextualizeChunk(content, chunks[i].content);
+        
+        textsToEmbed.push(contextualizedChunk);
+        chunks[i].context = context; // 存储上下文用于调试/展示
+        
+        onProgress?.({
+          bookId,
+          totalChunks: chunks.length,
+          processedChunks: i + 1,
+          status: 'contextualizing',
+        });
+      }
+    } else {
+      textsToEmbed = chunks.map(c => c.content);
+    }
+    
+    // 3. 生成 embedding (批量处理)
     onProgress?.({
       bookId,
       totalChunks: chunks.length,
@@ -1020,15 +1494,12 @@ export class VectorizePipeline {
       status: 'embedding',
     });
     
-    // 2. 生成 embedding (批量处理)
     const batchSize = 20;
     const embeddings: number[][] = [];
     
-    for (let i = 0; i < chunks.length; i += batchSize) {
-      const batch = chunks.slice(i, i + batchSize);
-      const texts = batch.map(c => c.content);
-      
-      const batchEmbeddings = await this.embeddingService.embedBatch(texts);
+    for (let i = 0; i < textsToEmbed.length; i += batchSize) {
+      const batch = textsToEmbed.slice(i, i + batchSize);
+      const batchEmbeddings = await this.embeddingService.embedBatch(batch);
       embeddings.push(...batchEmbeddings);
       
       onProgress?.({
@@ -1039,7 +1510,7 @@ export class VectorizePipeline {
       });
     }
     
-    // 3. 存储到数据库
+    // 4. 存储到数据库
     onProgress?.({
       bookId,
       totalChunks: chunks.length,
@@ -1054,6 +1525,9 @@ export class VectorizePipeline {
     
     await this.db.insertChunks(chunksWithEmbedding);
     
+    // 5. 同时构建 BM25 索引
+    await this.buildBM25Index(chunksWithEmbedding);
+    
     onProgress?.({
       bookId,
       totalChunks: chunks.length,
@@ -1063,7 +1537,52 @@ export class VectorizePipeline {
     
     return chunksWithEmbedding;
   }
+  
+  private async buildBM25Index(chunks: Chunk[]): Promise<void> {
+    // BM25 可以在查询时动态计算，无需预构建
+    // 但可以预处理 token 以加速
+  }
 }
+```
+
+#### 4.3 类型扩展
+
+```typescript
+// src/types/rag.ts 扩展
+
+export interface Chunk {
+  id: string;
+  bookId: string;
+  chapterIndex: number;
+  chapterTitle: string;
+  content: string;
+  tokenCount: number;
+  startCfi: string;
+  endCfi: string;
+  embedding?: number[];
+  context?: string;  // 新增: LLM 生成的上下文
+}
+
+export interface VectorizeProgress {
+  bookId: string;
+  totalChunks: number;
+  processedChunks: number;
+  status: 'idle' | 'chunking' | 'contextualizing' | 'embedding' | 'indexing' | 'completed' | 'error';
+  error?: string;
+}
+```
+
+#### 4.4 性能对比
+
+| 配置 | 检索失败率 | 成本/百万token | 延迟 |
+|------|-----------|---------------|------|
+| 标准分块 + Embedding | ~6% | $0.02 | 低 |
+| + Contextual Retrieval | ~3% (↓49%) | +$1.02 | 中 |
+| + Reranking | ~2% (↓67%) | +$0.50/1K查询 | 高 |
+
+**推荐配置**:
+- **开发/测试**: 标准分块即可
+- **生产环境**: Contextual Retrieval + Reranking
 ```
 
 #### 4.3 数据库扩展
@@ -2539,23 +3058,68 @@ export class PluginManager {
 
 ---
 
+## RAG 技术方案对比
+
+### 业界最佳实践 (2024-2025)
+
+| 技术 | 效果提升 | 实现成本 | 运行成本 | 推荐度 | 适用场景 |
+|------|----------|----------|----------|--------|----------|
+| **Contextual Retrieval** | ↓49% 失败率 | 低 | 低($1/百万token) | ⭐⭐⭐⭐⭐ | 所有场景 |
+| **Reranking** | ↓18% 失败率 | 低 | 中($0.5/1K查询) | ⭐⭐⭐⭐⭐ | 高精度要求 |
+| **HyDE** | ↑10-20% 召回 | 低 | 中(每次查询) | ⭐⭐⭐⭐ | 语义模糊查询 |
+| **Multi-Query** | ↑15-25% 召回 | 低 | 中(每次查询) | ⭐⭐⭐⭐ | 复杂问题 |
+| **Hybrid Search** | ↑20-30% | 低 | 低 | ⭐⭐⭐⭐⭐ | 必选基础 |
+| **GraphRAG** | 复杂推理强 | 高 | 高(10x token) | ⭐⭐⭐ | 人物/知识关联 |
+
+### 推荐实施路径
+
+```
+阶段 1: 基础能力 (1周)
+├── Hybrid Search (Vector + BM25 + RRF)
+└── Embedding Service
+
+阶段 2: 召回增强 (1周)
+├── Contextual Retrieval (预处理)
+└── Multi-Query (运行时可选)
+
+阶段 3: 精度优化 (可选)
+└── Reranking (Cohere/Voyage)
+
+阶段 4: 高级特性 (长期)
+├── HyDE (语义模糊查询)
+└── GraphRAG (知识图谱)
+```
+
+### 成本估算
+
+| 配置 | 预处理成本/书 | 查询成本/次 |
+|------|--------------|------------|
+| 基础 Hybrid | $0.01 | $0.001 |
+| + Contextual | $0.05 | $0.001 |
+| + Reranking | $0.05 | $0.005 |
+| + Multi-Query | $0.05 | $0.003 |
+
+---
+
 ## 实施优先级总览
 
 | 优先级 | 功能 | 预估工时 | 依赖 |
 |--------|------|----------|------|
 | **P0** | EPUB 渲染器 | 2 周 | foliate-js |
 | **P0** | PDF 渲染器 | 2 周 | PDF.js |
-| **P0** | RAG 工具实现 | 1 周 | 向量化管道 |
-| **P0** | 向量化管道 | 1 周 | Embedding API |
+| **P0** | RAG 基础管道 | 1 周 | Embedding API |
+| **P0** | 向量化管道 + Contextual | 1 周 | LLM API |
+| **P1** | Reranking 精排 | 3 天 | Cohere/Voyage API |
 | **P1** | AI 流式输出 | 3 天 | AI SDK |
 | **P1** | 批注导出 | 3 天 | 无 |
 | **P1** | 划词翻译 | 3 天 | 翻译 API |
 | **P1** | 阅读统计 | 1 周 | 图表库 |
+| **P2** | Multi-Query / HyDE | 3 天 | LLM API |
 | **P2** | 云同步 | 2 周 | 云存储 |
 | **P2** | 多格式支持 | 1 周 | 格式转换 |
 | **P2** | TTS 朗读 | 3 天 | Web Speech API |
 | **P2** | 阅读计划 | 1 周 | 通知 API |
-| **P3** | 知识图谱 | 2 周 | AI 服务 |
+| **P3** | GraphRAG | 3 周 | AI 服务 + 图数据库 |
 | **P3** | AI 共读 | 1 周 | AI 服务 |
 | **P3** | 间隔重复 | 1 周 | 无 |
 
@@ -2564,9 +3128,28 @@ export class PluginManager {
 ## 下一步行动
 
 1. **立即开始**: EPUB 渲染器实现（核心功能）
-2. **并行推进**: 向量化管道 + RAG 工具
+2. **并行推进**: 向量化管道 + RAG 工具（含 Contextual Retrieval）
 3. **快速迭代**: AI 流式输出 + 批注导出（用户可见价值高）
-4. **长期规划**: 云同步、知识图谱等创新功能
+4. **中期优化**: Reranking + Multi-Query（提升检索精度）
+5. **长期规划**: GraphRAG、云同步等创新功能
+
+---
+
+## 参考资料
+
+### RAG 技术
+- [Anthropic: Contextual Retrieval](https://www.anthropic.com/research/contextual-retrieval) - 上下文增强检索
+- [Cohere: Reranking](https://cohere.com/rerank) - 精排服务
+- [RAGFlow: RAG 2025 回顾](https://ragflow.io/blog/rag-review-2025-from-rag-to-context) - RAG 技术演进
+
+### 渲染引擎
+- [foliate-js](https://github.com/johnfactotum/foliate-js) - 多格式电子书渲染
+- [PDF.js](https://github.com/nickmomrik/docs) - PDF 渲染
+
+### 向量数据库
+- [pgvector](https://github.com/pgvector/pgvector) - PostgreSQL 向量扩展
+- [Chroma](https://www.trychroma.com/) - 轻量级向量数据库
+- [Qdrant](https://qdrant.tech/) - 高性能向量数据库
 
 ---
 
