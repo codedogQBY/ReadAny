@@ -1,0 +1,15 @@
+{
+  "name": "readany",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter app dev",
+    "build": "pnpm --filter app build",
+    "tauri": "pnpm --filter app tauri",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

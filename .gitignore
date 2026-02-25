@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build
+dist/
+target/
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Tauri
+packages/app/src-tauri/target/
+packages/app/src-tauri/gen/
+packages/app/src-tauri/WixTools/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
