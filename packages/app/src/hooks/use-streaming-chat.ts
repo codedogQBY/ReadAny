@@ -82,8 +82,11 @@ export function useStreamingChat(options?: {
           isVectorized: options?.book?.isVectorized || false,
           aiConfig,
           onToken: (token) => {
-            setStreamingText((prev) => prev + token);
-            setStreamingContent(token); // append via store action
+            setStreamingText((prev) => {
+              const updated = prev + token;
+              setStreamingContent(updated); // sync full content to store
+              return updated;
+            });
           },
           onComplete: (fullText, toolCalls) => {
             // Add assistant message

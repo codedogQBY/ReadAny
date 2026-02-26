@@ -6,31 +6,35 @@
  */
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { useAppStore } from "@/stores/app-store";
+import { useLocation } from "react-router";
 import { HomeSidebar } from "./Sidebar";
 import { TabBar } from "./TabBar";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  const activeTabId = useAppStore((s) => s.activeTabId);
   const showSettings = useAppStore((s) => s.showSettings);
   const setShowSettings = useAppStore((s) => s.setShowSettings);
-  const isHome = activeTabId === "home";
+  const location = useLocation();
+  // Use URL path to determine layout — more reliable than activeTabId
+  const isHome = location.pathname === "/" || location.pathname === "/chat" || location.pathname === "/notes" || location.pathname === "/stats";
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-muted">
       <TabBar />
-      <main className="relative flex-1 overflow-hidden p-1">
+      <main className="relative flex-1 overflow-hidden">
         {isHome ? (
-          <div className="flex h-full w-full overflow-hidden rounded-xl border bg-background shadow-around">
+          <div className="flex h-full w-full overflow-hidden">
             <HomeSidebar />
-            <div className="h-full flex-1 overflow-hidden p-1">
+            <div className="h-full flex-1 overflow-hidden pr-1 pb-1">
               <div className="flex h-full flex-col overflow-hidden rounded-xl border bg-background shadow-around">
                 {children}
               </div>
             </div>
           </div>
         ) : (
-          <div className="flex h-full w-full flex-col overflow-hidden rounded-xl border bg-background shadow-around">
-            {children}
+          <div className="flex h-full w-full flex-col overflow-hidden pr-1 pb-1">
+            <div className="flex h-full flex-col overflow-hidden rounded-xl border bg-background shadow-around">
+              {children}
+            </div>
           </div>
         )}
       </main>

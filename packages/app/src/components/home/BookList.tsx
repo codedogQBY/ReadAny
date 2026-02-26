@@ -31,8 +31,8 @@ export function BookList({ books }: BookListProps) {
             onClick={() => handleOpen(book)}
           >
             <div className="flex h-12 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-gradient-to-br from-neutral-100 to-neutral-200">
-              {book.coverPath ? (
-                <img src={book.coverPath} alt="" className="h-full w-full object-cover" />
+              {book.meta.coverUrl ? (
+                <img src={book.meta.coverUrl} alt="" className="h-full w-full object-cover" />
               ) : (
                 <span className="text-sm font-bold text-neutral-400">{book.meta.title.charAt(0)}</span>
               )}

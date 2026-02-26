@@ -38,9 +38,9 @@ export function BookCard({ book }: BookCardProps) {
 
       {/* Cover area */}
       <div className="relative mx-2 mb-2 flex aspect-[3/4] items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-neutral-100 to-neutral-200">
-        {book.coverPath ? (
+        {book.meta.coverUrl ? (
           <img
-            src={book.coverPath}
+            src={book.meta.coverUrl}
             alt={book.meta.title}
             className="h-full w-full object-cover transition-transform group-hover:scale-105"
           />

@@ -41,10 +41,16 @@ export const useAppStore = create<AppState>((set) => ({
   showSettings: false,
 
   addTab: (tab) =>
-    set((state) => ({
-      tabs: [...state.tabs, tab],
-      activeTabId: tab.id,
-    })),
+    set((state) => {
+      const exists = state.tabs.some((t) => t.id === tab.id);
+      if (exists) {
+        return { activeTabId: tab.id };
+      }
+      return {
+        tabs: [...state.tabs, tab],
+        activeTabId: tab.id,
+      };
+    }),
 
   removeTab: (tabId) =>
     set((state) => {

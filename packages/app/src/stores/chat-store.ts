@@ -80,9 +80,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setStreaming: (streaming) => set({ isStreaming: streaming }),
   setStreamingContent: (content) =>
-    set((state) => ({
-      streamingContent: state.streamingContent + content,
-    })),
+    set({ streamingContent: content }),
   appendStreamingContent: (chunk) =>
     set((state) => ({ streamingContent: state.streamingContent + chunk })),
   setSemanticContext: (ctx) => set({ semanticContext: ctx }),

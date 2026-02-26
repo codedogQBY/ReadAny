@@ -1,6 +1,8 @@
 /**
  * ChatPage — standalone full-page chat (sageread style)
  */
+import { Button } from "@/components/ui/button";
+import { useStreamingChat } from "@/hooks/use-streaming-chat";
 import { useChatReaderStore } from "@/stores/chat-reader-store";
 import { useChatStore } from "@/stores/chat-store";
 import {
@@ -11,9 +13,10 @@ import {
   MessageCirclePlus,
   ScrollText,
   Search,
+  Square,
   X,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChatInput } from "./ChatInput";
 import { ContextPopover } from "./ContextPopover";
@@ -104,8 +107,9 @@ function EmptyState({ onSuggestionClick }: { onSuggestionClick: (text: string) =
 
 export function ChatPage() {
   const { t } = useTranslation();
-  const { threads, activeThreadId, sendMessage, addThread, setActiveThread } = useChatStore();
+  const { threads, activeThreadId, isStreaming, streamingContent, setActiveThread, addThread } = useChatStore();
   const { bookTitle } = useChatReaderStore();
+  const { sendMessage, stopStream } = useStreamingChat();
   const activeThread = threads.find((t) => t.id === activeThreadId);
   const [showThreads, setShowThreads] = useState(false);
 
@@ -114,16 +118,23 @@ export function ChatPage() {
       if (!activeThreadId) {
         const thread = { id: crypto.randomUUID(), title: content.slice(0, 50), messages: [], createdAt: Date.now(), updatedAt: Date.now() };
         addThread(thread);
-        sendMessage(thread.id, content);
+        // sendMessage with the new thread context
+        setTimeout(() => sendMessage(content), 0);
       } else {
-        sendMessage(activeThreadId, content);
+        sendMessage(content);
       }
     },
     [activeThreadId, addThread, sendMessage],
   );
 
-  const handleNewThread = () => { setActiveThread(null as unknown as string); };
+  const handleNewThread = () => { setActiveThread(null); };
   const hasMessages = activeThread && activeThread.messages.length > 0;
+
+  const displayMessages = activeThread?.messages || [];
+  const allMessages =
+    isStreaming && streamingContent
+      ? [...displayMessages, { id: "streaming", threadId: activeThread?.id || "", role: "assistant" as const, content: streamingContent, createdAt: Date.now() }]
+      : displayMessages;
 
   return (
     <div className="relative flex h-full flex-col">
@@ -145,20 +156,27 @@ export function ChatPage() {
             <MessageCirclePlus className="size-4" />
           </button>
         </div>
-        {hasMessages && (
+        {allMessages.length > 0 && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-4 translate-y-full bg-gradient-to-b from-background to-transparent" />
         )}
       </div>
       <div className="flex flex-1 flex-col overflow-hidden">
-        {hasMessages ? (
+        {allMessages.length > 0 ? (
           <>
-            <div className="flex-1 overflow-hidden"><MessageList messages={activeThread.messages} /></div>
-            <div className="shrink-0 px-4 pb-3 pt-2"><ChatInput onSend={handleSend} /></div>
+            <div className="flex-1 overflow-hidden"><MessageList messages={allMessages} /></div>
+            {isStreaming && (
+              <div className="flex justify-center px-3 pb-1">
+                <Button variant="outline" size="sm" className="h-7 gap-1 rounded-full text-xs" onClick={stopStream}>
+                  <Square className="size-3" />{t("common.stop")}
+                </Button>
+              </div>
+            )}
+            <div className="shrink-0 px-4 pb-3 pt-2"><ChatInput onSend={handleSend} disabled={isStreaming} /></div>
           </>
         ) : (
           <div className="flex flex-1 flex-col overflow-hidden">
             <EmptyState onSuggestionClick={handleSend} />
-            <div className="shrink-0 px-4 pb-3 pt-2"><ChatInput onSend={handleSend} /></div>
+            <div className="shrink-0 px-4 pb-3 pt-2"><ChatInput onSend={handleSend} disabled={isStreaming} /></div>
           </div>
         )}
       </div>

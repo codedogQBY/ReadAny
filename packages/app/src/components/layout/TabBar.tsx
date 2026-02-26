@@ -18,19 +18,33 @@ export function TabBar() {
 
   const readerTabs = tabs.filter((t) => t.type !== "home");
 
+  const handleTabActivate = (tab: Tab) => {
+    setActiveTab(tab.id);
+    // Navigate to the correct route based on tab type
+    if (tab.type === "reader" && tab.bookId) {
+      navigate(`/reader/${tab.bookId}`);
+    } else if (tab.type === "chat") {
+      navigate("/chat");
+    } else if (tab.type === "notes") {
+      navigate("/notes");
+    }
+  };
+
   return (
     <div
-      className="flex h-9 shrink-0 select-none items-center border-neutral-200 bg-muted"
+      className="flex h-8 shrink-0 select-none items-center border-neutral-200 bg-muted"
       data-tauri-drag-region
+      style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
       {/* macOS traffic light spacing + Home icon */}
       <div
-        className="flex shrink-0 items-center"
+        className="flex h-full shrink-0 items-center"
         style={{ paddingLeft: 68 }}
       >
         <button
           type="button"
           className="flex items-center justify-center rounded-md p-1 text-neutral-500 transition-colors hover:bg-neutral-200/60 hover:text-neutral-800"
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
           onClick={() => {
             setActiveTab("home");
             navigate("/");
@@ -41,13 +55,13 @@ export function TabBar() {
       </div>
 
       {/* Tabs */}
-      <div className="flex flex-1 items-center gap-0.5 overflow-x-auto px-1" data-tauri-drag-region>
+      <div className="flex h-full flex-1 items-center gap-0.5 overflow-x-auto px-1" data-tauri-drag-region style={{ WebkitAppRegion: "drag" } as React.CSSProperties}>
         {readerTabs.map((tab) => (
           <TabItem
             key={tab.id}
             tab={tab}
             isActive={tab.id === activeTabId}
-            onActivate={() => setActiveTab(tab.id)}
+            onActivate={() => handleTabActivate(tab)}
             onClose={() => removeTab(tab.id)}
           />
         ))}
@@ -76,6 +90,7 @@ function TabItem({
           ? "bg-background text-foreground shadow-sm"
           : "text-muted-foreground hover:text-foreground"
       }`}
+      style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       onClick={onActivate}
     >
       <Icon className="h-3.5 w-3.5 shrink-0" />

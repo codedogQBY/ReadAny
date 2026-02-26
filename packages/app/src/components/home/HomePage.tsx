@@ -3,7 +3,7 @@
  */
 import { useLibraryStore } from "@/stores/library-store";
 import { Grid, List, Plus } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BookGrid } from "./BookGrid";
 import { BookList } from "./BookList";
@@ -11,8 +11,9 @@ import { ImportDropZone } from "./ImportDropZone";
 
 export function HomePage() {
   const { t } = useTranslation();
-  const { books, filter } = useLibraryStore();
+  const { books, filter, addBook } = useLibraryStore();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const filtered = filter.search
     ? books.filter(
@@ -22,17 +23,48 @@ export function HomePage() {
       )
     : books;
 
+  const handleImportFiles = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!e.target.files) return;
+      const epubFiles = Array.from(e.target.files).filter((f) => f.name.endsWith(".epub"));
+      for (const file of epubFiles) {
+        addBook({
+          id: crypto.randomUUID(),
+          filePath: (file as File & { path?: string }).path || file.name,
+          meta: { title: file.name.replace(".epub", ""), author: "" },
+          progress: 0,
+          isVectorized: false,
+          vectorizeProgress: 0,
+          tags: [],
+          addedAt: Date.now(),
+          lastOpenedAt: Date.now(),
+        });
+      }
+      e.target.value = "";
+    },
+    [addBook],
+  );
+
   if (books.length === 0) {
     return <ImportDropZone />;
   }
 
   return (
     <div className="flex h-full flex-col">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".epub"
+        multiple
+        className="hidden"
+        onChange={handleImportFiles}
+      />
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between px-6 pt-5 pb-2">
         <h1 className="text-3xl font-bold text-neutral-900">{t("home.library")}</h1>
         <button
           type="button"
+          onClick={() => fileInputRef.current?.click()}
           className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           <Plus className="size-4" />

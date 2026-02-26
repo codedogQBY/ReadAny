@@ -172,13 +172,39 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   }, []);
 
   const handleHighlight = useCallback(() => {
-    // Handled by parent via annotation store
+    if (selection) {
+      const highlight = {
+        id: crypto.randomUUID(),
+        bookId,
+        text: selection.text,
+        cfi: selection.start.cfi || "",
+        color: "yellow" as const,
+        chapterTitle: tab?.chapterTitle || undefined,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      useAnnotationStore.getState().addHighlight(highlight);
+    }
     setSelection(null);
-  }, []);
+  }, [selection, bookId, tab?.chapterTitle]);
 
   const handleNote = useCallback(() => {
+    if (selection) {
+      const note = {
+        id: crypto.randomUUID(),
+        bookId,
+        title: selection.text.slice(0, 50),
+        content: "",
+        cfi: selection.start.cfi || "",
+        chapterTitle: tab?.chapterTitle || undefined,
+        tags: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      useAnnotationStore.getState().addNote(note);
+    }
     setSelection(null);
-  }, []);
+  }, [selection, bookId, tab?.chapterTitle]);
 
   const handleCopy = useCallback(() => {
     if (selection?.text) {
