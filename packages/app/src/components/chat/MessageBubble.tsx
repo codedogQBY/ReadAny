@@ -15,9 +15,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
         className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-          isUser
-            ? "bg-primary text-primary-foreground"
-            : "bg-muted text-foreground"
+          isUser ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"
         }`}
       >
         <div className="whitespace-pre-wrap">{message.content}</div>

@@ -2,8 +2,8 @@
  * AppLayout — main layout with tab bar + content area + sidebar
  */
 import { useAppStore } from "@/stores/app-store";
-import { TabBar } from "./TabBar";
 import { Sidebar } from "./Sidebar";
+import { TabBar } from "./TabBar";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);

@@ -2,7 +2,7 @@
  * ToolCallDisplay — shows AI tool invocation status
  */
 import type { ToolCall } from "@/types";
-import { Loader2, CheckCircle, AlertCircle } from "lucide-react";
+import { AlertCircle, CheckCircle, Loader2 } from "lucide-react";
 
 interface ToolCallDisplayProps {
   toolCall: ToolCall;

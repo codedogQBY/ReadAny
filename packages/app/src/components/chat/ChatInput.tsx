@@ -1,10 +1,10 @@
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Send } from "lucide-react";
 /**
  * ChatInput — message input with Enter to send, Shift+Enter for newline
  */
-import { useState, useCallback } from "react";
-import { Textarea } from "@/components/ui/textarea";
-import { Button } from "@/components/ui/button";
-import { Send } from "lucide-react";
+import { useCallback, useState } from "react";
 
 interface ChatInputProps {
   onSend: (content: string) => void;
@@ -43,7 +43,12 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
         rows={1}
         disabled={disabled}
       />
-      <Button size="icon" className="h-9 w-9 shrink-0" onClick={handleSend} disabled={disabled || !value.trim()}>
+      <Button
+        size="icon"
+        className="h-9 w-9 shrink-0"
+        onClick={handleSend}
+        disabled={disabled || !value.trim()}
+      >
         <Send className="h-4 w-4" />
       </Button>
     </div>

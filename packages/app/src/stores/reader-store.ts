@@ -1,8 +1,8 @@
+import type { FontFamily, Theme, ViewMode, ViewSettings } from "@/types";
 /**
  * Reader store — per-tab reading state, progress, CFI
  */
 import { create } from "zustand";
-import type { ViewSettings, ViewMode, Theme, FontFamily } from "@/types";
 
 export interface ReaderTab {
   bookId: string;

@@ -40,6 +40,5 @@ export const useChatReaderStore = create<ChatReaderState>((set) => ({
       selectedBooks: state.selectedBooks.filter((id) => id !== bookId),
     })),
 
-  clearContext: () =>
-    set({ bookId: null, bookTitle: "", currentChapter: "", selectedBooks: [] }),
+  clearContext: () => set({ bookId: null, bookTitle: "", currentChapter: "", selectedBooks: [] }),
 }));

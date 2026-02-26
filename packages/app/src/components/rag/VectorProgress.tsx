@@ -11,10 +11,7 @@ interface VectorProgressProps {
 export function VectorProgress({ progress, size = 64 }: VectorProgressProps) {
   const radius = (size - 8) / 2;
   const circumference = 2 * Math.PI * radius;
-  const ratio =
-    progress.totalChunks > 0
-      ? progress.processedChunks / progress.totalChunks
-      : 0;
+  const ratio = progress.totalChunks > 0 ? progress.processedChunks / progress.totalChunks : 0;
   const offset = circumference * (1 - ratio);
 
   return (
@@ -42,9 +39,7 @@ export function VectorProgress({ progress, size = 64 }: VectorProgressProps) {
           strokeLinecap="round"
         />
       </svg>
-      <span className="absolute text-xs font-medium">
-        {Math.round(ratio * 100)}%
-      </span>
+      <span className="absolute text-xs font-medium">{Math.round(ratio * 100)}%</span>
     </div>
   );
 }

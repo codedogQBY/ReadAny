@@ -1,7 +1,7 @@
 /**
  * useDrag — generic mouse + touch drag hook
  */
-import { useRef, useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 interface DragState {
   isDragging: boolean;

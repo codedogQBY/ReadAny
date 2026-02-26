@@ -1,8 +1,8 @@
+import type { Bookmark, Highlight, HighlightColor, Note } from "@/types";
 /**
  * Annotation store — highlights, notes, bookmarks management
  */
 import { create } from "zustand";
-import type { Highlight, Note, Bookmark, HighlightColor } from "@/types";
 
 export interface AnnotationState {
   highlights: Highlight[];
@@ -34,13 +34,10 @@ export const useAnnotationStore = create<AnnotationState>((set) => ({
   bookmarks: [],
 
   setHighlights: (highlights) => set({ highlights }),
-  addHighlight: (highlight) =>
-    set((state) => ({ highlights: [...state.highlights, highlight] })),
+  addHighlight: (highlight) => set((state) => ({ highlights: [...state.highlights, highlight] })),
   updateHighlight: (id, updates) =>
     set((state) => ({
-      highlights: state.highlights.map((h) =>
-        h.id === id ? { ...h, ...updates } : h,
-      ),
+      highlights: state.highlights.map((h) => (h.id === id ? { ...h, ...updates } : h)),
     })),
   removeHighlight: (id) =>
     set((state) => ({
@@ -61,12 +58,10 @@ export const useAnnotationStore = create<AnnotationState>((set) => ({
         n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n,
       ),
     })),
-  removeNote: (id) =>
-    set((state) => ({ notes: state.notes.filter((n) => n.id !== id) })),
+  removeNote: (id) => set((state) => ({ notes: state.notes.filter((n) => n.id !== id) })),
 
   setBookmarks: (bookmarks) => set({ bookmarks }),
-  addBookmark: (bookmark) =>
-    set((state) => ({ bookmarks: [...state.bookmarks, bookmark] })),
+  addBookmark: (bookmark) => set((state) => ({ bookmarks: [...state.bookmarks, bookmark] })),
   removeBookmark: (id) =>
     set((state) => ({
       bookmarks: state.bookmarks.filter((b) => b.id !== id),

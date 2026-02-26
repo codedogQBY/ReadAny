@@ -1,8 +1,8 @@
+import type { AIConfig, AIModel, Message, SemanticContext, Thread } from "@/types";
 /**
- * Chat store — conversation threads, messages, streaming
+ * Chat store — conversation threads, messages, streaming state
  */
 import { create } from "zustand";
-import type { Thread, Message, SemanticContext, AIConfig, AIModel } from "@/types";
 
 export interface ChatState {
   threads: Thread[];
@@ -35,7 +35,7 @@ const defaultAIConfig: AIConfig = {
   slidingWindowSize: 8,
 };
 
-export const useChatStore = create<ChatState>((set) => ({
+export const useChatStore = create<ChatState>((set, get) => ({
   threads: [],
   activeThreadId: null,
   isStreaming: false,
@@ -54,8 +54,7 @@ export const useChatStore = create<ChatState>((set) => ({
   removeThread: (threadId) =>
     set((state) => ({
       threads: state.threads.filter((t) => t.id !== threadId),
-      activeThreadId:
-        state.activeThreadId === threadId ? null : state.activeThreadId,
+      activeThreadId: state.activeThreadId === threadId ? null : state.activeThreadId,
     })),
 
   setActiveThread: (threadId) => set({ activeThreadId: threadId }),
@@ -63,9 +62,7 @@ export const useChatStore = create<ChatState>((set) => ({
   addMessage: (threadId, message) =>
     set((state) => ({
       threads: state.threads.map((t) =>
-        t.id === threadId
-          ? { ...t, messages: [...t.messages, message], updatedAt: Date.now() }
-          : t,
+        t.id === threadId ? { ...t, messages: [...t.messages, message], updatedAt: Date.now() } : t,
       ),
     })),
 
@@ -75,23 +72,33 @@ export const useChatStore = create<ChatState>((set) => ({
         t.id === threadId
           ? {
               ...t,
-              messages: t.messages.map((m) =>
-                m.id === messageId ? { ...m, content } : m,
-              ),
+              messages: t.messages.map((m) => (m.id === messageId ? { ...m, content } : m)),
             }
           : t,
       ),
     })),
 
   setStreaming: (streaming) => set({ isStreaming: streaming }),
-  setStreamingContent: (content) => set({ streamingContent: content }),
+  setStreamingContent: (content) =>
+    set((state) => ({
+      streamingContent: state.streamingContent + content,
+    })),
   appendStreamingContent: (chunk) =>
     set((state) => ({ streamingContent: state.streamingContent + chunk })),
   setSemanticContext: (ctx) => set({ semanticContext: ctx }),
-  setAIModel: (model) =>
-    set((state) => ({ aiConfig: { ...state.aiConfig, model } })),
+  setAIModel: (model) => set((state) => ({ aiConfig: { ...state.aiConfig, model } })),
 
   sendMessage: async (_threadId, _content) => {
-    // TODO: Build message pipeline, call AI, handle streaming response
+    // Streaming is now handled by the useStreamingChat hook.
+    // This method is kept for backward compatibility with components
+    // that use it directly. The hook provides the full streaming flow.
+    const state = get();
+    if (state.isStreaming) return;
+
+    // For non-streaming fallback, this could be implemented as a simple
+    // fetch, but the primary flow uses the useStreamingChat hook.
+    console.warn(
+      "sendMessage called directly on chat store. Use useStreamingChat hook for streaming support.",
+    );
   },
 }));

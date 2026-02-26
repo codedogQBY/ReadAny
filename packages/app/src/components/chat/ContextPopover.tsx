@@ -1,10 +1,10 @@
+import { Button } from "@/components/ui/button";
+import { useChatReaderStore } from "@/stores/chat-reader-store";
 /**
  * ContextPopover — book context selector for standalone chat
  */
 import { useLibraryStore } from "@/stores/library-store";
-import { useChatReaderStore } from "@/stores/chat-reader-store";
 import { BookOpen } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { useState } from "react";
 
 export function ContextPopover() {
@@ -21,7 +21,9 @@ export function ContextPopover() {
 
       {open && (
         <div className="absolute right-0 top-full z-50 mt-1 w-64 rounded-lg border border-border bg-background p-2 shadow-lg">
-          <p className="mb-2 px-2 text-xs font-medium text-muted-foreground">Select books for context</p>
+          <p className="mb-2 px-2 text-xs font-medium text-muted-foreground">
+            Select books for context
+          </p>
           {books.map((book) => (
             <label
               key={book.id}
@@ -38,7 +40,9 @@ export function ContextPopover() {
             </label>
           ))}
           {books.length === 0 && (
-            <p className="px-2 py-4 text-center text-xs text-muted-foreground">No books in library</p>
+            <p className="px-2 py-4 text-center text-xs text-muted-foreground">
+              No books in library
+            </p>
           )}
         </div>
       )}

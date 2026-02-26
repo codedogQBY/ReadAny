@@ -27,11 +27,28 @@ export interface TranslationProvider {
 }
 
 export type TranslationTargetLang =
-  | "zh-CN" | "zh-TW" | "ja" | "ko"
-  | "en" | "fr" | "de" | "es" | "pt"
-  | "it" | "ru" | "ar" | "hi"
-  | "th" | "vi" | "id" | "ms"
-  | "tr" | "pl" | "nl" | "sv" | "da";
+  | "zh-CN"
+  | "zh-TW"
+  | "ja"
+  | "ko"
+  | "en"
+  | "fr"
+  | "de"
+  | "es"
+  | "pt"
+  | "it"
+  | "ru"
+  | "ar"
+  | "hi"
+  | "th"
+  | "vi"
+  | "id"
+  | "ms"
+  | "tr"
+  | "pl"
+  | "nl"
+  | "sv"
+  | "da";
 
 export interface TranslationConfig {
   provider: TranslationProvider;

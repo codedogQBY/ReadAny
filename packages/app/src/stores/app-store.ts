@@ -45,9 +45,7 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => {
       const tabs = state.tabs.filter((t) => t.id !== tabId);
       const activeTabId =
-        state.activeTabId === tabId
-          ? tabs[tabs.length - 1]?.id ?? null
-          : state.activeTabId;
+        state.activeTabId === tabId ? (tabs[tabs.length - 1]?.id ?? null) : state.activeTabId;
       return { tabs, activeTabId };
     }),
 

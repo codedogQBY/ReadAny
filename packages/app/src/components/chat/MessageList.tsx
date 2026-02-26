@@ -2,8 +2,8 @@
  * MessageList — scrollable message list
  */
 import type { Message } from "@/types";
+import { useEffect, useRef } from "react";
 import { MessageBubble } from "./MessageBubble";
-import { useRef, useEffect } from "react";
 
 interface MessageListProps {
   messages: Message[];

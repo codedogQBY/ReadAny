@@ -1,9 +1,9 @@
+import { type SessionEvent, createSessionDetector } from "@/lib/reader/session-detector";
+import { useReadingSessionStore } from "@/stores/reading-session-store";
 /**
  * useReadingSession — reading session state machine hook
  */
-import { useEffect, useRef, useCallback } from "react";
-import { useReadingSessionStore } from "@/stores/reading-session-store";
-import { createSessionDetector, type SessionEvent } from "@/lib/reader/session-detector";
+import { useCallback, useEffect, useRef } from "react";
 
 export function useReadingSession(bookId: string | null) {
   const { startSession, pauseSession, resumeSession, stopSession, updateActiveTime } =
@@ -35,8 +35,7 @@ export function useReadingSession(bookId: string | null) {
     if (!bookId) return;
 
     const onActivity = () => sendEvent({ type: "activity" });
-    const onVisibility = () =>
-      sendEvent({ type: "visibility", visible: !document.hidden });
+    const onVisibility = () => sendEvent({ type: "visibility", visible: !document.hidden });
 
     window.addEventListener("mousemove", onActivity);
     window.addEventListener("keydown", onActivity);

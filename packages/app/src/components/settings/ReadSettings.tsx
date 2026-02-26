@@ -15,7 +15,9 @@ export function ReadSettingsPanel() {
 
       <div className="space-y-4">
         <div>
-          <label className="mb-1 block text-sm font-medium">Font Size: {readSettings.fontSize}px</label>
+          <label className="mb-1 block text-sm font-medium">
+            Font Size: {readSettings.fontSize}px
+          </label>
           <input
             type="range"
             min={12}
@@ -27,7 +29,9 @@ export function ReadSettingsPanel() {
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium">Line Height: {readSettings.lineHeight}</label>
+          <label className="mb-1 block text-sm font-medium">
+            Line Height: {readSettings.lineHeight}
+          </label>
           <input
             type="range"
             min={1.2}
@@ -43,7 +47,9 @@ export function ReadSettingsPanel() {
           <label className="mb-1 block text-sm font-medium">Font Family</label>
           <select
             value={readSettings.fontFamily}
-            onChange={(e) => updateReadSettings({ fontFamily: e.target.value as "sans" | "serif" | "mono" })}
+            onChange={(e) =>
+              updateReadSettings({ fontFamily: e.target.value as "sans" | "serif" | "mono" })
+            }
             className="rounded-md border border-border px-2 py-1 text-sm"
           >
             <option value="sans">Sans-serif</option>
@@ -56,7 +62,9 @@ export function ReadSettingsPanel() {
           <label className="mb-1 block text-sm font-medium">View Mode</label>
           <select
             value={readSettings.viewMode}
-            onChange={(e) => updateReadSettings({ viewMode: e.target.value as "paginated" | "scroll" })}
+            onChange={(e) =>
+              updateReadSettings({ viewMode: e.target.value as "paginated" | "scroll" })
+            }
             className="rounded-md border border-border px-2 py-1 text-sm"
           >
             <option value="paginated">Paginated</option>

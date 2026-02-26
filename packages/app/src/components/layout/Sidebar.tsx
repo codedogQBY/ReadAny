@@ -1,10 +1,10 @@
+import { NoteList } from "@/components/annotation/NoteList";
+import { ChatPanel } from "@/components/chat/ChatPanel";
+import { TOCPanel } from "@/components/reader/TOCPanel";
 /**
  * Sidebar — container for chat/notes/TOC panels
  */
 import { useAppStore } from "@/stores/app-store";
-import { ChatPanel } from "@/components/chat/ChatPanel";
-import { NoteList } from "@/components/annotation/NoteList";
-import { TOCPanel } from "@/components/reader/TOCPanel";
 
 export function Sidebar() {
   const { sidebarTab, setSidebarTab, toggleSidebar } = useAppStore();
@@ -17,7 +17,9 @@ export function Sidebar() {
             <button
               key={tab}
               className={`text-xs font-medium transition-colors ${
-                sidebarTab === tab ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                sidebarTab === tab
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
               onClick={() => setSidebarTab(tab)}
             >
@@ -25,10 +27,7 @@ export function Sidebar() {
             </button>
           ))}
         </div>
-        <button
-          className="text-muted-foreground hover:text-foreground"
-          onClick={toggleSidebar}
-        >
+        <button className="text-muted-foreground hover:text-foreground" onClick={toggleSidebar}>
           ✕
         </button>
       </div>

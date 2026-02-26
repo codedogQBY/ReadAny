@@ -1,8 +1,8 @@
+import { Button } from "@/components/ui/button";
 /**
  * VectorizeDialog — dialog for starting/monitoring vectorization
  */
 import type { VectorizeProgress } from "@/types";
-import { Button } from "@/components/ui/button";
 import { VectorProgress } from "./VectorProgress";
 
 interface VectorizeDialogProps {
@@ -14,7 +14,10 @@ interface VectorizeDialogProps {
 
 export function VectorizeDialog({ bookTitle, progress, onStart, onClose }: VectorizeDialogProps) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
       <div
         className="w-96 rounded-lg border border-border bg-background p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
@@ -40,7 +43,9 @@ export function VectorizeDialog({ bookTitle, progress, onStart, onClose }: Vecto
         )}
 
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>Close</Button>
+          <Button variant="ghost" onClick={onClose}>
+            Close
+          </Button>
           {!progress && <Button onClick={onStart}>Start Vectorization</Button>}
         </div>
       </div>

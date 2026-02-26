@@ -29,10 +29,7 @@ export function getPageDirection(
 }
 
 /** Calculate page offset for scroll-based pagination */
-export function getScrollPageOffset(
-  containerHeight: number,
-  overlapRatio: number = 0.1,
-): number {
+export function getScrollPageOffset(containerHeight: number, overlapRatio = 0.1): number {
   return containerHeight * (1 - overlapRatio);
 }
 
@@ -48,10 +45,7 @@ export function navigatePage(
 }
 
 /** Calculate reading progress from page position */
-export function calculateProgress(
-  currentPage: number,
-  totalPages: number,
-): number {
+export function calculateProgress(currentPage: number, totalPages: number): number {
   if (totalPages <= 0) return 0;
   return Math.min(1, (currentPage + 1) / totalPages);
 }

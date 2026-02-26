@@ -1,10 +1,10 @@
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Sparkles } from "lucide-react";
 /**
  * AskAIDialog — quick AI question dialog for selected text
  */
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Sparkles } from "lucide-react";
 
 interface AskAIDialogProps {
   selectedText: string;
@@ -29,7 +29,8 @@ export function AskAIDialog({ selectedText, onSubmit, onClose }: AskAIDialogProp
       </div>
 
       <div className="mb-3 max-h-20 overflow-y-auto rounded-md bg-muted p-2 text-xs text-muted-foreground">
-        "{selectedText.slice(0, 200)}{selectedText.length > 200 ? "..." : ""}"
+        "{selectedText.slice(0, 200)}
+        {selectedText.length > 200 ? "..." : ""}"
       </div>
 
       <Textarea
@@ -47,8 +48,12 @@ export function AskAIDialog({ selectedText, onSubmit, onClose }: AskAIDialogProp
       />
 
       <div className="flex justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-        <Button size="sm" onClick={handleSubmit} disabled={!question.trim()}>Ask</Button>
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button size="sm" onClick={handleSubmit} disabled={!question.trim()}>
+          Ask
+        </Button>
       </div>
     </div>
   );

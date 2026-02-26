@@ -2,7 +2,7 @@
  * SelectionPopover — 5-button popover on text selection
  * Buttons: Highlight, Note, Copy, Translate, Ask AI
  */
-import { Highlighter, StickyNote, Copy, Languages, Sparkles } from "lucide-react";
+import { Copy, Highlighter, Languages, Sparkles, StickyNote } from "lucide-react";
 
 interface SelectionPopoverProps {
   position: { x: number; y: number };

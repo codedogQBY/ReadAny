@@ -4,9 +4,9 @@
  * - 8-message sliding window
  * - Context assembly
  */
-import type { Message, Thread, SemanticContext } from "@/types";
-import { buildSystemPrompt } from "./system-prompt";
+import type { Message, SemanticContext, Thread } from "@/types";
 import type { Book, Skill } from "@/types";
+import { buildSystemPrompt } from "./system-prompt";
 
 interface PipelineConfig {
   slidingWindowSize: number; // default 8
@@ -38,10 +38,7 @@ export function processMessages(
   const systemPrompt = buildSystemPrompt(context);
 
   // Apply sliding window — keep last N messages
-  const windowedMessages = applySlidingWindow(
-    thread.messages,
-    config.slidingWindowSize,
-  );
+  const windowedMessages = applySlidingWindow(thread.messages, config.slidingWindowSize);
 
   // Process citations in messages
   const processed = windowedMessages
@@ -55,10 +52,7 @@ export function processMessages(
 }
 
 /** Apply sliding window, keeping system messages + last N user/assistant pairs */
-function applySlidingWindow(
-  messages: Message[],
-  windowSize: number,
-): Message[] {
+function applySlidingWindow(messages: Message[], windowSize: number): Message[] {
   if (messages.length <= windowSize) return messages;
   return messages.slice(-windowSize);
 }

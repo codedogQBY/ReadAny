@@ -1,8 +1,14 @@
+import type {
+  AIConfig,
+  AIModel,
+  ReadSettings,
+  TranslationConfig,
+  TranslationTargetLang,
+} from "@/types";
 /**
  * Settings store — global reading settings, AI config, translation config
  */
 import { create } from "zustand";
-import type { ReadSettings, TranslationConfig, AIConfig, AIModel, TranslationTargetLang } from "@/types";
 
 export interface SettingsState {
   readSettings: ReadSettings;
@@ -68,11 +74,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       aiConfig: { ...state.aiConfig, ...updates },
     })),
 
-  setAIModel: (model) =>
-    set((state) => ({ aiConfig: { ...state.aiConfig, model } })),
+  setAIModel: (model) => set((state) => ({ aiConfig: { ...state.aiConfig, model } })),
 
-  setAPIKey: (key) =>
-    set((state) => ({ aiConfig: { ...state.aiConfig, apiKey: key } })),
+  setAPIKey: (key) => set((state) => ({ aiConfig: { ...state.aiConfig, apiKey: key } })),
 
   setTranslationLang: (lang) =>
     set((state) => ({

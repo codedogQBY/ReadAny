@@ -46,10 +46,7 @@ export function isInputElement(target: EventTarget | null): boolean {
 }
 
 /** Match a keyboard event against a binding */
-export function matchBinding(
-  event: KeyboardEvent,
-  binding: KeyBinding,
-): boolean {
+export function matchBinding(event: KeyboardEvent, binding: KeyBinding): boolean {
   return (
     event.key === binding.key &&
     !!event.ctrlKey === !!binding.ctrl &&

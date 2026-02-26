@@ -2,8 +2,8 @@
  * HighlightList — list of highlights for the current book
  */
 import { useAnnotationStore } from "@/stores/annotation-store";
-import { Highlighter } from "lucide-react";
 import type { HighlightColor } from "@/types";
+import { Highlighter } from "lucide-react";
 
 const COLOR_CLASSES: Record<HighlightColor, string> = {
   yellow: "bg-highlight-yellow",
@@ -37,9 +37,7 @@ export function HighlightList() {
             <div className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${COLOR_CLASSES[h.color]}`} />
             <div className="min-w-0">
               <p className="line-clamp-3 text-sm">{h.text}</p>
-              {h.note && (
-                <p className="mt-1 text-xs text-muted-foreground">{h.note}</p>
-              )}
+              {h.note && <p className="mt-1 text-xs text-muted-foreground">{h.note}</p>}
               {h.chapterTitle && (
                 <p className="mt-1 text-xs text-muted-foreground/70">{h.chapterTitle}</p>
               )}

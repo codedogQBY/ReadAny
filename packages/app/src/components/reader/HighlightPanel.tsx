@@ -31,10 +31,7 @@ export function HighlightPanel({ selectedColor, onColorChange, onDelete }: Highl
         />
       ))}
       {onDelete && (
-        <button
-          className="ml-2 text-xs text-destructive hover:underline"
-          onClick={onDelete}
-        >
+        <button className="ml-2 text-xs text-destructive hover:underline" onClick={onDelete}>
           Remove
         </button>
       )}

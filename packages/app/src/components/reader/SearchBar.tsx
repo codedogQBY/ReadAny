@@ -1,9 +1,9 @@
+import { Input } from "@/components/ui/input";
+import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
 /**
  * SearchBar — in-book search
  */
 import { useState } from "react";
-import { Input } from "@/components/ui/input";
-import { Search, X, ChevronUp, ChevronDown } from "lucide-react";
 
 interface SearchBarProps {
   onSearch: (query: string) => void;
@@ -14,7 +14,14 @@ interface SearchBarProps {
   currentIndex: number;
 }
 
-export function SearchBar({ onSearch, onNext, onPrev, onClose, resultCount, currentIndex }: SearchBarProps) {
+export function SearchBar({
+  onSearch,
+  onNext,
+  onPrev,
+  onClose,
+  resultCount,
+  currentIndex,
+}: SearchBarProps) {
   const [query, setQuery] = useState("");
 
   return (

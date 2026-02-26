@@ -1,10 +1,10 @@
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 /**
  * VectorTestDialog — 4-tab dialog for testing vectorization quality
  * Tabs: Chunks, Vector Search, BM25 Search, Hybrid Search
  */
 import { useState } from "react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 
 type TestTab = "chunks" | "vector" | "bm25" | "hybrid";
 
@@ -28,14 +28,19 @@ export function VectorTestDialog({ bookId: _bookId, open, onClose }: VectorTestD
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
       <div
         className="flex h-[80vh] w-[800px] flex-col overflow-hidden rounded-lg border border-border bg-background shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h3 className="font-medium">Vector Test</h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">✕</button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            ✕
+          </button>
         </div>
 
         <div className="flex border-b border-border">

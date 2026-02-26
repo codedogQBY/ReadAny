@@ -1,12 +1,12 @@
+import { AppLayout } from "@/components/layout/AppLayout";
+import Chat from "@/pages/Chat";
+import Home from "@/pages/Home";
+import Notes from "@/pages/Notes";
+import Reader from "@/pages/Reader";
 /**
  * App — React Router configuration
  */
-import { BrowserRouter, Routes, Route } from "react-router";
-import { AppLayout } from "@/components/layout/AppLayout";
-import Home from "@/pages/Home";
-import Reader from "@/pages/Reader";
-import Chat from "@/pages/Chat";
-import Notes from "@/pages/Notes";
+import { BrowserRouter, Route, Routes } from "react-router";
 
 export default function App() {
   return (

@@ -1,7 +1,7 @@
 /**
  * Reading session detector — state machine (ACTIVE → PAUSED → STOPPED)
  */
-import type { SessionState, SessionDetectorConfig } from "@/types";
+import type { SessionDetectorConfig, SessionState } from "@/types";
 
 const DEFAULT_CONFIG: SessionDetectorConfig = {
   pauseThreshold: 5 * 60 * 1000, // 5 minutes

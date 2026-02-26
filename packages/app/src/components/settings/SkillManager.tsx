@@ -1,10 +1,10 @@
+import { Button } from "@/components/ui/button";
+import type { Skill } from "@/types";
+import { Plus } from "lucide-react";
 /**
  * SkillManager — manage AI skills/tools
  */
 import { useState } from "react";
-import type { Skill } from "@/types";
-import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
 
 export function SkillManager() {
   const [skills] = useState<Skill[]>([]); // TODO: Load from store/db

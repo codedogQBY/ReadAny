@@ -1,8 +1,8 @@
+import type { Book, LibraryFilter, SortField, SortOrder } from "@/types";
 /**
  * Library store — book collection CRUD, import, filtering
  */
 import { create } from "zustand";
-import type { Book, LibraryFilter, SortField, SortOrder } from "@/types";
 
 export type LibraryViewMode = "grid" | "list";
 
@@ -39,26 +39,20 @@ export const useLibraryStore = create<LibraryState>((set) => ({
 
   addBook: (book) => set((state) => ({ books: [...state.books, book] })),
 
-  removeBook: (bookId) =>
-    set((state) => ({ books: state.books.filter((b) => b.id !== bookId) })),
+  removeBook: (bookId) => set((state) => ({ books: state.books.filter((b) => b.id !== bookId) })),
 
   updateBook: (bookId, updates) =>
     set((state) => ({
-      books: state.books.map((b) =>
-        b.id === bookId ? { ...b, ...updates } : b,
-      ),
+      books: state.books.map((b) => (b.id === bookId ? { ...b, ...updates } : b)),
     })),
 
-  setFilter: (filter) =>
-    set((state) => ({ filter: { ...state.filter, ...filter } })),
+  setFilter: (filter) => set((state) => ({ filter: { ...state.filter, ...filter } })),
 
   setViewMode: (mode) => set({ viewMode: mode }),
 
-  setSortField: (field) =>
-    set((state) => ({ filter: { ...state.filter, sortField: field } })),
+  setSortField: (field) => set((state) => ({ filter: { ...state.filter, sortField: field } })),
 
-  setSortOrder: (order) =>
-    set((state) => ({ filter: { ...state.filter, sortOrder: order } })),
+  setSortOrder: (order) => set((state) => ({ filter: { ...state.filter, sortOrder: order } })),
 
   importBooks: async (_filePaths) => {
     set({ isImporting: true });

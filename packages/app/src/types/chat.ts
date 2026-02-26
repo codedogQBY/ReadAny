@@ -43,7 +43,11 @@ export interface SemanticContext {
   operationType: "reading" | "highlighting" | "searching" | "navigating";
 }
 
-export type AIModel = "gpt-4o" | "gpt-4o-mini" | "claude-sonnet-4-20250514" | "claude-haiku-4-20250414";
+export type AIModel =
+  | "gpt-4o"
+  | "gpt-4o-mini"
+  | "claude-sonnet-4-20250514"
+  | "claude-haiku-4-20250414";
 
 export interface AIConfig {
   model: AIModel;

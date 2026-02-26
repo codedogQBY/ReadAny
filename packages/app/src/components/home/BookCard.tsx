@@ -43,7 +43,10 @@ export function BookCard({ book, onClick }: BookCardProps) {
 
       {/* Vectorize indicator */}
       {book.isVectorized && (
-        <div className="absolute right-2 top-2 h-2 w-2 rounded-full bg-green-500" title="Vectorized" />
+        <div
+          className="absolute right-2 top-2 h-2 w-2 rounded-full bg-green-500"
+          title="Vectorized"
+        />
       )}
       {!book.isVectorized && book.vectorizeProgress > 0 && (
         <VectorizeRing progress={book.vectorizeProgress} />
@@ -58,9 +61,22 @@ function VectorizeRing({ progress }: { progress: number }) {
 
   return (
     <svg className="absolute right-2 top-2 h-5 w-5" viewBox="0 0 20 20">
-      <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted" />
       <circle
-        cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="2"
+        cx="10"
+        cy="10"
+        r="8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        className="text-muted"
+      />
+      <circle
+        cx="10"
+        cy="10"
+        r="8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
         className="text-primary"
         strokeDasharray={circumference}
         strokeDashoffset={offset}

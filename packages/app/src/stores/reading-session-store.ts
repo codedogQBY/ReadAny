@@ -1,8 +1,8 @@
+import type { ReadingSession, ReadingStats, SessionState } from "@/types";
 /**
  * Reading session store — session state machine (ACTIVE/PAUSED/STOPPED)
  */
 import { create } from "zustand";
-import type { ReadingSession, SessionState, ReadingStats } from "@/types";
 
 export interface ReadingSessionState {
   currentSession: ReadingSession | null;

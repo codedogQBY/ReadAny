@@ -25,13 +25,9 @@ export function NoteList() {
           className="cursor-pointer rounded-md p-2.5 transition-colors hover:bg-muted"
         >
           <h4 className="text-sm font-medium">{note.title}</h4>
-          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-            {note.content}
-          </p>
+          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{note.content}</p>
           {note.chapterTitle && (
-            <p className="mt-1 text-xs text-muted-foreground/70">
-              {note.chapterTitle}
-            </p>
+            <p className="mt-1 text-xs text-muted-foreground/70">{note.chapterTitle}</p>
           )}
         </div>
       ))}

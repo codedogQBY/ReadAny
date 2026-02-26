@@ -1,11 +1,11 @@
+import { useChatReaderStore } from "@/stores/chat-reader-store";
 /**
  * ChatPage — standalone full-page chat
  */
 import { useChatStore } from "@/stores/chat-store";
-import { useChatReaderStore } from "@/stores/chat-reader-store";
-import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
 import { ContextPopover } from "./ContextPopover";
+import { MessageList } from "./MessageList";
 
 export function ChatPage() {
   const { threads, activeThreadId, sendMessage, addThread } = useChatStore();
@@ -31,9 +31,7 @@ export function ChatPage() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border px-6 py-3">
-        <h2 className="text-lg font-medium">
-          {bookTitle ? `Chat — ${bookTitle}` : "Chat"}
-        </h2>
+        <h2 className="text-lg font-medium">{bookTitle ? `Chat — ${bookTitle}` : "Chat"}</h2>
         <ContextPopover />
       </div>
       <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">

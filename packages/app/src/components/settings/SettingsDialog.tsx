@@ -2,11 +2,11 @@
  * SettingsDialog — main settings modal
  */
 import { useState } from "react";
+import { AISettings } from "./AISettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { ReadSettingsPanel } from "./ReadSettings";
-import { AISettings } from "./AISettings";
-import { TranslationSettings } from "./TranslationSettings";
 import { SkillManager } from "./SkillManager";
+import { TranslationSettings } from "./TranslationSettings";
 
 type SettingsTab = "general" | "reading" | "ai" | "translation" | "skills";
 
@@ -29,7 +29,10 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
       <div
         className="flex h-[70vh] w-[640px] overflow-hidden rounded-lg border border-border bg-background shadow-xl"
         onClick={(e) => e.stopPropagation()}

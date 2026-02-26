@@ -13,7 +13,7 @@ export interface ProgressData {
 
 /** Debounced progress save — prevents excessive writes */
 export function createProgressTracker(
-  saveInterval: number = 30000,
+  saveInterval = 30000,
   onSave: (data: ProgressData) => Promise<void>,
 ) {
   let pendingData: ProgressData | null = null;
@@ -48,10 +48,7 @@ export function createProgressTracker(
 }
 
 /** Calculate estimated time to finish */
-export function estimateTimeToFinish(
-  book: Book,
-  averagePagesPerMinute: number,
-): number | null {
+export function estimateTimeToFinish(book: Book, averagePagesPerMinute: number): number | null {
   if (!book.meta.totalPages || averagePagesPerMinute <= 0) return null;
   const remainingPages = book.meta.totalPages * (1 - book.progress);
   return Math.ceil(remainingPages / averagePagesPerMinute); // minutes

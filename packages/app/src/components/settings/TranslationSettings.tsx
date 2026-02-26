@@ -1,13 +1,18 @@
+import { SUPPORTED_LANGUAGES } from "@/lib/translation/translator";
 /**
  * TranslationSettings — translation provider and language config
  */
 import { useSettingsStore } from "@/stores/settings-store";
-import { SUPPORTED_LANGUAGES } from "@/lib/translation/translator";
 import type { TranslationTargetLang } from "@/types";
 
 export function TranslationSettings() {
-  const { readSettings, translationConfig, updateReadSettings, updateTranslationConfig, setTranslationLang } =
-    useSettingsStore();
+  const {
+    readSettings,
+    translationConfig,
+    updateReadSettings,
+    updateTranslationConfig,
+    setTranslationLang,
+  } = useSettingsStore();
 
   return (
     <div className="space-y-6">

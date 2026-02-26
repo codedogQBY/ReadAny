@@ -1,8 +1,8 @@
 /**
  * TabBar — draggable tab bar for multiple open books/views
  */
-import { useAppStore, type Tab } from "@/stores/app-store";
-import { X, Home, BookOpen, MessageSquare, StickyNote } from "lucide-react";
+import { type Tab, useAppStore } from "@/stores/app-store";
+import { BookOpen, Home, MessageSquare, StickyNote, X } from "lucide-react";
 
 const TAB_ICONS: Record<string, React.ElementType> = {
   home: Home,
@@ -15,7 +15,10 @@ export function TabBar() {
   const { tabs, activeTabId, setActiveTab, removeTab } = useAppStore();
 
   return (
-    <div className="flex h-9 items-center border-b border-border bg-muted/50 px-2" data-tauri-drag-region>
+    <div
+      className="flex h-9 items-center border-b border-border bg-muted/50 px-2"
+      data-tauri-drag-region
+    >
       <div className="flex items-center gap-0.5 overflow-x-auto">
         {tabs.map((tab) => (
           <TabItem
@@ -47,7 +50,9 @@ function TabItem({
   return (
     <div
       className={`group flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs transition-colors ${
-        isActive ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+        isActive
+          ? "bg-background text-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground"
       }`}
       onClick={onActivate}
     >

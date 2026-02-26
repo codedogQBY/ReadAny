@@ -1,12 +1,12 @@
+import { Input } from "@/components/ui/input";
 /**
  * HomePage — library/bookshelf view
  */
 import { useLibraryStore } from "@/stores/library-store";
+import { Grid, List, Search } from "lucide-react";
 import { BookGrid } from "./BookGrid";
 import { BookList } from "./BookList";
 import { ImportDropZone } from "./ImportDropZone";
-import { Input } from "@/components/ui/input";
-import { Search, Grid, List } from "lucide-react";
 
 export function HomePage() {
   const { books, filter, viewMode, setFilter, setViewMode } = useLibraryStore();
@@ -15,8 +15,7 @@ export function HomePage() {
     if (filter.search) {
       const q = filter.search.toLowerCase();
       return (
-        book.meta.title.toLowerCase().includes(q) ||
-        book.meta.author.toLowerCase().includes(q)
+        book.meta.title.toLowerCase().includes(q) || book.meta.author.toLowerCase().includes(q)
       );
     }
     return true;

@@ -29,12 +29,6 @@
     }
   },
   "files": {
-    "ignore": [
-      "node_modules",
-      "dist",
-      "target",
-      "src-tauri/gen",
-      "*.sql"
-    ]
+    "ignore": ["node_modules", "dist", "target", "src-tauri/gen", "*.sql"]
   }
 }

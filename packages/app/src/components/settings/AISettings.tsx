@@ -1,8 +1,8 @@
+import { Input } from "@/components/ui/input";
 /**
  * AISettings — AI model and API configuration
  */
 import { useSettingsStore } from "@/stores/settings-store";
-import { Input } from "@/components/ui/input";
 import type { AIModel } from "@/types";
 
 const MODELS: Array<{ id: AIModel; label: string }> = [
@@ -31,7 +31,9 @@ export function AISettings() {
             className="w-full rounded-md border border-border px-2 py-1.5 text-sm"
           >
             {MODELS.map((m) => (
-              <option key={m.id} value={m.id}>{m.label}</option>
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
             ))}
           </select>
         </div>
@@ -56,7 +58,9 @@ export function AISettings() {
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium">Temperature: {aiConfig.temperature}</label>
+          <label className="mb-1 block text-sm font-medium">
+            Temperature: {aiConfig.temperature}
+          </label>
           <input
             type="range"
             min={0}

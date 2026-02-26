@@ -1,7 +1,8 @@
 /**
- * Embedding model management
+ * Embedding model management and utilities
  */
 import type { EmbeddingModel } from "@/types";
+import { EmbeddingService } from "./embedding-service";
 
 const BUILTIN_MODELS: EmbeddingModel[] = [
   {
@@ -30,34 +31,32 @@ export function getDefaultModel(): EmbeddingModel {
   return BUILTIN_MODELS[0];
 }
 
-/** Generate embedding for text */
+/** Generate embedding for text using the EmbeddingService */
 export async function getEmbedding(
   text: string,
   model: EmbeddingModel,
   apiKey: string,
+  baseUrl?: string,
 ): Promise<number[]> {
-  // TODO: Call OpenAI / local embedding API
-  void text;
-  void model;
-  void apiKey;
-  return new Array(model.dimensions).fill(0);
+  const service = new EmbeddingService({ model, apiKey, baseUrl, batchSize: 1 });
+  return service.embed(text);
 }
 
-/** Batch generate embeddings */
+/** Batch generate embeddings using the EmbeddingService */
 export async function getEmbeddings(
   texts: string[],
   model: EmbeddingModel,
   apiKey: string,
+  baseUrl?: string,
 ): Promise<number[][]> {
-  // TODO: Batch API call with rate limiting
-  void texts;
-  void model;
-  void apiKey;
-  return texts.map(() => new Array(model.dimensions).fill(0));
+  const service = new EmbeddingService({ model, apiKey, baseUrl, batchSize: 20 });
+  return service.embedBatch(texts);
 }
 
 /** Compute cosine similarity between two vectors */
 export function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length || a.length === 0) return 0;
+
   let dotProduct = 0;
   let normA = 0;
   let normB = 0;
@@ -66,5 +65,9 @@ export function cosineSimilarity(a: number[], b: number[]): number {
     normA += a[i] * a[i];
     normB += b[i] * b[i];
   }
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+
+  const denominator = Math.sqrt(normA) * Math.sqrt(normB);
+  if (denominator === 0) return 0;
+
+  return dotProduct / denominator;
 }

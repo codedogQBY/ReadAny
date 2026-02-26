@@ -24,9 +24,7 @@ export function BookList({ books }: { books: Book[] }) {
             <p className="truncate text-sm font-medium">{book.meta.title}</p>
             <p className="truncate text-xs text-muted-foreground">{book.meta.author}</p>
           </div>
-          <div className="text-xs text-muted-foreground">
-            {Math.round(book.progress * 100)}%
-          </div>
+          <div className="text-xs text-muted-foreground">{Math.round(book.progress * 100)}%</div>
         </div>
       ))}
     </div>
