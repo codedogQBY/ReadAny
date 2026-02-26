@@ -30,6 +30,7 @@ export async function initDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS books (
       id TEXT PRIMARY KEY,
       file_path TEXT NOT NULL,
+      format TEXT NOT NULL DEFAULT 'epub',
       title TEXT NOT NULL DEFAULT '',
       author TEXT NOT NULL DEFAULT '',
       publisher TEXT,
@@ -170,6 +171,18 @@ export async function initDatabase(): Promise<void> {
     "CREATE INDEX IF NOT EXISTS idx_reading_sessions_book ON reading_sessions(book_id)",
   );
 
+  // Migrations: add columns that may be missing from older schema versions
+  try {
+    await database.execute("ALTER TABLE books ADD COLUMN format TEXT NOT NULL DEFAULT 'epub'");
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    await database.execute("ALTER TABLE books ADD COLUMN tags TEXT DEFAULT '[]'");
+  } catch {
+    // Column already exists, ignore
+  }
+
   dbInitialized = true;
 }
 
@@ -208,6 +221,7 @@ function parseJSON<T>(str: string | null | undefined, fallback: T): T {
 interface BookRow {
   id: string;
   file_path: string;
+  format: string;
   title: string;
   author: string;
   publisher: string | null;
@@ -232,6 +246,7 @@ function rowToBook(row: BookRow): Book {
   return {
     id: row.id,
     filePath: row.file_path,
+    format: (row.format as Book["format"]) || "epub",
     meta: {
       title: row.title,
       author: row.author,
@@ -272,11 +287,12 @@ export async function getBook(id: string): Promise<Book | null> {
 export async function insertBook(book: Book): Promise<void> {
   const database = await getDB();
   await database.execute(
-    `INSERT INTO books (id, file_path, title, author, publisher, language, isbn, description, cover_url, publish_date, subjects, total_pages, total_chapters, added_at, last_opened_at, progress, current_cfi, is_vectorized, vectorize_progress, tags)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO books (id, file_path, format, title, author, publisher, language, isbn, description, cover_url, publish_date, subjects, total_pages, total_chapters, added_at, last_opened_at, progress, current_cfi, is_vectorized, vectorize_progress, tags)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       book.id,
       book.filePath,
+      book.format || "epub",
       book.meta.title,
       book.meta.author,
       book.meta.publisher || null,
@@ -315,6 +331,30 @@ export async function updateBook(id: string, updates: Partial<Book>): Promise<vo
   if (updates.meta?.author !== undefined) {
     sets.push("author = ?");
     values.push(updates.meta.author);
+  }
+  if (updates.meta?.coverUrl !== undefined) {
+    sets.push("cover_url = ?");
+    values.push(updates.meta.coverUrl || null);
+  }
+  if (updates.meta?.publisher !== undefined) {
+    sets.push("publisher = ?");
+    values.push(updates.meta.publisher || null);
+  }
+  if (updates.meta?.description !== undefined) {
+    sets.push("description = ?");
+    values.push(updates.meta.description || null);
+  }
+  if (updates.meta?.language !== undefined) {
+    sets.push("language = ?");
+    values.push(updates.meta.language || null);
+  }
+  if (updates.meta?.totalPages !== undefined) {
+    sets.push("total_pages = ?");
+    values.push(updates.meta.totalPages);
+  }
+  if (updates.format !== undefined) {
+    sets.push("format = ?");
+    values.push(updates.format);
   }
   if (updates.progress !== undefined) {
     sets.push("progress = ?");

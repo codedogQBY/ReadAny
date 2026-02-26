@@ -10,15 +10,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::new().build())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let app_handle = app.handle().clone();
-            // Initialize database
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = db::init_database(&app_handle).await {
-                    eprintln!("Failed to initialize database: {}", e);
-                }
-            });
+            // Initialize database synchronously before frontend loads
+            // This ensures schema is ready when the SQL plugin connects
+            if let Err(e) = db::init_database_sync(&app_handle) {
+                eprintln!("Failed to initialize database: {}", e);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

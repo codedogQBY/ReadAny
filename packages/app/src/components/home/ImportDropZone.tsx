@@ -1,70 +1,59 @@
 /**
- * ImportDropZone — empty state with drag-and-drop
+ * ImportDropZone — empty state with import button and drag-drop
  */
 import { useLibraryStore } from "@/stores/library-store";
+import { open } from "@tauri-apps/plugin-dialog";
 import { Upload } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 export function ImportDropZone() {
   const { t } = useTranslation();
   const [isDragging, setIsDragging] = useState(false);
-  const addBook = useLibraryStore((s) => s.addBook);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const importBooks = useLibraryStore((s) => s.importBooks);
 
-  const importFromFiles = useCallback(
-    (files: FileList | File[]) => {
-      const epubFiles = Array.from(files).filter((f) => f.name.endsWith(".epub"));
-      for (const file of epubFiles) {
-        addBook({
-          id: crypto.randomUUID(),
-          filePath: (file as File & { path?: string }).path || file.name,
-          meta: { title: file.name.replace(".epub", ""), author: "" },
-          progress: 0,
-          isVectorized: false,
-          vectorizeProgress: 0,
-          tags: [],
-          addedAt: Date.now(),
-          lastOpenedAt: Date.now(),
-        });
+  const handleImportClick = useCallback(async () => {
+    try {
+      const selected = await open({
+        multiple: true,
+        filters: [{ name: "Books", extensions: ["epub", "pdf"] }],
+      } as const);
+      if (selected) {
+        const paths = Array.isArray(selected) ? selected : [selected];
+        if (paths.length > 0) {
+          await importBooks(paths);
+        }
       }
-    },
-    [addBook],
-  );
+    } catch {
+      // User cancelled
+    }
+  }, [importBooks]);
 
   const handleDrop = useCallback(
-    (e: React.DragEvent) => {
+    async (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragging(false);
-      importFromFiles(e.dataTransfer.files);
-    },
-    [importFromFiles],
-  );
-
-  const handleFileSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.files) {
-        importFromFiles(e.target.files);
-        e.target.value = "";
+      // In Tauri, drag-and-drop provides file paths via the dataTransfer
+      const files = e.dataTransfer.files;
+      const paths: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i] as File & { path?: string };
+        if (f.path) {
+          const ext = f.name.split(".").pop()?.toLowerCase();
+          if (ext === "epub" || ext === "pdf") {
+            paths.push(f.path);
+          }
+        }
+      }
+      if (paths.length > 0) {
+        await importBooks(paths);
       }
     },
-    [importFromFiles],
+    [importBooks],
   );
-
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
-  };
 
   return (
     <div className="flex h-full flex-col items-center justify-center p-8">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".epub"
-        multiple
-        className="hidden"
-        onChange={handleFileSelect}
-      />
       <div className="w-full max-w-md text-center">
         <p className="mb-8 text-lg text-muted-foreground">{t("home.emptyLibrary")}</p>
 

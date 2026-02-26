@@ -3,6 +3,7 @@
  */
 import type { DocumentRenderer } from "./document-renderer";
 import { EPUBRenderer } from "./epub-renderer";
+import { PDFRenderer } from "./pdf-renderer";
 
 export type SupportedFormat = "epub" | "pdf" | "mobi" | "txt" | "docx" | "cbz";
 
@@ -36,8 +37,7 @@ export function createRenderer(format: SupportedFormat): DocumentRenderer {
     case "epub":
       return new EPUBRenderer();
     case "pdf":
-      // TODO: Implement PDFRenderer
-      throw new Error("PDF renderer is not yet implemented");
+      return new PDFRenderer();
     case "mobi":
       // MOBI files need to be converted to EPUB first
       throw new Error("MOBI format requires conversion to EPUB");

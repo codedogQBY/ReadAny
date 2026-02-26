@@ -1,9 +1,10 @@
 /**
- * HomePage — sageread-style library page
+ * HomePage — library page with grid/list view
  */
 import { useLibraryStore } from "@/stores/library-store";
+import { open } from "@tauri-apps/plugin-dialog";
 import { Grid, List, Plus } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BookGrid } from "./BookGrid";
 import { BookList } from "./BookList";
@@ -11,9 +12,8 @@ import { ImportDropZone } from "./ImportDropZone";
 
 export function HomePage() {
   const { t } = useTranslation();
-  const { books, filter, addBook } = useLibraryStore();
+  const { books, filter, importBooks } = useLibraryStore();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const filtered = filter.search
     ? books.filter(
@@ -23,27 +23,22 @@ export function HomePage() {
       )
     : books;
 
-  const handleImportFiles = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (!e.target.files) return;
-      const epubFiles = Array.from(e.target.files).filter((f) => f.name.endsWith(".epub"));
-      for (const file of epubFiles) {
-        addBook({
-          id: crypto.randomUUID(),
-          filePath: (file as File & { path?: string }).path || file.name,
-          meta: { title: file.name.replace(".epub", ""), author: "" },
-          progress: 0,
-          isVectorized: false,
-          vectorizeProgress: 0,
-          tags: [],
-          addedAt: Date.now(),
-          lastOpenedAt: Date.now(),
-        });
+  const handleImportClick = useCallback(async () => {
+    try {
+      const selected = await open({
+        multiple: true,
+        filters: [{ name: "Books", extensions: ["epub", "pdf"] }],
+      } as const);
+      if (selected) {
+        const paths = Array.isArray(selected) ? selected : [selected];
+        if (paths.length > 0) {
+          await importBooks(paths);
+        }
       }
-      e.target.value = "";
-    },
-    [addBook],
-  );
+    } catch {
+      // User cancelled
+    }
+  }, [importBooks]);
 
   if (books.length === 0) {
     return <ImportDropZone />;
@@ -51,20 +46,12 @@ export function HomePage() {
 
   return (
     <div className="flex h-full flex-col">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".epub"
-        multiple
-        className="hidden"
-        onChange={handleImportFiles}
-      />
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between px-6 pt-5 pb-2">
         <h1 className="text-3xl font-bold text-neutral-900">{t("home.library")}</h1>
         <button
           type="button"
-          onClick={() => fileInputRef.current?.click()}
+          onClick={handleImportClick}
           className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           <Plus className="size-4" />

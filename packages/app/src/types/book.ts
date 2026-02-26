@@ -14,14 +14,17 @@ export interface BookMeta {
   totalChapters?: number;
 }
 
+export type BookFormat = "epub" | "pdf";
+
 export interface Book {
   id: string;
   filePath: string;
+  format: BookFormat;
   meta: BookMeta;
   addedAt: number;
   lastOpenedAt?: number;
   progress: number; // 0-1
-  currentCfi?: string; // EPUB CFI position
+  currentCfi?: string; // EPUB CFI position or PDF page marker (e.g. "page-5")
   isVectorized: boolean;
   vectorizeProgress: number; // 0-1
   tags: string[];

@@ -2,6 +2,7 @@
  * Reader library — document rendering, navigation, and annotation
  */
 export { EPUBRenderer } from "./epub-renderer";
+export { PDFRenderer } from "./pdf-renderer";
 export { createRenderer, createRendererForFile, detectFormat } from "./renderer-factory";
 export type {
   DocumentRenderer,

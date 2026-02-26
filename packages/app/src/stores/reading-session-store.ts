@@ -1,6 +1,8 @@
 import type { ReadingSession, ReadingStats, SessionState } from "@/types";
+import * as db from "@/lib/db/database";
 /**
  * Reading session store — session state machine (ACTIVE/PAUSED/STOPPED)
+ * Connected to SQLite for persistence
  */
 import { create } from "zustand";
 
@@ -55,13 +57,15 @@ export const useReadingSessionStore = create<ReadingSessionState>((set) => ({
   stopSession: () =>
     set((state) => {
       if (state.currentSession) {
-        // TODO: Save session to database
         const session = {
           ...state.currentSession,
           state: "STOPPED" as const,
           endedAt: Date.now(),
         };
-        void session;
+        // Save session to database
+        db.insertReadingSession(session).catch((err) =>
+          console.error("Failed to save reading session:", err),
+        );
       }
       return { currentSession: null, sessionState: "STOPPED" };
     }),
@@ -86,7 +90,32 @@ export const useReadingSessionStore = create<ReadingSessionState>((set) => ({
         : null,
     })),
 
-  loadStats: async (_bookId) => {
-    // TODO: Load reading stats from database
+  loadStats: async (bookId) => {
+    try {
+      const sessions = await db.getReadingSessions(bookId);
+      const totalReadingTime = sessions.reduce((sum, s) => sum + s.totalActiveTime, 0);
+      const totalPagesRead = sessions.reduce((sum, s) => sum + s.pagesRead, 0);
+      const totalSessions = sessions.length;
+      const averageSessionLength = totalSessions > 0 ? totalReadingTime / totalSessions : 0;
+
+      // Build daily reading map from sessions
+      const dailyReading = new Map<string, number>();
+      for (const s of sessions) {
+        const day = new Date(s.startedAt).toISOString().split("T")[0];
+        dailyReading.set(day, (dailyReading.get(day) || 0) + s.totalActiveTime);
+      }
+
+      set({
+        stats: {
+          totalReadingTime,
+          totalPagesRead,
+          totalSessions,
+          averageSessionLength,
+          dailyReading,
+        },
+      });
+    } catch (err) {
+      console.error("Failed to load reading stats:", err);
+    }
   },
 }));

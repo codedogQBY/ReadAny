@@ -3,18 +3,20 @@ import type {
   DocumentRenderer,
   TOCItem,
 } from "@/lib/reader/document-renderer";
-import { EPUBRenderer } from "@/lib/reader/epub-renderer";
+import { createRendererForFile } from "@/lib/reader/renderer-factory";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useReaderStore } from "@/stores/reader-store";
 import { readFile } from "@tauri-apps/plugin-fs";
-/**
- * ReaderView — main reading area with EPUB/PDF rendering
- */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AskAIDialog } from "./AskAIDialog";
+import { FooterBar } from "./FooterBar";
 import { ReaderToolbar } from "./ReaderToolbar";
+import { SearchBar } from "./SearchBar";
 import { SelectionPopover } from "./SelectionPopover";
+import { TOCPanel } from "./TOCPanel";
+import { TranslationPopover } from "./TranslationPopover";
 
 interface ReaderViewProps {
   bookId: string;
@@ -29,9 +31,11 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const setSelectedText = useReaderStore((s) => s.setSelectedText);
 
   const books = useLibraryStore((s) => s.books);
+  const updateBook = useLibraryStore((s) => s.updateBook);
   const book = books.find((b) => b.id === bookId);
 
   const highlights = useAnnotationStore((s) => s.highlights);
+  const loadAnnotations = useAnnotationStore((s) => s.loadAnnotations);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<DocumentRenderer | null>(null);
@@ -41,22 +45,62 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const [tocItems, setTocItems] = useState<TOCItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showSearch, setShowSearch] = useState(false);
+  const [showToc, setShowToc] = useState(false);
+  const [showTranslation, setShowTranslation] = useState(false);
+  const [translationText, setTranslationText] = useState("");
+  const [translationPos, setTranslationPos] = useState({ x: 0, y: 0 });
+  const [showAskAI, setShowAskAI] = useState(false);
+  const [askAIText, setAskAIText] = useState("");
+  const [searchResults, setSearchResults] = useState<number>(0);
+  const [searchIndex, setSearchIndex] = useState<number>(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0);
+
+  const { t } = useTranslation();
+
+  // Handle book not found — don't leave loading forever
+  useEffect(() => {
+    if (!book?.filePath) {
+      const timer = setTimeout(() => {
+        if (!book?.filePath) {
+          setIsLoading(false);
+          setError(t("reader.noBookFile", { bookId }));
+        }
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [book?.filePath, bookId, t]);
 
   // Initialize renderer
   useEffect(() => {
-    if (!containerRef.current || rendererRef.current) return;
+    if (!containerRef.current || rendererRef.current || !book?.filePath) return;
 
-    const renderer = new EPUBRenderer();
+    const renderer = createRendererForFile(book.filePath);
     rendererRef.current = renderer;
 
-    // Set up event listeners
     renderer.on("location-change", (location, progress) => {
-      setProgress(tabId, progress, location.cfi || `spine-${location.chapterIndex}`);
+      const positionKey =
+        location.cfi ||
+        (location.pageIndex !== undefined
+          ? `page-${location.pageIndex + 1}`
+          : `spine-${location.chapterIndex}`);
+      setProgress(tabId, progress, positionKey);
+      updateBook(bookId, { progress, currentCfi: positionKey, lastOpenedAt: Date.now() });
+
+      // Update page tracking
+      if (location.pageIndex !== undefined) {
+        setCurrentPage(location.pageIndex + 1);
+      }
     });
 
     renderer.on("load", (info) => {
       setChapter(tabId, info.chapterIndex, info.chapterTitle);
       setIsLoading(false);
+
+      // Get total pages if available
+      const pages = renderer.getTotalPages?.();
+      if (pages) setTotalPages(pages);
     });
 
     renderer.on("toc-ready", (toc) => {
@@ -67,7 +111,6 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       setSelection(sel);
       if (sel) {
         setSelectedText(tabId, sel.text, null);
-        // Position popover near the selection
         if (sel.rects.length > 0) {
           const firstRect = sel.rects[0];
           setSelectionPos({
@@ -81,13 +124,13 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     });
 
     renderer.on("error", (err) => {
+      console.error("Reader error:", err);
       setError(err.message);
       setIsLoading(false);
     });
 
-    // Mount the renderer
+    // Mount then load
     renderer.mount(containerRef.current).then(() => {
-      // Load the book file
       if (book?.filePath) {
         loadBookFile(renderer, book.filePath);
       }
@@ -100,22 +143,25 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId]);
 
-  // Apply view settings to renderer
+  // Load annotations
+  useEffect(() => {
+    loadAnnotations(bookId);
+  }, [bookId, loadAnnotations]);
+
+  // Apply view settings
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer) return;
-
     renderer.setFontSize(viewSettings.fontSize);
     renderer.setLineHeight(viewSettings.lineHeight);
     renderer.setTheme(viewSettings.theme);
     renderer.setViewMode(viewSettings.viewMode);
   }, [viewSettings]);
 
-  // Sync highlights to renderer
+  // Sync highlights
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer) return;
-
     renderer.clearAnnotations();
     const bookHighlights = highlights.filter((h) => h.bookId === bookId);
     for (const h of bookHighlights) {
@@ -128,11 +174,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       };
       renderer.addAnnotation({
         id: h.id,
-        location: {
-          type: "cfi",
-          cfi: h.cfi,
-          chapterIndex: undefined,
-        },
+        location: { type: "cfi", cfi: h.cfi, chapterIndex: undefined },
         color: colorMap[h.color] || "rgba(250, 204, 21, 0.35)",
         text: h.text,
         note: h.note,
@@ -148,32 +190,35 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       const blob = new Blob([fileBytes]);
 
       const initialLocation = book?.currentCfi
-        ? { type: "cfi" as const, cfi: book.currentCfi }
+        ? book.currentCfi.startsWith("page-")
+          ? {
+              type: "page-coord" as const,
+              pageIndex: Number.parseInt(book.currentCfi.replace("page-", ""), 10) - 1,
+              cfi: book.currentCfi,
+            }
+          : { type: "cfi" as const, cfi: book.currentCfi }
         : undefined;
 
       await renderer.open(blob, initialLocation);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load book";
+      console.error("loadBookFile failed:", err);
       setError(message);
       setIsLoading(false);
     }
   };
 
-  const handleNavPrev = useCallback(() => {
-    rendererRef.current?.prev();
-  }, []);
-
-  const handleNavNext = useCallback(() => {
-    rendererRef.current?.next();
-  }, []);
-
+  // Navigation handlers
+  const handleNavPrev = useCallback(() => rendererRef.current?.prev(), []);
+  const handleNavNext = useCallback(() => rendererRef.current?.next(), []);
   const handleGoToChapter = useCallback((index: number) => {
     rendererRef.current?.goToIndex(index);
   }, []);
 
+  // Selection actions
   const handleHighlight = useCallback(() => {
     if (selection) {
-      const highlight = {
+      useAnnotationStore.getState().addHighlight({
         id: crypto.randomUUID(),
         bookId,
         text: selection.text,
@@ -182,15 +227,14 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
         chapterTitle: tab?.chapterTitle || undefined,
         createdAt: Date.now(),
         updatedAt: Date.now(),
-      };
-      useAnnotationStore.getState().addHighlight(highlight);
+      });
     }
     setSelection(null);
   }, [selection, bookId, tab?.chapterTitle]);
 
   const handleNote = useCallback(() => {
     if (selection) {
-      const note = {
+      useAnnotationStore.getState().addNote({
         id: crypto.randomUUID(),
         bookId,
         title: selection.text.slice(0, 50),
@@ -200,114 +244,293 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
         tags: [],
         createdAt: Date.now(),
         updatedAt: Date.now(),
-      };
-      useAnnotationStore.getState().addNote(note);
+      });
     }
     setSelection(null);
   }, [selection, bookId, tab?.chapterTitle]);
 
   const handleCopy = useCallback(() => {
-    if (selection?.text) {
-      navigator.clipboard.writeText(selection.text);
-    }
+    if (selection?.text) navigator.clipboard.writeText(selection.text);
     setSelection(null);
   }, [selection]);
 
   const handleTranslate = useCallback(() => {
-    // TODO: Open translation popover
+    if (selection?.text) {
+      setTranslationText(selection.text);
+      setTranslationPos(selectionPos);
+      setShowTranslation(true);
+    }
     setSelection(null);
-  }, []);
+  }, [selection, selectionPos]);
 
   const handleAskAI = useCallback(() => {
-    // TODO: Open AI dialog
+    if (selection?.text) {
+      setAskAIText(selection.text);
+      setShowAskAI(true);
+    }
     setSelection(null);
+  }, [selection]);
+
+  const handleCloseSelection = useCallback(() => setSelection(null), []);
+  const handleToggleSearch = useCallback(() => setShowSearch((p) => !p), []);
+  const handleToggleToc = useCallback(() => setShowToc((p) => !p), []);
+
+  // Search logic
+  const handleSearch = useCallback((query: string) => {
+    const renderer = rendererRef.current;
+    if (!renderer || !query.trim()) {
+      setSearchResults(0);
+      setSearchIndex(0);
+      return;
+    }
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Clear previous marks
+    const existingMarks = container.querySelectorAll("mark[data-search]");
+    for (const mark of existingMarks) {
+      const parent = mark.parentNode;
+      if (parent) {
+        parent.replaceChild(document.createTextNode(mark.textContent || ""), mark);
+        parent.normalize();
+      }
+    }
+
+    const iframe = container.querySelector("iframe");
+    const searchDoc = iframe?.contentDocument || container.ownerDocument;
+    const body = iframe?.contentDocument?.body || container;
+    const treeWalker = searchDoc.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+    const matches: Range[] = [];
+    const lowerQuery = query.toLowerCase();
+
+    let textNode: Text | null;
+    while ((textNode = treeWalker.nextNode() as Text | null)) {
+      const text = textNode.textContent?.toLowerCase() || "";
+      let startPos = 0;
+      let idx: number;
+      while ((idx = text.indexOf(lowerQuery, startPos)) !== -1) {
+        const range = searchDoc.createRange();
+        range.setStart(textNode, idx);
+        range.setEnd(textNode, idx + query.length);
+        matches.push(range);
+        startPos = idx + 1;
+      }
+    }
+
+    for (const range of matches) {
+      try {
+        const mark = searchDoc.createElement("mark");
+        mark.setAttribute("data-search", "true");
+        mark.style.backgroundColor = "rgba(250, 204, 21, 0.5)";
+        range.surroundContents(mark);
+      } catch {
+        // Range may cross element boundaries
+      }
+    }
+
+    setSearchResults(matches.length);
+    setSearchIndex(matches.length > 0 ? 0 : -1);
+
+    if (matches.length > 0) {
+      const firstMark = (iframe?.contentDocument?.body || container).querySelector(
+        "mark[data-search]",
+      );
+      firstMark?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
   }, []);
 
-  const handleCloseSelection = useCallback(() => {
-    setSelection(null);
-  }, []);
+  const navigateSearchResult = useCallback(
+    (direction: "next" | "prev") => {
+      const container = containerRef.current;
+      if (!container) return;
+      const iframe = container.querySelector("iframe");
+      const body = iframe?.contentDocument?.body || container;
+      const marks = body.querySelectorAll("mark[data-search]");
+      if (marks.length === 0) return;
 
-  const { t } = useTranslation();
+      for (const m of marks) {
+        (m as HTMLElement).style.backgroundColor = "rgba(250, 204, 21, 0.5)";
+      }
+
+      let newIndex = searchIndex;
+      if (direction === "next") {
+        newIndex = (searchIndex + 1) % marks.length;
+      } else {
+        newIndex = (searchIndex - 1 + marks.length) % marks.length;
+      }
+
+      setSearchIndex(newIndex);
+      const target = marks[newIndex] as HTMLElement;
+      target.style.backgroundColor = "rgba(249, 115, 22, 0.7)";
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    },
+    [searchIndex],
+  );
 
   if (!tab) {
-    return <div className="flex h-full items-center justify-center">{t("common.loading")}</div>;
+    return (
+      <div className="flex h-full items-center justify-center">{t("common.loading")}</div>
+    );
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col bg-background">
+      {/* Toolbar */}
       <ReaderToolbar
         tabId={tabId}
         onPrev={handleNavPrev}
         onNext={handleNavNext}
         tocItems={tocItems}
         onGoToChapter={handleGoToChapter}
+        onToggleSearch={handleToggleSearch}
+        onToggleToc={handleToggleToc}
       />
 
-      <div className="relative flex-1 overflow-hidden">
-        {/* EPUB renderer container */}
-        <div ref={containerRef} className="h-full w-full" />
+      {/* Search bar */}
+      {showSearch && (
+        <SearchBar
+          onSearch={handleSearch}
+          onNext={() => navigateSearchResult("next")}
+          onPrev={() => navigateSearchResult("prev")}
+          onClose={() => {
+            setShowSearch(false);
+            const container = containerRef.current;
+            if (container) {
+              const iframe = container.querySelector("iframe");
+              const body = iframe?.contentDocument?.body || container;
+              const marks = body.querySelectorAll("mark[data-search]");
+              for (const mark of marks) {
+                const parent = mark.parentNode;
+                if (parent) {
+                  parent.replaceChild(
+                    document.createTextNode(mark.textContent || ""),
+                    mark,
+                  );
+                  parent.normalize();
+                }
+              }
+            }
+            setSearchResults(0);
+            setSearchIndex(0);
+          }}
+          resultCount={searchResults}
+          currentIndex={searchIndex}
+        />
+      )}
 
-        {/* Loading overlay */}
-        {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/80">
-            <div className="flex flex-col items-center gap-2">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-              <p className="text-sm text-muted-foreground">{t("reader.loadingBook")}</p>
+      {/* Main content area with optional TOC sidebar */}
+      <div className="relative flex flex-1 overflow-hidden">
+        {/* TOC sidebar - slide in from left */}
+        {showToc && (
+          <>
+            <div className="fixed inset-0 z-30 bg-black/20" onClick={() => setShowToc(false)} />
+            <div className="relative z-40 animate-in slide-in-from-left duration-200">
+              <TOCPanel
+                tocItems={tocItems}
+                onGoToChapter={(index) => {
+                  handleGoToChapter(index);
+                  setShowToc(false);
+                }}
+                onClose={() => setShowToc(false)}
+                tabId={tabId}
+              />
             </div>
-          </div>
+          </>
         )}
 
-        {/* Error state */}
-        {error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/80">
-            <div className="flex flex-col items-center gap-2 px-8 text-center">
-              <p className="text-sm text-destructive">{error}</p>
-              <p className="text-xs text-muted-foreground">
-                {t("reader.validEpub")}
-              </p>
+        {/* Reading area */}
+        <div className="relative flex-1 overflow-hidden">
+          <div ref={containerRef} className="h-full w-full" />
+
+          {/* Loading overlay */}
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background">
+              <div className="flex flex-col items-center gap-3">
+                <div className="h-10 w-10 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+                <p className="text-sm text-muted-foreground">{t("reader.loadingBook")}</p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* No book loaded placeholder */}
-        {!isLoading && !error && !book?.filePath && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center">
-              <p className="text-muted-foreground">{t("reader.noBookFile", { bookId })}</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {t("reader.importToStart")}
-              </p>
+          {/* Error state */}
+          {error && !isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background">
+              <div className="flex max-w-md flex-col items-center gap-3 px-8 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
+                  <span className="text-lg text-destructive">!</span>
+                </div>
+                <p className="text-sm font-medium text-destructive">{t("reader.loadFailed")}</p>
+                <p className="text-xs text-muted-foreground">{error}</p>
+                <button
+                  type="button"
+                  className="mt-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
+                  onClick={() => {
+                    const renderer = rendererRef.current;
+                    if (renderer && book?.filePath) {
+                      setError(null);
+                      loadBookFile(renderer, book.filePath);
+                    }
+                  }}
+                >
+                  {t("common.retry")}
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Selection popover */}
-        {selection && (
-          <SelectionPopover
-            position={selectionPos}
-            selectedText={selection.text}
-            onHighlight={handleHighlight}
-            onNote={handleNote}
-            onCopy={handleCopy}
-            onTranslate={handleTranslate}
-            onAskAI={handleAskAI}
-            onClose={handleCloseSelection}
-          />
-        )}
-      </div>
-
-      {/* Progress bar at the bottom */}
-      <div className="flex h-6 items-center gap-2 border-t border-border px-4">
-        <div className="flex-1">
-          <div className="h-1 rounded-full bg-muted">
-            <div
-              className="h-1 rounded-full bg-primary transition-all duration-300"
-              style={{ width: `${Math.round(tab.progress * 100)}%` }}
+          {/* Selection popover */}
+          {selection && (
+            <SelectionPopover
+              position={selectionPos}
+              selectedText={selection.text}
+              onHighlight={handleHighlight}
+              onNote={handleNote}
+              onCopy={handleCopy}
+              onTranslate={handleTranslate}
+              onAskAI={handleAskAI}
+              onClose={handleCloseSelection}
             />
-          </div>
+          )}
+
+          {/* Translation popover */}
+          {showTranslation && translationText && (
+            <TranslationPopover
+              text={translationText}
+              position={translationPos}
+              onClose={() => {
+                setShowTranslation(false);
+                setTranslationText("");
+              }}
+            />
+          )}
+
+          {/* Ask AI dialog */}
+          {showAskAI && askAIText && (
+            <div className="absolute left-1/2 top-1/4 z-50 -translate-x-1/2">
+              <AskAIDialog
+                selectedText={askAIText}
+                onSubmit={() => {
+                  setShowAskAI(false);
+                  setAskAIText("");
+                }}
+                onClose={() => {
+                  setShowAskAI(false);
+                  setAskAIText("");
+                }}
+              />
+            </div>
+          )}
         </div>
-        <span className="text-xs text-muted-foreground">{Math.round(tab.progress * 100)}%</span>
       </div>
+
+      {/* Footer bar */}
+      <FooterBar
+        tabId={tabId}
+        totalPages={totalPages}
+        currentPage={currentPage}
+        onPrev={handleNavPrev}
+        onNext={handleNavNext}
+      />
     </div>
   );
 }

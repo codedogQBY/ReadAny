@@ -12,7 +12,9 @@
     "done": "done",
     "stop": "Stop",
     "ask": "Ask",
-    "total": "Total"
+    "total": "Total",
+    "back": "Back",
+    "retry": "Retry"
   },
   "sidebar": {
     "library": "Library",
@@ -28,7 +30,7 @@
     "tryDifferentSearch": "Try a different search term",
     "emptyLibrary": "Your library is empty, import books to start reading",
     "dropToUpload": "Drop books here to upload",
-    "supportedFormat": "Supported format: .epub",
+    "supportedFormat": "Supported formats: .epub, .pdf",
     "importBooks": "Import Books",
     "new": "New",
     "complete": "Complete",
@@ -65,7 +67,7 @@
     "untitled": "Untitled",
     "loadingBook": "Loading book...",
     "failedToLoad": "Failed to load book",
-    "validEpub": "Make sure the book file is a valid EPUB.",
+    "validEpub": "Make sure the book file is a valid EPUB or PDF.",
     "noBookFile": "No book file available for book {{bookId}}",
     "importToStart": "Import an EPUB file from the library to start reading.",
     "noBookSelected": "No book selected",
@@ -76,7 +78,11 @@
     "note": "Note",
     "translate": "Translate",
     "toc": "Table of Contents",
-    "noBookOpen": "No book open"
+    "noToc": "No table of contents",
+    "noBookOpen": "No book open",
+    "loadFailed": "Failed to load",
+    "search": "Search",
+    "settings": "Settings"
   },
   "translation": {
     "translateTo": "Translate to {{lang}}",

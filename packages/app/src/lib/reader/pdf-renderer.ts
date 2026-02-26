@@ -1,0 +1,605 @@
+/**
+ * PDFRenderer — renders PDF files using pdf.js
+ * Implements the DocumentRenderer interface
+ */
+import * as pdfjsLib from "pdfjs-dist";
+import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import type {
+  AnnotationMark,
+  DocumentRenderer,
+  Location,
+  RendererEvents,
+  Selection,
+  TOCItem,
+} from "./document-renderer";
+
+// Configure pdf.js worker using Vite's ?url import for reliable resolution
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
+
+type EventCallback = (...args: unknown[]) => void;
+
+/** Outline node type matching pdfjs-dist getOutline() return */
+interface PdfOutlineNode {
+  title: string;
+  dest: string | unknown[] | null;
+  url: string | null;
+  items: PdfOutlineNode[];
+}
+
+export class PDFRenderer implements DocumentRenderer {
+  private container: HTMLElement | null = null;
+  private scrollContainer: HTMLElement | null = null;
+  private pdfDoc: pdfjsLib.PDFDocumentProxy | null = null;
+  private pageCanvases: Map<number, HTMLCanvasElement> = new Map();
+  private renderedPages: Set<number> = new Set();
+  private currentPage = 1;
+  private totalPages = 0;
+  private scale = 1.5;
+  private toc: TOCItem[] = [];
+  private listeners: Map<string, Set<EventCallback>> = new Map();
+  private resizeObserver: ResizeObserver | null = null;
+  private scrollTimeout: ReturnType<typeof setTimeout> | null = null;
+  private theme: "light" | "dark" | "sepia" = "light";
+  // Used by setViewMode but not directly read
+  private destroyed = false;
+
+  async mount(container: HTMLElement): Promise<void> {
+    this.container = container;
+    container.style.position = "relative";
+    container.style.overflow = "hidden";
+    container.style.width = "100%";
+    container.style.height = "100%";
+
+    // Create scrollable wrapper
+    const scrollEl = document.createElement("div");
+    scrollEl.style.cssText =
+      "width:100%;height:100%;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 0;";
+    scrollEl.className = "pdf-scroll-container";
+    container.appendChild(scrollEl);
+    this.scrollContainer = scrollEl;
+
+    // Track scroll for page detection
+    scrollEl.addEventListener("scroll", this.handleScroll);
+
+    // Observe resize to re-render visible pages
+    this.resizeObserver = new ResizeObserver(() => {
+      if (this.pdfDoc) this.updateScale();
+    });
+    this.resizeObserver.observe(container);
+  }
+
+  async open(file: File | Blob, initialLocation?: Location): Promise<void> {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+
+      // Add timeout to prevent hanging forever if worker fails
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("PDF loading timed out after 30s")), 30000);
+      });
+      this.pdfDoc = await Promise.race([loadingTask.promise, timeoutPromise]);
+      this.totalPages = this.pdfDoc.numPages;
+
+      // Extract outline/TOC
+      await this.extractTOC();
+
+      // Create page placeholders
+      this.createPageElements();
+
+      // Render initial visible pages
+      await this.renderVisiblePages();
+
+      // Navigate to initial location
+      if (initialLocation?.pageIndex !== undefined) {
+        await this.goToPage(initialLocation.pageIndex + 1);
+      } else if (initialLocation?.cfi) {
+        const match = initialLocation.cfi.match(/page-(\d+)/);
+        if (match) {
+          await this.goToPage(Number.parseInt(match[1], 10));
+        }
+      }
+
+      this.emit("load", { chapterIndex: 0, chapterTitle: this.getPageTitle(this.currentPage) });
+      this.emitLocationChange();
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error("Failed to open PDF:", error);
+      this.emit("error", error);
+    }
+  }
+
+  destroy(): void {
+    this.destroyed = true;
+    if (this.scrollTimeout) clearTimeout(this.scrollTimeout);
+    if (this.resizeObserver) this.resizeObserver.disconnect();
+    if (this.scrollContainer) {
+      this.scrollContainer.removeEventListener("scroll", this.handleScroll);
+    }
+    if (this.container) {
+      this.container.innerHTML = "";
+    }
+    this.pageCanvases.clear();
+    this.renderedPages.clear();
+    this.listeners.clear();
+    this.pdfDoc?.destroy();
+    this.pdfDoc = null;
+  }
+
+  // --- Navigation ---
+
+  async goTo(location: Location): Promise<void> {
+    if (location.pageIndex !== undefined) {
+      await this.goToPage(location.pageIndex + 1);
+    }
+  }
+
+  async goToIndex(index: number): Promise<void> {
+    // Index refers to TOC item — find the page
+    const tocItem = this.flattenTOC()[index];
+    if (tocItem?.href) {
+      const pageNum = Number.parseInt(tocItem.href, 10);
+      if (!Number.isNaN(pageNum)) {
+        await this.goToPage(pageNum);
+      }
+    } else {
+      // Fallback: treat index as page number
+      await this.goToPage(index + 1);
+    }
+  }
+
+  async next(): Promise<void> {
+    if (this.currentPage < this.totalPages) {
+      await this.goToPage(this.currentPage + 1);
+    }
+  }
+
+  async prev(): Promise<void> {
+    if (this.currentPage > 1) {
+      await this.goToPage(this.currentPage - 1);
+    }
+  }
+
+  // --- Info ---
+
+  getTOC(): TOCItem[] {
+    return this.toc;
+  }
+
+  getCurrentLocation(): Location {
+    return {
+      type: "page-coord",
+      pageIndex: this.currentPage - 1,
+      cfi: `page-${this.currentPage}`,
+    };
+  }
+
+  getProgress(): number {
+    if (this.totalPages === 0) return 0;
+    return this.currentPage / this.totalPages;
+  }
+
+  getTotalPages(): number {
+    return this.totalPages;
+  }
+
+  // --- Selection ---
+
+  getSelection(): Selection | null {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.toString().trim()) return null;
+
+    const text = sel.toString().trim();
+    const range = sel.getRangeAt(0);
+    const rects = Array.from(range.getClientRects());
+
+    return {
+      text,
+      start: { type: "page-coord", pageIndex: this.currentPage - 1, cfi: `page-${this.currentPage}` },
+      end: { type: "page-coord", pageIndex: this.currentPage - 1, cfi: `page-${this.currentPage}` },
+      rects,
+    };
+  }
+
+  // --- Annotations (simplified for PDF) ---
+
+  addAnnotation(_annotation: AnnotationMark): void {
+    // PDF annotations could be rendered as overlay divs
+    // Simplified for now
+  }
+
+  removeAnnotation(_id: string): void {}
+
+  clearAnnotations(): void {}
+
+  // --- View Settings ---
+
+  setFontSize(_size: number): void {
+    // PDF has fixed layout, font size doesn't apply
+  }
+
+  setLineHeight(_height: number): void {
+    // PDF has fixed layout
+  }
+
+  setTheme(theme: "light" | "dark" | "sepia"): void {
+    this.theme = theme;
+    this.applyTheme();
+  }
+
+  setViewMode(_mode: "paginated" | "scroll"): void {
+    // Both modes use scroll container in PDF
+  }
+
+  // --- Events ---
+
+  on<K extends keyof RendererEvents>(event: K, callback: RendererEvents[K]): void {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
+    }
+    this.listeners.get(event)!.add(callback as EventCallback);
+  }
+
+  off<K extends keyof RendererEvents>(event: K, callback: RendererEvents[K]): void {
+    this.listeners.get(event)?.delete(callback as EventCallback);
+  }
+
+  // --- Private methods ---
+
+  private emit(event: string, ...args: unknown[]): void {
+    const callbacks = this.listeners.get(event);
+    if (callbacks) {
+      for (const cb of callbacks) {
+        try {
+          cb(...args);
+        } catch (e) {
+          console.error(`Error in ${event} listener:`, e);
+        }
+      }
+    }
+  }
+
+  private handleScroll = (): void => {
+    if (this.scrollTimeout) clearTimeout(this.scrollTimeout);
+    this.scrollTimeout = setTimeout(() => {
+      if (this.destroyed) return;
+      this.detectCurrentPage();
+      this.renderVisiblePages();
+    }, 100);
+  };
+
+  private detectCurrentPage(): void {
+    if (!this.scrollContainer) return;
+
+    const containerRect = this.scrollContainer.getBoundingClientRect();
+    const centerY = containerRect.top + containerRect.height / 2;
+
+    let closestPage = 1;
+    let closestDist = Number.POSITIVE_INFINITY;
+
+    for (const [pageNum, canvas] of this.pageCanvases) {
+      const wrapper = canvas.parentElement;
+      if (!wrapper) continue;
+      const rect = wrapper.getBoundingClientRect();
+      const pageCenterY = rect.top + rect.height / 2;
+      const dist = Math.abs(pageCenterY - centerY);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestPage = pageNum;
+      }
+    }
+
+    if (closestPage !== this.currentPage) {
+      this.currentPage = closestPage;
+      this.emitLocationChange();
+      this.emit("load", {
+        chapterIndex: this.currentPage - 1,
+        chapterTitle: this.getPageTitle(this.currentPage),
+      });
+    }
+  }
+
+  private emitLocationChange(): void {
+    this.emit("location-change", this.getCurrentLocation(), this.getProgress());
+  }
+
+  private async goToPage(pageNum: number): Promise<void> {
+    const clamped = Math.max(1, Math.min(pageNum, this.totalPages));
+    this.currentPage = clamped;
+
+    // Ensure the page is rendered
+    await this.renderPage(clamped);
+
+    // Scroll to the page
+    const canvas = this.pageCanvases.get(clamped);
+    if (canvas?.parentElement && this.scrollContainer) {
+      canvas.parentElement.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    this.emitLocationChange();
+  }
+
+  private createPageElements(): void {
+    if (!this.scrollContainer || !this.pdfDoc) return;
+
+    this.scrollContainer.innerHTML = "";
+    this.pageCanvases.clear();
+    this.renderedPages.clear();
+
+    for (let i = 1; i <= this.totalPages; i++) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "pdf-page-wrapper";
+      wrapper.style.cssText =
+        "position:relative;margin:0 auto;box-shadow:0 2px 8px rgba(0,0,0,0.1);background:#fff;border-radius:4px;";
+      wrapper.dataset.pageNum = String(i);
+
+      const canvas = document.createElement("canvas");
+      canvas.style.cssText = "display:block;width:100%;height:auto;";
+      wrapper.appendChild(canvas);
+
+      // Page number label
+      const label = document.createElement("div");
+      label.style.cssText =
+        "position:absolute;bottom:4px;right:8px;font-size:10px;color:rgba(0,0,0,0.35);pointer-events:none;";
+      label.textContent = String(i);
+      wrapper.appendChild(label);
+
+      this.scrollContainer.appendChild(wrapper);
+      this.pageCanvases.set(i, canvas);
+    }
+
+    // Set initial placeholder sizes
+    this.setPlaceholderSizes();
+  }
+
+  private async setPlaceholderSizes(): Promise<void> {
+    if (!this.pdfDoc || !this.scrollContainer) return;
+
+    // Use first page to determine default size
+    const page = await this.pdfDoc.getPage(1);
+    const viewport = page.getViewport({ scale: this.scale });
+
+    const containerWidth = this.scrollContainer.clientWidth - 32; // padding
+    const adjustedScale = containerWidth / viewport.width * this.scale;
+    const adjustedViewport = page.getViewport({ scale: adjustedScale });
+
+    for (const [, canvas] of this.pageCanvases) {
+      const wrapper = canvas.parentElement;
+      if (wrapper) {
+        wrapper.style.width = `${adjustedViewport.width}px`;
+        wrapper.style.minHeight = `${adjustedViewport.height}px`;
+      }
+    }
+  }
+
+  private async renderVisiblePages(): Promise<void> {
+    if (!this.scrollContainer || !this.pdfDoc) return;
+
+    const containerRect = this.scrollContainer.getBoundingClientRect();
+    const buffer = containerRect.height; // render 1 screen ahead
+
+    const pagesToRender: number[] = [];
+
+    for (const [pageNum, canvas] of this.pageCanvases) {
+      const wrapper = canvas.parentElement;
+      if (!wrapper) continue;
+
+      const rect = wrapper.getBoundingClientRect();
+      const isVisible =
+        rect.bottom > containerRect.top - buffer &&
+        rect.top < containerRect.bottom + buffer;
+
+      if (isVisible && !this.renderedPages.has(pageNum)) {
+        pagesToRender.push(pageNum);
+      }
+    }
+
+    await Promise.all(pagesToRender.map((p) => this.renderPage(p)));
+  }
+
+  private async renderPage(pageNum: number): Promise<void> {
+    if (!this.pdfDoc || this.renderedPages.has(pageNum) || this.destroyed) return;
+
+    const canvas = this.pageCanvases.get(pageNum);
+    if (!canvas) return;
+
+    try {
+      const page = await this.pdfDoc.getPage(pageNum);
+
+      // Calculate scale to fit container width
+      const containerWidth = (this.scrollContainer?.clientWidth ?? 800) - 32;
+      const baseViewport = page.getViewport({ scale: 1 });
+      const fitScale = containerWidth / baseViewport.width;
+      const pixelRatio = window.devicePixelRatio || 1;
+      const renderScale = fitScale * pixelRatio;
+
+      const viewport = page.getViewport({ scale: fitScale });
+      const renderViewport = page.getViewport({ scale: renderScale });
+
+      canvas.width = renderViewport.width;
+      canvas.height = renderViewport.height;
+      canvas.style.width = `${viewport.width}px`;
+      canvas.style.height = `${viewport.height}px`;
+
+      const wrapper = canvas.parentElement;
+      if (wrapper) {
+        wrapper.style.width = `${viewport.width}px`;
+        wrapper.style.minHeight = `${viewport.height}px`;
+      }
+
+      await page.render({
+        canvas: canvas,
+        viewport: renderViewport,
+      }).promise;
+
+      this.renderedPages.add(pageNum);
+
+      // Also render text layer for selection
+      this.renderTextLayer(page, viewport, canvas);
+    } catch (err) {
+      console.error(`Failed to render page ${pageNum}:`, err);
+    }
+  }
+
+  private async renderTextLayer(
+    page: pdfjsLib.PDFPageProxy,
+    viewport: pdfjsLib.PageViewport,
+    canvas: HTMLCanvasElement,
+  ): Promise<void> {
+    const wrapper = canvas.parentElement;
+    if (!wrapper) return;
+
+    // Remove existing text layer
+    const existing = wrapper.querySelector(".pdf-text-layer");
+    if (existing) existing.remove();
+
+    const textContent = await page.getTextContent();
+    const textLayer = document.createElement("div");
+    textLayer.className = "pdf-text-layer";
+    textLayer.style.cssText = `
+      position:absolute;top:0;left:0;
+      width:${viewport.width}px;height:${viewport.height}px;
+      overflow:hidden;opacity:0.25;line-height:1;
+    `;
+
+    for (const item of textContent.items) {
+      if (!("str" in item) || !item.str) continue;
+      const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+      const span = document.createElement("span");
+      span.textContent = item.str;
+      span.style.cssText = `
+        position:absolute;white-space:pre;
+        left:${tx[4]}px;top:${tx[5]}px;
+        font-size:${Math.hypot(tx[0], tx[1])}px;
+        transform:scaleX(${item.width / (item.str.length * Math.hypot(tx[0], tx[1]) * 0.5 + 0.001)});
+        transform-origin:left bottom;
+        color:transparent;
+      `;
+      textLayer.appendChild(span);
+    }
+
+    wrapper.appendChild(textLayer);
+
+    // Listen for selection changes on this layer
+    textLayer.addEventListener("mouseup", () => {
+      setTimeout(() => {
+        const sel = this.getSelection();
+        this.emit("selection", sel);
+      }, 10);
+    });
+  }
+
+  private updateScale(): void {
+    // Re-render all visible pages with new container size
+    this.renderedPages.clear();
+    this.setPlaceholderSizes().then(() => this.renderVisiblePages());
+  }
+
+  private applyTheme(): void {
+    if (!this.scrollContainer) return;
+    switch (this.theme) {
+      case "dark":
+        this.scrollContainer.style.background = "#1a1a1a";
+        break;
+      case "sepia":
+        this.scrollContainer.style.background = "#f4ecd8";
+        break;
+      default:
+        this.scrollContainer.style.background = "";
+    }
+  }
+
+  private async extractTOC(): Promise<void> {
+    if (!this.pdfDoc) return;
+
+    try {
+      const outline = await this.pdfDoc.getOutline();
+      if (outline) {
+        this.toc = await this.parseOutline(outline, 0);
+      } else {
+        // Fallback: create TOC from page numbers
+        this.toc = [];
+        const step = Math.max(1, Math.ceil(this.totalPages / 20));
+        for (let i = 1; i <= this.totalPages; i += step) {
+          this.toc.push({
+            id: `page-${i}`,
+            title: `Page ${i}`,
+            level: 0,
+            href: String(i),
+            index: i - 1,
+          });
+        }
+      }
+
+      this.emit("toc-ready", this.toc);
+    } catch {
+      this.toc = [];
+    }
+  }
+
+  private async parseOutline(
+    items: PdfOutlineNode[],
+    level: number,
+  ): Promise<TOCItem[]> {
+    const result: TOCItem[] = [];
+
+    for (const item of items) {
+      let pageNum = 1;
+      if (item.dest) {
+        try {
+          const dest = typeof item.dest === "string"
+            ? await this.pdfDoc!.getDestination(item.dest)
+            : item.dest;
+          if (dest) {
+            const ref = dest[0];
+            pageNum = await this.pdfDoc!.getPageIndex(ref) + 1;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      const tocItem: TOCItem = {
+        id: `outline-${result.length}-${level}`,
+        title: item.title,
+        level,
+        href: String(pageNum),
+        index: pageNum - 1,
+      };
+
+      if (item.items && item.items.length > 0) {
+        tocItem.subitems = await this.parseOutline(item.items, level + 1);
+      }
+
+      result.push(tocItem);
+    }
+
+    return result;
+  }
+
+  private flattenTOC(items?: TOCItem[]): TOCItem[] {
+    const src = items || this.toc;
+    const result: TOCItem[] = [];
+    for (const item of src) {
+      result.push(item);
+      if (item.subitems) {
+        result.push(...this.flattenTOC(item.subitems));
+      }
+    }
+    return result;
+  }
+
+  private getPageTitle(pageNum: number): string {
+    // Find closest TOC entry
+    const flat = this.flattenTOC();
+    let closest = flat[0];
+    for (const item of flat) {
+      const itemPage = Number.parseInt(item.href || "0", 10);
+      if (itemPage <= pageNum) {
+        closest = item;
+      } else {
+        break;
+      }
+    }
+    return closest?.title || `Page ${pageNum}`;
+  }
+}

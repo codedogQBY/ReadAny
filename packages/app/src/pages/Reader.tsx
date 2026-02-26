@@ -11,14 +11,16 @@ import { useParams } from "react-router";
 export default function Reader() {
   const { t } = useTranslation();
   const { bookId } = useParams<{ bookId: string }>();
-  const { addTab, activeTabId } = useAppStore();
+  const { addTab } = useAppStore();
   const { initTab } = useReaderStore();
+
+  const tabId = bookId ? `reader-${bookId}` : "";
 
   useEffect(() => {
     if (!bookId) return;
-    const tabId = `reader-${bookId}`;
-    addTab({ id: tabId, type: "reader", title: bookId, bookId });
-    initTab(tabId, bookId);
+    const tid = `reader-${bookId}`;
+    addTab({ id: tid, type: "reader", title: bookId, bookId });
+    initTab(tid, bookId);
   }, [bookId, addTab, initTab]);
 
   if (!bookId) {
@@ -28,8 +30,6 @@ export default function Reader() {
       </div>
     );
   }
-
-  const tabId = activeTabId ?? `reader-${bookId}`;
 
   return <ReaderView bookId={bookId} tabId={tabId} />;
 }

@@ -12,7 +12,9 @@
     "done": "完成",
     "stop": "停止",
     "ask": "提问",
-    "total": "总计"
+    "total": "总计",
+    "back": "返回",
+    "retry": "重试"
   },
   "sidebar": {
     "library": "书库",
@@ -28,7 +30,7 @@
     "tryDifferentSearch": "试试其他搜索词",
     "emptyLibrary": "书库是空的，导入书籍开始阅读吧",
     "dropToUpload": "拖拽书籍到这里上传",
-    "supportedFormat": "支持格式：.epub",
+    "supportedFormat": "支持格式：.epub、.pdf",
     "importBooks": "导入书籍",
     "new": "新书",
     "complete": "已读完",
@@ -65,7 +67,7 @@
     "untitled": "无标题",
     "loadingBook": "正在加载书籍...",
     "failedToLoad": "加载书籍失败",
-    "validEpub": "请确保文件是有效的 EPUB 格式。",
+    "validEpub": "请确保文件是有效的 EPUB 或 PDF 格式。",
     "noBookFile": "书籍 {{bookId}} 没有可用的文件",
     "importToStart": "从书库导入 EPUB 文件开始阅读。",
     "noBookSelected": "未选择书籍",
@@ -76,7 +78,11 @@
     "note": "笔记",
     "translate": "翻译",
     "toc": "目录",
-    "noBookOpen": "未打开书籍"
+    "noToc": "暂无目录",
+    "noBookOpen": "未打开书籍",
+    "loadFailed": "加载失败",
+    "search": "搜索",
+    "settings": "设置"
   },
   "translation": {
     "translateTo": "翻译为 {{lang}}",

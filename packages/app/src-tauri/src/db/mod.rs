@@ -3,8 +3,8 @@ pub mod schema;
 use anyhow::Result;
 use tauri::{AppHandle, Manager};
 
-/// Initialize the SQLite database and run migrations
-pub async fn init_database(app: &AppHandle) -> Result<()> {
+/// Initialize the SQLite database synchronously (called in setup before frontend loads)
+pub fn init_database_sync(app: &AppHandle) -> Result<()> {
     let app_dir = app
         .path()
         .app_data_dir()
