@@ -15,6 +15,24 @@
     "fs:allow-write",
     "fs:allow-exists",
     "fs:allow-mkdir",
+    "fs:allow-read-file",
+    "fs:allow-read-text-file",
+    "fs:allow-write-file",
+    "fs:allow-write-text-file",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$APPDATA/**" },
+        { "path": "$APPLOCALDATA/**" },
+        { "path": "$APPCACHE/**" },
+        { "path": "$APPCONFIG/**" },
+        { "path": "$HOME/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "**" }
+      ]
+    },
     "dialog:default",
     "dialog:allow-open",
     "updater:default"
