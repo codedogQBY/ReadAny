@@ -1,4 +1,5 @@
 import type { FontFamily, Theme, ViewMode, ViewSettings } from "@/types";
+import type { TOCItem } from "@/lib/reader/document-renderer";
 /**
  * Reader store — per-tab reading state, progress, CFI
  */
@@ -20,6 +21,8 @@ export interface ReaderTab {
 export interface ReaderState {
   tabs: Record<string, ReaderTab>; // keyed by tab id
   viewSettings: ViewSettings;
+  tocItems: TOCItem[];
+  goToChapterFn: ((index: number) => void) | null;
 
   // Actions
   initTab: (tabId: string, bookId: string) => void;
@@ -34,6 +37,8 @@ export interface ReaderState {
   setFontFamily: (family: FontFamily) => void;
   setTheme: (theme: Theme) => void;
   setViewMode: (mode: ViewMode) => void;
+  setTocItems: (items: TOCItem[]) => void;
+  setGoToChapterFn: (fn: ((index: number) => void) | null) => void;
 }
 
 const defaultViewSettings: ViewSettings = {
@@ -49,6 +54,8 @@ const defaultViewSettings: ViewSettings = {
 export const useReaderStore = create<ReaderState>((set) => ({
   tabs: {},
   viewSettings: defaultViewSettings,
+  tocItems: [],
+  goToChapterFn: null,
 
   initTab: (tabId, bookId) =>
     set((state) => ({
@@ -150,4 +157,8 @@ export const useReaderStore = create<ReaderState>((set) => ({
     set((state) => ({
       viewSettings: { ...state.viewSettings, viewMode: mode },
     })),
+
+  setTocItems: (items) => set({ tocItems: items }),
+
+  setGoToChapterFn: (fn) => set({ goToChapterFn: fn }),
 }));

@@ -3,6 +3,7 @@ import Chat from "@/pages/Chat";
 import Home from "@/pages/Home";
 import Notes from "@/pages/Notes";
 import Reader from "@/pages/Reader";
+import Stats from "@/pages/Stats";
 /**
  * App — React Router configuration
  */
@@ -17,6 +18,7 @@ export default function App() {
           <Route path="/reader/:bookId" element={<Reader />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/notes" element={<Notes />} />
+          <Route path="/stats" element={<Stats />} />
         </Routes>
       </AppLayout>
     </BrowserRouter>

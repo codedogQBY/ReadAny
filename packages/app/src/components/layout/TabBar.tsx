@@ -1,8 +1,9 @@
 /**
- * TabBar — draggable tab bar for multiple open books/views
+ * TabBar — draggable tab bar (sageread style: compact h-7, Home icon pinned left, drag region)
  */
 import { type Tab, useAppStore } from "@/stores/app-store";
 import { BookOpen, Home, MessageSquare, StickyNote, X } from "lucide-react";
+import { useNavigate } from "react-router";
 
 const TAB_ICONS: Record<string, React.ElementType> = {
   home: Home,
@@ -13,14 +14,35 @@ const TAB_ICONS: Record<string, React.ElementType> = {
 
 export function TabBar() {
   const { tabs, activeTabId, setActiveTab, removeTab } = useAppStore();
+  const navigate = useNavigate();
+
+  const readerTabs = tabs.filter((t) => t.type !== "home");
 
   return (
     <div
-      className="flex h-9 items-center border-b border-border bg-muted/50 px-2"
+      className="flex h-9 shrink-0 select-none items-center border-neutral-200 bg-muted"
       data-tauri-drag-region
     >
-      <div className="flex items-center gap-0.5 overflow-x-auto">
-        {tabs.map((tab) => (
+      {/* macOS traffic light spacing + Home icon */}
+      <div
+        className="flex shrink-0 items-center"
+        style={{ paddingLeft: 68 }}
+      >
+        <button
+          type="button"
+          className="flex items-center justify-center rounded-md p-1 text-neutral-500 transition-colors hover:bg-neutral-200/60 hover:text-neutral-800"
+          onClick={() => {
+            setActiveTab("home");
+            navigate("/");
+          }}
+        >
+          <Home className="h-[18px] w-[18px]" />
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex flex-1 items-center gap-0.5 overflow-x-auto px-1" data-tauri-drag-region>
+        {readerTabs.map((tab) => (
           <TabItem
             key={tab.id}
             tab={tab}
@@ -49,7 +71,7 @@ function TabItem({
 
   return (
     <div
-      className={`group flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs transition-colors ${
+      className={`group flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-xs transition-all ${
         isActive
           ? "bg-background text-foreground shadow-sm"
           : "text-muted-foreground hover:text-foreground"
@@ -58,17 +80,16 @@ function TabItem({
     >
       <Icon className="h-3.5 w-3.5 shrink-0" />
       <span className="max-w-[120px] truncate">{tab.title}</span>
-      {tab.type !== "home" && (
-        <button
-          className="ml-1 hidden h-4 w-4 items-center justify-center rounded-sm hover:bg-muted group-hover:flex"
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose();
-          }}
-        >
-          <X className="h-3 w-3" />
-        </button>
-      )}
+      <button
+        type="button"
+        className="ml-0.5 hidden h-4 w-4 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-neutral-200/80 hover:text-foreground group-hover:flex"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+      >
+        <X className="h-3 w-3" />
+      </button>
     </div>
   );
 }

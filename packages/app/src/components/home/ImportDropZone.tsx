@@ -1,41 +1,65 @@
 /**
- * ImportDropZone — drag-and-drop area for importing EPUB files
+ * ImportDropZone — empty state with drag-and-drop
  */
+import { useLibraryStore } from "@/stores/library-store";
 import { Upload } from "lucide-react";
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export function ImportDropZone() {
+  const { t } = useTranslation();
   const [isDragging, setIsDragging] = useState(false);
+  const addBook = useLibraryStore((s) => s.addBook);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback(() => {
-    setIsDragging(false);
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    // TODO: Handle dropped files — extract paths, call importBooks
-    const _files = Array.from(e.dataTransfer.files);
-    void _files;
-  }, []);
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      const files = Array.from(e.dataTransfer.files).filter((f) => f.name.endsWith(".epub"));
+      for (const file of files) {
+        addBook({
+          id: crypto.randomUUID(),
+          filePath: (file as File & { path?: string }).path || file.name,
+          meta: { title: file.name.replace(".epub", ""), author: "" },
+          progress: 0,
+          isVectorized: false,
+          addedAt: Date.now(),
+          lastOpenedAt: Date.now(),
+        });
+      }
+    },
+    [addBook],
+  );
 
   return (
-    <div
-      className={`flex flex-1 flex-col items-center justify-center rounded-lg border-2 border-dashed transition-colors ${
-        isDragging ? "border-primary bg-primary/5" : "border-border"
-      }`}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      <Upload className="mb-4 h-12 w-12 text-muted-foreground" />
-      <p className="mb-2 text-lg font-medium">Drop EPUB files here</p>
-      <p className="text-sm text-muted-foreground">or click to browse</p>
+    <div className="flex h-full flex-col items-center justify-center p-8">
+      <div className="w-full max-w-md text-center">
+        <p className="mb-8 text-lg text-muted-foreground">{t("home.emptyLibrary")}</p>
+
+        <div
+          className={`rounded-2xl border-2 border-dashed p-12 transition-colors ${
+            isDragging ? "border-primary bg-primary/5" : "border-border bg-muted/30"
+          }`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+        >
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-neutral-200">
+            <Upload className="h-7 w-7 text-neutral-500" />
+          </div>
+          <p className="mb-1 text-sm font-medium text-neutral-700">{t("home.dropToUpload")}</p>
+          <p className="mb-4 text-xs text-muted-foreground">{t("home.supportedFormat")}</p>
+          <button
+            type="button"
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            {t("home.importBooks")}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

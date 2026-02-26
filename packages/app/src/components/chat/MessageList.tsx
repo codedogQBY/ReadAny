@@ -1,5 +1,6 @@
 /**
- * MessageList — scrollable message list
+ * MessageList — sageread-style scrollable message list
+ * Messages centered in max-w-3xl container
  */
 import type { Message } from "@/types";
 import { useEffect, useRef } from "react";
@@ -11,17 +12,20 @@ interface MessageListProps {
 
 export function MessageList({ messages }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto p-4">
-      {messages.map((msg) => (
-        <MessageBubble key={msg.id} message={msg} />
-      ))}
-      <div ref={bottomRef} />
+    <div ref={containerRef} className="flex h-full flex-col overflow-y-auto py-4">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4">
+        {messages.map((msg) => (
+          <MessageBubble key={msg.id} message={msg} />
+        ))}
+        <div ref={bottomRef} />
+      </div>
     </div>
   );
 }

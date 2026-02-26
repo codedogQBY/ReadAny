@@ -3,16 +3,18 @@
  */
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { FileText } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 export function NoteList() {
+  const { t } = useTranslation();
   const notes = useAnnotationStore((s) => s.notes);
 
   if (notes.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center p-4 text-center text-sm text-muted-foreground">
         <FileText className="mb-2 h-8 w-8" />
-        <p>No notes yet</p>
-        <p className="text-xs">Select text and create a note</p>
+        <p>{t("notes.noNotes")}</p>
+        <p className="text-xs">{t("notes.selectToCreate")}</p>
       </div>
     );
   }

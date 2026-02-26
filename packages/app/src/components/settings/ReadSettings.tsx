@@ -1,77 +1,94 @@
 /**
- * ReadSettings — reading view settings (font, layout, etc.)
+ * ReadSettings — reading view settings using shadcn components
  */
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useTranslation } from "react-i18next";
 
 export function ReadSettingsPanel() {
+  const { t } = useTranslation();
   const { readSettings, updateReadSettings } = useSettingsStore();
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-medium">Reading</h3>
-        <p className="text-sm text-muted-foreground">Customize your reading experience</p>
-      </div>
+    <div className="space-y-6 p-4 pt-3">
+      <section className="rounded-lg bg-muted/60 p-4">
+        <h2 className="mb-4 text-sm font-medium text-neutral-900">{t("settings.reading_title")}</h2>
+        <p className="mb-4 text-xs text-neutral-500">{t("settings.reading_desc")}</p>
 
-      <div className="space-y-4">
-        <div>
-          <label className="mb-1 block text-sm font-medium">
-            Font Size: {readSettings.fontSize}px
-          </label>
-          <input
-            type="range"
-            min={12}
-            max={32}
-            value={readSettings.fontSize}
-            onChange={(e) => updateReadSettings({ fontSize: Number(e.target.value) })}
-            className="w-full"
-          />
-        </div>
+        <div className="space-y-5">
+          {/* Font Size */}
+          <div>
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-sm text-neutral-800">{t("settings.fontSize", { size: readSettings.fontSize })}</span>
+              <span className="rounded bg-background px-2 py-0.5 text-xs font-medium text-neutral-600">{readSettings.fontSize}px</span>
+            </div>
+            <Slider
+              min={12}
+              max={32}
+              step={1}
+              value={[readSettings.fontSize]}
+              onValueChange={([v]) => updateReadSettings({ fontSize: v })}
+            />
+          </div>
 
-        <div>
-          <label className="mb-1 block text-sm font-medium">
-            Line Height: {readSettings.lineHeight}
-          </label>
-          <input
-            type="range"
-            min={1.2}
-            max={2.5}
-            step={0.1}
-            value={readSettings.lineHeight}
-            onChange={(e) => updateReadSettings({ lineHeight: Number(e.target.value) })}
-            className="w-full"
-          />
-        </div>
+          {/* Line Height */}
+          <div>
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-sm text-neutral-800">{t("settings.lineHeight", { height: readSettings.lineHeight })}</span>
+              <span className="rounded bg-background px-2 py-0.5 text-xs font-medium text-neutral-600">{readSettings.lineHeight}</span>
+            </div>
+            <Slider
+              min={1.2}
+              max={2.5}
+              step={0.1}
+              value={[readSettings.lineHeight]}
+              onValueChange={([v]) => updateReadSettings({ lineHeight: v })}
+            />
+          </div>
 
-        <div>
-          <label className="mb-1 block text-sm font-medium">Font Family</label>
-          <select
-            value={readSettings.fontFamily}
-            onChange={(e) =>
-              updateReadSettings({ fontFamily: e.target.value as "sans" | "serif" | "mono" })
-            }
-            className="rounded-md border border-border px-2 py-1 text-sm"
-          >
-            <option value="sans">Sans-serif</option>
-            <option value="serif">Serif</option>
-            <option value="mono">Monospace</option>
-          </select>
-        </div>
+          {/* Font Family */}
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-neutral-800">{t("settings.fontFamily")}</span>
+            <Select
+              value={readSettings.fontFamily}
+              onValueChange={(v) => updateReadSettings({ fontFamily: v as "sans" | "serif" | "mono" })}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sans">{t("settings.sansSerif")}</SelectItem>
+                <SelectItem value="serif">{t("settings.serif")}</SelectItem>
+                <SelectItem value="mono">{t("settings.monospace")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-        <div>
-          <label className="mb-1 block text-sm font-medium">View Mode</label>
-          <select
-            value={readSettings.viewMode}
-            onChange={(e) =>
-              updateReadSettings({ viewMode: e.target.value as "paginated" | "scroll" })
-            }
-            className="rounded-md border border-border px-2 py-1 text-sm"
-          >
-            <option value="paginated">Paginated</option>
-            <option value="scroll">Scroll</option>
-          </select>
+          {/* View Mode */}
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-neutral-800">{t("settings.viewMode")}</span>
+            <Select
+              value={readSettings.viewMode}
+              onValueChange={(v) => updateReadSettings({ viewMode: v as "paginated" | "scroll" })}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="paginated">{t("settings.paginated")}</SelectItem>
+                <SelectItem value="scroll">{t("settings.scroll")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

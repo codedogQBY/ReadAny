@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
  * Tabs: Chunks, Vector Search, BM25 Search, Hybrid Search
  */
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 type TestTab = "chunks" | "vector" | "bm25" | "hybrid";
 
@@ -14,18 +15,20 @@ interface VectorTestDialogProps {
   onClose: () => void;
 }
 
+const TAB_IDS: TestTab[] = ["chunks", "vector", "bm25", "hybrid"];
+const TAB_KEYS: Record<TestTab, string> = {
+  chunks: "vectorize.chunks",
+  vector: "vectorize.vector",
+  bm25: "vectorize.bm25",
+  hybrid: "vectorize.hybrid",
+};
+
 export function VectorTestDialog({ bookId: _bookId, open, onClose }: VectorTestDialogProps) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TestTab>("chunks");
   const [query, setQuery] = useState("");
 
   if (!open) return null;
-
-  const tabs: Array<{ id: TestTab; label: string }> = [
-    { id: "chunks", label: "Chunks" },
-    { id: "vector", label: "Vector" },
-    { id: "bm25", label: "BM25" },
-    { id: "hybrid", label: "Hybrid" },
-  ];
 
   return (
     <div
@@ -37,24 +40,24 @@ export function VectorTestDialog({ bookId: _bookId, open, onClose }: VectorTestD
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h3 className="font-medium">Vector Test</h3>
+          <h3 className="font-medium">{t("vectorize.title")}</h3>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
             ✕
           </button>
         </div>
 
         <div className="flex border-b border-border">
-          {tabs.map((tab) => (
+          {TAB_IDS.map((id) => (
             <button
-              key={tab.id}
+              key={id}
               className={`flex-1 py-2 text-center text-sm transition-colors ${
-                activeTab === tab.id
+                activeTab === id
                   ? "border-b-2 border-primary font-medium"
                   : "text-muted-foreground hover:text-foreground"
               }`}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => setActiveTab(id)}
             >
-              {tab.label}
+              {t(TAB_KEYS[id])}
             </button>
           ))}
         </div>
@@ -62,20 +65,20 @@ export function VectorTestDialog({ bookId: _bookId, open, onClose }: VectorTestD
         {activeTab !== "chunks" && (
           <div className="flex gap-2 border-b border-border p-3">
             <Input
-              placeholder="Enter search query..."
+              placeholder={t("vectorize.searchPlaceholder")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="flex-1"
             />
-            <Button size="sm">Search</Button>
+            <Button size="sm">{t("vectorize.search")}</Button>
           </div>
         )}
 
         <div className="flex-1 overflow-y-auto p-4">
           <p className="text-sm text-muted-foreground">
             {activeTab === "chunks"
-              ? "Showing all chunks for this book..."
-              : `${activeTab} search results will appear here.`}
+              ? t("vectorize.showingChunks")
+              : t("vectorize.searchResults", { tab: activeTab })}
           </p>
         </div>
       </div>

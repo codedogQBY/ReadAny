@@ -14,11 +14,14 @@ export interface Tab {
   isModified?: boolean;
 }
 
+export type SidebarTab = "chat" | "notes" | "toc" | "highlights" | "stats";
+
 export interface AppState {
   tabs: Tab[];
   activeTabId: string | null;
   sidebarOpen: boolean;
-  sidebarTab: "chat" | "notes" | "toc";
+  sidebarTab: SidebarTab;
+  showSettings: boolean;
 
   // Actions
   addTab: (tab: Tab) => void;
@@ -26,7 +29,8 @@ export interface AppState {
   setActiveTab: (tabId: string) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   toggleSidebar: () => void;
-  setSidebarTab: (tab: "chat" | "notes" | "toc") => void;
+  setSidebarTab: (tab: SidebarTab) => void;
+  setShowSettings: (show: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -34,6 +38,7 @@ export const useAppStore = create<AppState>((set) => ({
   activeTabId: "home",
   sidebarOpen: false,
   sidebarTab: "chat",
+  showSettings: false,
 
   addTab: (tab) =>
     set((state) => ({
@@ -62,4 +67,6 @@ export const useAppStore = create<AppState>((set) => ({
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
 
   setSidebarTab: (tab) => set({ sidebarTab: tab, sidebarOpen: true }),
+
+  setShowSettings: (show) => set({ showSettings: show }),
 }));

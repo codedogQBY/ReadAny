@@ -1,8 +1,8 @@
 /**
  * SelectionPopover — 5-button popover on text selection
- * Buttons: Highlight, Note, Copy, Translate, Ask AI
  */
 import { Copy, Highlighter, Languages, Sparkles, StickyNote } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface SelectionPopoverProps {
   position: { x: number; y: number };
@@ -25,12 +25,13 @@ export function SelectionPopover({
   onAskAI,
   onClose: _onClose,
 }: SelectionPopoverProps) {
+  const { t } = useTranslation();
   const buttons = [
-    { icon: Highlighter, label: "Highlight", onClick: onHighlight },
-    { icon: StickyNote, label: "Note", onClick: onNote },
-    { icon: Copy, label: "Copy", onClick: onCopy },
-    { icon: Languages, label: "Translate", onClick: onTranslate },
-    { icon: Sparkles, label: "Ask AI", onClick: onAskAI },
+    { icon: Highlighter, label: t("reader.highlight"), onClick: onHighlight },
+    { icon: StickyNote, label: t("reader.note"), onClick: onNote },
+    { icon: Copy, label: t("common.copy"), onClick: onCopy },
+    { icon: Languages, label: t("reader.translate"), onClick: onTranslate },
+    { icon: Sparkles, label: t("reader.askAI"), onClick: onAskAI },
   ];
 
   return (

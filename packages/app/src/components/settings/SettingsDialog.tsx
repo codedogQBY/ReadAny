@@ -1,7 +1,10 @@
 /**
- * SettingsDialog — main settings modal
+ * SettingsDialog — main settings modal using shadcn Dialog
  */
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AISettings } from "./AISettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { ReadSettingsPanel } from "./ReadSettings";
@@ -15,53 +18,58 @@ interface SettingsDialogProps {
   onClose: () => void;
 }
 
-const TABS: Array<{ id: SettingsTab; label: string }> = [
-  { id: "general", label: "General" },
-  { id: "reading", label: "Reading" },
-  { id: "ai", label: "AI" },
-  { id: "translation", label: "Translation" },
-  { id: "skills", label: "Skills" },
-];
+const TAB_IDS: SettingsTab[] = ["general", "reading", "ai", "translation", "skills"];
+const TAB_KEYS: Record<SettingsTab, string> = {
+  general: "settings.general",
+  reading: "settings.reading",
+  ai: "settings.ai",
+  translation: "settings.translationTab",
+  skills: "settings.skills",
+};
 
 export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
 
-  if (!open) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-      onClick={onClose}
-    >
-      <div
-        className="flex h-[70vh] w-[640px] overflow-hidden rounded-lg border border-border bg-background shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Sidebar */}
-        <div className="w-44 border-r border-border bg-muted/30 p-3">
-          <h2 className="mb-3 px-2 text-sm font-semibold">Settings</h2>
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              className={`w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-                activeTab === tab.id ? "bg-muted font-medium" : "hover:bg-muted/50"
-              }`}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="flex min-h-[80vh] max-h-[80vh] w-[800px] max-w-[800px] flex-col overflow-hidden p-0">
+        {/* Header */}
+        <div className="flex-shrink-0 border-b border-neutral-200 px-4 py-3.5">
+          <DialogTitle className="text-base font-semibold">{t("settings.title")}</DialogTitle>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {activeTab === "general" && <GeneralSettings />}
-          {activeTab === "reading" && <ReadSettingsPanel />}
-          {activeTab === "ai" && <AISettings />}
-          {activeTab === "translation" && <TranslationSettings />}
-          {activeTab === "skills" && <SkillManager />}
+        <div className="flex min-h-0 flex-1">
+          {/* Sidebar */}
+          <div className="w-48 flex-shrink-0 overflow-y-auto border-r border-neutral-200 p-2.5">
+            <nav className="space-y-0.5">
+              {TAB_IDS.map((id) => (
+                <button
+                  key={id}
+                  className={cn(
+                    "flex w-full items-center rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors",
+                    activeTab === id
+                      ? "bg-muted/80 font-medium text-neutral-900"
+                      : "text-neutral-600 hover:bg-muted/50",
+                  )}
+                  onClick={() => setActiveTab(id)}
+                >
+                  {t(TAB_KEYS[id])}
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          {/* Content */}
+          <div className="min-w-0 flex-1 overflow-y-auto">
+            {activeTab === "general" && <GeneralSettings />}
+            {activeTab === "reading" && <ReadSettingsPanel />}
+            {activeTab === "ai" && <AISettings />}
+            {activeTab === "translation" && <TranslationSettings />}
+            {activeTab === "skills" && <SkillManager />}
+          </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

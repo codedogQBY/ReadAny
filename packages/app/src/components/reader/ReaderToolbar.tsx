@@ -6,6 +6,7 @@ import type { TOCItem } from "@/lib/reader/document-renderer";
 import { useAppStore } from "@/stores/app-store";
 import { useReaderStore } from "@/stores/reader-store";
 import { ChevronLeft, ChevronRight, List, MessageSquare, Search, Settings } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface ReaderToolbarProps {
   tabId: string;
@@ -16,13 +17,14 @@ interface ReaderToolbarProps {
 }
 
 export function ReaderToolbar({ tabId, onPrev, onNext }: ReaderToolbarProps) {
+  const { t } = useTranslation();
   const tab = useReaderStore((s) => s.tabs[tabId]);
   const { setSidebarTab } = useAppStore();
 
   if (!tab) return null;
 
   return (
-    <div className="flex h-10 items-center justify-between border-b border-border px-4">
+    <div className="flex h-10 items-center justify-between border-b px-4">
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onPrev}>
           <ChevronLeft className="h-4 w-4" />
@@ -30,7 +32,7 @@ export function ReaderToolbar({ tabId, onPrev, onNext }: ReaderToolbarProps) {
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onNext}>
           <ChevronRight className="h-4 w-4" />
         </Button>
-        <span className="text-xs text-muted-foreground">{tab.chapterTitle || "Untitled"}</span>
+        <span className="text-xs text-muted-foreground">{tab.chapterTitle || t("reader.untitled")}</span>
       </div>
 
       <div className="flex items-center gap-1">

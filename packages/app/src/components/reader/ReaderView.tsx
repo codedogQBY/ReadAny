@@ -12,6 +12,7 @@ import { readFile } from "@tauri-apps/plugin-fs";
  * ReaderView — main reading area with EPUB/PDF rendering
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ReaderToolbar } from "./ReaderToolbar";
 import { SelectionPopover } from "./SelectionPopover";
 
@@ -200,8 +201,10 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     setSelection(null);
   }, []);
 
+  const { t } = useTranslation();
+
   if (!tab) {
-    return <div className="flex h-full items-center justify-center">Loading...</div>;
+    return <div className="flex h-full items-center justify-center">{t("common.loading")}</div>;
   }
 
   return (
@@ -223,7 +226,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           <div className="absolute inset-0 flex items-center justify-center bg-background/80">
             <div className="flex flex-col items-center gap-2">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-              <p className="text-sm text-muted-foreground">Loading book...</p>
+              <p className="text-sm text-muted-foreground">{t("reader.loadingBook")}</p>
             </div>
           </div>
         )}
@@ -234,7 +237,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
             <div className="flex flex-col items-center gap-2 px-8 text-center">
               <p className="text-sm text-destructive">{error}</p>
               <p className="text-xs text-muted-foreground">
-                Make sure the book file is a valid EPUB.
+                {t("reader.validEpub")}
               </p>
             </div>
           </div>
@@ -244,9 +247,9 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
         {!isLoading && !error && !book?.filePath && (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center">
-              <p className="text-muted-foreground">No book file available for book {bookId}</p>
+              <p className="text-muted-foreground">{t("reader.noBookFile", { bookId })}</p>
               <p className="mt-2 text-sm text-muted-foreground">
-                Import an EPUB file from the library to start reading.
+                {t("reader.importToStart")}
               </p>
             </div>
           </div>

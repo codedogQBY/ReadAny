@@ -1,28 +1,30 @@
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { readingStatsService } from "@/lib/stats/reading-stats";
 import type { DailyStats, OverallStats } from "@/lib/stats/reading-stats";
 import { BookOpen, Clock, Flame, TrendingUp } from "lucide-react";
 /**
- * ReadingStatsPanel — displays reading statistics with visual charts
- * Uses native CSS for chart rendering (no recharts dependency)
+ * ReadingStatsPanel — displays reading statistics with heatmap
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export function ReadingStatsPanel() {
+  const { t, i18n } = useTranslation();
   const [dailyStats, setDailyStats] = useState<DailyStats[]>([]);
   const [overall, setOverall] = useState<OverallStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState<"week" | "month">("week");
 
   useEffect(() => {
     loadStats();
-  }, [period]);
+  }, []);
 
   const loadStats = async () => {
     setLoading(true);
     try {
+      // Load last 365 days for heatmap
       const endDate = new Date();
       const startDate = new Date();
-      startDate.setDate(startDate.getDate() - (period === "week" ? 7 : 30));
+      startDate.setDate(startDate.getDate() - 365);
 
       const [daily, overallStats] = await Promise.all([
         readingStatsService.getDailyStats(startDate, endDate),
@@ -39,113 +41,71 @@ export function ReadingStatsPanel() {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      <div className="flex h-[60vh] items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-700" />
       </div>
     );
   }
 
-  const maxTime = Math.max(...dailyStats.map((d) => d.totalTime), 1);
-
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto p-4">
-      {/* Overall stats cards */}
+    <div className="flex-1 space-y-6 overflow-auto p-6">
+      {/* Page Header */}
+      <div className="space-y-1">
+        <h1 className="text-2xl font-bold text-neutral-900">{t("stats.title")}</h1>
+        <p className="text-sm text-neutral-500">{t("stats.subtitle")}</p>
+      </div>
+
+      {/* Stat Cards Grid */}
       {overall && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <StatCard
             icon={<BookOpen className="h-4 w-4" />}
-            label="Books Read"
+            title={t("stats.booksRead")}
             value={String(overall.totalBooks)}
+            description={t("stats.booksReadDesc")}
           />
           <StatCard
             icon={<Clock className="h-4 w-4" />}
-            label="Total Time"
+            title={t("stats.totalTime")}
             value={formatTime(overall.totalReadingTime)}
+            description={t("stats.totalTimeDesc")}
           />
           <StatCard
             icon={<Flame className="h-4 w-4" />}
-            label="Current Streak"
+            title={t("stats.currentStreak")}
             value={`${overall.currentStreak}d`}
+            description={t("stats.currentStreakDesc")}
           />
           <StatCard
             icon={<TrendingUp className="h-4 w-4" />}
-            label="Avg Daily"
+            title={t("stats.avgDaily")}
             value={formatTime(overall.avgDailyTime)}
+            description={t("stats.avgDailyDesc")}
           />
         </div>
       )}
 
-      {/* Period selector */}
-      <div className="flex gap-1">
-        <button
-          className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-            period === "week"
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-muted-foreground hover:text-foreground"
-          }`}
-          onClick={() => setPeriod("week")}
-        >
-          Week
-        </button>
-        <button
-          className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-            period === "month"
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-muted-foreground hover:text-foreground"
-          }`}
-          onClick={() => setPeriod("month")}
-        >
-          Month
-        </button>
-      </div>
-
-      {/* Bar chart */}
-      <div className="rounded-lg border border-border p-3">
-        <h4 className="mb-3 text-xs font-medium text-muted-foreground">Daily Reading Time</h4>
-        <div className="flex items-end gap-1" style={{ height: "120px" }}>
-          {dailyStats.map((stat) => {
-            const height = maxTime > 0 ? (stat.totalTime / maxTime) * 100 : 0;
-            const date = new Date(stat.date);
-            const dayLabel = date.toLocaleDateString("en", { weekday: "narrow" });
-
-            return (
-              <div
-                key={stat.date}
-                className="group relative flex flex-1 flex-col items-center"
-                style={{ height: "100%" }}
-              >
-                {/* Tooltip */}
-                <div className="pointer-events-none absolute -top-8 z-10 hidden rounded bg-foreground px-2 py-1 text-[10px] text-background group-hover:block">
-                  {Math.round(stat.totalTime)}m
-                </div>
-
-                {/* Bar */}
-                <div className="mt-auto w-full max-w-[24px]">
-                  <div
-                    className="w-full rounded-t bg-primary transition-all"
-                    style={{
-                      height: `${Math.max(height, stat.totalTime > 0 ? 4 : 0)}%`,
-                      minHeight: stat.totalTime > 0 ? "2px" : "0",
-                    }}
-                  />
-                </div>
-
-                {/* Day label */}
-                <span className="mt-1 text-[9px] text-muted-foreground">{dayLabel}</span>
-              </div>
-            );
-          })}
+      {/* Heatmap Section */}
+      <div className="rounded-xl border border-neutral-150 p-5">
+        <div className="mb-4 space-y-1">
+          <h3 className="text-base font-semibold text-neutral-900">{t("stats.heatmapTitle")}</h3>
+          <p className="text-xs text-neutral-500">{t("stats.heatmapDesc")}</p>
         </div>
+        <HeatmapChart dailyStats={dailyStats} lang={i18n.language} />
+        <HeatmapLegend />
       </div>
 
-      {/* Longest streak */}
+      {/* Longest Streak */}
       {overall && overall.longestStreak > 0 && (
-        <div className="rounded-lg border border-border p-3">
-          <div className="flex items-center gap-2">
-            <Flame className="h-4 w-4 text-orange-500" />
-            <span className="text-sm font-medium">
-              Longest Streak: {overall.longestStreak} days
-            </span>
+        <div className="flex items-center gap-3 rounded-xl border border-neutral-150 p-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-50">
+            <Flame className="h-5 w-5 text-orange-500" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-neutral-900">
+              {t("stats.longestStreak", { days: overall.longestStreak })}
+            </p>
+            <p className="text-xs text-neutral-500">{t("stats.longestStreakDesc")}</p>
           </div>
         </div>
       )}
@@ -153,22 +113,187 @@ export function ReadingStatsPanel() {
   );
 }
 
+/* ── Heatmap Chart ── */
+
+function HeatmapChart({ dailyStats, lang }: { dailyStats: DailyStats[]; lang: string }) {
+  const { t } = useTranslation();
+
+  const { weeks, monthLabels } = useMemo(() => {
+    // Build a lookup map: date -> totalTime
+    const statsMap = new Map<string, number>();
+    for (const s of dailyStats) {
+      statsMap.set(s.date, s.totalTime);
+    }
+
+    // Generate 53 weeks ending on today
+    const today = new Date();
+    const todayDay = today.getDay(); // 0=Sun
+    // Find the start: go back to ~53 weeks ago, aligned to Sunday
+    const startDate = new Date(today);
+    startDate.setDate(startDate.getDate() - (52 * 7 + todayDay));
+
+    const weeksArr: Array<Array<{ date: string; time: number; dayOfWeek: number }>> = [];
+    const mLabels: Array<{ label: string; col: number }> = [];
+    let currentWeek: Array<{ date: string; time: number; dayOfWeek: number }> = [];
+    let lastMonth = -1;
+
+    const cursor = new Date(startDate);
+    let weekIdx = 0;
+
+    while (cursor <= today) {
+      const dateStr = cursor.toISOString().split("T")[0];
+      const dow = cursor.getDay();
+      const month = cursor.getMonth();
+
+      if (dow === 0 && currentWeek.length > 0) {
+        weeksArr.push(currentWeek);
+        currentWeek = [];
+        weekIdx++;
+      }
+
+      if (month !== lastMonth) {
+        const monthName = cursor.toLocaleDateString(lang === "zh" ? "zh-CN" : "en", { month: "short" });
+        mLabels.push({ label: monthName, col: weekIdx });
+        lastMonth = month;
+      }
+
+      currentWeek.push({
+        date: dateStr,
+        time: statsMap.get(dateStr) || 0,
+        dayOfWeek: dow,
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    if (currentWeek.length > 0) weeksArr.push(currentWeek);
+
+    return { weeks: weeksArr, monthLabels: mLabels };
+  }, [dailyStats, lang]);
+
+  const dayLabels = useMemo(() => {
+    const days = lang === "zh"
+      ? ["日", "一", "二", "三", "四", "五", "六"]
+      : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    // Only show Mon, Wed, Fri
+    return [
+      { idx: 1, label: days[1] },
+      { idx: 3, label: days[3] },
+      { idx: 5, label: days[5] },
+    ];
+  }, [lang]);
+
+  return (
+    <TooltipProvider delayDuration={100}>
+      <div className="overflow-x-auto">
+        {/* Month labels */}
+        <div className="flex" style={{ paddingLeft: "32px" }}>
+          {monthLabels.map((m, i) => {
+            const nextCol = i + 1 < monthLabels.length ? monthLabels[i + 1].col : weeks.length;
+            const span = nextCol - m.col;
+            return (
+              <div
+                key={`${m.label}-${m.col}`}
+                className="text-xs text-neutral-400"
+                style={{ width: `${span * 14}px`, minWidth: `${span * 14}px` }}
+              >
+                {span >= 2 ? m.label : ""}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex gap-0">
+          {/* Day of week labels */}
+          <div className="flex flex-col justify-between pr-1.5" style={{ width: "28px", height: `${7 * 14 - 2}px` }}>
+            {[0, 1, 2, 3, 4, 5, 6].map((d) => {
+              const label = dayLabels.find((l) => l.idx === d);
+              return (
+                <div key={d} className="flex h-[12px] items-center">
+                  <span className="text-[10px] text-neutral-400">{label?.label || ""}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Heatmap grid */}
+          <div className="flex gap-[2px]">
+            {weeks.map((week, wi) => (
+              <div key={wi} className="flex flex-col gap-[2px]">
+                {/* Fill empty cells at start of week */}
+                {week[0] && week[0].dayOfWeek > 0 && wi === 0 &&
+                  Array.from({ length: week[0].dayOfWeek }).map((_, i) => (
+                    <div key={`empty-${i}`} className="h-[12px] w-[12px]" />
+                  ))}
+                {week.map((day) => (
+                  <Tooltip key={day.date}>
+                    <TooltipTrigger asChild>
+                      <div
+                        className={`h-[12px] w-[12px] rounded-[2px] transition-colors ${getHeatColor(day.time)}`}
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="bg-neutral-800 text-white">
+                      <p className="text-xs font-medium">
+                        {day.time > 0
+                          ? t("stats.heatmapTooltip", { time: Math.round(day.time), date: day.date })
+                          : t("stats.heatmapNoReading", { date: day.date })}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </TooltipProvider>
+  );
+}
+
+function HeatmapLegend() {
+  const { t } = useTranslation();
+  return (
+    <div className="mt-3 flex items-center justify-end gap-1.5 text-xs text-neutral-400">
+      <span>{t("stats.less")}</span>
+      <div className="h-[12px] w-[12px] rounded-[2px] bg-neutral-100" />
+      <div className="h-[12px] w-[12px] rounded-[2px] bg-emerald-200" />
+      <div className="h-[12px] w-[12px] rounded-[2px] bg-emerald-400" />
+      <div className="h-[12px] w-[12px] rounded-[2px] bg-emerald-500" />
+      <div className="h-[12px] w-[12px] rounded-[2px] bg-emerald-700" />
+      <span>{t("stats.more")}</span>
+    </div>
+  );
+}
+
+function getHeatColor(minutes: number): string {
+  if (minutes <= 0) return "bg-neutral-100";
+  if (minutes < 15) return "bg-emerald-200";
+  if (minutes < 30) return "bg-emerald-400";
+  if (minutes < 60) return "bg-emerald-500";
+  return "bg-emerald-700";
+}
+
+/* ── Stat Card ── */
+
 function StatCard({
   icon,
-  label,
+  title,
   value,
+  description,
 }: {
   icon: React.ReactNode;
-  label: string;
+  title: string;
   value: string;
+  description?: string;
 }) {
   return (
-    <div className="rounded-lg border border-border p-3">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        {icon}
-        <span className="text-[10px] uppercase">{label}</span>
+    <div className="rounded-xl bg-muted p-4 shadow-around">
+      <div className="flex items-center justify-between pb-2">
+        <h3 className="text-sm font-medium text-neutral-500">{title}</h3>
+        <div className="text-neutral-400">{icon}</div>
       </div>
-      <div className="mt-1 text-lg font-semibold">{value}</div>
+      <div className="space-y-1">
+        <div className="text-2xl font-bold text-neutral-900">{value}</div>
+        {description && <p className="text-xs text-neutral-400">{description}</p>}
+      </div>
     </div>
   );
 }

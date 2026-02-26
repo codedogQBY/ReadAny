@@ -5,6 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
  * NoteEditor — markdown note editor
  */
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 interface NoteEditorProps {
   initialTitle?: string;
@@ -19,14 +20,15 @@ export function NoteEditor({
   onSave,
   onCancel,
 }: NoteEditorProps) {
+  const { t } = useTranslation();
   const [title, setTitle] = useState(initialTitle);
   const [content, setContent] = useState(initialContent);
 
   return (
     <div className="flex flex-col gap-3 p-3">
-      <Input placeholder="Note title" value={title} onChange={(e) => setTitle(e.target.value)} />
+      <Input placeholder={t("notes.noteTitle")} value={title} onChange={(e) => setTitle(e.target.value)} />
       <Textarea
-        placeholder="Write your note in Markdown..."
+        placeholder={t("notes.writeMarkdown")}
         value={content}
         onChange={(e) => setContent(e.target.value)}
         rows={8}
@@ -34,10 +36,10 @@ export function NoteEditor({
       />
       <div className="flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={onCancel}>
-          Cancel
+          {t("common.cancel")}
         </Button>
         <Button size="sm" onClick={() => onSave(title, content)} disabled={!title.trim()}>
-          Save
+          {t("common.save")}
         </Button>
       </div>
     </div>

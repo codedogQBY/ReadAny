@@ -4,6 +4,7 @@
 import { useAnnotationStore } from "@/stores/annotation-store";
 import type { HighlightColor } from "@/types";
 import { Highlighter } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 const COLOR_CLASSES: Record<HighlightColor, string> = {
   yellow: "bg-highlight-yellow",
@@ -14,14 +15,15 @@ const COLOR_CLASSES: Record<HighlightColor, string> = {
 };
 
 export function HighlightList() {
+  const { t } = useTranslation();
   const highlights = useAnnotationStore((s) => s.highlights);
 
   if (highlights.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center p-4 text-center text-sm text-muted-foreground">
         <Highlighter className="mb-2 h-8 w-8" />
-        <p>No highlights yet</p>
-        <p className="text-xs">Select text to highlight</p>
+        <p>{t("highlights.noHighlights")}</p>
+        <p className="text-xs">{t("highlights.selectToHighlight")}</p>
       </div>
     );
   }

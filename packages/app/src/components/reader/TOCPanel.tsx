@@ -1,6 +1,7 @@
 /**
- * TOCPanel — table of contents with virtual list
+ * TOCPanel — table of contents
  */
+import { useTranslation } from "react-i18next";
 
 interface TOCItem {
   id: string;
@@ -10,14 +11,14 @@ interface TOCItem {
 }
 
 export function TOCPanel() {
-  // TODO: Load TOC from book, render with react-window for large lists
+  const { t } = useTranslation();
   const items: TOCItem[] = [];
 
   return (
     <div className="flex h-full flex-col p-3">
-      <h3 className="mb-3 text-sm font-medium">Table of Contents</h3>
+      <h3 className="mb-3 text-sm font-medium">{t("reader.toc")}</h3>
       {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No book open</p>
+        <p className="text-sm text-muted-foreground">{t("reader.noBookOpen")}</p>
       ) : (
         <div className="flex-1 overflow-y-auto">
           {items.map((item) => (
