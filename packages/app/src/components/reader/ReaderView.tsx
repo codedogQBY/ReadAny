@@ -1,3 +1,4 @@
+import { ChatPanel } from "@/components/chat/ChatPanel";
 import type {
   Selection as DocSelection,
   DocumentRenderer,
@@ -8,6 +9,7 @@ import { useAnnotationStore } from "@/stores/annotation-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useReaderStore } from "@/stores/reader-store";
 import { readFile } from "@tauri-apps/plugin-fs";
+import { X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AskAIDialog } from "./AskAIDialog";
@@ -17,6 +19,75 @@ import { SearchBar } from "./SearchBar";
 import { SelectionPopover } from "./SelectionPopover";
 import { TOCPanel } from "./TOCPanel";
 import { TranslationPopover } from "./TranslationPopover";
+
+// In-memory file blob cache to avoid re-reading from disk on every tab switch
+const fileBlobCache = new Map<string, Blob>();
+const MAX_CACHE_SIZE = 5; // keep at most 5 files in memory
+
+async function getCachedBlob(filePath: string): Promise<Blob> {
+  const cached = fileBlobCache.get(filePath);
+  if (cached) return cached;
+
+  const fileBytes = await readFile(filePath);
+  const blob = new Blob([fileBytes]);
+
+  // Evict oldest if cache is full
+  if (fileBlobCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = fileBlobCache.keys().next().value;
+    if (firstKey) fileBlobCache.delete(firstKey);
+  }
+  fileBlobCache.set(filePath, blob);
+  return blob;
+}
+
+/**
+ * Auto-hide controls hook — shows on mouse enter, hides after delay.
+ * Stays visible if `keepVisible` is true (e.g., when a dropdown is open).
+ */
+function useAutoHideControls(delay = 5000, keepVisible = false) {
+  const [isVisible, setIsVisible] = useState(true);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isHoveringRef = useRef(false);
+
+  const clearTimer = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  }, []);
+
+  const hideAfterDelay = useCallback(() => {
+    if (keepVisible) return;
+    clearTimer();
+    timeoutRef.current = setTimeout(() => setIsVisible(false), delay);
+  }, [clearTimer, delay, keepVisible]);
+
+  const handleMouseEnter = useCallback(() => {
+    isHoveringRef.current = true;
+    setIsVisible(true);
+    clearTimer();
+  }, [clearTimer]);
+
+  const handleMouseLeave = useCallback(() => {
+    isHoveringRef.current = false;
+    hideAfterDelay();
+  }, [hideAfterDelay]);
+
+  useEffect(() => {
+    hideAfterDelay();
+    return () => clearTimer();
+  }, [hideAfterDelay, clearTimer]);
+
+  useEffect(() => {
+    if (keepVisible) {
+      setIsVisible(true);
+    } else if (!isHoveringRef.current) {
+      hideAfterDelay();
+    }
+  }, [keepVisible, hideAfterDelay]);
+
+  return { isVisible, handleMouseEnter, handleMouseLeave };
+}
 
 interface ReaderViewProps {
   bookId: string;
@@ -56,10 +127,19 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const [searchIndex, setSearchIndex] = useState<number>(0);
   const [totalPages, setTotalPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(0);
+  const [showChat, setShowChat] = useState(false);
 
   const { t } = useTranslation();
 
-  // Handle book not found — don't leave loading forever
+  // SageReader-style auto-hide controls
+  const keepControlsVisible = showSearch || showToc;
+  const {
+    isVisible: controlsVisible,
+    handleMouseEnter: onControlsEnter,
+    handleMouseLeave: onControlsLeave,
+  } = useAutoHideControls(5000, keepControlsVisible);
+
+  // Handle book not found
   useEffect(() => {
     if (!book?.filePath) {
       const timer = setTimeout(() => {
@@ -88,7 +168,6 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       setProgress(tabId, progress, positionKey);
       updateBook(bookId, { progress, currentCfi: positionKey, lastOpenedAt: Date.now() });
 
-      // Update page tracking
       if (location.pageIndex !== undefined) {
         setCurrentPage(location.pageIndex + 1);
       }
@@ -98,7 +177,6 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       setChapter(tabId, info.chapterIndex, info.chapterTitle);
       setIsLoading(false);
 
-      // Get total pages if available
       const pages = renderer.getTotalPages?.();
       if (pages) setTotalPages(pages);
     });
@@ -129,7 +207,6 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       setIsLoading(false);
     });
 
-    // Mount then load
     renderer.mount(containerRef.current).then(() => {
       if (book?.filePath) {
         loadBookFile(renderer, book.filePath);
@@ -186,8 +263,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     try {
       setIsLoading(true);
       setError(null);
-      const fileBytes = await readFile(filePath);
-      const blob = new Blob([fileBytes]);
+      const blob = await getCachedBlob(filePath);
 
       const initialLocation = book?.currentCfi
         ? book.currentCfi.startsWith("page-")
@@ -274,6 +350,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const handleCloseSelection = useCallback(() => setSelection(null), []);
   const handleToggleSearch = useCallback(() => setShowSearch((p) => !p), []);
   const handleToggleToc = useCallback(() => setShowToc((p) => !p), []);
+  const handleToggleChat = useCallback(() => setShowChat((p) => !p), []);
 
   // Search logic
   const handleSearch = useCallback((query: string) => {
@@ -286,7 +363,6 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     const container = containerRef.current;
     if (!container) return;
 
-    // Clear previous marks
     const existingMarks = container.querySelectorAll("mark[data-search]");
     for (const mark of existingMarks) {
       const parent = mark.parentNode;
@@ -374,163 +450,195 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   }
 
   return (
-    <div className="flex h-full flex-col bg-background">
-      {/* Toolbar */}
-      <ReaderToolbar
-        tabId={tabId}
-        onPrev={handleNavPrev}
-        onNext={handleNavNext}
-        tocItems={tocItems}
-        onGoToChapter={handleGoToChapter}
-        onToggleSearch={handleToggleSearch}
-        onToggleToc={handleToggleToc}
-      />
+    <div className="flex h-full bg-muted/30 p-1">
+      {/* Main reading area — center, with border and shadow like SageRead */}
+      <div className="relative flex flex-1 flex-col overflow-hidden rounded-lg border border-border/60 bg-background shadow-sm">
+        {/* Toolbar — auto-hide like SageReader */}
+        <ReaderToolbar
+          tabId={tabId}
+          isVisible={controlsVisible}
+          onPrev={handleNavPrev}
+          onNext={handleNavNext}
+          tocItems={tocItems}
+          onGoToChapter={handleGoToChapter}
+          onToggleSearch={handleToggleSearch}
+          onToggleToc={handleToggleToc}
+          onToggleChat={handleToggleChat}
+          isChatOpen={showChat}
+          onMouseEnter={onControlsEnter}
+          onMouseLeave={onControlsLeave}
+        />
 
-      {/* Search bar */}
-      {showSearch && (
-        <SearchBar
-          onSearch={handleSearch}
-          onNext={() => navigateSearchResult("next")}
-          onPrev={() => navigateSearchResult("prev")}
-          onClose={() => {
-            setShowSearch(false);
-            const container = containerRef.current;
-            if (container) {
-              const iframe = container.querySelector("iframe");
-              const body = iframe?.contentDocument?.body || container;
-              const marks = body.querySelectorAll("mark[data-search]");
-              for (const mark of marks) {
-                const parent = mark.parentNode;
-                if (parent) {
-                  parent.replaceChild(
-                    document.createTextNode(mark.textContent || ""),
-                    mark,
-                  );
-                  parent.normalize();
+        {/* Search bar */}
+        {showSearch && (
+          <SearchBar
+            onSearch={handleSearch}
+            onNext={() => navigateSearchResult("next")}
+            onPrev={() => navigateSearchResult("prev")}
+            onClose={() => {
+              setShowSearch(false);
+              const container = containerRef.current;
+              if (container) {
+                const iframe = container.querySelector("iframe");
+                const body = iframe?.contentDocument?.body || container;
+                const marks = body.querySelectorAll("mark[data-search]");
+                for (const mark of marks) {
+                  const parent = mark.parentNode;
+                  if (parent) {
+                    parent.replaceChild(
+                      document.createTextNode(mark.textContent || ""),
+                      mark,
+                    );
+                    parent.normalize();
+                  }
                 }
               }
-            }
-            setSearchResults(0);
-            setSearchIndex(0);
-          }}
-          resultCount={searchResults}
-          currentIndex={searchIndex}
-        />
-      )}
-
-      {/* Main content area with optional TOC sidebar */}
-      <div className="relative flex flex-1 overflow-hidden">
-        {/* TOC sidebar - slide in from left */}
-        {showToc && (
-          <>
-            <div className="fixed inset-0 z-30 bg-black/20" onClick={() => setShowToc(false)} />
-            <div className="relative z-40 animate-in slide-in-from-left duration-200">
-              <TOCPanel
-                tocItems={tocItems}
-                onGoToChapter={(index) => {
-                  handleGoToChapter(index);
-                  setShowToc(false);
-                }}
-                onClose={() => setShowToc(false)}
-                tabId={tabId}
-              />
-            </div>
-          </>
+              setSearchResults(0);
+              setSearchIndex(0);
+            }}
+            resultCount={searchResults}
+            currentIndex={searchIndex}
+          />
         )}
 
-        {/* Reading area */}
-        <div className="relative flex-1 overflow-hidden">
-          <div ref={containerRef} className="h-full w-full" />
-
-          {/* Loading overlay */}
-          {isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-background">
-              <div className="flex flex-col items-center gap-3">
-                <div className="h-10 w-10 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
-                <p className="text-sm text-muted-foreground">{t("reader.loadingBook")}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Error state */}
-          {error && !isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-background">
-              <div className="flex max-w-md flex-col items-center gap-3 px-8 text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
-                  <span className="text-lg text-destructive">!</span>
-                </div>
-                <p className="text-sm font-medium text-destructive">{t("reader.loadFailed")}</p>
-                <p className="text-xs text-muted-foreground">{error}</p>
-                <button
-                  type="button"
-                  className="mt-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
-                  onClick={() => {
-                    const renderer = rendererRef.current;
-                    if (renderer && book?.filePath) {
-                      setError(null);
-                      loadBookFile(renderer, book.filePath);
-                    }
+        {/* Content area with optional TOC */}
+        <div className="relative flex flex-1 overflow-hidden">
+          {/* TOC sidebar */}
+          {showToc && (
+            <>
+              <div className="fixed inset-0 z-30 bg-black/20" onClick={() => setShowToc(false)} />
+              <div className="relative z-40 animate-in slide-in-from-left duration-200">
+                <TOCPanel
+                  tocItems={tocItems}
+                  onGoToChapter={(index) => {
+                    handleGoToChapter(index);
+                    setShowToc(false);
                   }}
-                >
-                  {t("common.retry")}
-                </button>
+                  onClose={() => setShowToc(false)}
+                  tabId={tabId}
+                />
               </div>
-            </div>
+            </>
           )}
 
-          {/* Selection popover */}
-          {selection && (
-            <SelectionPopover
-              position={selectionPos}
-              selectedText={selection.text}
-              onHighlight={handleHighlight}
-              onNote={handleNote}
-              onCopy={handleCopy}
-              onTranslate={handleTranslate}
-              onAskAI={handleAskAI}
-              onClose={handleCloseSelection}
-            />
-          )}
+          {/* Reading area */}
+          <div className="relative flex-1 overflow-hidden">
+            <div ref={containerRef} className="h-full w-full" />
 
-          {/* Translation popover */}
-          {showTranslation && translationText && (
-            <TranslationPopover
-              text={translationText}
-              position={translationPos}
-              onClose={() => {
-                setShowTranslation(false);
-                setTranslationText("");
-              }}
-            />
-          )}
+            {/* Loading overlay */}
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-background">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+                  <p className="text-sm text-muted-foreground">{t("reader.loadingBook")}</p>
+                </div>
+              </div>
+            )}
 
-          {/* Ask AI dialog */}
-          {showAskAI && askAIText && (
-            <div className="absolute left-1/2 top-1/4 z-50 -translate-x-1/2">
-              <AskAIDialog
-                selectedText={askAIText}
-                onSubmit={() => {
-                  setShowAskAI(false);
-                  setAskAIText("");
-                }}
+            {/* Error state */}
+            {error && !isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-background">
+                <div className="flex max-w-md flex-col items-center gap-3 px-8 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
+                    <span className="text-lg text-destructive">!</span>
+                  </div>
+                  <p className="text-sm font-medium text-destructive">{t("reader.loadFailed")}</p>
+                  <p className="text-xs text-muted-foreground">{error}</p>
+                  <button
+                    type="button"
+                    className="mt-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
+                    onClick={() => {
+                      const renderer = rendererRef.current;
+                      if (renderer && book?.filePath) {
+                        setError(null);
+                        loadBookFile(renderer, book.filePath);
+                      }
+                    }}
+                  >
+                    {t("common.retry")}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Selection popover */}
+            {selection && (
+              <SelectionPopover
+                position={selectionPos}
+                selectedText={selection.text}
+                onHighlight={handleHighlight}
+                onNote={handleNote}
+                onCopy={handleCopy}
+                onTranslate={handleTranslate}
+                onAskAI={handleAskAI}
+                onClose={handleCloseSelection}
+              />
+            )}
+
+            {/* Translation popover */}
+            {showTranslation && translationText && (
+              <TranslationPopover
+                text={translationText}
+                position={translationPos}
                 onClose={() => {
-                  setShowAskAI(false);
-                  setAskAIText("");
+                  setShowTranslation(false);
+                  setTranslationText("");
                 }}
               />
-            </div>
-          )}
+            )}
+
+            {/* Ask AI dialog */}
+            {showAskAI && askAIText && (
+              <div className="absolute left-1/2 top-1/4 z-50 -translate-x-1/2">
+                <AskAIDialog
+                  selectedText={askAIText}
+                  onSubmit={() => {
+                    setShowAskAI(false);
+                    setAskAIText("");
+                  }}
+                  onClose={() => {
+                    setShowAskAI(false);
+                    setAskAIText("");
+                  }}
+                />
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Footer bar — auto-hide like SageReader */}
+        <FooterBar
+          tabId={tabId}
+          totalPages={totalPages}
+          currentPage={currentPage}
+          isVisible={controlsVisible}
+          onPrev={handleNavPrev}
+          onNext={handleNavNext}
+          onMouseEnter={onControlsEnter}
+          onMouseLeave={onControlsLeave}
+        />
       </div>
 
-      {/* Footer bar */}
-      <FooterBar
-        tabId={tabId}
-        totalPages={totalPages}
-        currentPage={currentPage}
-        onPrev={handleNavPrev}
-        onNext={handleNavNext}
-      />
+      {/* AI Chat sidebar — right side, separate panel */}
+      {showChat && (
+        <div className="ml-1 flex w-80 shrink-0 flex-col overflow-hidden rounded-lg border border-border/60 bg-background shadow-sm">
+          {/* Chat header */}
+          <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/40 px-3">
+            <span className="text-xs font-medium text-foreground">{t("chat.aiAssistant")}</span>
+            <button
+              type="button"
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              onClick={() => setShowChat(false)}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          {/* Chat content */}
+          <div className="flex-1 overflow-hidden">
+            <ChatPanel />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

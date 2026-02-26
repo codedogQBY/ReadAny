@@ -55,6 +55,10 @@ export class EPUBRenderer implements DocumentRenderer {
   private lineHeight = 1.6;
   private theme: "light" | "dark" | "sepia" = "light";
 
+  // Pagination state — tracks column offset within a chapter
+  private totalColumns = 1;
+  private columnPageIndex = 0; // current page within chapter
+
   async mount(container: HTMLElement): Promise<void> {
     this.container = container;
 
@@ -69,20 +73,61 @@ export class EPUBRenderer implements DocumentRenderer {
 
     // Listen for selection events from iframe
     this.iframe.addEventListener("load", () => {
-      const iframeDoc = this.iframe?.contentDocument;
-      if (!iframeDoc) return;
+      this.setupIframeEvents();
+    });
+  }
 
-      iframeDoc.addEventListener("mouseup", () => {
-        this.handleSelection();
-      });
+  private setupIframeEvents(): void {
+    const iframeDoc = this.iframe?.contentDocument;
+    if (!iframeDoc) return;
 
-      iframeDoc.addEventListener("keyup", (e: KeyboardEvent) => {
-        if (e.key === "ArrowRight" || e.key === "PageDown") {
+    iframeDoc.addEventListener("mouseup", () => {
+      this.handleSelection();
+    });
+
+    iframeDoc.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight" || e.key === "PageDown") {
+        e.preventDefault();
+        this.next();
+      } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+        e.preventDefault();
+        this.prev();
+      }
+    });
+
+    // Wheel event for page turning in paginated mode
+    iframeDoc.addEventListener("wheel", (e: WheelEvent) => {
+      if (this.viewMode === "paginated") {
+        e.preventDefault();
+        if (e.deltaY > 0 || e.deltaX > 0) {
           this.next();
-        } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+        } else if (e.deltaY < 0 || e.deltaX < 0) {
           this.prev();
         }
-      });
+      }
+    }, { passive: false });
+
+    // Click to turn pages — left 37.5% prev, right 37.5% next, center no-op
+    iframeDoc.addEventListener("click", (e: MouseEvent) => {
+      if (this.viewMode !== "paginated") return;
+      // Ignore clicks on links
+      const target = e.target as HTMLElement;
+      if (target.closest("a")) return;
+      // Ignore if user is selecting text
+      const sel = iframeDoc.getSelection();
+      if (sel && !sel.isCollapsed) return;
+
+      const rect = this.iframe?.getBoundingClientRect();
+      if (!rect) return;
+      const x = e.clientX;
+      const width = rect.width;
+      const ratio = x / width;
+
+      if (ratio < 0.375) {
+        this.prev();
+      } else if (ratio > 0.625) {
+        this.next();
+      }
     });
   }
 
@@ -289,10 +334,11 @@ export class EPUBRenderer implements DocumentRenderer {
     return flat;
   }
 
-  private async renderSpineItem(index: number): Promise<void> {
+  private async renderSpineItem(index: number, goToEnd = false): Promise<void> {
     if (!this.iframe || index < 0 || index >= this.spine.length) return;
 
     this.currentSpineIndex = index;
+    this.columnPageIndex = 0;
     const item = this.spine[index];
 
     // Read the HTML content
@@ -308,28 +354,31 @@ export class EPUBRenderer implements DocumentRenderer {
     iframeDoc.write(styledHtml);
     iframeDoc.close();
 
+    // Re-attach events since the iframe document was replaced
+    this.setupIframeEvents();
+
     // Resolve relative resource URLs (images, CSS)
     await this.resolveResources(iframeDoc, item.href);
 
     // Apply annotations
     this.renderAnnotationsInIframe(iframeDoc);
 
-    // Update progress
-    this.progress = (index + 1) / this.spine.length;
+    // Wait for content to layout, then calculate columns
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    this.recalcColumns();
+
+    // If navigating backwards, go to last page of this chapter
+    if (goToEnd && this.totalColumns > 1) {
+      this.columnPageIndex = this.totalColumns - 1;
+      iframeDoc.body.scrollLeft = this.columnPageIndex * iframeDoc.body.clientWidth;
+    }
 
     // Find chapter title from TOC
     const chapterTitle = this.getChapterTitle(index);
 
     // Emit events
     this.emit("load", { chapterIndex: index, chapterTitle });
-    this.emit(
-      "location-change",
-      {
-        type: "cfi" as const,
-        chapterIndex: index,
-      },
-      this.progress,
-    );
+    this.emitProgressUpdate();
   }
 
   private wrapContentWithStyles(html: string): string {
@@ -404,11 +453,17 @@ export class EPUBRenderer implements DocumentRenderer {
       ${
         this.viewMode === "paginated"
           ? `
-        body {
-          column-width: 100vw;
-          column-gap: 4em;
+        html {
           height: 100vh;
           overflow: hidden;
+        }
+        body {
+          height: 100vh;
+          column-width: calc(100vw - 6em);
+          column-gap: 6em;
+          overflow: hidden;
+          padding: 2em 3em;
+          max-width: none;
         }
       `
           : ""
@@ -711,15 +766,96 @@ export class EPUBRenderer implements DocumentRenderer {
   }
 
   async next(): Promise<void> {
-    if (this.currentSpineIndex < this.spine.length - 1) {
-      await this.renderSpineItem(this.currentSpineIndex + 1);
+    if (this.viewMode === "paginated") {
+      // Try to go to next column page within current chapter
+      if (this.scrollToColumn(this.columnPageIndex + 1)) {
+        return;
+      }
+      // Reached end of chapter — go to next spine item
+      if (this.currentSpineIndex < this.spine.length - 1) {
+        await this.renderSpineItem(this.currentSpineIndex + 1);
+      }
+    } else {
+      // Scroll mode — just go to next chapter
+      if (this.currentSpineIndex < this.spine.length - 1) {
+        await this.renderSpineItem(this.currentSpineIndex + 1);
+      }
     }
   }
 
   async prev(): Promise<void> {
-    if (this.currentSpineIndex > 0) {
-      await this.renderSpineItem(this.currentSpineIndex - 1);
+    if (this.viewMode === "paginated") {
+      // Try to go to previous column page within current chapter
+      if (this.scrollToColumn(this.columnPageIndex - 1)) {
+        return;
+      }
+      // Reached start of chapter — go to previous spine item (last page)
+      if (this.currentSpineIndex > 0) {
+        await this.renderSpineItem(this.currentSpineIndex - 1, true);
+      }
+    } else {
+      if (this.currentSpineIndex > 0) {
+        await this.renderSpineItem(this.currentSpineIndex - 1);
+      }
     }
+  }
+
+  /**
+   * Scroll to a specific column page. Returns true if successful, false if out of bounds.
+   */
+  private scrollToColumn(pageIndex: number): boolean {
+    const iframeDoc = this.iframe?.contentDocument;
+    if (!iframeDoc || this.viewMode !== "paginated") return false;
+
+    this.recalcColumns();
+
+    if (pageIndex < 0 || pageIndex >= this.totalColumns) {
+      return false;
+    }
+
+    this.columnPageIndex = pageIndex;
+    const body = iframeDoc.body;
+    const viewWidth = body.clientWidth;
+
+    if (this.totalColumns <= 1) {
+      body.scrollLeft = 0;
+    } else {
+      // Each page is viewWidth wide (column-width: 100vw + column-gap)
+      body.scrollLeft = pageIndex * viewWidth;
+    }
+
+    this.emitProgressUpdate();
+    return true;
+  }
+
+  /**
+   * Recalculate the total number of column pages in the current chapter.
+   */
+  private recalcColumns(): void {
+    const iframeDoc = this.iframe?.contentDocument;
+    if (!iframeDoc) return;
+    const body = iframeDoc.body;
+    const scrollWidth = body.scrollWidth;
+    const viewWidth = body.clientWidth;
+    this.totalColumns = viewWidth > 0 ? Math.max(1, Math.ceil(scrollWidth / viewWidth)) : 1;
+  }
+
+  private emitProgressUpdate(): void {
+    // Progress = (chapters before + fraction of current chapter)
+    const chapterFraction = this.totalColumns > 1
+      ? (this.columnPageIndex + 1) / this.totalColumns
+      : 1;
+    this.progress = (this.currentSpineIndex + chapterFraction) / this.spine.length;
+
+    this.emit(
+      "location-change",
+      {
+        type: "cfi" as const,
+        chapterIndex: this.currentSpineIndex,
+        cfi: `spine-${this.currentSpineIndex}`,
+      },
+      this.progress,
+    );
   }
 
   getTOC(): TOCItem[] {
@@ -738,7 +874,14 @@ export class EPUBRenderer implements DocumentRenderer {
   }
 
   getTotalPages(): number {
-    return this.spine.length;
+    // In paginated mode, return columns in current chapter
+    // In scroll mode, return spine count
+    return this.viewMode === "paginated" ? this.totalColumns : this.spine.length;
+  }
+
+  /** Get current page index (0-based) within the current chapter */
+  getCurrentPageIndex(): number {
+    return this.columnPageIndex;
   }
 
   getSelection(): Selection | null {

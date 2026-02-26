@@ -4,7 +4,6 @@
 import { useAppStore } from "@/stores/app-store";
 import type { Book } from "@/types";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router";
 
 interface BookListProps {
   books: Book[];
@@ -12,12 +11,10 @@ interface BookListProps {
 
 export function BookList({ books }: BookListProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const addTab = useAppStore((s) => s.addTab);
 
   const handleOpen = (book: Book) => {
     addTab({ id: `reader-${book.id}`, type: "reader", title: book.meta.title, bookId: book.id });
-    navigate(`/reader/${book.id}`);
   };
 
   return (

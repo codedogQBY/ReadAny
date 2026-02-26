@@ -16,6 +16,7 @@ export default defineConfig(async () => ({
   },
   optimizeDeps: {
     include: ["pdfjs-dist"],
+    exclude: ["pdfjs-dist/build/pdf.worker.min.mjs"],
   },
   clearScreen: false,
   server: {

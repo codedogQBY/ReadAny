@@ -2,9 +2,11 @@ import type { Book, LibraryFilter, SortField, SortOrder } from "@/types";
 import * as db from "@/lib/db/database";
 /**
  * Library store — book collection CRUD, import, filtering
- * Connected to SQLite for persistence
+ * Connected to SQLite for persistence.
+ * Uses FS-level JSON cache for fast startup (avoids re-querying SQLite every launch).
  */
 import { create } from "zustand";
+import { debouncedSave, loadFromFS } from "./persist";
 
 interface EpubMeta {
   title: string;
@@ -90,10 +92,23 @@ async function extractEpubMetadata(blob: Blob): Promise<EpubMeta> {
 async function generatePdfCover(fileBytes: Uint8Array): Promise<Blob | null> {
   try {
     const pdfjsLib = await import("pdfjs-dist");
-    const workerModule = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
-    pdfjsLib.GlobalWorkerOptions.workerSrc = workerModule.default;
 
-    const pdfDoc = await pdfjsLib.getDocument({ data: fileBytes.slice() }).promise;
+    // Set worker if not already configured
+    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+      try {
+        const workerUrl = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url);
+        pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl.href;
+      } catch {
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+          `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+      }
+    }
+
+    const pdfDoc = await pdfjsLib.getDocument({
+      data: new Uint8Array(fileBytes),
+      useWorkerFetch: false,
+      isEvalSupported: false,
+    }).promise;
     const page = await pdfDoc.getPage(1);
 
     // Render at a reasonable thumbnail size (width ~400px)
@@ -102,20 +117,19 @@ async function generatePdfCover(fileBytes: Uint8Array): Promise<Blob | null> {
     const scale = targetWidth / viewport.width;
     const scaledViewport = page.getViewport({ scale });
 
-    const canvas = new OffscreenCanvas(
-      Math.floor(scaledViewport.width),
-      Math.floor(scaledViewport.height),
-    );
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
+    // Create an HTMLCanvasElement for pdfjs v5 compatibility
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.floor(scaledViewport.width);
+    canvas.height = Math.floor(scaledViewport.height);
 
     await page.render({
-      canvas: null,
-      canvasContext: ctx as unknown as CanvasRenderingContext2D,
+      canvas: canvas,
       viewport: scaledViewport,
     }).promise;
 
-    const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 });
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.85);
+    });
     pdfDoc.destroy();
     return blob;
   } catch (err) {
@@ -252,10 +266,23 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   isLoaded: false,
 
   loadBooks: async () => {
+    // 1) Fast path: restore from FS cache so UI shows books instantly
+    try {
+      const cached = await loadFromFS<Book[]>("library-books");
+      if (cached && cached.length > 0) {
+        set({ books: cached, isLoaded: true });
+      }
+    } catch {
+      // cache miss is fine
+    }
+
+    // 2) Full path: init DB and load from SQLite (source of truth)
     try {
       await db.initDatabase();
       const books = await db.getBooks();
       set({ books, isLoaded: true });
+      // Update the cache for next launch
+      debouncedSave("library-books", books);
     } catch (err) {
       console.error("Failed to load books from database:", err);
       set({ isLoaded: true });
@@ -270,6 +297,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     db.insertBook(book).catch((err) =>
       console.error("Failed to insert book into database:", err),
     );
+    // Update FS cache
+    debouncedSave("library-books", get().books);
   },
 
   removeBook: (bookId) => {
@@ -277,6 +306,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     db.deleteBook(bookId).catch((err) =>
       console.error("Failed to delete book from database:", err),
     );
+    // Update FS cache
+    debouncedSave("library-books", get().books);
   },
 
   updateBook: (bookId, updates) => {
@@ -286,6 +317,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     db.updateBook(bookId, updates).catch((err) =>
       console.error("Failed to update book in database:", err),
     );
+    // Update FS cache
+    debouncedSave("library-books", get().books);
   },
 
   setFilter: (filter) => set((state) => ({ filter: { ...state.filter, ...filter } })),

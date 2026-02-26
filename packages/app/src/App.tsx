@@ -1,26 +1,9 @@
-import { AppLayout } from "@/components/layout/AppLayout";
-import Chat from "@/pages/Chat";
-import Home from "@/pages/Home";
-import Notes from "@/pages/Notes";
-import Reader from "@/pages/Reader";
-import Stats from "@/pages/Stats";
 /**
- * App — React Router configuration
+ * App — Tab-driven layout. No react-router page switching.
+ * All opened tabs stay mounted; visibility controlled by CSS display.
  */
-import { BrowserRouter, Route, Routes } from "react-router";
+import { AppLayout } from "@/components/layout/AppLayout";
 
 export default function App() {
-  return (
-    <BrowserRouter>
-      <AppLayout>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/reader/:bookId" element={<Reader />} />
-          <Route path="/chat" element={<Chat />} />
-          <Route path="/notes" element={<Notes />} />
-          <Route path="/stats" element={<Stats />} />
-        </Routes>
-      </AppLayout>
-    </BrowserRouter>
-  );
+  return <AppLayout />;
 }

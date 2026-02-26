@@ -1,13 +1,21 @@
 import { Button } from "@/components/ui/button";
 import type { TOCItem } from "@/lib/reader/document-renderer";
+import { useAppStore } from "@/stores/app-store";
 import { useReaderStore } from "@/stores/reader-store";
-import { ArrowLeft, ChevronLeft, ChevronRight, List, Search, Settings } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  List,
+  MessageSquare,
+  Search,
+  Settings,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router";
 
 interface ReaderToolbarProps {
   tabId: string;
+  isVisible: boolean;
   onPrev?: () => void;
   onNext?: () => void;
   tocItems?: TOCItem[];
@@ -15,10 +23,15 @@ interface ReaderToolbarProps {
   onToggleSearch?: () => void;
   onToggleToc?: () => void;
   onToggleSettings?: () => void;
+  onToggleChat?: () => void;
+  isChatOpen?: boolean;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }
 
 export function ReaderToolbar({
   tabId,
+  isVisible,
   onPrev,
   onNext,
   tocItems: _tocItems = [],
@@ -26,115 +39,100 @@ export function ReaderToolbar({
   onToggleSearch,
   onToggleToc,
   onToggleSettings,
+  onToggleChat,
+  isChatOpen,
+  onMouseEnter,
+  onMouseLeave,
 }: ReaderToolbarProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const setActiveTab = useAppStore((s) => s.setActiveTab);
   const tab = useReaderStore((s) => s.tabs[tabId]);
-  const [visible, setVisible] = useState(true);
-  const hideTimer = useRef<ReturnType<typeof setTimeout>>(null);
-
-  // Auto-hide after 3s of no mouse movement in the top area
-  const resetHideTimer = useCallback(() => {
-    setVisible(true);
-    if (hideTimer.current) clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => setVisible(false), 3000);
-  }, []);
-
-  useEffect(() => {
-    resetHideTimer();
-    return () => {
-      if (hideTimer.current) clearTimeout(hideTimer.current);
-    };
-  }, [resetHideTimer]);
 
   if (!tab) return null;
 
   return (
     <div
-      className={`relative z-30 transition-all duration-300 ${visible ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0"}`}
-      onMouseEnter={() => {
-        setVisible(true);
-        if (hideTimer.current) clearTimeout(hideTimer.current);
-      }}
-      onMouseLeave={resetHideTimer}
+      className="relative z-30 flex h-10 shrink-0 items-center justify-between bg-background px-2 transition-all duration-300"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     >
-      {/* Hover trigger zone - always present */}
+      {/* Left: back + TOC + nav */}
       <div
-        className="absolute top-0 left-0 z-40 h-3 w-full"
-        onMouseEnter={() => setVisible(true)}
-      />
+        className="flex items-center gap-0.5 transition-opacity duration-300"
+        style={{ opacity: isVisible ? 1 : 0 }}
+      >
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={() => setActiveTab("home")}
+          title={t("common.back")}
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+        </Button>
 
-      <div className="flex h-11 items-center justify-between border-b border-border/50 bg-background/95 px-3 backdrop-blur-sm">
-        {/* Left: back + TOC + nav */}
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => navigate("/")}
-            title={t("common.back")}
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
+        <div className="mx-0.5 h-3.5 w-px bg-border/40" />
 
-          <div className="mx-1 h-4 w-px bg-border/50" />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={onToggleToc}
+          title={t("reader.toc")}
+        >
+          <List className="h-3.5 w-3.5" />
+        </Button>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={onToggleToc}
-            title={t("reader.toc")}
-          >
-            <List className="h-4 w-4" />
-          </Button>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onPrev}>
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </Button>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onNext}>
+          <ChevronRight className="h-3.5 w-3.5" />
+        </Button>
+      </div>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={onPrev}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={onNext}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
+      {/* Center: chapter title — fades with controls */}
+      <div className="absolute inset-x-0 flex justify-center pointer-events-none">
+        <span
+          className="max-w-[200px] truncate text-xs transition-colors duration-300"
+          style={{ color: isVisible ? "var(--color-foreground)" : "var(--color-muted-foreground)" }}
+        >
+          {tab.chapterTitle || t("reader.untitled")}
+        </span>
+      </div>
 
-        {/* Center: chapter title */}
-        <div className="flex-1 text-center">
-          <span className="truncate text-xs text-muted-foreground">
-            {tab.chapterTitle || t("reader.untitled")}
-          </span>
-        </div>
-
-        {/* Right: search + settings */}
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={onToggleSearch}
-            title={t("reader.search")}
-          >
-            <Search className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={onToggleSettings}
-            title={t("reader.settings")}
-          >
-            <Settings className="h-4 w-4" />
-          </Button>
-        </div>
+      {/* Right: search + AI chat + settings */}
+      <div
+        className="flex items-center gap-0.5 transition-opacity duration-300"
+        style={{ opacity: isVisible ? 1 : 0 }}
+      >
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={onToggleSearch}
+          title={t("reader.search")}
+        >
+          <Search className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`h-7 w-7 ${isChatOpen ? "bg-primary/10 text-primary" : ""}`}
+          onClick={onToggleChat}
+          title={t("reader.askAI")}
+        >
+          <MessageSquare className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={onToggleSettings}
+          title={t("reader.settings")}
+        >
+          <Settings className="h-3.5 w-3.5" />
+        </Button>
       </div>
     </div>
   );

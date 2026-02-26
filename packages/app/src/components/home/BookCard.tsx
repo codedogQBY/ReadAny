@@ -7,7 +7,6 @@ import type { Book } from "@/types";
 import { MoreVertical, Trash2 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router";
 
 interface BookCardProps {
   book: Book;
@@ -15,7 +14,6 @@ interface BookCardProps {
 
 export function BookCard({ book }: BookCardProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const addTab = useAppStore((s) => s.addTab);
   const removeBook = useLibraryStore((s) => s.removeBook);
   const [showMenu, setShowMenu] = useState(false);
@@ -23,7 +21,6 @@ export function BookCard({ book }: BookCardProps) {
 
   const handleOpen = () => {
     addTab({ id: `reader-${book.id}`, type: "reader", title: book.meta.title, bookId: book.id });
-    navigate(`/reader/${book.id}`);
   };
 
   const handleDelete = useCallback(

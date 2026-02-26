@@ -1,9 +1,10 @@
 /**
  * PDFRenderer — renders PDF files using pdf.js
- * Implements the DocumentRenderer interface
+ * Implements the DocumentRenderer interface.
+ * Uses official pdfjs TextLayer for accurate text selection.
  */
 import * as pdfjsLib from "pdfjs-dist";
-import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { TextLayer } from "pdfjs-dist";
 import type {
   AnnotationMark,
   DocumentRenderer,
@@ -13,8 +14,19 @@ import type {
   TOCItem,
 } from "./document-renderer";
 
-// Configure pdf.js worker using Vite's ?url import for reliable resolution
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
+// Configure pdf.js worker — use multiple strategies for reliability in Tauri
+function initWorker() {
+  try {
+    // Strategy 1: Use the bundled worker via new URL() — works with Vite
+    const workerUrl = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl.href;
+  } catch {
+    // Strategy 2: CDN fallback
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+  }
+}
+initWorker();
 
 type EventCallback = (...args: unknown[]) => void;
 
@@ -34,14 +46,14 @@ export class PDFRenderer implements DocumentRenderer {
   private renderedPages: Set<number> = new Set();
   private currentPage = 1;
   private totalPages = 0;
-  private scale = 1.5;
   private toc: TOCItem[] = [];
   private listeners: Map<string, Set<EventCallback>> = new Map();
   private resizeObserver: ResizeObserver | null = null;
   private scrollTimeout: ReturnType<typeof setTimeout> | null = null;
   private theme: "light" | "dark" | "sepia" = "light";
-  // Used by setViewMode but not directly read
   private destroyed = false;
+  private viewMode: "paginated" | "scroll" = "paginated";
+  private wheelCooldown = false;
 
   async mount(container: HTMLElement): Promise<void> {
     this.container = container;
@@ -58,8 +70,42 @@ export class PDFRenderer implements DocumentRenderer {
     container.appendChild(scrollEl);
     this.scrollContainer = scrollEl;
 
-    // Track scroll for page detection
+    // Track scroll for page detection (scroll mode)
     scrollEl.addEventListener("scroll", this.handleScroll);
+
+    // Wheel event — in paginated mode, intercept and turn pages
+    scrollEl.addEventListener("wheel", (e: WheelEvent) => {
+      if (this.viewMode === "paginated") {
+        e.preventDefault();
+        if (this.wheelCooldown) return;
+        this.wheelCooldown = true;
+        setTimeout(() => { this.wheelCooldown = false; }, 250);
+
+        if (e.deltaY > 0) {
+          this.next();
+        } else if (e.deltaY < 0) {
+          this.prev();
+        }
+      }
+    }, { passive: false });
+
+    // Click to turn pages — left 37.5% prev, right 37.5% next
+    scrollEl.addEventListener("click", (e: MouseEvent) => {
+      if (this.viewMode !== "paginated") return;
+      // Ignore clicks on text layer (allow text selection)
+      const target = e.target as HTMLElement;
+      if (target.closest(".textLayer")) return;
+
+      const rect = scrollEl.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const ratio = x / rect.width;
+
+      if (ratio < 0.375) {
+        this.prev();
+      } else if (ratio > 0.625) {
+        this.next();
+      }
+    });
 
     // Observe resize to re-render visible pages
     this.resizeObserver = new ResizeObserver(() => {
@@ -70,14 +116,25 @@ export class PDFRenderer implements DocumentRenderer {
 
   async open(file: File | Blob, initialLocation?: Location): Promise<void> {
     try {
+      console.log("[PDFRenderer] Opening PDF, size:", file.size, "bytes");
+      console.log("[PDFRenderer] Worker src:", pdfjsLib.GlobalWorkerOptions.workerSrc);
+
       const arrayBuffer = await file.arrayBuffer();
-      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+      console.log("[PDFRenderer] ArrayBuffer ready, length:", arrayBuffer.byteLength);
+
+      const loadingTask = pdfjsLib.getDocument({
+        data: new Uint8Array(arrayBuffer),
+        useWorkerFetch: false,
+        isEvalSupported: false,
+        useSystemFonts: true,
+      });
 
       // Add timeout to prevent hanging forever if worker fails
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("PDF loading timed out after 30s")), 30000);
+        setTimeout(() => reject(new Error("PDF loading timed out after 30s. Worker may have failed to load.")), 30000);
       });
       this.pdfDoc = await Promise.race([loadingTask.promise, timeoutPromise]);
+      console.log("[PDFRenderer] PDF loaded, pages:", this.pdfDoc.numPages);
       this.totalPages = this.pdfDoc.numPages;
 
       // Extract outline/TOC
@@ -85,6 +142,9 @@ export class PDFRenderer implements DocumentRenderer {
 
       // Create page placeholders
       this.createPageElements();
+
+      // Apply initial view mode
+      this.applyViewMode();
 
       // Render initial visible pages
       await this.renderVisiblePages();
@@ -134,17 +194,9 @@ export class PDFRenderer implements DocumentRenderer {
   }
 
   async goToIndex(index: number): Promise<void> {
-    // Index refers to TOC item — find the page
-    const tocItem = this.flattenTOC()[index];
-    if (tocItem?.href) {
-      const pageNum = Number.parseInt(tocItem.href, 10);
-      if (!Number.isNaN(pageNum)) {
-        await this.goToPage(pageNum);
-      }
-    } else {
-      // Fallback: treat index as page number
-      await this.goToPage(index + 1);
-    }
+    // Index is the page index (0-based) from TOCItem.index
+    // which equals (pageNum - 1), so we add 1 to get page number
+    await this.goToPage(index + 1);
   }
 
   async next(): Promise<void> {
@@ -226,8 +278,10 @@ export class PDFRenderer implements DocumentRenderer {
     this.applyTheme();
   }
 
-  setViewMode(_mode: "paginated" | "scroll"): void {
-    // Both modes use scroll container in PDF
+  setViewMode(mode: "paginated" | "scroll"): void {
+    if (this.viewMode === mode) return;
+    this.viewMode = mode;
+    this.applyViewMode();
   }
 
   // --- Events ---
@@ -259,6 +313,7 @@ export class PDFRenderer implements DocumentRenderer {
   }
 
   private handleScroll = (): void => {
+    if (this.viewMode === "paginated") return; // Don't track scroll in paginated mode
     if (this.scrollTimeout) clearTimeout(this.scrollTimeout);
     this.scrollTimeout = setTimeout(() => {
       if (this.destroyed) return;
@@ -309,13 +364,62 @@ export class PDFRenderer implements DocumentRenderer {
     // Ensure the page is rendered
     await this.renderPage(clamped);
 
-    // Scroll to the page
-    const canvas = this.pageCanvases.get(clamped);
-    if (canvas?.parentElement && this.scrollContainer) {
-      canvas.parentElement.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (this.viewMode === "paginated") {
+      // In paginated mode: hide all pages, show only current
+      for (const [num, canvas] of this.pageCanvases) {
+        const wrapper = canvas.parentElement;
+        if (wrapper) {
+          wrapper.style.display = num === clamped ? "block" : "none";
+        }
+      }
+      // Scroll to top
+      if (this.scrollContainer) {
+        this.scrollContainer.scrollTop = 0;
+      }
+      // Also pre-render adjacent pages
+      if (clamped > 1) this.renderPage(clamped - 1);
+      if (clamped < this.totalPages) this.renderPage(clamped + 1);
+    } else {
+      // In scroll mode: scroll to the page
+      const canvas = this.pageCanvases.get(clamped);
+      if (canvas?.parentElement && this.scrollContainer) {
+        canvas.parentElement.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     }
 
     this.emitLocationChange();
+    this.emit("load", {
+      chapterIndex: this.currentPage - 1,
+      chapterTitle: this.getPageTitle(this.currentPage),
+    });
+  }
+
+  private applyViewMode(): void {
+    if (!this.scrollContainer) return;
+
+    if (this.viewMode === "paginated") {
+      // Paginated: no scrolling, show one page at a time, center it
+      this.scrollContainer.style.overflowY = "hidden";
+      this.scrollContainer.style.justifyContent = "center";
+      // Show only current page
+      for (const [num, canvas] of this.pageCanvases) {
+        const wrapper = canvas.parentElement;
+        if (wrapper) {
+          wrapper.style.display = num === this.currentPage ? "block" : "none";
+        }
+      }
+    } else {
+      // Scroll: show all pages, enable scrolling
+      this.scrollContainer.style.overflowY = "auto";
+      this.scrollContainer.style.justifyContent = "";
+      for (const [, canvas] of this.pageCanvases) {
+        const wrapper = canvas.parentElement;
+        if (wrapper) {
+          wrapper.style.display = "block";
+        }
+      }
+      this.renderVisiblePages();
+    }
   }
 
   private createPageElements(): void {
@@ -329,7 +433,7 @@ export class PDFRenderer implements DocumentRenderer {
       const wrapper = document.createElement("div");
       wrapper.className = "pdf-page-wrapper";
       wrapper.style.cssText =
-        "position:relative;margin:0 auto;box-shadow:0 2px 8px rgba(0,0,0,0.1);background:#fff;border-radius:4px;";
+        "position:relative;margin:0 auto;box-shadow:0 2px 8px rgba(0,0,0,0.1);background:#fff;border-radius:4px;max-width:calc(100% - 32px);";
       wrapper.dataset.pageNum = String(i);
 
       const canvas = document.createElement("canvas");
@@ -356,17 +460,16 @@ export class PDFRenderer implements DocumentRenderer {
 
     // Use first page to determine default size
     const page = await this.pdfDoc.getPage(1);
-    const viewport = page.getViewport({ scale: this.scale });
-
     const containerWidth = this.scrollContainer.clientWidth - 32; // padding
-    const adjustedScale = containerWidth / viewport.width * this.scale;
-    const adjustedViewport = page.getViewport({ scale: adjustedScale });
+    const baseViewport = page.getViewport({ scale: 1 });
+    const fitScale = containerWidth / baseViewport.width;
+    const viewport = page.getViewport({ scale: fitScale });
 
     for (const [, canvas] of this.pageCanvases) {
       const wrapper = canvas.parentElement;
       if (wrapper) {
-        wrapper.style.width = `${adjustedViewport.width}px`;
-        wrapper.style.minHeight = `${adjustedViewport.height}px`;
+        wrapper.style.width = `${viewport.width}px`;
+        wrapper.style.minHeight = `${viewport.height}px`;
       }
     }
   }
@@ -449,38 +552,31 @@ export class PDFRenderer implements DocumentRenderer {
     if (!wrapper) return;
 
     // Remove existing text layer
-    const existing = wrapper.querySelector(".pdf-text-layer");
+    const existing = wrapper.querySelector(".textLayer");
     if (existing) existing.remove();
 
+    // Create text layer container with official pdfjs CSS class
+    const textLayerDiv = document.createElement("div");
+    textLayerDiv.className = "textLayer";
+
+    // The official CSS uses position:absolute + inset:0, so we just need
+    // to set the --total-scale-factor CSS variable for proper font sizing
+    textLayerDiv.style.setProperty("--total-scale-factor", String(viewport.scale));
+
+    wrapper.appendChild(textLayerDiv);
+
+    // Use official TextLayer API from pdfjs-dist v5
     const textContent = await page.getTextContent();
-    const textLayer = document.createElement("div");
-    textLayer.className = "pdf-text-layer";
-    textLayer.style.cssText = `
-      position:absolute;top:0;left:0;
-      width:${viewport.width}px;height:${viewport.height}px;
-      overflow:hidden;opacity:0.25;line-height:1;
-    `;
+    const textLayer = new TextLayer({
+      textContentSource: textContent,
+      container: textLayerDiv,
+      viewport,
+    });
 
-    for (const item of textContent.items) {
-      if (!("str" in item) || !item.str) continue;
-      const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
-      const span = document.createElement("span");
-      span.textContent = item.str;
-      span.style.cssText = `
-        position:absolute;white-space:pre;
-        left:${tx[4]}px;top:${tx[5]}px;
-        font-size:${Math.hypot(tx[0], tx[1])}px;
-        transform:scaleX(${item.width / (item.str.length * Math.hypot(tx[0], tx[1]) * 0.5 + 0.001)});
-        transform-origin:left bottom;
-        color:transparent;
-      `;
-      textLayer.appendChild(span);
-    }
-
-    wrapper.appendChild(textLayer);
+    await textLayer.render();
 
     // Listen for selection changes on this layer
-    textLayer.addEventListener("mouseup", () => {
+    textLayerDiv.addEventListener("mouseup", () => {
       setTimeout(() => {
         const sel = this.getSelection();
         this.emit("selection", sel);

@@ -1,9 +1,10 @@
 /**
- * TabBar — draggable tab bar (sageread style: compact h-7, Home icon pinned left, drag region)
+ * TabBar — draggable tab bar (sageread style: compact h-8, Home icon pinned left, drag region)
+ * No react-router navigation — tab switching is purely state-driven.
  */
 import { type Tab, useAppStore } from "@/stores/app-store";
+import { useReaderStore } from "@/stores/reader-store";
 import { BookOpen, Home, MessageSquare, StickyNote, X } from "lucide-react";
-import { useNavigate } from "react-router";
 
 const TAB_ICONS: Record<string, React.ElementType> = {
   home: Home,
@@ -14,20 +15,20 @@ const TAB_ICONS: Record<string, React.ElementType> = {
 
 export function TabBar() {
   const { tabs, activeTabId, setActiveTab, removeTab } = useAppStore();
-  const navigate = useNavigate();
+  const removeReaderTab = useReaderStore((s) => s.removeTab);
 
   const readerTabs = tabs.filter((t) => t.type !== "home");
 
-  const handleTabActivate = (tab: Tab) => {
-    setActiveTab(tab.id);
-    // Navigate to the correct route based on tab type
-    if (tab.type === "reader" && tab.bookId) {
-      navigate(`/reader/${tab.bookId}`);
-    } else if (tab.type === "chat") {
-      navigate("/chat");
-    } else if (tab.type === "notes") {
-      navigate("/notes");
+  const handleTabClose = (tabId: string) => {
+    removeTab(tabId);
+    removeReaderTab(tabId);
+
+    // After removing, check if all non-home tabs are gone
+    const remainingNonHome = tabs.filter((t) => t.type !== "home" && t.id !== tabId);
+    if (remainingNonHome.length === 0) {
+      setActiveTab("home");
     }
+    // If closed tab was active, app-store.removeTab already sets activeTabId to last tab
   };
 
   return (
@@ -45,10 +46,7 @@ export function TabBar() {
           type="button"
           className="flex items-center justify-center rounded-md p-1 text-neutral-500 transition-colors hover:bg-neutral-200/60 hover:text-neutral-800"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-          onClick={() => {
-            setActiveTab("home");
-            navigate("/");
-          }}
+          onClick={() => setActiveTab("home")}
         >
           <Home className="h-[18px] w-[18px]" />
         </button>
@@ -61,8 +59,8 @@ export function TabBar() {
             key={tab.id}
             tab={tab}
             isActive={tab.id === activeTabId}
-            onActivate={() => handleTabActivate(tab)}
-            onClose={() => removeTab(tab.id)}
+            onActivate={() => setActiveTab(tab.id)}
+            onClose={() => handleTabClose(tab.id)}
           />
         ))}
       </div>
