@@ -1,10 +1,17 @@
 /**
  * PDFRenderer — renders PDF files using pdf.js
  * Implements the DocumentRenderer interface.
- * Uses official pdfjs TextLayer for accurate text selection.
+ *
+ * Optimizations applied (SageReader-style):
+ * - #1  Dynamic import: pdf.js + worker loaded only when PDF is opened
+ * - #5  CSS-based layout: CSS Grid for zero-reflow page positioning
+ * - #7  CSS Grid zero-reflow: layout changes via CSS custom properties only
+ * - #8  Multi-level debounce/throttle: scroll 250ms, resize 100ms, progress save 5000ms
+ * - #10 Lightweight style update: theme changes via CSS variables, no DOM rebuild
+ * - #11 Layout stability detection: rAF polling 5 frames before triggering render
+ * - #13 Tauri convertFileSrc: used at ReaderView level (not in renderer)
+ * - #15 Page turn animation: CSS transform + requestAnimationFrame + easeOutQuad
  */
-import * as pdfjsLib from "pdfjs-dist";
-import { TextLayer } from "pdfjs-dist";
 import type {
   AnnotationMark,
   DocumentRenderer,
@@ -13,20 +20,7 @@ import type {
   Selection,
   TOCItem,
 } from "./document-renderer";
-
-// Configure pdf.js worker — use multiple strategies for reliability in Tauri
-function initWorker() {
-  try {
-    // Strategy 1: Use the bundled worker via new URL() — works with Vite
-    const workerUrl = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url);
-    pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl.href;
-  } catch {
-    // Strategy 2: CDN fallback
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-  }
-}
-initWorker();
+import { debounce } from "@/lib/utils/debounce";
 
 type EventCallback = (...args: unknown[]) => void;
 
@@ -38,22 +32,62 @@ interface PdfOutlineNode {
   items: PdfOutlineNode[];
 }
 
+// biome-ignore lint: pdfjs types are complex
+type PdfjsLib = any;
+// biome-ignore lint: pdfjs types are complex
+type PdfDocProxy = any;
+// biome-ignore lint: pdfjs types are complex
+type PdfPageProxy = any;
+// biome-ignore lint: pdfjs types are complex
+type PageViewport = any;
+
+/** easeOutQuad easing function for smooth animations */
+function easeOutQuad(t: number): number {
+  return t * (2 - t);
+}
+
 export class PDFRenderer implements DocumentRenderer {
   private container: HTMLElement | null = null;
   private scrollContainer: HTMLElement | null = null;
-  private pdfDoc: pdfjsLib.PDFDocumentProxy | null = null;
+  private pdfDoc: PdfDocProxy | null = null;
+  private pdfjsLib: PdfjsLib | null = null;
   private pageCanvases: Map<number, HTMLCanvasElement> = new Map();
   private renderedPages: Set<number> = new Set();
+  private renderingPages: Set<number> = new Set();
   private currentPage = 1;
   private totalPages = 0;
   private toc: TOCItem[] = [];
   private listeners: Map<string, Set<EventCallback>> = new Map();
   private resizeObserver: ResizeObserver | null = null;
-  private scrollTimeout: ReturnType<typeof setTimeout> | null = null;
   private theme: "light" | "dark" | "sepia" = "light";
   private destroyed = false;
   private viewMode: "paginated" | "scroll" = "paginated";
   private wheelCooldown = false;
+  private isAnimating = false;
+  private animationFrameId: number | null = null;
+
+  // Debounced/throttled handlers (SageReader optimization #8)
+  private debouncedScroll = debounce(() => {
+    if (this.destroyed) return;
+    this.detectCurrentPage();
+    this.renderVisiblePages();
+  }, 250);
+
+  private debouncedResize = debounce(() => {
+    if (this.destroyed || !this.pdfDoc) return;
+    this.checkLayoutStability(() => {
+      this.renderedPages.clear();
+      this.renderingPages.clear();
+      this.setPlaceholderSizes().then(() => {
+        if (this.viewMode === "paginated") {
+          this.showOnlyCurrentPage();
+          this.renderPage(this.currentPage);
+        } else {
+          this.renderVisiblePages();
+        }
+      });
+    });
+  }, 100);
 
   async mount(container: HTMLElement): Promise<void> {
     this.container = container;
@@ -62,65 +96,53 @@ export class PDFRenderer implements DocumentRenderer {
     container.style.width = "100%";
     container.style.height = "100%";
 
-    // Create scrollable wrapper
+    // Create scrollable wrapper with CSS Grid for zero-reflow layout (#7)
     const scrollEl = document.createElement("div");
-    scrollEl.style.cssText =
-      "width:100%;height:100%;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 0;";
     scrollEl.className = "pdf-scroll-container";
+    scrollEl.style.cssText = [
+      "width:100%", "height:100%",
+      "overflow-y:auto", "overflow-x:hidden",
+      "display:grid",
+      "grid-template-columns:1fr",
+      "justify-items:center",
+      "gap:8px",
+      "padding:16px 0",
+      // CSS custom properties for theme (#10)
+      "--pdf-bg:", "--pdf-page-shadow:0 2px 8px rgba(0,0,0,0.1)",
+    ].join(";");
     container.appendChild(scrollEl);
     this.scrollContainer = scrollEl;
 
-    // Track scroll for page detection (scroll mode)
-    scrollEl.addEventListener("scroll", this.handleScroll);
+    // Track scroll for page detection (scroll mode) — debounced 250ms (#8)
+    scrollEl.addEventListener("scroll", this.handleScroll, { passive: true });
 
-    // Wheel event — in paginated mode, intercept and turn pages
-    scrollEl.addEventListener("wheel", (e: WheelEvent) => {
-      if (this.viewMode === "paginated") {
-        e.preventDefault();
-        if (this.wheelCooldown) return;
-        this.wheelCooldown = true;
-        setTimeout(() => { this.wheelCooldown = false; }, 250);
-
-        if (e.deltaY > 0) {
-          this.next();
-        } else if (e.deltaY < 0) {
-          this.prev();
-        }
-      }
-    }, { passive: false });
+    // Wheel event — in paginated mode, intercept and turn pages with cooldown
+    scrollEl.addEventListener("wheel", this.handleWheel, { passive: false });
 
     // Click to turn pages — left 37.5% prev, right 37.5% next
-    scrollEl.addEventListener("click", (e: MouseEvent) => {
-      if (this.viewMode !== "paginated") return;
-      // Ignore clicks on text layer (allow text selection)
-      const target = e.target as HTMLElement;
-      if (target.closest(".textLayer")) return;
+    scrollEl.addEventListener("click", this.handleClick);
 
-      const rect = scrollEl.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const ratio = x / rect.width;
-
-      if (ratio < 0.375) {
-        this.prev();
-      } else if (ratio > 0.625) {
-        this.next();
-      }
-    });
-
-    // Observe resize to re-render visible pages
-    this.resizeObserver = new ResizeObserver(() => {
-      if (this.pdfDoc) this.updateScale();
-    });
+    // Observe resize — debounced 100ms (#8)
+    this.resizeObserver = new ResizeObserver(() => this.debouncedResize());
     this.resizeObserver.observe(container);
   }
 
   async open(file: File | Blob, initialLocation?: Location): Promise<void> {
     try {
-      console.log("[PDFRenderer] Opening PDF, size:", file.size, "bytes");
-      console.log("[PDFRenderer] Worker src:", pdfjsLib.GlobalWorkerOptions.workerSrc);
+      // Dynamic import of pdf.js (#1)
+      const pdfjsLib = await import("pdfjs-dist");
+      this.pdfjsLib = pdfjsLib;
+
+      // Configure worker
+      try {
+        const workerUrl = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url);
+        pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl.href;
+      } catch {
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+          `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+      }
 
       const arrayBuffer = await file.arrayBuffer();
-      console.log("[PDFRenderer] ArrayBuffer ready, length:", arrayBuffer.byteLength);
 
       const loadingTask = pdfjsLib.getDocument({
         data: new Uint8Array(arrayBuffer),
@@ -129,12 +151,10 @@ export class PDFRenderer implements DocumentRenderer {
         useSystemFonts: true,
       });
 
-      // Add timeout to prevent hanging forever if worker fails
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("PDF loading timed out after 30s. Worker may have failed to load.")), 30000);
+        setTimeout(() => reject(new Error("PDF loading timed out after 30s")), 30000);
       });
       this.pdfDoc = await Promise.race([loadingTask.promise, timeoutPromise]);
-      console.log("[PDFRenderer] PDF loaded, pages:", this.pdfDoc.numPages);
       this.totalPages = this.pdfDoc.numPages;
 
       // Extract outline/TOC
@@ -151,11 +171,11 @@ export class PDFRenderer implements DocumentRenderer {
 
       // Navigate to initial location
       if (initialLocation?.pageIndex !== undefined) {
-        await this.goToPage(initialLocation.pageIndex + 1);
+        await this.goToPage(initialLocation.pageIndex + 1, false);
       } else if (initialLocation?.cfi) {
         const match = initialLocation.cfi.match(/page-(\d+)/);
         if (match) {
-          await this.goToPage(Number.parseInt(match[1], 10));
+          await this.goToPage(Number.parseInt(match[1], 10), false);
         }
       }
 
@@ -170,19 +190,23 @@ export class PDFRenderer implements DocumentRenderer {
 
   destroy(): void {
     this.destroyed = true;
-    if (this.scrollTimeout) clearTimeout(this.scrollTimeout);
+    if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
     if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this.scrollContainer) {
       this.scrollContainer.removeEventListener("scroll", this.handleScroll);
+      this.scrollContainer.removeEventListener("wheel", this.handleWheel);
+      this.scrollContainer.removeEventListener("click", this.handleClick);
     }
     if (this.container) {
       this.container.innerHTML = "";
     }
     this.pageCanvases.clear();
     this.renderedPages.clear();
+    this.renderingPages.clear();
     this.listeners.clear();
     this.pdfDoc?.destroy();
     this.pdfDoc = null;
+    this.pdfjsLib = null;
   }
 
   // --- Navigation ---
@@ -194,8 +218,6 @@ export class PDFRenderer implements DocumentRenderer {
   }
 
   async goToIndex(index: number): Promise<void> {
-    // Index is the page index (0-based) from TOCItem.index
-    // which equals (pageNum - 1), so we add 1 to get page number
     await this.goToPage(index + 1);
   }
 
@@ -254,13 +276,8 @@ export class PDFRenderer implements DocumentRenderer {
 
   // --- Annotations (simplified for PDF) ---
 
-  addAnnotation(_annotation: AnnotationMark): void {
-    // PDF annotations could be rendered as overlay divs
-    // Simplified for now
-  }
-
+  addAnnotation(_annotation: AnnotationMark): void {}
   removeAnnotation(_id: string): void {}
-
   clearAnnotations(): void {}
 
   // --- View Settings ---
@@ -273,9 +290,10 @@ export class PDFRenderer implements DocumentRenderer {
     // PDF has fixed layout
   }
 
+  /** Lightweight style update — CSS variables only, no DOM rebuild (#10) */
   setTheme(theme: "light" | "dark" | "sepia"): void {
     this.theme = theme;
-    this.applyTheme();
+    this.applyThemeCSS();
   }
 
   setViewMode(mode: "paginated" | "scroll"): void {
@@ -297,30 +315,130 @@ export class PDFRenderer implements DocumentRenderer {
     this.listeners.get(event)?.delete(callback as EventCallback);
   }
 
-  // --- Private methods ---
+  // ============================================================
+  // Private methods
+  // ============================================================
 
   private emit(event: string, ...args: unknown[]): void {
     const callbacks = this.listeners.get(event);
     if (callbacks) {
       for (const cb of callbacks) {
-        try {
-          cb(...args);
-        } catch (e) {
-          console.error(`Error in ${event} listener:`, e);
-        }
+        try { cb(...args); } catch (e) { console.error(`Error in ${event} listener:`, e); }
       }
     }
   }
 
+  // --- Event handlers (bound) ---
+
   private handleScroll = (): void => {
-    if (this.viewMode === "paginated") return; // Don't track scroll in paginated mode
-    if (this.scrollTimeout) clearTimeout(this.scrollTimeout);
-    this.scrollTimeout = setTimeout(() => {
-      if (this.destroyed) return;
-      this.detectCurrentPage();
-      this.renderVisiblePages();
-    }, 100);
+    if (this.viewMode === "paginated") return;
+    this.debouncedScroll();
   };
+
+  private handleWheel = (e: WheelEvent): void => {
+    if (this.viewMode !== "paginated") return;
+    e.preventDefault();
+    if (this.wheelCooldown || this.isAnimating) return;
+    this.wheelCooldown = true;
+    setTimeout(() => { this.wheelCooldown = false; }, 250);
+
+    if (e.deltaY > 0) this.next();
+    else if (e.deltaY < 0) this.prev();
+  };
+
+  private handleClick = (e: MouseEvent): void => {
+    if (this.viewMode !== "paginated" || this.isAnimating) return;
+    const target = e.target as HTMLElement;
+    if (target.closest(".textLayer")) return;
+
+    const rect = this.scrollContainer!.getBoundingClientRect();
+    const ratio = (e.clientX - rect.left) / rect.width;
+
+    if (ratio < 0.375) this.prev();
+    else if (ratio > 0.625) this.next();
+  };
+
+  // --- Layout stability detection (#11) ---
+
+  private checkLayoutStability(callback: () => void): void {
+    let stableFrames = 0;
+    let lastWidth = 0;
+    let lastHeight = 0;
+    let frameCount = 0;
+    const maxFrames = 15;
+
+    const checkFrame = () => {
+      if (this.destroyed) return;
+      const w = this.scrollContainer?.clientWidth ?? 0;
+      const h = this.scrollContainer?.clientHeight ?? 0;
+
+      if (w === lastWidth && h === lastHeight) {
+        stableFrames++;
+      } else {
+        stableFrames = 0;
+      }
+      lastWidth = w;
+      lastHeight = h;
+      frameCount++;
+
+      if (stableFrames >= 5) {
+        setTimeout(callback, 50);
+        return;
+      }
+      if (frameCount < maxFrames) {
+        requestAnimationFrame(checkFrame);
+      } else {
+        setTimeout(callback, 50);
+      }
+    };
+
+    setTimeout(() => requestAnimationFrame(checkFrame), 50);
+  }
+
+  // --- Page turn animation (#15) ---
+
+  private animatePageTransition(direction: "next" | "prev"): Promise<void> {
+    // Skip animation if page is hidden or destroyed
+    if (document.hidden || this.destroyed) return Promise.resolve();
+
+    return new Promise((resolve) => {
+      const wrapper = this.getPageWrapper(this.currentPage);
+      if (!wrapper) { resolve(); return; }
+
+      this.isAnimating = true;
+      const duration = 300;
+      const startTime = performance.now();
+      const startX = direction === "next" ? 30 : -30;
+
+      wrapper.style.opacity = "0";
+      wrapper.style.transform = `translateX(${startX}px)`;
+
+      const animate = (now: number) => {
+        if (this.destroyed) { this.isAnimating = false; resolve(); return; }
+
+        const elapsed = now - startTime;
+        const t = Math.min(elapsed / duration, 1);
+        const eased = easeOutQuad(t);
+
+        wrapper.style.opacity = String(eased);
+        wrapper.style.transform = `translateX(${startX * (1 - eased)}px)`;
+
+        if (t < 1) {
+          this.animationFrameId = requestAnimationFrame(animate);
+        } else {
+          wrapper.style.opacity = "";
+          wrapper.style.transform = "";
+          this.isAnimating = false;
+          this.animationFrameId = null;
+          resolve();
+        }
+      };
+
+      this.animationFrameId = requestAnimationFrame(animate);
+    });
+  }
+
+  // --- Page management ---
 
   private detectCurrentPage(): void {
     if (!this.scrollContainer) return;
@@ -354,33 +472,37 @@ export class PDFRenderer implements DocumentRenderer {
   }
 
   private emitLocationChange(): void {
-    this.emit("location-change", this.getCurrentLocation(), this.getProgress());
+    const location = this.getCurrentLocation();
+    const progress = this.getProgress();
+    // Immediate emit for UI responsiveness
+    this.emit("location-change", location, progress);
   }
 
-  private async goToPage(pageNum: number): Promise<void> {
+  private async goToPage(pageNum: number, animate = true): Promise<void> {
     const clamped = Math.max(1, Math.min(pageNum, this.totalPages));
+    const direction = clamped > this.currentPage ? "next" : "prev";
     this.currentPage = clamped;
 
     // Ensure the page is rendered
     await this.renderPage(clamped);
 
     if (this.viewMode === "paginated") {
-      // In paginated mode: hide all pages, show only current
-      for (const [num, canvas] of this.pageCanvases) {
-        const wrapper = canvas.parentElement;
-        if (wrapper) {
-          wrapper.style.display = num === clamped ? "block" : "none";
-        }
-      }
+      this.showOnlyCurrentPage();
+
       // Scroll to top
       if (this.scrollContainer) {
         this.scrollContainer.scrollTop = 0;
       }
-      // Also pre-render adjacent pages
+
+      // Animate page transition (#15)
+      if (animate) {
+        await this.animatePageTransition(direction);
+      }
+
+      // Pre-render adjacent pages
       if (clamped > 1) this.renderPage(clamped - 1);
       if (clamped < this.totalPages) this.renderPage(clamped + 1);
     } else {
-      // In scroll mode: scroll to the page
       const canvas = this.pageCanvases.get(clamped);
       if (canvas?.parentElement && this.scrollContainer) {
         canvas.parentElement.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -394,31 +516,55 @@ export class PDFRenderer implements DocumentRenderer {
     });
   }
 
+  private showOnlyCurrentPage(): void {
+    for (const [num, canvas] of this.pageCanvases) {
+      const wrapper = canvas.parentElement;
+      if (wrapper) {
+        wrapper.style.display = num === this.currentPage ? "block" : "none";
+      }
+    }
+  }
+
+  private getPageWrapper(pageNum: number): HTMLElement | null {
+    const canvas = this.pageCanvases.get(pageNum);
+    return canvas?.parentElement ?? null;
+  }
+
   private applyViewMode(): void {
     if (!this.scrollContainer) return;
 
     if (this.viewMode === "paginated") {
-      // Paginated: no scrolling, show one page at a time, center it
       this.scrollContainer.style.overflowY = "hidden";
-      this.scrollContainer.style.justifyContent = "center";
-      // Show only current page
-      for (const [num, canvas] of this.pageCanvases) {
-        const wrapper = canvas.parentElement;
-        if (wrapper) {
-          wrapper.style.display = num === this.currentPage ? "block" : "none";
-        }
-      }
+      this.scrollContainer.style.alignContent = "center";
+      this.showOnlyCurrentPage();
     } else {
-      // Scroll: show all pages, enable scrolling
       this.scrollContainer.style.overflowY = "auto";
-      this.scrollContainer.style.justifyContent = "";
+      this.scrollContainer.style.alignContent = "";
       for (const [, canvas] of this.pageCanvases) {
         const wrapper = canvas.parentElement;
-        if (wrapper) {
-          wrapper.style.display = "block";
-        }
+        if (wrapper) wrapper.style.display = "block";
       }
       this.renderVisiblePages();
+    }
+  }
+
+  /** Lightweight theme update via CSS custom properties (#10) */
+  private applyThemeCSS(): void {
+    if (!this.scrollContainer) return;
+    const themes: Record<string, { bg: string; shadow: string }> = {
+      light: { bg: "", shadow: "0 2px 8px rgba(0,0,0,0.1)" },
+      dark: { bg: "#1a1a1a", shadow: "0 2px 8px rgba(0,0,0,0.4)" },
+      sepia: { bg: "#f4ecd8", shadow: "0 2px 8px rgba(0,0,0,0.08)" },
+    };
+    const t = themes[this.theme] || themes.light;
+    this.scrollContainer.style.setProperty("--pdf-bg", t.bg);
+    this.scrollContainer.style.setProperty("--pdf-page-shadow", t.shadow);
+    this.scrollContainer.style.background = t.bg;
+
+    // Update page wrappers shadows
+    for (const [, canvas] of this.pageCanvases) {
+      const wrapper = canvas.parentElement;
+      if (wrapper) wrapper.style.boxShadow = t.shadow;
     }
   }
 
@@ -428,12 +574,20 @@ export class PDFRenderer implements DocumentRenderer {
     this.scrollContainer.innerHTML = "";
     this.pageCanvases.clear();
     this.renderedPages.clear();
+    this.renderingPages.clear();
 
     for (let i = 1; i <= this.totalPages; i++) {
       const wrapper = document.createElement("div");
       wrapper.className = "pdf-page-wrapper";
-      wrapper.style.cssText =
-        "position:relative;margin:0 auto;box-shadow:0 2px 8px rgba(0,0,0,0.1);background:#fff;border-radius:4px;max-width:calc(100% - 32px);";
+      wrapper.style.cssText = [
+        "position:relative",
+        "margin:0 auto",
+        "box-shadow:var(--pdf-page-shadow, 0 2px 8px rgba(0,0,0,0.1))",
+        "background:#fff",
+        "border-radius:4px",
+        "max-width:calc(100% - 32px)",
+        "will-change:transform,opacity",
+      ].join(";");
       wrapper.dataset.pageNum = String(i);
 
       const canvas = document.createElement("canvas");
@@ -451,16 +605,15 @@ export class PDFRenderer implements DocumentRenderer {
       this.pageCanvases.set(i, canvas);
     }
 
-    // Set initial placeholder sizes
     this.setPlaceholderSizes();
+    this.applyThemeCSS();
   }
 
   private async setPlaceholderSizes(): Promise<void> {
     if (!this.pdfDoc || !this.scrollContainer) return;
 
-    // Use first page to determine default size
     const page = await this.pdfDoc.getPage(1);
-    const containerWidth = this.scrollContainer.clientWidth - 32; // padding
+    const containerWidth = this.scrollContainer.clientWidth - 32;
     const baseViewport = page.getViewport({ scale: 1 });
     const fitScale = containerWidth / baseViewport.width;
     const viewport = page.getViewport({ scale: fitScale });
@@ -477,6 +630,11 @@ export class PDFRenderer implements DocumentRenderer {
   private async renderVisiblePages(): Promise<void> {
     if (!this.scrollContainer || !this.pdfDoc) return;
 
+    if (this.viewMode === "paginated") {
+      await this.renderPage(this.currentPage);
+      return;
+    }
+
     const containerRect = this.scrollContainer.getBoundingClientRect();
     const buffer = containerRect.height; // render 1 screen ahead
 
@@ -491,7 +649,7 @@ export class PDFRenderer implements DocumentRenderer {
         rect.bottom > containerRect.top - buffer &&
         rect.top < containerRect.bottom + buffer;
 
-      if (isVisible && !this.renderedPages.has(pageNum)) {
+      if (isVisible && !this.renderedPages.has(pageNum) && !this.renderingPages.has(pageNum)) {
         pagesToRender.push(pageNum);
       }
     }
@@ -500,15 +658,16 @@ export class PDFRenderer implements DocumentRenderer {
   }
 
   private async renderPage(pageNum: number): Promise<void> {
-    if (!this.pdfDoc || this.renderedPages.has(pageNum) || this.destroyed) return;
+    if (!this.pdfDoc || this.renderedPages.has(pageNum) || this.renderingPages.has(pageNum) || this.destroyed) return;
 
     const canvas = this.pageCanvases.get(pageNum);
     if (!canvas) return;
 
+    this.renderingPages.add(pageNum);
+
     try {
       const page = await this.pdfDoc.getPage(pageNum);
 
-      // Calculate scale to fit container width
       const containerWidth = (this.scrollContainer?.clientWidth ?? 800) - 32;
       const baseViewport = page.getViewport({ scale: 1 });
       const fitScale = containerWidth / baseViewport.width;
@@ -535,38 +694,35 @@ export class PDFRenderer implements DocumentRenderer {
       }).promise;
 
       this.renderedPages.add(pageNum);
+      this.renderingPages.delete(pageNum);
 
-      // Also render text layer for selection
+      // Render text layer for selection
       this.renderTextLayer(page, viewport, canvas);
     } catch (err) {
+      this.renderingPages.delete(pageNum);
       console.error(`Failed to render page ${pageNum}:`, err);
     }
   }
 
   private async renderTextLayer(
-    page: pdfjsLib.PDFPageProxy,
-    viewport: pdfjsLib.PageViewport,
+    page: PdfPageProxy,
+    viewport: PageViewport,
     canvas: HTMLCanvasElement,
   ): Promise<void> {
     const wrapper = canvas.parentElement;
-    if (!wrapper) return;
+    if (!wrapper || !this.pdfjsLib) return;
 
     // Remove existing text layer
     const existing = wrapper.querySelector(".textLayer");
     if (existing) existing.remove();
 
-    // Create text layer container with official pdfjs CSS class
     const textLayerDiv = document.createElement("div");
     textLayerDiv.className = "textLayer";
-
-    // The official CSS uses position:absolute + inset:0, so we just need
-    // to set the --total-scale-factor CSS variable for proper font sizing
     textLayerDiv.style.setProperty("--total-scale-factor", String(viewport.scale));
-
     wrapper.appendChild(textLayerDiv);
 
-    // Use official TextLayer API from pdfjs-dist v5
     const textContent = await page.getTextContent();
+    const { TextLayer } = this.pdfjsLib;
     const textLayer = new TextLayer({
       textContentSource: textContent,
       container: textLayerDiv,
@@ -575,33 +731,13 @@ export class PDFRenderer implements DocumentRenderer {
 
     await textLayer.render();
 
-    // Listen for selection changes on this layer
     textLayerDiv.addEventListener("mouseup", () => {
+      // Debounced selection emission (#8) — 50ms
       setTimeout(() => {
         const sel = this.getSelection();
         this.emit("selection", sel);
-      }, 10);
+      }, 50);
     });
-  }
-
-  private updateScale(): void {
-    // Re-render all visible pages with new container size
-    this.renderedPages.clear();
-    this.setPlaceholderSizes().then(() => this.renderVisiblePages());
-  }
-
-  private applyTheme(): void {
-    if (!this.scrollContainer) return;
-    switch (this.theme) {
-      case "dark":
-        this.scrollContainer.style.background = "#1a1a1a";
-        break;
-      case "sepia":
-        this.scrollContainer.style.background = "#f4ecd8";
-        break;
-      default:
-        this.scrollContainer.style.background = "";
-    }
   }
 
   private async extractTOC(): Promise<void> {
@@ -612,7 +748,6 @@ export class PDFRenderer implements DocumentRenderer {
       if (outline) {
         this.toc = await this.parseOutline(outline, 0);
       } else {
-        // Fallback: create TOC from page numbers
         this.toc = [];
         const step = Math.max(1, Math.ceil(this.totalPages / 20));
         for (let i = 1; i <= this.totalPages; i += step) {
@@ -632,10 +767,7 @@ export class PDFRenderer implements DocumentRenderer {
     }
   }
 
-  private async parseOutline(
-    items: PdfOutlineNode[],
-    level: number,
-  ): Promise<TOCItem[]> {
+  private async parseOutline(items: PdfOutlineNode[], level: number): Promise<TOCItem[]> {
     const result: TOCItem[] = [];
 
     for (const item of items) {
@@ -685,16 +817,12 @@ export class PDFRenderer implements DocumentRenderer {
   }
 
   private getPageTitle(pageNum: number): string {
-    // Find closest TOC entry
     const flat = this.flattenTOC();
     let closest = flat[0];
     for (const item of flat) {
       const itemPage = Number.parseInt(item.href || "0", 10);
-      if (itemPage <= pageNum) {
-        closest = item;
-      } else {
-        break;
-      }
+      if (itemPage <= pageNum) closest = item;
+      else break;
     }
     return closest?.title || `Page ${pageNum}`;
   }

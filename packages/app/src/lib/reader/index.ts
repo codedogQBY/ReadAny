@@ -1,8 +1,9 @@
 /**
  * Reader library — document rendering, navigation, and annotation
+ *
+ * NOTE: Renderer classes (EPUBRenderer, PDFRenderer) are NOT re-exported here
+ * to preserve dynamic import code splitting (#1). Use renderer-factory instead.
  */
-export { EPUBRenderer } from "./epub-renderer";
-export { PDFRenderer } from "./pdf-renderer";
 export { createRenderer, createRendererForFile, detectFormat } from "./renderer-factory";
 export type {
   DocumentRenderer,

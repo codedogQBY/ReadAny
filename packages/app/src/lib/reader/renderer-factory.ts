@@ -1,9 +1,8 @@
 /**
  * Renderer Factory — creates the appropriate renderer based on file format
+ * Uses dynamic imports for code splitting — only loads the renderer needed.
  */
 import type { DocumentRenderer } from "./document-renderer";
-import { EPUBRenderer } from "./epub-renderer";
-import { PDFRenderer } from "./pdf-renderer";
 
 export type SupportedFormat = "epub" | "pdf" | "mobi" | "txt" | "docx" | "cbz";
 
@@ -31,23 +30,27 @@ export function detectFormat(filename: string): SupportedFormat {
   }
 }
 
-/** Create a renderer instance for the given format */
-export function createRenderer(format: SupportedFormat): DocumentRenderer {
+/** Create a renderer instance for the given format (async — uses dynamic import) */
+export async function createRenderer(format: SupportedFormat): Promise<DocumentRenderer> {
   switch (format) {
     case "epub":
-      return new EPUBRenderer();
-    case "pdf":
-      return new PDFRenderer();
     case "mobi":
-      // MOBI files need to be converted to EPUB first
-      throw new Error("MOBI format requires conversion to EPUB");
+    case "cbz": {
+      // foliate-js handles EPUB, MOBI, FB2, CBZ — all via <foliate-view>
+      const { EPUBRenderer } = await import("./epub-renderer");
+      return new EPUBRenderer();
+    }
+    case "pdf": {
+      const { PDFRenderer } = await import("./pdf-renderer");
+      return new PDFRenderer();
+    }
     default:
       throw new Error(`Unsupported format: ${format}`);
   }
 }
 
-/** Create a renderer by detecting the format from a filename */
-export function createRendererForFile(filename: string): DocumentRenderer {
+/** Create a renderer by detecting the format from a filename (async) */
+export async function createRendererForFile(filename: string): Promise<DocumentRenderer> {
   const format = detectFormat(filename);
   return createRenderer(format);
 }

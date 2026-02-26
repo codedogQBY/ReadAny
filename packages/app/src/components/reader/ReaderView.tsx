@@ -5,10 +5,10 @@ import type {
   TOCItem,
 } from "@/lib/reader/document-renderer";
 import { createRendererForFile } from "@/lib/reader/renderer-factory";
+import { throttle } from "@/lib/utils/throttle";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useReaderStore } from "@/stores/reader-store";
-import { readFile } from "@tauri-apps/plugin-fs";
 import { X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -20,16 +20,33 @@ import { SelectionPopover } from "./SelectionPopover";
 import { TOCPanel } from "./TOCPanel";
 import { TranslationPopover } from "./TranslationPopover";
 
+// --- Optimization #13: Tauri convertFileSrc ---
+// Try to use convertFileSrc (asset:// protocol) for zero-serialization file loading.
+// Falls back to readFile + Blob if convertFileSrc is not available.
+async function loadFileAsBlob(filePath: string): Promise<Blob> {
+  try {
+    const { convertFileSrc } = await import("@tauri-apps/api/core");
+    const assetUrl = convertFileSrc(filePath);
+    const response = await fetch(assetUrl);
+    if (!response.ok) throw new Error(`fetch failed: ${response.status}`);
+    return await response.blob();
+  } catch {
+    // Fallback: use readFile plugin (works in all Tauri environments)
+    const { readFile } = await import("@tauri-apps/plugin-fs");
+    const fileBytes = await readFile(filePath);
+    return new Blob([fileBytes]);
+  }
+}
+
 // In-memory file blob cache to avoid re-reading from disk on every tab switch
 const fileBlobCache = new Map<string, Blob>();
-const MAX_CACHE_SIZE = 5; // keep at most 5 files in memory
+const MAX_CACHE_SIZE = 5;
 
 async function getCachedBlob(filePath: string): Promise<Blob> {
   const cached = fileBlobCache.get(filePath);
   if (cached) return cached;
 
-  const fileBytes = await readFile(filePath);
-  const blob = new Blob([fileBytes]);
+  const blob = await loadFileAsBlob(filePath);
 
   // Evict oldest if cache is full
   if (fileBlobCache.size >= MAX_CACHE_SIZE) {
@@ -110,6 +127,8 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<DocumentRenderer | null>(null);
+  // Optimization #9: Ref lock to prevent React StrictMode double init
+  const isInitializedRef = useRef(false);
 
   const [selection, setSelection] = useState<DocSelection | null>(null);
   const [selectionPos, setSelectionPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -152,70 +171,97 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     }
   }, [book?.filePath, bookId, t]);
 
-  // Initialize renderer
+  // Initialize renderer — with Ref lock (#9)
   useEffect(() => {
-    if (!containerRef.current || rendererRef.current || !book?.filePath) return;
+    if (!containerRef.current || !book?.filePath) return;
+    // Ref lock: prevent double init from React StrictMode (#9)
+    if (isInitializedRef.current) return;
+    isInitializedRef.current = true;
 
-    const renderer = createRendererForFile(book.filePath);
-    rendererRef.current = renderer;
+    let cancelled = false;
 
-    renderer.on("location-change", (location, progress) => {
-      const positionKey =
-        location.cfi ||
-        (location.pageIndex !== undefined
-          ? `page-${location.pageIndex + 1}`
-          : `spine-${location.chapterIndex}`);
-      setProgress(tabId, progress, positionKey);
-      updateBook(bookId, { progress, currentCfi: positionKey, lastOpenedAt: Date.now() });
+    // Throttled progress save to DB — 5000ms (#8)
+    const throttledSaveProgress = throttle((bId: string, prog: number, cfi: string) => {
+      updateBook(bId, { progress: prog, currentCfi: cfi, lastOpenedAt: Date.now() });
+    }, 5000);
 
-      if (location.pageIndex !== undefined) {
-        setCurrentPage(location.pageIndex + 1);
-      }
-    });
+    const initRenderer = async () => {
+      const renderer = await createRendererForFile(book.filePath!);
+      if (cancelled) { renderer.destroy(); return; }
+      rendererRef.current = renderer;
 
-    renderer.on("load", (info) => {
-      setChapter(tabId, info.chapterIndex, info.chapterTitle);
-      setIsLoading(false);
+      renderer.on("location-change", (location, progress) => {
+        const positionKey =
+          location.cfi ||
+          (location.pageIndex !== undefined
+            ? `page-${location.pageIndex + 1}`
+            : `spine-${location.chapterIndex}`);
 
-      const pages = renderer.getTotalPages?.();
-      if (pages) setTotalPages(pages);
-    });
+        // Immediate update to reader store (UI responsiveness)
+        setProgress(tabId, progress, positionKey);
+        // Throttled save to persistent storage (#8 — 5000ms)
+        throttledSaveProgress(bookId, progress, positionKey);
 
-    renderer.on("toc-ready", (toc) => {
-      setTocItems(toc);
-    });
-
-    renderer.on("selection", (sel) => {
-      setSelection(sel);
-      if (sel) {
-        setSelectedText(tabId, sel.text, null);
-        if (sel.rects.length > 0) {
-          const firstRect = sel.rects[0];
-          setSelectionPos({
-            x: firstRect.left + firstRect.width / 2,
-            y: firstRect.top - 40,
-          });
+        if (location.pageIndex !== undefined) {
+          setCurrentPage(location.pageIndex + 1);
         }
-      } else {
-        setSelectedText(tabId, "", null);
-      }
-    });
+      });
 
-    renderer.on("error", (err) => {
-      console.error("Reader error:", err);
+      renderer.on("load", (info) => {
+        setChapter(tabId, info.chapterIndex, info.chapterTitle);
+        setIsLoading(false);
+
+        const pages = renderer.getTotalPages?.();
+        if (pages) setTotalPages(pages);
+      });
+
+      renderer.on("toc-ready", (toc) => {
+        setTocItems(toc);
+      });
+
+      renderer.on("selection", (sel) => {
+        setSelection(sel);
+        if (sel) {
+          setSelectedText(tabId, sel.text, null);
+          if (sel.rects.length > 0) {
+            const firstRect = sel.rects[0];
+            setSelectionPos({
+              x: firstRect.left + firstRect.width / 2,
+              y: firstRect.top - 40,
+            });
+          }
+        } else {
+          setSelectedText(tabId, "", null);
+        }
+      });
+
+      renderer.on("error", (err) => {
+        console.error("Reader error:", err);
+        setError(err.message);
+        setIsLoading(false);
+      });
+
+      await renderer.mount(containerRef.current!);
+      if (cancelled) { renderer.destroy(); rendererRef.current = null; return; }
+
+      if (book?.filePath) {
+        loadBookFile(renderer, book.filePath);
+      }
+    };
+
+    initRenderer().catch((err) => {
+      console.error("Failed to init renderer:", err);
       setError(err.message);
       setIsLoading(false);
     });
 
-    renderer.mount(containerRef.current).then(() => {
-      if (book?.filePath) {
-        loadBookFile(renderer, book.filePath);
-      }
-    });
-
     return () => {
-      renderer.destroy();
-      rendererRef.current = null;
+      cancelled = true;
+      if (rendererRef.current) {
+        rendererRef.current.destroy();
+        rendererRef.current = null;
+      }
+      isInitializedRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId]);
@@ -225,7 +271,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     loadAnnotations(bookId);
   }, [bookId, loadAnnotations]);
 
-  // Apply view settings
+  // Apply view settings — lightweight path (#10)
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer) return;
