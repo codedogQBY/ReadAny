@@ -20,6 +20,7 @@
  */
 import type {
   AnnotationMark,
+  BookDoc,
   DocumentRenderer,
   Location,
   RendererEvents,
@@ -96,6 +97,7 @@ export class EPUBRenderer implements DocumentRenderer {
   private lastCFI: string | undefined;
   private totalPages = 0;
   private resizeObserver: ResizeObserver | null = null;
+  private selectionCleanups: Array<() => void> = [];
 
   /** Debounced style application — 50ms (#8) */
   private debouncedApplyStyles = debounce(() => {
@@ -116,6 +118,8 @@ export class EPUBRenderer implements DocumentRenderer {
 
   async mount(container: HTMLElement): Promise<void> {
     this.container = container;
+
+    this.emit("loading-stage", "parsing");
 
     // Dynamically import foliate-js view.js to register <foliate-view> (#1)
     await import("foliate-js/view.js");
@@ -142,11 +146,16 @@ export class EPUBRenderer implements DocumentRenderer {
     this.resizeObserver.observe(container);
   }
 
-  async open(file: File | Blob, initialLocation?: Location): Promise<void> {
+  async open(file: File | Blob | BookDoc, initialLocation?: Location): Promise<void> {
     if (!this.foliateView) throw new Error("Not mounted");
 
-    // Open the book — foliate-js auto-detects format (EPUB, MOBI, FB2, CBZ)
+    // Pass directly to foliate-view. If `file` is a pre-parsed BookDoc,
+    // foliate-js skips makeBook() entirely (no redundant ZIP extraction).
+    // If `file` is a raw Blob/File, foliate-js auto-detects and parses.
+    this.emit("loading-stage", "rendering");
+    console.log("[EPUBRenderer] calling foliateView.open...");
     await this.foliateView.open(file);
+    console.log("[EPUBRenderer] foliateView.open resolved");
 
     // Extract TOC
     const book = this.foliateView.book;
@@ -159,14 +168,16 @@ export class EPUBRenderer implements DocumentRenderer {
     this.applyViewSettings();
 
     // Navigate to initial location or start
-    if (initialLocation?.cfi && this.lastCFI) {
-      await this.foliateView.init({ lastLocation: this.lastCFI });
+    console.log("[EPUBRenderer] calling foliateView.init, initialLocation:", initialLocation);
+    if (initialLocation?.cfi) {
+      await this.foliateView.init({ lastLocation: initialLocation.cfi });
     } else if (initialLocation?.chapterIndex !== undefined) {
-      await this.foliateView.init();
+      await this.foliateView.init({});
       await this.foliateView.goTo(initialLocation.chapterIndex);
     } else {
-      await this.foliateView.init();
+      await this.foliateView.init({});
     }
+    console.log("[EPUBRenderer] foliateView.init resolved");
   }
 
   private convertTOC(
@@ -226,6 +237,7 @@ export class EPUBRenderer implements DocumentRenderer {
         type: "cfi" as const,
         chapterIndex: this.currentChapterIndex,
         cfi: detail.cfi || `section-${this.currentChapterIndex}`,
+        pageIndex: detail.location ? detail.location.current - 1 : undefined,
       },
       this.progress,
     );
@@ -239,6 +251,33 @@ export class EPUBRenderer implements DocumentRenderer {
       chapterIndex: detail.index ?? this.currentChapterIndex,
       chapterTitle,
     });
+
+    // Attach selection listener to the section document
+    if (detail.doc) {
+      this.attachSelectionListener(detail.doc);
+    }
+
+    // Preload next chapter document in background for smoother page turns
+    const currentIndex = detail.index ?? this.currentChapterIndex;
+    const book = this.foliateView?.book;
+    if (book?.sections) {
+      const nextSection = book.sections[currentIndex + 1];
+      nextSection?.createDocument?.().catch(() => {});
+    }
+  }
+
+  /** Attach mouseup listener to iframe doc for selection detection */
+  private attachSelectionListener(doc: Document): void {
+    const handlePointerUp = () => {
+      // Small delay to let the browser finalize the selection
+      setTimeout(() => {
+        const sel = this.getSelection();
+        this.emit("selection", sel);
+      }, 10);
+    };
+
+    doc.addEventListener("pointerup", handlePointerUp);
+    this.selectionCleanups.push(() => doc.removeEventListener("pointerup", handlePointerUp));
   }
 
   private getChapterTitleByIndex(index: number): string {
@@ -355,10 +394,12 @@ export class EPUBRenderer implements DocumentRenderer {
   }
 
   async next(): Promise<void> {
+    this.emit("selection", null); // Clear selection on page turn
     await this.foliateView?.next();
   }
 
   async prev(): Promise<void> {
+    this.emit("selection", null); // Clear selection on page turn
     await this.foliateView?.prev();
   }
 
@@ -472,6 +513,8 @@ export class EPUBRenderer implements DocumentRenderer {
 
   destroy(): void {
     if (this.resizeObserver) this.resizeObserver.disconnect();
+    for (const cleanup of this.selectionCleanups) cleanup();
+    this.selectionCleanups = [];
     if (this.foliateView) {
       try { this.foliateView.close(); } catch { /* ignore */ }
       this.foliateView.remove();

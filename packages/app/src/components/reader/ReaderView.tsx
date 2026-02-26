@@ -3,6 +3,7 @@ import type {
   Selection as DocSelection,
   DocumentRenderer,
   TOCItem,
+  BookDoc,
 } from "@/lib/reader/document-renderer";
 import { createRendererForFile } from "@/lib/reader/renderer-factory";
 import { throttle } from "@/lib/utils/throttle";
@@ -55,6 +56,27 @@ async function getCachedBlob(filePath: string): Promise<Blob> {
   }
   fileBlobCache.set(filePath, blob);
   return blob;
+}
+
+/**
+ * Pre-parse a book file: load blob from disk → parse via foliate-js makeBook().
+ * Returns a pre-parsed BookDoc that can be passed directly to foliate-view.
+ * This follows the Readest pattern for unified book handling.
+ */
+async function preParseBook(filePath: string): Promise<BookDoc> {
+  console.log("[preParseBook] start, filePath:", filePath);
+  const blob = await getCachedBlob(filePath);
+  console.log("[preParseBook] blob loaded, size:", blob.size);
+
+  // makeBook() expects a File-like object with `name` for format detection
+  const fileName = filePath.split("/").pop() || "book.epub";
+  const file = new File([blob], fileName, { type: blob.type || "application/octet-stream" });
+  
+  console.log("[preParseBook] calling makeBook...");
+  const { makeBook } = await import("foliate-js/view.js");
+  const bookDoc = await makeBook(file);
+  console.log("[preParseBook] makeBook done, sections:", bookDoc.sections?.length);
+  return bookDoc;
 }
 
 /**
@@ -173,9 +195,16 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
   // Initialize renderer — with Ref lock (#9)
   useEffect(() => {
-    if (!containerRef.current || !book?.filePath) return;
+    console.log("[ReaderView] useEffect triggered, containerRef:", !!containerRef.current, "filePath:", book?.filePath, "tab:", !!tab);
+    if (!containerRef.current || !book?.filePath) {
+      console.log("[ReaderView] Early return: no container or no filePath");
+      return;
+    }
     // Ref lock: prevent double init from React StrictMode (#9)
-    if (isInitializedRef.current) return;
+    if (isInitializedRef.current) {
+      console.log("[ReaderView] Already initialized, skipping");
+      return;
+    }
     isInitializedRef.current = true;
 
     let cancelled = false;
@@ -185,8 +214,11 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       updateBook(bId, { progress: prog, currentCfi: cfi, lastOpenedAt: Date.now() });
     }, 5000);
 
+    console.log("[ReaderView] Starting init...");
     const initRenderer = async () => {
       const renderer = await createRendererForFile(book.filePath!);
+      console.log("[ReaderView] initRenderer start, filePath:", book.filePath);
+      console.log("[ReaderView] renderer created");
       if (cancelled) { renderer.destroy(); return; }
       rendererRef.current = renderer;
 
@@ -209,6 +241,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
       renderer.on("load", (info) => {
         setChapter(tabId, info.chapterIndex, info.chapterTitle);
+        console.log("[ReaderView] load event fired:", info);
         setIsLoading(false);
 
         const pages = renderer.getTotalPages?.();
@@ -241,8 +274,10 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
         setIsLoading(false);
       });
 
+      console.log("[ReaderView] calling renderer.mount...");
       await renderer.mount(containerRef.current!);
       if (cancelled) { renderer.destroy(); rendererRef.current = null; return; }
+      console.log("[ReaderView] renderer.mount done");
 
       if (book?.filePath) {
         loadBookFile(renderer, book.filePath);
@@ -264,7 +299,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       isInitializedRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookId]);
+  }, [bookId, book?.filePath, !!tab]);
 
   // Load annotations
   useEffect(() => {
@@ -307,9 +342,14 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
   const loadBookFile = async (renderer: DocumentRenderer, filePath: string) => {
     try {
+      console.log("[loadBookFile] start, filePath:", filePath);
       setIsLoading(true);
       setError(null);
-      const blob = await getCachedBlob(filePath);
+      
+      // Pre-parse book to BookDoc (follows Readest pattern)
+      console.log("[loadBookFile] pre-parsing book...");
+      const bookDoc = await preParseBook(filePath);
+      console.log("[loadBookFile] book parsed, sections:", bookDoc.sections?.length);
 
       const initialLocation = book?.currentCfi
         ? book.currentCfi.startsWith("page-")
@@ -321,7 +361,9 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           : { type: "cfi" as const, cfi: book.currentCfi }
         : undefined;
 
-      await renderer.open(blob, initialLocation);
+      console.log("[loadBookFile] calling renderer.open with BookDoc...");
+      await renderer.open(bookDoc, initialLocation);
+      console.log("[loadBookFile] renderer.open done");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load book";
       console.error("loadBookFile failed:", err);

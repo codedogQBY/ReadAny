@@ -111,12 +111,10 @@ export const makeBook = async (file) => {
       const { EPUB } = await import("./epub.js");
       book = await new EPUB(loader).init();
     }
-  }
-  // else if (await isPDF(file)) {
-  //     const { makePDF } = await import('./pdf.js')
-  //     book = await makePDF(file)
-  // }
-  else {
+  } else if (await isPDF(file)) {
+    const { makePDF } = await import("./pdf.js");
+    book = await makePDF(file);
+  } else {
     const { isMOBI, MOBI } = await import("./mobi.js");
     if (await isMOBI(file)) {
       const fflate = await import("./vendor/fflate.js");

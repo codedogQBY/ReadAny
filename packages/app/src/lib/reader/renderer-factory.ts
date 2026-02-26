@@ -1,6 +1,9 @@
 /**
  * Renderer Factory — creates the appropriate renderer based on file format
  * Uses dynamic imports for code splitting — only loads the renderer needed.
+ * 
+ * Note: All formats (EPUB, MOBI, CBZ, PDF) now use foliate-js <foliate-view>
+ * for unified rendering behavior and consistent user experience.
  */
 import type { DocumentRenderer } from "./document-renderer";
 
@@ -35,14 +38,11 @@ export async function createRenderer(format: SupportedFormat): Promise<DocumentR
   switch (format) {
     case "epub":
     case "mobi":
-    case "cbz": {
-      // foliate-js handles EPUB, MOBI, FB2, CBZ — all via <foliate-view>
+    case "cbz":
+    case "pdf": {
+      // All formats use foliate-js for unified rendering
       const { EPUBRenderer } = await import("./epub-renderer");
       return new EPUBRenderer();
-    }
-    case "pdf": {
-      const { PDFRenderer } = await import("./pdf-renderer");
-      return new PDFRenderer();
     }
     default:
       throw new Error(`Unsupported format: ${format}`);

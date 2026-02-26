@@ -81,6 +81,11 @@
     "noToc": "No table of contents",
     "noBookOpen": "No book open",
     "loadFailed": "Failed to load",
+    "loadingStage": {
+      "reading": "Reading file...",
+      "parsing": "Parsing structure...",
+      "rendering": "Rendering pages..."
+    },
     "search": "Search",
     "settings": "Settings"
   },

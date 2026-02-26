@@ -65,6 +65,7 @@ export class PDFRenderer implements DocumentRenderer {
   private wheelCooldown = false;
   private isAnimating = false;
   private animationFrameId: number | null = null;
+  private zoomScale = 1; // Zoom scale for PDF pages
 
   // Debounced/throttled handlers (SageReader optimization #8)
   private debouncedScroll = debounce(() => {
@@ -96,19 +97,17 @@ export class PDFRenderer implements DocumentRenderer {
     container.style.width = "100%";
     container.style.height = "100%";
 
-    // Create scrollable wrapper with CSS Grid for zero-reflow layout (#7)
+    // Create scrollable wrapper - use simple overflow scroll approach
     const scrollEl = document.createElement("div");
     scrollEl.className = "pdf-scroll-container";
     scrollEl.style.cssText = [
-      "width:100%", "height:100%",
-      "overflow-y:auto", "overflow-x:hidden",
-      "display:grid",
-      "grid-template-columns:1fr",
-      "justify-items:center",
-      "gap:8px",
-      "padding:16px 0",
-      // CSS custom properties for theme (#10)
-      "--pdf-bg:", "--pdf-page-shadow:0 2px 8px rgba(0,0,0,0.1)",
+      "position:absolute",
+      "inset:0",
+      "display:flex",
+      "flex-direction:column",
+      "align-items:center",
+      "justify-content:center",
+      "overflow:hidden",
     ].join(";");
     container.appendChild(scrollEl);
     this.scrollContainer = scrollEl;
@@ -121,6 +120,10 @@ export class PDFRenderer implements DocumentRenderer {
 
     // Click to turn pages — left 37.5% prev, right 37.5% next
     scrollEl.addEventListener("click", this.handleClick);
+
+    // Keyboard navigation
+    scrollEl.setAttribute("tabindex", "0");
+    scrollEl.addEventListener("keydown", this.handleKeyDown);
 
     // Observe resize — debounced 100ms (#8)
     this.resizeObserver = new ResizeObserver(() => this.debouncedResize());
@@ -163,6 +166,9 @@ export class PDFRenderer implements DocumentRenderer {
       // Create page placeholders
       this.createPageElements();
 
+      // Wait for layout to stabilize before calculating sizes
+      await this.setPlaceholderSizes();
+
       // Apply initial view mode
       this.applyViewMode();
 
@@ -196,6 +202,7 @@ export class PDFRenderer implements DocumentRenderer {
       this.scrollContainer.removeEventListener("scroll", this.handleScroll);
       this.scrollContainer.removeEventListener("wheel", this.handleWheel);
       this.scrollContainer.removeEventListener("click", this.handleClick);
+      this.scrollContainer.removeEventListener("keydown", this.handleKeyDown);
     }
     if (this.container) {
       this.container.innerHTML = "";
@@ -282,12 +289,24 @@ export class PDFRenderer implements DocumentRenderer {
 
   // --- View Settings ---
 
-  setFontSize(_size: number): void {
-    // PDF has fixed layout, font size doesn't apply
+  setFontSize(size: number): void {
+    // For PDF, font size maps to zoom scale (16px = 100% zoom)
+    this.zoomScale = Math.max(0.5, Math.min(3, size / 16));
+    // Re-render visible pages with new zoom
+    if (this.pdfDoc && !this.destroyed) {
+      this.renderedPages.clear();
+      this.setPlaceholderSizes().then(() => {
+        if (this.viewMode === "paginated") {
+          this.renderPage(this.currentPage);
+        } else {
+          this.renderVisiblePages();
+        }
+      });
+    }
   }
 
   setLineHeight(_height: number): void {
-    // PDF has fixed layout
+    // PDF has fixed layout, line height doesn't apply
   }
 
   /** Lightweight style update — CSS variables only, no DOM rebuild (#10) */
@@ -356,6 +375,34 @@ export class PDFRenderer implements DocumentRenderer {
 
     if (ratio < 0.375) this.prev();
     else if (ratio > 0.625) this.next();
+  };
+
+  private handleKeyDown = (e: KeyboardEvent): void => {
+    if (this.isAnimating) return;
+    
+    switch (e.key) {
+      case "ArrowLeft":
+      case "ArrowUp":
+      case "PageUp":
+        e.preventDefault();
+        this.prev();
+        break;
+      case "ArrowRight":
+      case "ArrowDown":
+      case "PageDown":
+      case " ":
+        e.preventDefault();
+        this.next();
+        break;
+      case "Home":
+        e.preventDefault();
+        this.goToPage(1);
+        break;
+      case "End":
+        e.preventDefault();
+        this.goToPage(this.totalPages);
+        break;
+    }
   };
 
   // --- Layout stability detection (#11) ---
@@ -534,12 +581,17 @@ export class PDFRenderer implements DocumentRenderer {
     if (!this.scrollContainer) return;
 
     if (this.viewMode === "paginated") {
-      this.scrollContainer.style.overflowY = "hidden";
-      this.scrollContainer.style.alignContent = "center";
+      this.scrollContainer.style.overflow = "hidden";
+      this.scrollContainer.style.justifyContent = "center";
       this.showOnlyCurrentPage();
     } else {
       this.scrollContainer.style.overflowY = "auto";
-      this.scrollContainer.style.alignContent = "";
+      this.scrollContainer.style.overflowX = "hidden";
+      this.scrollContainer.style.justifyContent = "flex-start";
+      this.scrollContainer.style.alignContent = "flex-start";
+      this.scrollContainer.style.paddingTop = "16px";
+      this.scrollContainer.style.paddingBottom = "16px";
+      this.scrollContainer.style.gap = "8px";
       for (const [, canvas] of this.pageCanvases) {
         const wrapper = canvas.parentElement;
         if (wrapper) wrapper.style.display = "block";
@@ -581,11 +633,11 @@ export class PDFRenderer implements DocumentRenderer {
       wrapper.className = "pdf-page-wrapper";
       wrapper.style.cssText = [
         "position:relative",
+        "flex-shrink:0",
         "margin:0 auto",
         "box-shadow:var(--pdf-page-shadow, 0 2px 8px rgba(0,0,0,0.1))",
         "background:#fff",
         "border-radius:4px",
-        "max-width:calc(100% - 32px)",
         "will-change:transform,opacity",
       ].join(";");
       wrapper.dataset.pageNum = String(i);
@@ -612,12 +664,23 @@ export class PDFRenderer implements DocumentRenderer {
   private async setPlaceholderSizes(): Promise<void> {
     if (!this.pdfDoc || !this.scrollContainer) return;
 
-    const page = await this.pdfDoc.getPage(1);
-    const containerWidth = this.scrollContainer.clientWidth - 32;
-    const baseViewport = page.getViewport({ scale: 1 });
-    const fitScale = containerWidth / baseViewport.width;
-    const viewport = page.getViewport({ scale: fitScale });
+    // Wait for container to have proper dimensions
+    let retries = 0;
+    while (this.scrollContainer.clientWidth === 0 && retries < 10) {
+      await new Promise((r) => requestAnimationFrame(r));
+      retries++;
+    }
 
+    // Use page 1 to determine the fit scale (most pages share similar dimensions)
+    const firstPage = await this.pdfDoc.getPage(1);
+    // Leave some padding on each side (16px per side = 32px total)
+    const containerWidth = Math.max(100, this.scrollContainer.clientWidth - 32);
+    const baseViewport = firstPage.getViewport({ scale: 1 });
+    const fitScale = (containerWidth / baseViewport.width) * this.zoomScale;
+
+    // Set initial placeholder using first page dimensions
+    // Actual size will be corrected in renderPage() for each page
+    const viewport = firstPage.getViewport({ scale: fitScale });
     for (const [, canvas] of this.pageCanvases) {
       const wrapper = canvas.parentElement;
       if (wrapper) {
@@ -668,24 +731,30 @@ export class PDFRenderer implements DocumentRenderer {
     try {
       const page = await this.pdfDoc.getPage(pageNum);
 
-      const containerWidth = (this.scrollContainer?.clientWidth ?? 800) - 32;
+      // Calculate scale based on THIS page's dimensions (pages can have different sizes)
+      // Leave padding on each side (16px per side = 32px total)
+      const rawWidth = this.scrollContainer?.clientWidth ?? 800;
+      const containerWidth = Math.max(100, rawWidth - 32);
       const baseViewport = page.getViewport({ scale: 1 });
-      const fitScale = containerWidth / baseViewport.width;
+      const fitScale = (containerWidth / baseViewport.width) * this.zoomScale;
       const pixelRatio = window.devicePixelRatio || 1;
       const renderScale = fitScale * pixelRatio;
 
       const viewport = page.getViewport({ scale: fitScale });
       const renderViewport = page.getViewport({ scale: renderScale });
 
+      // Set canvas dimensions
       canvas.width = renderViewport.width;
       canvas.height = renderViewport.height;
       canvas.style.width = `${viewport.width}px`;
       canvas.style.height = `${viewport.height}px`;
 
+      // Update wrapper to match this page's actual size
       const wrapper = canvas.parentElement;
       if (wrapper) {
         wrapper.style.width = `${viewport.width}px`;
-        wrapper.style.minHeight = `${viewport.height}px`;
+        wrapper.style.height = `${viewport.height}px`;
+        wrapper.style.minHeight = "";
       }
 
       await page.render({
@@ -718,7 +787,22 @@ export class PDFRenderer implements DocumentRenderer {
 
     const textLayerDiv = document.createElement("div");
     textLayerDiv.className = "textLayer";
-    textLayerDiv.style.setProperty("--total-scale-factor", String(viewport.scale));
+    // Position text layer absolutely over the canvas
+    // Text layer is invisible but allows text selection
+    textLayerDiv.style.cssText = [
+      "position:absolute",
+      "left:0",
+      "top:0",
+      "right:0",
+      "bottom:0",
+      "overflow:hidden",
+      "opacity:0",
+      "line-height:1.0",
+      "-webkit-user-select:text",
+      "user-select:text",
+      "pointer-events:auto",
+    ].join(";");
+    textLayerDiv.style.setProperty("--scale-factor", String(viewport.scale));
     wrapper.appendChild(textLayerDiv);
 
     const textContent = await page.getTextContent();

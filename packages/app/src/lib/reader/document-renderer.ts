@@ -38,20 +38,27 @@ export interface AnnotationMark {
   note?: string;
 }
 
+export type LoadingStage = "reading" | "parsing" | "rendering";
+
 export interface RendererEvents {
   "location-change": (location: Location, progress: number) => void;
   selection: (selection: Selection | null) => void;
   load: (info: { chapterIndex: number; chapterTitle: string }) => void;
   "toc-ready": (toc: TOCItem[]) => void;
+  "loading-stage": (stage: LoadingStage) => void;
   error: (error: Error) => void;
 }
+
+/** Pre-parsed book document (from foliate-js makeBook) */
+// biome-ignore lint: foliate-js uses loosely typed book objects
+export type BookDoc = any;
 
 export interface DocumentRenderer {
   /** Mount the renderer into a container element */
   mount(container: HTMLElement): Promise<void>;
 
-  /** Open and render a book file */
-  open(file: File | Blob, initialLocation?: Location): Promise<void>;
+  /** Open and render a book file (accepts raw Blob or pre-parsed BookDoc) */
+  open(file: File | Blob | BookDoc, initialLocation?: Location): Promise<void>;
 
   /** Destroy and clean up resources */
   destroy(): void;

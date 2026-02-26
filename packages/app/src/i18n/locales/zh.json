@@ -81,6 +81,11 @@
     "noToc": "暂无目录",
     "noBookOpen": "未打开书籍",
     "loadFailed": "加载失败",
+    "loadingStage": {
+      "reading": "正在读取文件...",
+      "parsing": "正在解析结构...",
+      "rendering": "正在渲染页面..."
+    },
     "search": "搜索",
     "settings": "设置"
   },
