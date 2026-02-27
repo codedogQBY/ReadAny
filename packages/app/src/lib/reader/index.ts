@@ -1,16 +1,13 @@
 /**
- * Reader library — document rendering, navigation, and annotation
+ * Reader library — document loading, rendering, and utilities
  *
- * NOTE: Renderer classes (EPUBRenderer, PDFRenderer) are NOT re-exported here
- * to preserve dynamic import code splitting (#1). Use renderer-factory instead.
+ * The old renderer abstraction (DocumentRenderer, EPUBRenderer, PDFRenderer,
+ * renderer-factory) has been replaced by the unified architecture:
+ *
+ * DocumentLoader → BookDoc → FoliateViewer → <foliate-view>
+ *
+ * All formats are handled by foliate-js through a single rendering path.
  */
-export { createRenderer, createRendererForFile, detectFormat } from "./renderer-factory";
-export type {
-  DocumentRenderer,
-  Location,
-  Selection,
-  TOCItem,
-  AnnotationMark,
-  RendererEvents,
-} from "./document-renderer";
-export type { SupportedFormat } from "./renderer-factory";
+export { DocumentLoader, getDirection, isFixedLayoutFormat } from "./document-loader";
+export type { BookDoc, BookFormat, BookMetadata, TOCItem, SectionItem } from "./document-loader";
+export { registerIframeEventHandlers } from "./iframe-event-handlers";

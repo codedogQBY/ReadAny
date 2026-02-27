@@ -336,8 +336,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       for (const filePath of filePaths) {
         try {
           const ext = filePath.split(".").pop()?.toLowerCase();
-          const format: "epub" | "pdf" = ext === "pdf" ? "pdf" : "epub";
-          let title = filePath.split("/").pop()?.replace(/\.(epub|pdf)$/i, "") || "Untitled";
+          const formatMap: Record<string, Book["format"]> = {
+            epub: "epub", pdf: "pdf", mobi: "mobi", azw: "azw", azw3: "azw3",
+            cbz: "cbz", cbr: "cbz", fb2: "fb2", fbz: "fbz",
+          };
+          const format: Book["format"] = formatMap[ext || ""] || "epub";
+          let title = filePath.split("/").pop()?.replace(/\.\w+$/i, "") || "Untitled";
           let author = "";
           let coverUrl: string | undefined;
           const bookId = crypto.randomUUID();

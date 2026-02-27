@@ -1,5 +1,5 @@
 import type { FontFamily, Theme, ViewMode, ViewSettings } from "@/types";
-import type { TOCItem } from "@/lib/reader/document-renderer";
+import type { TOCItem } from "@/components/reader/FoliateViewer";
 /**
  * Reader store — per-tab reading state, progress, CFI
  */

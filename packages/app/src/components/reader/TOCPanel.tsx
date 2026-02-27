@@ -1,4 +1,4 @@
-import type { TOCItem } from "@/lib/reader/document-renderer";
+import type { TOCItem } from "./FoliateViewer";
 import { useReaderStore } from "@/stores/reader-store";
 import { BookOpen, ChevronDown, ChevronRight, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -92,7 +92,7 @@ export function TOCPanel({ tocItems, onGoToChapter, onClose, tabId }: TOCPanelPr
   );
 
   return (
-    <div className="flex h-full w-72 flex-col rounded-r-xl bg-background/95 shadow-2xl backdrop-blur-sm border border-l-0 border-border/50">
+    <div className="flex max-h-full w-72 flex-col overflow-hidden rounded-r-xl bg-background/95 shadow-2xl backdrop-blur-sm border border-l-0 border-border/50">
       {/* Header */}
       <div className="flex h-11 shrink-0 items-center justify-between border-b border-border/50 px-4 rounded-tr-xl">
         <div className="flex items-center gap-2">
@@ -114,7 +114,7 @@ export function TOCPanel({ tocItems, onGoToChapter, onClose, tabId }: TOCPanelPr
           <p className="text-xs text-muted-foreground">{t("reader.noToc")}</p>
         </div>
       ) : (
-        <div ref={scrollRef} className="flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
+        <div ref={scrollRef} className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
           {tocItems.map((item, idx) => (
             <TOCItemRow
               key={item.id}

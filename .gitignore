@@ -32,3 +32,5 @@ packages/app/src-tauri/WixTools/
 *.log
 npm-debug.log*
 pnpm-debug.log*
+
+readese/*

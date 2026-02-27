@@ -12,11 +12,13 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // Map @pdfjs/* to foliate-js vendored pdfjs (v4.7, compatible with foliate-js)
+      "@pdfjs": path.resolve(__dirname, "../../foliate-js/vendor/pdfjs"),
     },
   },
   optimizeDeps: {
-    include: ["pdfjs-dist"],
-    exclude: ["pdfjs-dist/build/pdf.worker.min.mjs"],
+    // Exclude foliate-js pdf.js from pre-bundling so that @pdfjs alias works
+    exclude: ["foliate-js/pdf.js"],
   },
   clearScreen: false,
   server: {

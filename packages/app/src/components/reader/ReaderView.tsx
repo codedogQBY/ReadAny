@@ -1,11 +1,28 @@
+/**
+ * ReaderView — main reader page component.
+ *
+ * Refactored architecture (reference: Readest):
+ * 1. File → DocumentLoader.open() → BookDoc (in-memory)
+ * 2. BookDoc → FoliateViewer (React component)
+ * 3. FoliateViewer → <foliate-view> (Web Component)
+ *
+ * ReaderView is responsible for:
+ * - Loading the book file from disk (via Tauri)
+ * - Pre-parsing it with DocumentLoader
+ * - Managing reading state (progress, location, selection)
+ * - Rendering the FoliateViewer and surrounding UI (toolbar, footer, panels)
+ */
 import { ChatPanel } from "@/components/chat/ChatPanel";
+import { DocumentLoader } from "@/lib/reader/document-loader";
+import type { BookDoc, BookFormat } from "@/lib/reader/document-loader";
+import { isFixedLayoutFormat } from "@/lib/reader/document-loader";
 import type {
-  Selection as DocSelection,
-  DocumentRenderer,
+  RelocateDetail,
   TOCItem,
-  BookDoc,
-} from "@/lib/reader/document-renderer";
-import { createRendererForFile } from "@/lib/reader/renderer-factory";
+  BookSelection,
+  FoliateViewerHandle,
+} from "./FoliateViewer";
+import { FoliateViewer } from "./FoliateViewer";
 import { throttle } from "@/lib/utils/throttle";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useLibraryStore } from "@/stores/library-store";
@@ -21,9 +38,7 @@ import { SelectionPopover } from "./SelectionPopover";
 import { TOCPanel } from "./TOCPanel";
 import { TranslationPopover } from "./TranslationPopover";
 
-// --- Optimization #13: Tauri convertFileSrc ---
-// Try to use convertFileSrc (asset:// protocol) for zero-serialization file loading.
-// Falls back to readFile + Blob if convertFileSrc is not available.
+// --- Tauri file loading ---
 async function loadFileAsBlob(filePath: string): Promise<Blob> {
   try {
     const { convertFileSrc } = await import("@tauri-apps/api/core");
@@ -32,14 +47,13 @@ async function loadFileAsBlob(filePath: string): Promise<Blob> {
     if (!response.ok) throw new Error(`fetch failed: ${response.status}`);
     return await response.blob();
   } catch {
-    // Fallback: use readFile plugin (works in all Tauri environments)
     const { readFile } = await import("@tauri-apps/plugin-fs");
     const fileBytes = await readFile(filePath);
     return new Blob([fileBytes]);
   }
 }
 
-// In-memory file blob cache to avoid re-reading from disk on every tab switch
+// --- Blob cache ---
 const fileBlobCache = new Map<string, Blob>();
 const MAX_CACHE_SIZE = 5;
 
@@ -49,7 +63,6 @@ async function getCachedBlob(filePath: string): Promise<Blob> {
 
   const blob = await loadFileAsBlob(filePath);
 
-  // Evict oldest if cache is full
   if (fileBlobCache.size >= MAX_CACHE_SIZE) {
     const firstKey = fileBlobCache.keys().next().value;
     if (firstKey) fileBlobCache.delete(firstKey);
@@ -59,30 +72,34 @@ async function getCachedBlob(filePath: string): Promise<Blob> {
 }
 
 /**
- * Pre-parse a book file: load blob from disk → parse via foliate-js makeBook().
- * Returns a pre-parsed BookDoc that can be passed directly to foliate-view.
- * This follows the Readest pattern for unified book handling.
+ * Load a book file from disk and parse it with DocumentLoader.
+ * Returns both the BookDoc and detected format.
  */
-async function preParseBook(filePath: string): Promise<BookDoc> {
-  console.log("[preParseBook] start, filePath:", filePath);
+async function loadAndParseBook(
+  filePath: string,
+): Promise<{ bookDoc: BookDoc; format: BookFormat }> {
+  console.log("[loadAndParseBook] start, filePath:", filePath);
   const blob = await getCachedBlob(filePath);
-  console.log("[preParseBook] blob loaded, size:", blob.size);
+  console.log("[loadAndParseBook] blob loaded, size:", blob.size);
 
-  // makeBook() expects a File-like object with `name` for format detection
-  const fileName = filePath.split("/").pop() || "book.epub";
-  const file = new File([blob], fileName, { type: blob.type || "application/octet-stream" });
-  
-  console.log("[preParseBook] calling makeBook...");
-  const { makeBook } = await import("foliate-js/view.js");
-  const bookDoc = await makeBook(file);
-  console.log("[preParseBook] makeBook done, sections:", bookDoc.sections?.length);
-  return bookDoc;
+  const fileName =
+    filePath.split("/").pop() || "book.epub";
+  const file = new File([blob], fileName, {
+    type: blob.type || "application/octet-stream",
+  });
+
+  const loader = new DocumentLoader(file);
+  const { book, format } = await loader.open();
+  console.log(
+    "[loadAndParseBook] parsed, format:",
+    format,
+    "sections:",
+    book.sections?.length,
+  );
+  return { bookDoc: book, format };
 }
 
-/**
- * Auto-hide controls hook — shows on mouse enter, hides after delay.
- * Stays visible if `keepVisible` is true (e.g., when a dropdown is open).
- */
+// --- Auto-hide controls hook ---
 function useAutoHideControls(delay = 5000, keepVisible = false) {
   const [isVisible, setIsVisible] = useState(true);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -128,6 +145,8 @@ function useAutoHideControls(delay = 5000, keepVisible = false) {
   return { isVisible, handleMouseEnter, handleMouseLeave };
 }
 
+// --- Main component ---
+
 interface ReaderViewProps {
   bookId: string;
   tabId: string;
@@ -147,16 +166,33 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const highlights = useAnnotationStore((s) => s.highlights);
   const loadAnnotations = useAnnotationStore((s) => s.loadAnnotations);
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const rendererRef = useRef<DocumentRenderer | null>(null);
-  // Optimization #9: Ref lock to prevent React StrictMode double init
-  const isInitializedRef = useRef(false);
+  // Ref to FoliateViewer imperative handle
+  const foliateRef = useRef<FoliateViewerHandle>(null);
 
-  const [selection, setSelection] = useState<DocSelection | null>(null);
-  const [selectionPos, setSelectionPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [tocItems, setTocItems] = useState<TOCItem[]>([]);
+  // Sync highlights to FoliateViewer when they change
+  useEffect(() => {
+    if (!foliateRef.current || !highlights.length) return;
+    for (const h of highlights) {
+      if (h.cfi) {
+        foliateRef.current.addAnnotation({
+          value: h.cfi,
+          type: "highlight",
+          color: h.color || "yellow",
+        });
+      }
+    }
+  }, [highlights]);
+
+  // Book document state
+  const [bookDoc, setBookDoc] = useState<BookDoc | null>(null);
+  const [bookFormat, setBookFormat] = useState<BookFormat>("EPUB");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // UI state
+  const [selection, setSelection] = useState<BookSelection | null>(null);
+  const [selectionPos, setSelectionPos] = useState({ x: 0, y: 0 });
+  const [tocItems, setTocItems] = useState<TOCItem[]>([]);
   const [showSearch, setShowSearch] = useState(false);
   const [showToc, setShowToc] = useState(false);
   const [showTranslation, setShowTranslation] = useState(false);
@@ -171,14 +207,60 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const [showChat, setShowChat] = useState(false);
 
   const { t } = useTranslation();
+  const isInitializedRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // SageReader-style auto-hide controls
+  // Auto-hide controls
   const keepControlsVisible = showSearch || showToc;
   const {
     isVisible: controlsVisible,
     handleMouseEnter: onControlsEnter,
     handleMouseLeave: onControlsLeave,
   } = useAutoHideControls(5000, keepControlsVisible);
+
+  // Throttled progress save
+  const throttledSaveProgress = useRef(
+    throttle((bId: string, prog: number, cfi: string) => {
+      updateBook(bId, {
+        progress: prog,
+        currentCfi: cfi,
+        lastOpenedAt: Date.now(),
+      });
+    }, 5000),
+  ).current;
+
+  // --- Load book on mount ---
+  useEffect(() => {
+    if (!book?.filePath || isInitializedRef.current) return;
+    isInitializedRef.current = true;
+
+    const initBook = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const { bookDoc, format } = await loadAndParseBook(book.filePath!);
+        setBookDoc(bookDoc);
+        setBookFormat(format);
+      } catch (err) {
+        console.error("[ReaderView] Failed to load book:", err);
+        setError(
+          err instanceof Error ? err.message : "Failed to load book",
+        );
+        setIsLoading(false);
+      }
+    };
+
+    initBook();
+
+    return () => {
+      isInitializedRef.current = false;
+    };
+  }, [book?.filePath]);
+
+  // Load annotations
+  useEffect(() => {
+    loadAnnotations(bookId);
+  }, [bookId, loadAnnotations]);
 
   // Handle book not found
   useEffect(() => {
@@ -193,200 +275,96 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     }
   }, [book?.filePath, bookId, t]);
 
-  // Initialize renderer — with Ref lock (#9)
-  useEffect(() => {
-    console.log("[ReaderView] useEffect triggered, containerRef:", !!containerRef.current, "filePath:", book?.filePath, "tab:", !!tab);
-    if (!containerRef.current || !book?.filePath) {
-      console.log("[ReaderView] Early return: no container or no filePath");
-      return;
-    }
-    // Ref lock: prevent double init from React StrictMode (#9)
-    if (isInitializedRef.current) {
-      console.log("[ReaderView] Already initialized, skipping");
-      return;
-    }
-    isInitializedRef.current = true;
+  // --- Event handlers from FoliateViewer ---
+  const handleRelocate = useCallback(
+    (detail: RelocateDetail) => {
+      const progress = detail.fraction ?? 0;
+      const cfi =
+        detail.cfi || `section-${detail.section?.current ?? 0}`;
 
-    let cancelled = false;
+      // Update reader store (immediate)
+      setProgress(tabId, progress, cfi);
 
-    // Throttled progress save to DB — 5000ms (#8)
-    const throttledSaveProgress = throttle((bId: string, prog: number, cfi: string) => {
-      updateBook(bId, { progress: prog, currentCfi: cfi, lastOpenedAt: Date.now() });
-    }, 5000);
-
-    console.log("[ReaderView] Starting init...");
-    const initRenderer = async () => {
-      const renderer = await createRendererForFile(book.filePath!);
-      console.log("[ReaderView] initRenderer start, filePath:", book.filePath);
-      console.log("[ReaderView] renderer created");
-      if (cancelled) { renderer.destroy(); return; }
-      rendererRef.current = renderer;
-
-      renderer.on("location-change", (location, progress) => {
-        const positionKey =
-          location.cfi ||
-          (location.pageIndex !== undefined
-            ? `page-${location.pageIndex + 1}`
-            : `spine-${location.chapterIndex}`);
-
-        // Immediate update to reader store (UI responsiveness)
-        setProgress(tabId, progress, positionKey);
-        // Throttled save to persistent storage (#8 — 5000ms)
-        throttledSaveProgress(bookId, progress, positionKey);
-
-        if (location.pageIndex !== undefined) {
-          setCurrentPage(location.pageIndex + 1);
-        }
-      });
-
-      renderer.on("load", (info) => {
-        setChapter(tabId, info.chapterIndex, info.chapterTitle);
-        console.log("[ReaderView] load event fired:", info);
-        setIsLoading(false);
-
-        const pages = renderer.getTotalPages?.();
-        if (pages) setTotalPages(pages);
-      });
-
-      renderer.on("toc-ready", (toc) => {
-        setTocItems(toc);
-      });
-
-      renderer.on("selection", (sel) => {
-        setSelection(sel);
-        if (sel) {
-          setSelectedText(tabId, sel.text, null);
-          if (sel.rects.length > 0) {
-            const firstRect = sel.rects[0];
-            setSelectionPos({
-              x: firstRect.left + firstRect.width / 2,
-              y: firstRect.top - 40,
-            });
-          }
-        } else {
-          setSelectedText(tabId, "", null);
-        }
-      });
-
-      renderer.on("error", (err) => {
-        console.error("Reader error:", err);
-        setError(err.message);
-        setIsLoading(false);
-      });
-
-      console.log("[ReaderView] calling renderer.mount...");
-      await renderer.mount(containerRef.current!);
-      if (cancelled) { renderer.destroy(); rendererRef.current = null; return; }
-      console.log("[ReaderView] renderer.mount done");
-
-      if (book?.filePath) {
-        loadBookFile(renderer, book.filePath);
+      // Update chapter info
+      if (detail.tocItem?.label) {
+        setChapter(
+          tabId,
+          detail.section?.current ?? 0,
+          detail.tocItem.label,
+        );
       }
-    };
 
-    initRenderer().catch((err) => {
-      console.error("Failed to init renderer:", err);
-      setError(err.message);
-      setIsLoading(false);
-    });
-
-    return () => {
-      cancelled = true;
-      if (rendererRef.current) {
-        rendererRef.current.destroy();
-        rendererRef.current = null;
+      // Track pages — for fixed layout (PDF/CBZ), use section index as page counter
+      // because location.total is calculated from sizePerLoc which gives wrong results for PDF
+      if (isFixedLayoutFormat(bookFormat) && detail.section) {
+        setTotalPages(detail.section.total);
+        setCurrentPage(detail.section.current + 1);
+      } else if (detail.location) {
+        setTotalPages(detail.location.total);
+        setCurrentPage(detail.location.current);
       }
-      isInitializedRef.current = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookId, book?.filePath, !!tab]);
 
-  // Load annotations
-  useEffect(() => {
-    loadAnnotations(bookId);
-  }, [bookId, loadAnnotations]);
+      // Throttled save to DB
+      throttledSaveProgress(bookId, progress, cfi);
+    },
+    [tabId, bookId, bookFormat, setProgress, setChapter, throttledSaveProgress],
+  );
 
-  // Apply view settings — lightweight path (#10)
-  useEffect(() => {
-    const renderer = rendererRef.current;
-    if (!renderer) return;
-    renderer.setFontSize(viewSettings.fontSize);
-    renderer.setLineHeight(viewSettings.lineHeight);
-    renderer.setTheme(viewSettings.theme);
-    renderer.setViewMode(viewSettings.viewMode);
-  }, [viewSettings]);
-
-  // Sync highlights
-  useEffect(() => {
-    const renderer = rendererRef.current;
-    if (!renderer) return;
-    renderer.clearAnnotations();
-    const bookHighlights = highlights.filter((h) => h.bookId === bookId);
-    for (const h of bookHighlights) {
-      const colorMap: Record<string, string> = {
-        yellow: "rgba(250, 204, 21, 0.35)",
-        green: "rgba(74, 222, 128, 0.35)",
-        blue: "rgba(96, 165, 250, 0.35)",
-        pink: "rgba(244, 114, 182, 0.35)",
-        purple: "rgba(192, 132, 252, 0.35)",
-      };
-      renderer.addAnnotation({
-        id: h.id,
-        location: { type: "cfi", cfi: h.cfi, chapterIndex: undefined },
-        color: colorMap[h.color] || "rgba(250, 204, 21, 0.35)",
-        text: h.text,
-        note: h.note,
-      });
-    }
-  }, [highlights, bookId]);
-
-  const loadBookFile = async (renderer: DocumentRenderer, filePath: string) => {
-    try {
-      console.log("[loadBookFile] start, filePath:", filePath);
-      setIsLoading(true);
-      setError(null);
-      
-      // Pre-parse book to BookDoc (follows Readest pattern)
-      console.log("[loadBookFile] pre-parsing book...");
-      const bookDoc = await preParseBook(filePath);
-      console.log("[loadBookFile] book parsed, sections:", bookDoc.sections?.length);
-
-      const initialLocation = book?.currentCfi
-        ? book.currentCfi.startsWith("page-")
-          ? {
-              type: "page-coord" as const,
-              pageIndex: Number.parseInt(book.currentCfi.replace("page-", ""), 10) - 1,
-              cfi: book.currentCfi,
-            }
-          : { type: "cfi" as const, cfi: book.currentCfi }
-        : undefined;
-
-      console.log("[loadBookFile] calling renderer.open with BookDoc...");
-      await renderer.open(bookDoc, initialLocation);
-      console.log("[loadBookFile] renderer.open done");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load book";
-      console.error("loadBookFile failed:", err);
-      setError(message);
-      setIsLoading(false);
-    }
-  };
-
-  // Navigation handlers
-  const handleNavPrev = useCallback(() => rendererRef.current?.prev(), []);
-  const handleNavNext = useCallback(() => rendererRef.current?.next(), []);
-  const handleGoToChapter = useCallback((index: number) => {
-    rendererRef.current?.goToIndex(index);
+  const handleTocReady = useCallback((toc: TOCItem[]) => {
+    setTocItems(toc);
   }, []);
 
-  // Selection actions
+  const handleLoaded = useCallback(() => {
+    setIsLoading(false);
+  }, []);
+
+  const handleError = useCallback((err: Error) => {
+    setError(err.message);
+    setIsLoading(false);
+  }, []);
+
+  const handleSelection = useCallback(
+    (sel: BookSelection | null) => {
+      setSelection(sel);
+      if (sel) {
+        setSelectedText(tabId, sel.text, null);
+        if (sel.rects.length > 0) {
+          const firstRect = sel.rects[0];
+          setSelectionPos({
+            x: firstRect.left + firstRect.width / 2,
+            y: firstRect.top - 40,
+          });
+        }
+      } else {
+        setSelectedText(tabId, "", null);
+      }
+    },
+    [tabId, setSelectedText],
+  );
+
+  // --- Navigation (for toolbar buttons) ---
+  const handleNavPrev = useCallback(() => {
+    foliateRef.current?.goPrev();
+  }, []);
+  const handleNavNext = useCallback(() => {
+    foliateRef.current?.goNext();
+  }, []);
+
+  const handleGoToChapter = useCallback((index: number) => {
+    const item = tocItems[index];
+    if (item?.href) {
+      foliateRef.current?.goToHref(item.href);
+    }
+  }, [tocItems]);
+
+  // --- Selection actions ---
   const handleHighlight = useCallback(() => {
     if (selection) {
       useAnnotationStore.getState().addHighlight({
         id: crypto.randomUUID(),
         bookId,
         text: selection.text,
-        cfi: selection.start.cfi || "",
+        cfi: selection.cfi || "",
         color: "yellow" as const,
         chapterTitle: tab?.chapterTitle || undefined,
         createdAt: Date.now(),
@@ -403,7 +381,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
         bookId,
         title: selection.text.slice(0, 50),
         content: "",
-        cfi: selection.start.cfi || "",
+        cfi: selection.cfi || "",
         chapterTitle: tab?.chapterTitle || undefined,
         tags: [],
         createdAt: Date.now(),
@@ -435,113 +413,102 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     setSelection(null);
   }, [selection]);
 
-  const handleCloseSelection = useCallback(() => setSelection(null), []);
-  const handleToggleSearch = useCallback(() => setShowSearch((p) => !p), []);
-  const handleToggleToc = useCallback(() => setShowToc((p) => !p), []);
-  const handleToggleChat = useCallback(() => setShowChat((p) => !p), []);
+  const handleCloseSelection = useCallback(
+    () => setSelection(null),
+    [],
+  );
+  const handleToggleSearch = useCallback(
+    () => setShowSearch((p) => !p),
+    [],
+  );
+  const handleToggleToc = useCallback(
+    () => setShowToc((p) => !p),
+    [],
+  );
+  const handleToggleChat = useCallback(
+    () => setShowChat((p) => !p),
+    [],
+  );
 
-  // Search logic
-  const handleSearch = useCallback((query: string) => {
-    const renderer = rendererRef.current;
-    if (!renderer || !query.trim()) {
-      setSearchResults(0);
-      setSearchIndex(0);
-      return;
-    }
-    const container = containerRef.current;
-    if (!container) return;
+  // --- Search logic ---
+  const searchGeneratorRef = useRef<AsyncGenerator | null>(null);
+  const searchResultsListRef = useRef<Array<{ cfi: string; excerpt: string }>>(
+    [],
+  );
 
-    const existingMarks = container.querySelectorAll("mark[data-search]");
-    for (const mark of existingMarks) {
-      const parent = mark.parentNode;
-      if (parent) {
-        parent.replaceChild(document.createTextNode(mark.textContent || ""), mark);
-        parent.normalize();
+  const handleSearch = useCallback(
+    async (query: string) => {
+      // Clear previous search
+      foliateRef.current?.clearSearch();
+      searchResultsListRef.current = [];
+
+      if (!query.trim()) {
+        setSearchResults(0);
+        setSearchIndex(0);
+        return;
       }
-    }
 
-    const iframe = container.querySelector("iframe");
-    const searchDoc = iframe?.contentDocument || container.ownerDocument;
-    const body = iframe?.contentDocument?.body || container;
-    const treeWalker = searchDoc.createTreeWalker(body, NodeFilter.SHOW_TEXT);
-    const matches: Range[] = [];
-    const lowerQuery = query.toLowerCase();
-
-    let textNode: Text | null;
-    while ((textNode = treeWalker.nextNode() as Text | null)) {
-      const text = textNode.textContent?.toLowerCase() || "";
-      let startPos = 0;
-      let idx: number;
-      while ((idx = text.indexOf(lowerQuery, startPos)) !== -1) {
-        const range = searchDoc.createRange();
-        range.setStart(textNode, idx);
-        range.setEnd(textNode, idx + query.length);
-        matches.push(range);
-        startPos = idx + 1;
+      const gen = foliateRef.current?.search({ query });
+      if (!gen) {
+        setSearchResults(0);
+        setSearchIndex(0);
+        return;
       }
-    }
+      searchGeneratorRef.current = gen;
 
-    for (const range of matches) {
+      // Collect results from the async generator
+      const results: Array<{ cfi: string; excerpt: string }> = [];
       try {
-        const mark = searchDoc.createElement("mark");
-        mark.setAttribute("data-search", "true");
-        mark.style.backgroundColor = "rgba(250, 204, 21, 0.5)";
-        range.surroundContents(mark);
+        for await (const result of gen) {
+          const r = result as { cfi?: string; excerpt?: string } | undefined;
+          if (r?.cfi) {
+            results.push({ cfi: r.cfi, excerpt: r.excerpt || "" });
+          }
+        }
       } catch {
-        // Range may cross element boundaries
+        // Generator may be interrupted by a new search
       }
-    }
 
-    setSearchResults(matches.length);
-    setSearchIndex(matches.length > 0 ? 0 : -1);
-
-    if (matches.length > 0) {
-      const firstMark = (iframe?.contentDocument?.body || container).querySelector(
-        "mark[data-search]",
-      );
-      firstMark?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, []);
+      searchResultsListRef.current = results;
+      setSearchResults(results.length);
+      if (results.length > 0) {
+        setSearchIndex(0);
+        foliateRef.current?.goToCFI(results[0].cfi);
+      }
+    },
+    [],
+  );
 
   const navigateSearchResult = useCallback(
     (direction: "next" | "prev") => {
-      const container = containerRef.current;
-      if (!container) return;
-      const iframe = container.querySelector("iframe");
-      const body = iframe?.contentDocument?.body || container;
-      const marks = body.querySelectorAll("mark[data-search]");
-      if (marks.length === 0) return;
+      const results = searchResultsListRef.current;
+      if (results.length === 0) return;
 
-      for (const m of marks) {
-        (m as HTMLElement).style.backgroundColor = "rgba(250, 204, 21, 0.5)";
-      }
-
-      let newIndex = searchIndex;
-      if (direction === "next") {
-        newIndex = (searchIndex + 1) % marks.length;
-      } else {
-        newIndex = (searchIndex - 1 + marks.length) % marks.length;
-      }
-
-      setSearchIndex(newIndex);
-      const target = marks[newIndex] as HTMLElement;
-      target.style.backgroundColor = "rgba(249, 115, 22, 0.7)";
-      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      setSearchIndex((prev) => {
+        const next =
+          direction === "next"
+            ? (prev + 1) % results.length
+            : (prev - 1 + results.length) % results.length;
+        foliateRef.current?.goToCFI(results[next].cfi);
+        return next;
+      });
     },
-    [searchIndex],
+    [],
   );
 
   if (!tab) {
     return (
-      <div className="flex h-full items-center justify-center">{t("common.loading")}</div>
+      <div className="flex h-full items-center justify-center">
+        {t("common.loading")}
+      </div>
     );
   }
 
   return (
     <div className="flex h-full bg-muted/30 p-1">
-      {/* Main reading area — center, with border and shadow like SageRead */}
+      {/* Main reading area */}
       <div className="relative flex flex-1 flex-col overflow-hidden rounded-lg border border-border/60 bg-background shadow-sm">
-        {/* Toolbar — auto-hide like SageReader */}
+        {/* Toolbar */}
         <ReaderToolbar
           tabId={tabId}
           isVisible={controlsVisible}
@@ -565,24 +532,9 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
             onPrev={() => navigateSearchResult("prev")}
             onClose={() => {
               setShowSearch(false);
-              const container = containerRef.current;
-              if (container) {
-                const iframe = container.querySelector("iframe");
-                const body = iframe?.contentDocument?.body || container;
-                const marks = body.querySelectorAll("mark[data-search]");
-                for (const mark of marks) {
-                  const parent = mark.parentNode;
-                  if (parent) {
-                    parent.replaceChild(
-                      document.createTextNode(mark.textContent || ""),
-                      mark,
-                    );
-                    parent.normalize();
-                  }
-                }
-              }
               setSearchResults(0);
               setSearchIndex(0);
+              foliateRef.current?.clearSearch();
             }}
             resultCount={searchResults}
             currentIndex={searchIndex}
@@ -594,8 +546,11 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           {/* TOC sidebar */}
           {showToc && (
             <>
-              <div className="fixed inset-0 z-30 bg-black/20" onClick={() => setShowToc(false)} />
-              <div className="relative z-40 animate-in slide-in-from-left duration-200">
+              <div
+                className="fixed inset-0 z-30 bg-black/20"
+                onClick={() => setShowToc(false)}
+              />
+              <div className="relative z-40 flex h-full max-h-full animate-in slide-in-from-left duration-200">
                 <TOCPanel
                   tocItems={tocItems}
                   onGoToChapter={(index) => {
@@ -609,19 +564,35 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
             </>
           )}
 
-          {/* Reading area */}
-          <div className="relative flex-1 overflow-hidden">
-            <div ref={containerRef} className="h-full w-full" />
-
-            {/* Loading overlay */}
-            {isLoading && (
+          {/* Reading area — FoliateViewer */}
+          <div className="relative flex-1 overflow-hidden" ref={containerRef}>
+            {bookDoc ? (
+              <FoliateViewer
+                ref={foliateRef}
+                bookKey={bookId}
+                bookDoc={bookDoc}
+                format={bookFormat}
+                viewSettings={viewSettings}
+                lastLocation={book?.currentCfi || undefined}
+                onRelocate={handleRelocate}
+                onTocReady={handleTocReady}
+                onLoaded={handleLoaded}
+                onError={handleError}
+                onSelection={handleSelection}
+                onToggleSearch={handleToggleSearch}
+                onToggleToc={handleToggleToc}
+                onToggleChat={handleToggleChat}
+              />
+            ) : isLoading ? (
               <div className="absolute inset-0 flex items-center justify-center bg-background">
                 <div className="flex flex-col items-center gap-3">
                   <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
-                  <p className="text-sm text-muted-foreground">{t("reader.loadingBook")}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {t("reader.loadingBook")}
+                  </p>
                 </div>
               </div>
-            )}
+            ) : null}
 
             {/* Error state */}
             {error && !isLoading && (
@@ -630,16 +601,30 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
                     <span className="text-lg text-destructive">!</span>
                   </div>
-                  <p className="text-sm font-medium text-destructive">{t("reader.loadFailed")}</p>
+                  <p className="text-sm font-medium text-destructive">
+                    {t("reader.loadFailed")}
+                  </p>
                   <p className="text-xs text-muted-foreground">{error}</p>
                   <button
                     type="button"
                     className="mt-2 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
                     onClick={() => {
-                      const renderer = rendererRef.current;
-                      if (renderer && book?.filePath) {
+                      if (book?.filePath) {
+                        isInitializedRef.current = false;
                         setError(null);
-                        loadBookFile(renderer, book.filePath);
+                        setBookDoc(null);
+                        // Trigger re-init
+                        setIsLoading(true);
+                        loadAndParseBook(book.filePath).then(
+                          ({ bookDoc, format }) => {
+                            setBookDoc(bookDoc);
+                            setBookFormat(format);
+                            isInitializedRef.current = true;
+                          },
+                        ).catch((err) => {
+                          setError(err instanceof Error ? err.message : "Failed");
+                          setIsLoading(false);
+                        });
                       }
                     }}
                   >
@@ -694,7 +679,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           </div>
         </div>
 
-        {/* Footer bar — auto-hide like SageReader */}
+        {/* Footer bar */}
         <FooterBar
           tabId={tabId}
           totalPages={totalPages}
@@ -707,12 +692,13 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
         />
       </div>
 
-      {/* AI Chat sidebar — right side, separate panel */}
+      {/* AI Chat sidebar */}
       {showChat && (
         <div className="ml-1 flex w-80 shrink-0 flex-col overflow-hidden rounded-lg border border-border/60 bg-background shadow-sm">
-          {/* Chat header */}
           <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/40 px-3">
-            <span className="text-xs font-medium text-foreground">{t("chat.aiAssistant")}</span>
+            <span className="text-xs font-medium text-foreground">
+              {t("chat.aiAssistant")}
+            </span>
             <button
               type="button"
               className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -721,7 +707,6 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
-          {/* Chat content */}
           <div className="flex-1 overflow-hidden">
             <ChatPanel />
           </div>

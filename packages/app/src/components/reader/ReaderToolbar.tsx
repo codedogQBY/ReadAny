@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import type { TOCItem } from "@/lib/reader/document-renderer";
+import type { TOCItem } from "./FoliateViewer";
 import { useAppStore } from "@/stores/app-store";
 import { useReaderStore } from "@/stores/reader-store";
 import {
