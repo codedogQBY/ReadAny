@@ -96,22 +96,40 @@ export const useReadingSessionStore = create<ReadingSessionState>((set) => ({
       const totalReadingTime = sessions.reduce((sum, s) => sum + s.totalActiveTime, 0);
       const totalPagesRead = sessions.reduce((sum, s) => sum + s.pagesRead, 0);
       const totalSessions = sessions.length;
-      const averageSessionLength = totalSessions > 0 ? totalReadingTime / totalSessions : 0;
+      const averageSessionTime = totalSessions > 0 ? totalReadingTime / totalSessions : 0;
 
-      // Build daily reading map from sessions
-      const dailyReading = new Map<string, number>();
+      // Build daily stats from sessions
+      const dailyStatsMap = new Map<string, { readingTime: number; pagesRead: number; sessions: number }>();
       for (const s of sessions) {
         const day = new Date(s.startedAt).toISOString().split("T")[0];
-        dailyReading.set(day, (dailyReading.get(day) || 0) + s.totalActiveTime);
+        const existing = dailyStatsMap.get(day) || { readingTime: 0, pagesRead: 0, sessions: 0 };
+        dailyStatsMap.set(day, {
+          readingTime: existing.readingTime + s.totalActiveTime,
+          pagesRead: existing.pagesRead + s.pagesRead,
+          sessions: existing.sessions + 1,
+        });
       }
+
+      const dailyStats = Array.from(dailyStatsMap.entries()).map(([date, data]) => ({
+        date,
+        readingTime: data.readingTime,
+        pagesRead: data.pagesRead,
+        sessions: data.sessions,
+      }));
+
+      const lastSession = sessions[0];
+      const lastReadAt = lastSession?.startedAt || 0;
 
       set({
         stats: {
+          bookId,
           totalReadingTime,
           totalPagesRead,
           totalSessions,
-          averageSessionLength,
-          dailyReading,
+          averageSessionTime,
+          lastReadAt,
+          readingStreak: 0,
+          dailyStats,
         },
       });
     } catch (err) {

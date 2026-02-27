@@ -3,17 +3,20 @@
  * - Assistant: left-aligned, no bubble, markdown-rendered prose
  * - User: right-aligned, muted rounded card, plain text
  */
-import type { Message } from "@/types";
+import type { Message, Citation } from "@/types/chat";
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
-import { ToolCallDisplay } from "./ToolCallDisplay";
+import { Tool } from "./Tool";
+import { Reasoning } from "./Reasoning";
+import { CitationCard } from "./CitationCard";
 
 interface MessageBubbleProps {
   message: Message;
+  onCitationClick?: (citation: Citation) => void;
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, onCitationClick }: MessageBubbleProps) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
 
@@ -34,7 +37,34 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   }
 
   return (
-    <div className="group flex w-full flex-col gap-0.5">
+    <div className="group flex w-full flex-col gap-1">
+      {/* reasoning steps */}
+      {message.reasoning && message.reasoning.length > 0 && (
+        <div className="space-y-1">
+          {message.reasoning.map((step, i) => (
+            <Reasoning
+              key={step.id || `reasoning-${i}`}
+              content={step.content}
+              isStreaming={false}
+              defaultOpen={i === 0}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* tool calls */}
+      {message.toolCalls && message.toolCalls.length > 0 && (
+        <div className="space-y-1">
+          {message.toolCalls.map((tc) => (
+            <Tool
+              key={tc.id}
+              toolCall={tc}
+              defaultOpen={tc.status === "running"}
+            />
+          ))}
+        </div>
+      )}
+
       {/* assistant text — markdown rendered, left aligned */}
       <div className="chat-markdown max-w-none text-sm leading-relaxed">
         <MarkdownRenderer content={message.content} />
@@ -42,21 +72,13 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
       {/* citations */}
       {message.citations && message.citations.length > 0 && (
-        <div className="mt-1.5 space-y-1 border-l-2 border-neutral-200 pl-3">
+        <div className="mt-2 space-y-2">
           {message.citations.map((citation, i) => (
-            <div key={i} className="text-xs text-muted-foreground">
-              <span className="font-medium">[{citation.chapterTitle}]</span>{" "}
-              "{citation.text.slice(0, 100)}…"
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* tool calls */}
-      {message.toolCalls && message.toolCalls.length > 0 && (
-        <div className="mt-1.5 space-y-1">
-          {message.toolCalls.map((tc) => (
-            <ToolCallDisplay key={tc.id} toolCall={tc} />
+            <CitationCard
+              key={citation.id || `citation-${i}`}
+              citation={citation}
+              onNavigate={onCitationClick}
+            />
           ))}
         </div>
       )}

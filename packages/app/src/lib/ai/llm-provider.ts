@@ -3,25 +3,19 @@
  *
  * Supports:
  * - OpenAI-compatible endpoints (OpenAI, Ollama, vLLM, DeepSeek, etc.)
- * - Anthropic Claude (native API)
+ * - Anthropic Claude (native API with extended thinking support)
  * - Google Gemini (native API)
  */
 import type { AIConfig, AIEndpoint } from "@/types";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 
 export interface LLMOptions {
-  /** Override temperature (defaults to aiConfig.temperature) */
   temperature?: number;
-  /** Override maxTokens (defaults to aiConfig.maxTokens) */
   maxTokens?: number;
-  /** Streaming enabled (default true) */
   streaming?: boolean;
+  deepThinking?: boolean;
 }
 
-/**
- * Resolve the active endpoint and model from the AI config.
- * Throws if misconfigured.
- */
 export function resolveActiveEndpoint(config: AIConfig): {
   endpoint: AIEndpoint;
   model: string;
@@ -42,10 +36,6 @@ export function resolveActiveEndpoint(config: AIConfig): {
   return { endpoint, model };
 }
 
-/**
- * Create a LangChain ChatModel instance from the current AI config.
- * Automatically selects the correct SDK based on the endpoint's provider type.
- */
 export async function createChatModel(
   config: AIConfig,
   options: LLMOptions = {},
@@ -55,13 +45,10 @@ export async function createChatModel(
     temperature: options.temperature ?? config.temperature,
     maxTokens: options.maxTokens ?? config.maxTokens,
     streaming: options.streaming,
+    deepThinking: options.deepThinking,
   });
 }
 
-/**
- * Create a ChatModel from a specific endpoint (not necessarily the active one).
- * Useful for multi-model workflows in LangGraph.
- */
 export async function createChatModelFromEndpoint(
   endpoint: AIEndpoint,
   model: string,
@@ -78,6 +65,7 @@ export async function createChatModelFromEndpoint(
   switch (endpoint.provider) {
     case "anthropic": {
       const { ChatAnthropic } = await import("@langchain/anthropic");
+      
       return new ChatAnthropic({
         model,
         apiKey: endpoint.apiKey,
@@ -92,6 +80,7 @@ export async function createChatModelFromEndpoint(
 
     case "google": {
       const { ChatGoogleGenerativeAI } = await import("@langchain/google-genai");
+      
       return new ChatGoogleGenerativeAI({
         model,
         apiKey: endpoint.apiKey,
@@ -104,6 +93,7 @@ export async function createChatModelFromEndpoint(
     case "openai":
     default: {
       const { ChatOpenAI } = await import("@langchain/openai");
+      
       return new ChatOpenAI({
         model,
         apiKey: endpoint.apiKey,

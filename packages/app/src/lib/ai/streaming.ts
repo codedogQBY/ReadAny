@@ -14,6 +14,7 @@ export interface StreamingOptions {
   enabledSkills: Skill[];
   isVectorized: boolean;
   aiConfig: AIConfig;
+  deepThinking?: boolean;
   onToken: (token: string) => void;
   onComplete: (
     fullText: string,
@@ -22,16 +23,15 @@ export interface StreamingOptions {
   onError: (error: Error) => void;
   onToolCall?: (toolName: string, args: Record<string, unknown>) => void;
   onToolResult?: (toolName: string, result: unknown) => void;
+  onReasoning?: (content: string, type?: "thinking" | "planning" | "analyzing" | "deciding") => void;
 }
 
 export class StreamingChat {
   private aborted = false;
 
-  /** Start a streaming chat completion using LangGraph agent */
   async stream(options: StreamingOptions): Promise<void> {
     this.aborted = false;
 
-    // Extract the user's latest message and conversation history
     const { messages } = processMessages(
       options.thread,
       {
@@ -44,7 +44,6 @@ export class StreamingChat {
       { slidingWindowSize: options.aiConfig.slidingWindowSize },
     );
 
-    // Last message is user input, rest is history
     const userInput = messages[messages.length - 1]?.content || "";
     const history = messages.slice(0, -1).map((m) => ({
       role: m.role as "user" | "assistant",
@@ -63,6 +62,7 @@ export class StreamingChat {
           semanticContext: options.semanticContext,
           enabledSkills: options.enabledSkills,
           isVectorized: options.isVectorized,
+          deepThinking: options.deepThinking,
         },
         userInput,
         history,
@@ -71,16 +71,33 @@ export class StreamingChat {
       for await (const event of stream) {
         if (this.aborted) return;
 
-        if (event.type === "token") {
-          fullText += event.content;
-          options.onToken(event.content);
-        } else if (event.type === "tool_call") {
-          options.onToolCall?.(event.name, event.args);
-          toolCalls.push({ name: event.name, args: event.args });
-        } else if (event.type === "tool_result") {
-          options.onToolResult?.(event.name, event.result);
-          const existing = toolCalls.find((tc) => tc.name === event.name);
-          if (existing) existing.result = event.result;
+        switch (event.type) {
+          case "token":
+            fullText += event.content;
+            options.onToken(event.content);
+            break;
+
+          case "tool_call":
+            options.onToolCall?.(event.name, event.args);
+            toolCalls.push({ name: event.name, args: event.args });
+            break;
+
+          case "tool_result":
+            options.onToolResult?.(event.name, event.result);
+            const existing = toolCalls.find((tc) => tc.name === event.name);
+            if (existing) existing.result = event.result;
+            break;
+
+          case "reasoning":
+            options.onReasoning?.(event.content, event.stepType);
+            break;
+
+          case "citation":
+            break;
+
+          case "error":
+            options.onError(new Error(event.error));
+            break;
         }
       }
 
@@ -93,18 +110,15 @@ export class StreamingChat {
     }
   }
 
-  /** Abort the current stream */
   abort(): void {
     this.aborted = true;
   }
 }
 
-/** Create a new message ID */
 export function createMessageId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Create a new thread ID */
 export function createThreadId(): string {
   return `thread-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }

@@ -20,6 +20,7 @@
     "library": "书库",
     "chat": "对话",
     "notes": "笔记",
+    "skills": "技能",
     "allBooks": "全部书籍"
   },
   "home": {
@@ -67,7 +68,9 @@
       "analyzeAuthor": "分析作者的论点"
     },
     "aiAssistant": "AI 阅读助手",
-    "aiAssistantDesc": "分析内容、回答问题，帮助你更好地理解书籍。"
+    "aiAssistantDesc": "分析内容、回答问题，帮助你更好地理解书籍。",
+    "deepThinking": "深度思考",
+    "deepThinkingHint": "启用更深入的分析和推理过程，响应时间可能更长"
   },
   "reader": {
     "untitled": "无标题",
@@ -195,6 +198,26 @@
     "addSkill": "添加技能",
     "noSkills": "暂无自定义技能。内置技能已自动可用。",
     "builtIn": "内置",
+    "enabled": "已启用",
+    "disabled": "未启用",
+    "viewSkill": "查看技能",
+    "editSkill": "编辑技能",
+    "skillName": "技能名称",
+    "skillNamePlaceholder": "例如：生成思维导图",
+    "skillDescription": "技能描述",
+    "skillDescriptionPlaceholder": "简要描述这个技能的作用",
+    "skillPrompt": "技能提示词",
+    "skillPromptPlaceholder": "详细描述技能的行为和输出要求",
+    "builtinNameReadOnly": "内置技能名称不可修改",
+    "skillUsage": "技能使用说明",
+    "skillUsageSummary": "摘要",
+    "skillUsageSummaryDesc": "在聊天中输入「总结这一章」或「全书摘要」",
+    "skillUsageCharacter": "人物",
+    "skillUsageCharacterDesc": "询问「书中有哪些人物」或「分析主角」",
+    "skillUsageQuote": "金句",
+    "skillUsageQuoteDesc": "请求「找出书中的金句」或「有哪些精彩段落」",
+    "skillUsageAnalysis": "分析",
+    "skillUsageAnalysisDesc": "提问「作者的论点是什么」或「分析论证逻辑」",
     "vectorModel": "向量模型",
     "vm_title": "向量模型",
     "vm_desc": "配置嵌入模型，用于语义搜索和 RAG 检索",

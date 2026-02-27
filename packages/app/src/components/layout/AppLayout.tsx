@@ -7,7 +7,7 @@
  * Non-active tabs are hidden via `display:none` so renderers are never destroyed
  * on tab switch. Only closing a tab truly unmounts the ReaderView.
  *
- * Home-type pages (home/chat/notes/stats) share the left sidebar.
+ * Home-type pages (home/chat/notes/skills/stats) share the left sidebar.
  * Reader pages are full-width (no sidebar).
  */
 import { ChatPage as ChatPageComponent } from "@/components/chat/ChatPage";
@@ -15,6 +15,7 @@ import { HomePage } from "@/components/home/HomePage";
 import { ReaderView } from "@/components/reader/ReaderView";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { ReadingStatsPanel } from "@/components/stats/ReadingStatsPanel";
+import SkillsPage from "@/pages/Skills";
 import { useAppStore } from "@/stores/app-store";
 import { useReaderStore } from "@/stores/reader-store";
 import { Construction } from "lucide-react";
@@ -39,6 +40,7 @@ const HOME_VIEWS: { id: string; Component: React.ComponentType }[] = [
   { id: "home", Component: HomePage },
   { id: "chat", Component: ChatPageComponent },
   { id: "notes", Component: NotesPlaceholder },
+  { id: "skills", Component: SkillsPage },
   { id: "stats", Component: ReadingStatsPanel },
 ];
 

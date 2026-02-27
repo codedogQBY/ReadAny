@@ -1,23 +1,16 @@
 /**
  * ChatPanel — book-scoped sidebar chat panel.
- *
- * - Bound to the current book's bookId.
- * - Shows only threads belonging to this book.
- * - Supports creating new conversations and switching between them.
- * - RAG search is scoped to this book by default.
  */
-import { Button } from "@/components/ui/button";
 import { useStreamingChat } from "@/hooks/use-streaming-chat";
 import { useChatStore } from "@/stores/chat-store";
-import type { Book } from "@/types";
-import { Brain, History, MessageCirclePlus, Square, X } from "lucide-react";
+import type { Book, MessageV2 } from "@/types";
+import { Brain, History, MessageCirclePlus, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChatInput } from "./ChatInput";
 import { MessageList } from "./MessageList";
 
 interface ChatPanelProps {
-  /** The current book — used to scope conversations */
   book?: Book | null;
 }
 
@@ -27,8 +20,6 @@ export function ChatPanel({ book }: ChatPanelProps) {
 
   const {
     threads,
-    isStreaming,
-    streamingContent,
     loadThreads,
     createThread,
     removeThread,
@@ -36,6 +27,18 @@ export function ChatPanel({ book }: ChatPanelProps) {
     getActiveThreadId,
     getThreadsForContext,
   } = useChatStore();
+
+  // Use streaming chat hook with book context
+  const {
+    isStreaming,
+    currentMessage,
+    currentStep,
+    sendMessage,
+    stopStream,
+  } = useStreamingChat({
+    book: book || null,
+    bookId,
+  });
 
   // Load book threads on mount
   useEffect(() => {
@@ -48,16 +51,11 @@ export function ChatPanel({ book }: ChatPanelProps) {
   const activeThread = threads.find((t) => t.id === activeThreadId);
   const bookThreads = bookId ? getThreadsForContext(bookId) : [];
 
-  const { sendMessage, stopStream } = useStreamingChat({
-    book: book || null,
-    bookId,
-  });
-
   const [showThreadList, setShowThreadList] = useState(false);
 
   const handleSend = useCallback(
-    (content: string) => {
-      sendMessage(content, bookId);
+    (content: string, deepThinking: boolean = false) => {
+      sendMessage(content, bookId, deepThinking);
     },
     [sendMessage, bookId],
   );
@@ -101,19 +99,66 @@ export function ChatPanel({ book }: ChatPanelProps) {
   );
 
   const displayMessages = activeThread?.messages || [];
-  const allMessages =
-    isStreaming && streamingContent
-      ? [
-          ...displayMessages,
-          {
-            id: "streaming",
-            threadId: activeThread?.id || "",
-            role: "assistant" as const,
-            content: streamingContent,
-            createdAt: Date.now(),
-          },
-        ]
-      : displayMessages;
+  
+  // Convert old message format to MessageV2 format with parts
+  const convertToMessageV2 = (messages: any[]): MessageV2[] => {
+    return messages.map((m) => {
+      const parts: any[] = [];
+      
+      // Add reasoning parts
+      if (m.reasoning && m.reasoning.length > 0) {
+        m.reasoning.forEach((r: any) => {
+          parts.push({
+            id: r.id || `reasoning-${Date.now()}`,
+            type: "reasoning",
+            text: r.content,
+            thinkingType: r.type,
+            status: "completed",
+            createdAt: r.timestamp || m.createdAt,
+          });
+        });
+      }
+      
+      // Add tool call parts
+      if (m.toolCalls && m.toolCalls.length > 0) {
+        m.toolCalls.forEach((tc: any) => {
+          parts.push({
+            id: tc.id,
+            type: "tool_call",
+            name: tc.name,
+            args: tc.args,
+            result: tc.result,
+            status: tc.status || "completed",
+            createdAt: m.createdAt,
+          });
+        });
+      }
+      
+      // Add text part
+      if (m.content) {
+        parts.push({
+          id: `text-${m.id}`,
+          type: "text",
+          text: m.content,
+          status: "completed",
+          createdAt: m.createdAt,
+        });
+      }
+      
+      return {
+        id: m.id,
+        threadId: m.threadId,
+        role: m.role,
+        parts,
+        createdAt: m.createdAt,
+      };
+    });
+  };
+
+  // Build message list with streaming message
+  const allMessages: MessageV2[] = isStreaming && currentMessage
+    ? [...convertToMessageV2(displayMessages), currentMessage]
+    : convertToMessageV2(displayMessages);
 
   const SUGGESTIONS = [
     t("chat.suggestions.summarizeChapter"),
@@ -182,7 +227,12 @@ export function ChatPanel({ book }: ChatPanelProps) {
       {/* Messages or empty state */}
       <div className="flex-1 overflow-hidden">
         {allMessages.length > 0 ? (
-          <MessageList messages={allMessages} />
+          <MessageList 
+            messages={allMessages} 
+            isStreaming={isStreaming}
+            currentStep={currentStep}
+            onStop={stopStream}
+          />
         ) : (
           <div className="flex h-full flex-col items-start justify-end gap-3 overflow-y-auto p-4 pb-6">
             <div className="flex flex-col items-start gap-3 pl-1">
@@ -213,21 +263,6 @@ export function ChatPanel({ book }: ChatPanelProps) {
           </div>
         )}
       </div>
-
-      {/* Stop button */}
-      {isStreaming && (
-        <div className="flex justify-center px-3 pb-1">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 gap-1 rounded-full text-xs"
-            onClick={stopStream}
-          >
-            <Square className="size-3" />
-            {t("common.stop")}
-          </Button>
-        </div>
-      )}
 
       {/* Input */}
       <div className="shrink-0 px-2 pb-2 pt-1">

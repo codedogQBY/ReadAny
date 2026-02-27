@@ -1,12 +1,6 @@
 /**
  * ChatPage — standalone full-page chat for general conversations.
- *
- * - Shows only threads WITHOUT a bookId (general chat).
- * - Supports creating new conversations and switching between them.
- * - Users can optionally select books as context via ContextPopover.
- * - RAG search uses selected books' context.
  */
-import { Button } from "@/components/ui/button";
 import { useStreamingChat } from "@/hooks/use-streaming-chat";
 import { useChatReaderStore } from "@/stores/chat-reader-store";
 import { useChatStore } from "@/stores/chat-store";
@@ -18,7 +12,6 @@ import {
   MessageCirclePlus,
   ScrollText,
   Search,
-  Square,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -26,6 +19,7 @@ import { useTranslation } from "react-i18next";
 import { ChatInput } from "./ChatInput";
 import { ContextPopover } from "./ContextPopover";
 import { MessageList } from "./MessageList";
+import type { MessageV2 } from "@/types/message";
 
 function ThreadsSidebar({
   open,
@@ -37,15 +31,12 @@ function ThreadsSidebar({
   onSelect: (threadId: string) => void;
 }) {
   const { t } = useTranslation();
-  const { getThreadsForContext, getActiveThreadId, removeThread } =
-    useChatStore();
+  const { getThreadsForContext, getActiveThreadId, removeThread } = useChatStore();
   const generalThreads = getThreadsForContext();
   const activeThreadId = getActiveThreadId();
 
   return (
-    <div
-      className={`absolute inset-0 z-50 ${open ? "pointer-events-auto" : "pointer-events-none"}`}
-    >
+    <div className={`absolute inset-0 z-50 ${open ? "pointer-events-auto" : "pointer-events-none"}`}>
       <div
         className={`absolute inset-0 transition-opacity duration-300 ${open ? "bg-black/5 opacity-100" : "opacity-0"}`}
         onClick={onClose}
@@ -54,14 +45,8 @@ function ThreadsSidebar({
         className={`absolute left-0 top-0 h-full w-72 transform rounded-r-2xl border-r bg-background px-3 py-3 shadow-lg transition-all duration-300 ease-out ${open ? "translate-x-0 opacity-100" : "-translate-x-full opacity-0"}`}
       >
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-neutral-900">
-            {t("chat.history")}
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full p-1 hover:bg-muted"
-          >
+          <h3 className="text-sm font-semibold text-neutral-900">{t("chat.history")}</h3>
+          <button type="button" onClick={onClose} className="rounded-full p-1 hover:bg-muted">
             <X className="size-4" />
           </button>
         </div>
@@ -80,9 +65,7 @@ function ThreadsSidebar({
               }}
               className={`group flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors ${thread.id === activeThreadId ? "bg-primary/10 text-primary" : "text-neutral-700 hover:bg-muted"}`}
             >
-              <span className="truncate">
-                {thread.title || t("chat.newChat")}
-              </span>
+              <span className="truncate">{thread.title || t("chat.newChat")}</span>
               <button
                 type="button"
                 onClick={(e) => {
@@ -101,11 +84,7 @@ function ThreadsSidebar({
   );
 }
 
-function EmptyState({
-  onSuggestionClick,
-}: {
-  onSuggestionClick: (text: string) => void;
-}) {
+function EmptyState({ onSuggestionClick }: { onSuggestionClick: (text: string) => void }) {
   const { t } = useTranslation();
   const SUGGESTIONS = [
     { key: "chat.suggestions.summarizeReading", icon: ScrollText },
@@ -121,17 +100,11 @@ function EmptyState({
           <div className="rounded-full bg-primary/10 p-3">
             <Brain className="size-10 text-primary" />
           </div>
-          <h1 className="text-2xl font-semibold text-neutral-900">
-            {t("chat.howCanIHelp")}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {t("chat.askAboutBooks")}
-          </p>
+          <h1 className="text-2xl font-semibold text-neutral-900">{t("chat.howCanIHelp")}</h1>
+          <p className="text-sm text-muted-foreground">{t("chat.askAboutBooks")}</p>
         </div>
         <div>
-          <h2 className="mb-2 text-sm font-medium text-muted-foreground">
-            {t("chat.getStarted")}
-          </h2>
+          <h2 className="mb-2 text-sm font-medium text-muted-foreground">{t("chat.getStarted")}</h2>
           <div className="grid grid-cols-2 gap-3">
             {SUGGESTIONS.map(({ key, icon: Icon }) => (
               <div
@@ -150,12 +123,64 @@ function EmptyState({
   );
 }
 
+function convertToMessageV2(messages: any[]): MessageV2[] {
+  return messages.map((m) => {
+    const parts: any[] = [];
+    
+    // Add reasoning parts
+    if (m.reasoning && m.reasoning.length > 0) {
+      m.reasoning.forEach((r: any) => {
+        parts.push({
+          id: r.id || `reasoning-${Date.now()}`,
+          type: "reasoning",
+          text: r.content,
+          thinkingType: r.type,
+          status: "completed",
+          createdAt: r.timestamp || m.createdAt,
+        });
+      });
+    }
+    
+    // Add tool call parts
+    if (m.toolCalls && m.toolCalls.length > 0) {
+      m.toolCalls.forEach((tc: any) => {
+        parts.push({
+          id: tc.id,
+          type: "tool_call",
+          name: tc.name,
+          args: tc.args,
+          result: tc.result,
+          status: tc.status || "completed",
+          createdAt: m.createdAt,
+        });
+      });
+    }
+    
+    // Add text part
+    if (m.content) {
+      parts.push({
+        id: `text-${m.id}`,
+        type: "text",
+        text: m.content,
+        status: "completed",
+        createdAt: m.createdAt,
+      });
+    }
+    
+    return {
+      id: m.id,
+      threadId: m.threadId,
+      role: m.role,
+      parts,
+      createdAt: m.createdAt,
+    };
+  });
+}
+
 export function ChatPage() {
   const { t } = useTranslation();
   const {
     threads,
-    isStreaming,
-    streamingContent,
     loadAllThreads,
     initialized,
     createThread,
@@ -163,10 +188,17 @@ export function ChatPage() {
     getActiveThreadId,
   } = useChatStore();
   const { bookTitle } = useChatReaderStore();
-  const { sendMessage, stopStream } = useStreamingChat();
+  
+  const {
+    isStreaming,
+    currentMessage,
+    currentStep,
+    sendMessage,
+    stopStream,
+  } = useStreamingChat();
+  
   const [showThreads, setShowThreads] = useState(false);
 
-  // Load all threads on mount
   useEffect(() => {
     if (!initialized) {
       loadAllThreads();
@@ -177,14 +209,12 @@ export function ChatPage() {
   const activeThread = threads.find((t) => t.id === activeThreadId);
 
   const handleSend = useCallback(
-    async (content: string) => {
+    async (content: string, deepThinking: boolean = false) => {
       if (!activeThreadId) {
-        // Create a new general thread, then send
         await createThread(undefined, content.slice(0, 50));
-        // sendMessage after state update
-        setTimeout(() => sendMessage(content), 0);
+        setTimeout(() => sendMessage(content, undefined, deepThinking), 50);
       } else {
-        sendMessage(content);
+        sendMessage(content, undefined, deepThinking);
       }
     },
     [activeThreadId, createThread, sendMessage],
@@ -194,20 +224,11 @@ export function ChatPage() {
     setGeneralActiveThread(null);
   }, [setGeneralActiveThread]);
 
-  const displayMessages = activeThread?.messages || [];
-  const allMessages =
-    isStreaming && streamingContent
-      ? [
-          ...displayMessages,
-          {
-            id: "streaming",
-            threadId: activeThread?.id || "",
-            role: "assistant" as const,
-            content: streamingContent,
-            createdAt: Date.now(),
-          },
-        ]
-      : displayMessages;
+  const displayMessages = convertToMessageV2(activeThread?.messages || []);
+  
+  const allMessages: MessageV2[] = isStreaming && currentMessage
+    ? [...displayMessages, currentMessage]
+    : displayMessages;
 
   return (
     <div className="relative flex h-full flex-col">
@@ -242,29 +263,19 @@ export function ChatPage() {
             <MessageCirclePlus className="size-4" />
           </button>
         </div>
-        {allMessages.length > 0 && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-4 translate-y-full bg-gradient-to-b from-background to-transparent" />
-        )}
       </div>
       <div className="flex flex-1 flex-col overflow-hidden">
         {allMessages.length > 0 ? (
           <>
             <div className="flex-1 overflow-hidden">
-              <MessageList messages={allMessages} />
+              <MessageList 
+                messages={allMessages} 
+                isStreaming={isStreaming}
+                currentStep={currentStep}
+                onStop={stopStream}
+              />
             </div>
-            {isStreaming && (
-              <div className="flex justify-center px-3 pb-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 gap-1 rounded-full text-xs"
-                  onClick={stopStream}
-                >
-                  <Square className="size-3" />
-                  {t("common.stop")}
-                </Button>
-              </div>
-            )}
+
             <div className="shrink-0 px-4 pb-3 pt-2">
               <ChatInput onSend={handleSend} disabled={isStreaming} />
             </div>

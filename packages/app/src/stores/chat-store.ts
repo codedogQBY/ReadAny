@@ -1,4 +1,4 @@
-import type { Message, SemanticContext, Thread } from "@/types";
+import type { Message, SemanticContext, Thread, ToolCall, ReasoningStep } from "@/types";
 /**
  * Chat store — conversation threads, messages, streaming state.
  *
@@ -18,48 +18,39 @@ import {
 } from "@/lib/db/database";
 
 export interface ChatState {
-  /** All loaded threads (both book & general) */
   threads: Thread[];
-  /** Active thread for general chat (ChatPage) */
   generalActiveThreadId: string | null;
-  /** Active thread per book (keyed by bookId) */
   bookActiveThreadIds: Record<string, string>;
-  /** Streaming state */
   isStreaming: boolean;
   streamingContent: string;
-  /** Semantic reading context (for book chat) */
+  toolCalls: ToolCall[];
+  reasoning: ReasoningStep[];
+  currentStep: "thinking" | "tool_calling" | "responding" | "idle";
   semanticContext: SemanticContext | null;
-  /** Whether initial load from DB is complete */
   initialized: boolean;
 
-  // --- Actions ---
-  /** Load threads from DB. If bookId given, load that book's threads; otherwise load general. */
   loadThreads: (bookId?: string) => Promise<void>;
-  /** Load all threads (for initial app startup) */
   loadAllThreads: () => Promise<void>;
-  /** Create a new thread and persist to DB */
   createThread: (bookId?: string, title?: string) => Promise<Thread>;
-  /** Remove a thread and delete from DB */
   removeThread: (threadId: string) => Promise<void>;
-  /** Set active thread for general chat */
   setGeneralActiveThread: (threadId: string | null) => void;
-  /** Set active thread for a specific book */
   setBookActiveThread: (bookId: string, threadId: string | null) => void;
-  /** Get the active thread ID for a context (book or general) */
   getActiveThreadId: (bookId?: string) => string | null;
-  /** Get threads filtered by context */
   getThreadsForContext: (bookId?: string) => Thread[];
-  /** Add a message to a thread (in-memory + DB) */
   addMessage: (threadId: string, message: Message) => Promise<void>;
-  /** Update message content in-memory */
   updateMessage: (threadId: string, messageId: string, content: string) => void;
-  /** Update thread title */
   updateThreadTitle: (threadId: string, title: string) => Promise<void>;
-  /** Streaming controls */
   setStreaming: (streaming: boolean) => void;
   setStreamingContent: (content: string) => void;
   appendStreamingContent: (chunk: string) => void;
+  setToolCalls: (toolCalls: ToolCall[]) => void;
+  addToolCall: (toolCall: ToolCall) => void;
+  updateToolCall: (id: string, update: Partial<ToolCall>) => void;
+  setReasoning: (reasoning: ReasoningStep[]) => void;
+  addReasoningStep: (step: ReasoningStep) => void;
+  setCurrentStep: (step: "thinking" | "tool_calling" | "responding" | "idle") => void;
   setSemanticContext: (ctx: SemanticContext | null) => void;
+  resetStreamingState: () => void;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -68,6 +59,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   bookActiveThreadIds: {},
   isStreaming: false,
   streamingContent: "",
+  toolCalls: [],
+  reasoning: [],
+  currentStep: "idle",
   semanticContext: null,
   initialized: false,
 
@@ -75,7 +69,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const dbThreads = await dbGetThreads(bookId);
       set((state) => {
-        // Merge: replace threads for this context, keep others
         const otherThreads = state.threads.filter((t) =>
           bookId ? t.bookId !== bookId : !!t.bookId,
         );
@@ -106,7 +99,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       updatedAt: Date.now(),
     };
 
-    // Persist to DB
     try {
       await dbInsertThread(thread);
     } catch (err) {
@@ -117,7 +109,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const newState: Partial<ChatState> = {
         threads: [thread, ...state.threads],
       };
-      // Auto-activate the new thread
       if (bookId) {
         newState.bookActiveThreadIds = {
           ...state.bookActiveThreadIds,
@@ -146,15 +137,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       if (removed?.bookId) {
         if (state.bookActiveThreadIds[removed.bookId] === threadId) {
-          // Pick the next thread for this book, or null
           const nextForBook = newThreads.find((t) => t.bookId === removed.bookId);
-          updates.bookActiveThreadIds = {
-            ...state.bookActiveThreadIds,
-            [removed.bookId]: nextForBook?.id || "",
-          };
           if (!nextForBook) {
             const { [removed.bookId]: _, ...rest } = state.bookActiveThreadIds;
             updates.bookActiveThreadIds = rest;
+          } else {
+            updates.bookActiveThreadIds = {
+              ...state.bookActiveThreadIds,
+              [removed.bookId]: nextForBook.id,
+            };
           }
         }
       } else {
@@ -195,7 +186,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   addMessage: async (threadId, message) => {
-    // Persist to DB
     try {
       await dbInsertMessage(message);
     } catch (err) {
@@ -243,5 +233,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setStreamingContent: (content) => set({ streamingContent: content }),
   appendStreamingContent: (chunk) =>
     set((state) => ({ streamingContent: state.streamingContent + chunk })),
+  
+  setToolCalls: (toolCalls) => set({ toolCalls }),
+  addToolCall: (toolCall) => set((state) => ({ toolCalls: [...state.toolCalls, toolCall] })),
+  updateToolCall: (id, update) =>
+    set((state) => ({
+      toolCalls: state.toolCalls.map((tc) =>
+        tc.id === id ? { ...tc, ...update } : tc
+      ),
+    })),
+  
+  setReasoning: (reasoning) => set({ reasoning }),
+  addReasoningStep: (step) => set((state) => ({ reasoning: [...state.reasoning, step] })),
+  
+  setCurrentStep: (step) => set({ currentStep: step }),
+  
   setSemanticContext: (ctx) => set({ semanticContext: ctx }),
+  
+  resetStreamingState: () =>
+    set({
+      isStreaming: false,
+      streamingContent: "",
+      toolCalls: [],
+      reasoning: [],
+      currentStep: "idle",
+    }),
 }));

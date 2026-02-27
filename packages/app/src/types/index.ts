@@ -17,6 +17,7 @@ export type {
   MessageRole,
   Citation,
   ToolCall,
+  ReasoningStep,
   SemanticContext,
   AIConfig,
   AIModel,
@@ -24,6 +25,18 @@ export type {
   AIProviderType,
   VectorModelConfig,
 } from "./chat";
+export type {
+  Part,
+  TextPart,
+  ReasoningPart,
+  ToolCallPart,
+  CitationPart,
+  MessageV2,
+  ThreadV2,
+  PartStatus,
+  StreamEvent,
+  StreamEventType,
+} from "./message";
 export type {
   ReadingSession,
   ReadingStats,

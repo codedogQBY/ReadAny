@@ -1,11 +1,11 @@
 import { useAppStore } from "@/stores/app-store";
 import { useLibraryStore } from "@/stores/library-store";
-import { BarChart3, BookOpen, ChevronDown, ChevronRight, MessageSquare, Search, Settings, StickyNote } from "lucide-react";
+import { BarChart3, BookOpen, ChevronDown, ChevronRight, MessageSquare, Puzzle, Search, Settings, StickyNote } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 interface NavItem {
-  tabType: "home" | "chat" | "notes";
+  tabType: "home" | "chat" | "notes" | "skills";
   labelKey: string;
   icon: React.ComponentType<{ className?: string; size?: number }>;
   expandable?: boolean;
@@ -15,6 +15,7 @@ const NAV_ITEMS: NavItem[] = [
   { tabType: "home", labelKey: "sidebar.library", icon: BookOpen, expandable: true },
   { tabType: "chat", labelKey: "sidebar.chat", icon: MessageSquare },
   { tabType: "notes", labelKey: "sidebar.notes", icon: StickyNote },
+  { tabType: "skills", labelKey: "sidebar.skills", icon: Puzzle },
 ];
 
 export function HomeSidebar() {
@@ -29,7 +30,7 @@ export function HomeSidebar() {
   const activeTab = useAppStore((s) => s.tabs.find((t) => t.id === activeTabId));
   const activeType = activeTab?.type ?? "home";
 
-  const handleNavClick = (tabType: "home" | "chat" | "notes") => {
+  const handleNavClick = (tabType: "home" | "chat" | "notes" | "skills") => {
     if (tabType === "home") {
       setActiveTab("home");
     } else {

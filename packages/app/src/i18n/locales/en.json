@@ -20,6 +20,7 @@
     "library": "Library",
     "chat": "Chat",
     "notes": "Notes",
+    "skills": "Skills",
     "allBooks": "All Books"
   },
   "home": {
@@ -67,7 +68,9 @@
       "analyzeAuthor": "Analyze the author's argument"
     },
     "aiAssistant": "AI Reading Assistant",
-    "aiAssistantDesc": "Analyze content, answer questions, and help you understand your books better."
+    "aiAssistantDesc": "Analyze content, answer questions, and help you understand your books better.",
+    "deepThinking": "Deep Thinking",
+    "deepThinkingHint": "Enable deeper analysis and reasoning, response time may be longer"
   },
   "reader": {
     "untitled": "Untitled",
@@ -195,6 +198,26 @@
     "addSkill": "Add Skill",
     "noSkills": "No custom skills yet. Built-in skills are automatically available.",
     "builtIn": "Built-in",
+    "enabled": "enabled",
+    "disabled": "disabled",
+    "viewSkill": "View Skill",
+    "editSkill": "Edit Skill",
+    "skillName": "Skill Name",
+    "skillNamePlaceholder": "e.g., Generate Mind Map",
+    "skillDescription": "Description",
+    "skillDescriptionPlaceholder": "Briefly describe what this skill does",
+    "skillPrompt": "Prompt",
+    "skillPromptPlaceholder": "Describe the skill's behavior and output requirements",
+    "builtinNameReadOnly": "Built-in skill name cannot be modified",
+    "skillUsage": "Skill Usage Guide",
+    "skillUsageSummary": "Summary",
+    "skillUsageSummaryDesc": "Type \"summarize this chapter\" or \"book summary\" in chat",
+    "skillUsageCharacter": "Characters",
+    "skillUsageCharacterDesc": "Ask \"who are the characters\" or \"analyze the protagonist\"",
+    "skillUsageQuote": "Quotes",
+    "skillUsageQuoteDesc": "Request \"find notable quotes\" or \"memorable passages\"",
+    "skillUsageAnalysis": "Analysis",
+    "skillUsageAnalysisDesc": "Ask \"what are the author's arguments\" or \"analyze the logic\"",
     "vectorModel": "Vector Model",
     "vm_title": "Vector Model",
     "vm_desc": "Configure embedding models for semantic search and RAG",

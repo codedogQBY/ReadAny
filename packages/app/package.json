@@ -16,6 +16,7 @@
     "@langchain/google-genai": "^2.1.21",
     "@langchain/langgraph": "^1.2.0",
     "@langchain/openai": "^1.2.11",
+    "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.4",
     "@radix-ui/react-dropdown-menu": "^2.1.4",
     "@radix-ui/react-popover": "^1.1.4",

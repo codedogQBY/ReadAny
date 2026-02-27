@@ -60,7 +60,7 @@ export function loadEmbeddingPipeline(
  * Does NOT block the main thread.
  */
 export function generateLocalEmbeddings(
-  builtinModelId: string,
+  _builtinModelId: string,
   texts: string[],
   onItemProgress?: (done: number, total: number) => void,
 ): Promise<number[][]> {

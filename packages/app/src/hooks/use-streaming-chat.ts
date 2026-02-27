@@ -1,28 +1,32 @@
 import { StreamingChat, createMessageId } from "@/lib/ai/streaming";
 import { useChatStore } from "@/stores/chat-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import type { Book, Message, SemanticContext, Thread } from "@/types";
-/**
- * useStreamingChat — React hook for AI streaming chat.
- *
- * Supports two modes:
- * 1. **Book chat** (bookId provided): scoped to a single book, RAG tools use that book's index.
- * 2. **General chat** (no bookId): standalone chat, can optionally reference selected books.
- */
+import type { Book, SemanticContext, Thread, Part, TextPart, ToolCallPart, MessageV2, ReasoningPart } from "@/types";
 import { useCallback, useRef, useState } from "react";
+import {
+  createTextPart,
+  createReasoningPart,
+  createToolCallPart,
+} from "@/types/message";
 
 export interface StreamingChatOptions {
-  /** The book context for book-scoped chat */
   book?: Book | null;
-  /** Semantic reading context */
   semanticContext?: SemanticContext | null;
-  /** The bookId for scoping (used to find/create thread) */
   bookId?: string;
 }
 
+export interface StreamingState {
+  isStreaming: boolean;
+  currentMessage: MessageV2 | null;
+  currentStep: "thinking" | "tool_calling" | "responding" | "idle";
+}
+
 export function useStreamingChat(options?: StreamingChatOptions) {
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingText, setStreamingText] = useState("");
+  const [state, setState] = useState<StreamingState>({
+    isStreaming: false,
+    currentMessage: null,
+    currentStep: "idle",
+  });
   const [error, setError] = useState<Error | null>(null);
   const streamingRef = useRef<StreamingChat | null>(null);
 
@@ -33,7 +37,6 @@ export function useStreamingChat(options?: StreamingChatOptions) {
     addMessage,
     updateThreadTitle,
     setStreaming,
-    setStreamingContent,
   } = useChatStore();
 
   const aiConfig = useSettingsStore((s) => s.aiConfig);
@@ -43,49 +46,62 @@ export function useStreamingChat(options?: StreamingChatOptions) {
       const activeId = getActiveThreadId(bookId);
       const existing = activeId ? threads.find((t) => t.id === activeId) : null;
       if (existing) return existing;
-
-      // Create a new thread scoped to this context
       return await createThread(bookId);
     },
     [threads, getActiveThreadId, createThread],
   );
 
   const sendMessage = useCallback(
-    async (content: string, overrideBookId?: string) => {
-      if (!content.trim() || isStreaming) return;
+    async (content: string, overrideBookId?: string, deepThinking: boolean = false) => {
+      if (!content.trim() || state.isStreaming) return;
 
-      setIsStreaming(true);
-      setStreamingText("");
+      const messageId = createMessageId();
+      const initialMessage = {
+        id: messageId,
+        threadId: "",
+        role: "assistant" as const,
+        parts: [],
+        createdAt: Date.now(),
+      };
+
+      setState({
+        isStreaming: true,
+        currentMessage: initialMessage,
+        currentStep: "thinking",
+      });
       setError(null);
       setStreaming(true);
-      setStreamingContent("");
 
       const bookId = overrideBookId ?? options?.bookId;
       const thread = await getOrCreateThread(bookId);
 
-      // Auto-title: use first message as thread title
       if (thread.messages.length === 0 && !thread.title) {
         await updateThreadTitle(thread.id, content.slice(0, 50));
       }
 
-      // Add user message
-      const userMessage: Message = {
-        id: createMessageId(),
+      const userMessageId = createMessageId();
+      const userMessage = {
+        id: userMessageId,
         threadId: thread.id,
-        role: "user",
+        role: "user" as const,
         content: content.trim(),
         createdAt: Date.now(),
       };
-      await addMessage(thread.id, userMessage);
 
-      // Create streaming client
+      // Save user message to store
+      await addMessage(thread.id, userMessage as any);
+
       streamingRef.current = new StreamingChat();
 
-      // Get the updated thread with the new message
       const updatedThread: Thread = {
         ...thread,
-        messages: [...thread.messages, userMessage],
+        messages: [...thread.messages, userMessage as any],
       };
+
+      const currentParts: Part[] = [];
+      let currentTextPart: TextPart | null = null;
+      let currentReasoningPart: ReasoningPart | null = null;
+      let currentToolCallPart: ToolCallPart | null = null;
 
       try {
         await streamingRef.current.stream({
@@ -95,60 +111,130 @@ export function useStreamingChat(options?: StreamingChatOptions) {
           enabledSkills: [],
           isVectorized: options?.book?.isVectorized || false,
           aiConfig,
+          deepThinking,
           onToken: (token) => {
-            setStreamingText((prev) => {
-              const updated = prev + token;
-              setStreamingContent(updated);
-              return updated;
-            });
+            if (!currentTextPart) {
+              currentTextPart = createTextPart("");
+              currentParts.push(currentTextPart);
+            }
+            currentTextPart.text += token;
+            currentTextPart.status = "running";
+            currentTextPart.updatedAt = Date.now();
+            setState((prev) => ({
+              ...prev,
+              currentMessage: prev.currentMessage
+                ? { ...prev.currentMessage, parts: [...currentParts] }
+                : null,
+              currentStep: "responding",
+            }));
           },
-          onComplete: async (fullText, toolCalls) => {
-            const assistantMessage: Message = {
-              id: createMessageId(),
+          onComplete: async () => {
+            if (currentTextPart) {
+              currentTextPart.status = "completed";
+              currentTextPart.updatedAt = Date.now();
+            }
+
+            // Extract text content from parts for database storage
+            const textContent = currentParts
+              .filter((p) => p.type === "text")
+              .map((p) => (p as TextPart).text)
+              .join("\n");
+
+            // Extract reasoning from parts
+            const reasoning = currentParts
+              .filter((p) => p.type === "reasoning")
+              .map((p) => ({
+                id: p.id,
+                type: (p as ReasoningPart).thinkingType || "thinking",
+                content: (p as ReasoningPart).text,
+                timestamp: p.createdAt,
+              }));
+
+            // Create assistant message compatible with database schema
+            const assistantMessage = {
+              id: messageId,
               threadId: thread.id,
-              role: "assistant",
-              content: fullText,
-              toolCalls: toolCalls?.map((tc) => ({
-                id: `tc-${Date.now()}`,
-                name: tc.name,
-                args: tc.args,
-                result: tc.result,
-                status: "completed" as const,
-              })),
+              role: "assistant" as const,
+              content: textContent,
+              toolCalls: currentParts
+                .filter((p) => p.type === "tool_call")
+                .map((p) => ({
+                  id: p.id,
+                  name: (p as ToolCallPart).name,
+                  args: (p as ToolCallPart).args,
+                  result: (p as ToolCallPart).result,
+                  status: (p as ToolCallPart).status,
+                })),
+              reasoning: reasoning.length > 0 ? reasoning : undefined,
               createdAt: Date.now(),
             };
-            await addMessage(thread.id, assistantMessage);
 
-            setIsStreaming(false);
+            // Save assistant message to store
+            await addMessage(thread.id, assistantMessage as any);
+
+            setState({
+              isStreaming: false,
+              currentMessage: null,
+              currentStep: "idle",
+            });
             setStreaming(false);
-            setStreamingContent("");
           },
           onError: (err) => {
             setError(err);
-            setIsStreaming(false);
+            setState((prev) => ({ ...prev, isStreaming: false, currentStep: "idle" }));
             setStreaming(false);
-            setStreamingContent("");
           },
           onToolCall: (name, args) => {
-            console.log(`Tool call: ${name}`, args);
+            currentToolCallPart = createToolCallPart(name, args);
+            currentParts.push(currentToolCallPart);
+            setState((prev) => ({
+              ...prev,
+              currentMessage: prev.currentMessage
+                ? { ...prev.currentMessage, parts: [...currentParts] }
+                : null,
+              currentStep: "tool_calling",
+            }));
           },
           onToolResult: (name, result) => {
-            console.log(`Tool result: ${name}`, result);
+            const part = currentParts.find(
+              (p) => p.type === "tool_call" && (p as ToolCallPart).name === name
+            ) as ToolCallPart | undefined;
+            if (part) {
+              part.result = result;
+              part.status = "completed";
+              part.updatedAt = Date.now();
+              setState((prev) => ({
+                ...prev,
+                currentMessage: prev.currentMessage
+                  ? { ...prev.currentMessage, parts: [...currentParts] }
+                  : null,
+              }));
+            }
+          },
+          onReasoning: (content, type) => {
+            currentReasoningPart = createReasoningPart(content, type);
+            currentParts.push(currentReasoningPart);
+            setState((prev) => ({
+              ...prev,
+              currentMessage: prev.currentMessage
+                ? { ...prev.currentMessage, parts: [...currentParts] }
+                : null,
+              currentStep: "thinking",
+            }));
           },
         });
       } catch (err) {
         setError(err instanceof Error ? err : new Error("Unknown error"));
-        setIsStreaming(false);
+        setState((prev) => ({ ...prev, isStreaming: false, currentStep: "idle" }));
         setStreaming(false);
       }
     },
     [
-      isStreaming,
+      state.isStreaming,
       getOrCreateThread,
       addMessage,
       updateThreadTitle,
       setStreaming,
-      setStreamingContent,
       aiConfig,
       options?.book,
       options?.bookId,
@@ -158,14 +244,16 @@ export function useStreamingChat(options?: StreamingChatOptions) {
 
   const stopStream = useCallback(() => {
     streamingRef.current?.abort();
-    setIsStreaming(false);
+    setState({
+      isStreaming: false,
+      currentMessage: null,
+      currentStep: "idle",
+    });
     setStreaming(false);
-    setStreamingContent("");
-  }, [setStreaming, setStreamingContent]);
+  }, [setStreaming]);
 
   return {
-    isStreaming,
-    streamingText,
+    ...state,
     error,
     sendMessage,
     stopStream,

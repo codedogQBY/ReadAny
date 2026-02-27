@@ -23,6 +23,7 @@ import { useBookShortcuts } from "@/hooks/reader/useBookShortcuts";
 import type { FoliateView } from "@/hooks/reader/useFoliateView";
 import { wrappedFoliateView } from "@/hooks/reader/useFoliateView";
 import type { ViewSettings } from "@/types";
+import { readingContextService } from "@/lib/ai/reading-context-service";
 
 // Polyfills required by foliate-js
 // biome-ignore lint: polyfill for foliate-js
@@ -236,8 +237,24 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
     (event: Event) => {
       const detail = (event as CustomEvent).detail as RelocateDetail;
       onRelocate?.(detail);
+
+      // Update reading context service
+      if (detail.tocItem?.label && detail.fraction !== undefined) {
+        readingContextService.updateContext({
+          bookId: bookKey,
+          currentChapter: {
+            index: detail.section?.current ?? 0,
+            title: detail.tocItem.label,
+            href: detail.tocItem.href || "",
+          },
+          currentPosition: {
+            cfi: detail.cfi || "",
+            percentage: detail.fraction * 100,
+          },
+        });
+      }
     },
-    [onRelocate],
+    [onRelocate, bookKey],
   );
   const relocateHandlerRef = useRef(relocateHandlerImpl);
   relocateHandlerRef.current = relocateHandlerImpl;
@@ -282,10 +299,12 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
 
     // Get CFI for the selection
     let cfi: string | undefined;
+    let chapterIndex: number | undefined;
     try {
       const index = contents[0].index;
       if (index !== undefined) {
         cfi = view.getCFI(index, range);
+        chapterIndex = index;
       }
     } catch {
       // CFI generation may fail for some selections
@@ -331,7 +350,17 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         : rects;
     }
 
-    return { text, cfi, rects: offsetRects };
+    // Update reading context service with selection
+    if (cfi && chapterIndex !== undefined) {
+      readingContextService.updateSelection({
+        text,
+        cfi,
+        chapterIndex,
+        chapterTitle: "", // Will be filled by relocate handler
+      });
+    }
+
+    return { text, cfi, chapterIndex, rects: offsetRects };
   }, []);
 
   // Bind foliate events (use viewReady state to ensure re-bind after view creation)

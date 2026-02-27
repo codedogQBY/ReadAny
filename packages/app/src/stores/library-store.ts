@@ -15,7 +15,8 @@ interface EpubMeta {
 }
 
 /** Lightweight EPUB metadata + cover extraction (no full rendering needed) */
-async function extractEpubMetadata(blob: Blob): Promise<EpubMeta> {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function extractEpubMetadata(blob: Blob): Promise<EpubMeta> {
   const { entries } = await unzipBlob(blob);
   console.log("[extractEpubMetadata] entries:", [...entries.keys()]);
 

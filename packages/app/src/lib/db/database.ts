@@ -113,6 +113,7 @@ export async function initDatabase(): Promise<void> {
       content TEXT NOT NULL DEFAULT '',
       citations TEXT,
       tool_calls TEXT,
+      reasoning TEXT,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE CASCADE
     )
@@ -179,6 +180,11 @@ export async function initDatabase(): Promise<void> {
   }
   try {
     await database.execute("ALTER TABLE books ADD COLUMN tags TEXT DEFAULT '[]'");
+  } catch {
+    // Column already exists, ignore
+  }
+  try {
+    await database.execute("ALTER TABLE messages ADD COLUMN reasoning TEXT");
   } catch {
     // Column already exists, ignore
   }
@@ -697,6 +703,7 @@ export async function getMessages(threadId: string): Promise<Message[]> {
       content: string;
       citations: string | null;
       tool_calls: string | null;
+      reasoning: string | null;
       created_at: number;
     }>
   >("SELECT * FROM messages WHERE thread_id = ? ORDER BY created_at ASC", [threadId]);
@@ -707,6 +714,7 @@ export async function getMessages(threadId: string): Promise<Message[]> {
     content: r.content,
     citations: parseJSON(r.citations, undefined),
     toolCalls: parseJSON(r.tool_calls, undefined),
+    reasoning: parseJSON(r.reasoning, undefined),
     createdAt: r.created_at,
   }));
 }
@@ -714,7 +722,7 @@ export async function getMessages(threadId: string): Promise<Message[]> {
 export async function insertMessage(message: Message): Promise<void> {
   const database = await getDB();
   await database.execute(
-    "INSERT INTO messages (id, thread_id, role, content, citations, tool_calls, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO messages (id, thread_id, role, content, citations, tool_calls, reasoning, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     [
       message.id,
       message.threadId,
@@ -722,6 +730,7 @@ export async function insertMessage(message: Message): Promise<void> {
       message.content,
       message.citations ? JSON.stringify(message.citations) : null,
       message.toolCalls ? JSON.stringify(message.toolCalls) : null,
+      message.reasoning ? JSON.stringify(message.reasoning) : null,
       message.createdAt,
     ],
   );

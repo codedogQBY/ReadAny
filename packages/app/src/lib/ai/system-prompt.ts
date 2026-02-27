@@ -64,18 +64,41 @@ function buildSemanticSection(ctx: SemanticContext | null): string {
 function buildToolsSection(skills: Skill[], isVectorized: boolean): string {
   const tools: string[] = [];
 
+  // RAG tools (require vectorization)
   if (isVectorized) {
     tools.push("- **ragSearch**: Search book content using semantic/keyword search");
     tools.push("- **ragToc**: Retrieve table of contents structure");
     tools.push("- **ragContext**: Get surrounding context for a specific position");
   }
 
+  // Content analysis tools (always available)
+  tools.push("- **summarize**: Generate summary of a chapter or the entire book");
+  tools.push("- **extractEntities**: Extract characters, places, concepts, organizations from the text");
+  tools.push("- **analyzeArguments**: Analyze author's arguments, reasoning, and logical structure");
+  tools.push("- **findQuotes**: Find notable quotes, passages, and memorable sentences");
+  tools.push("- **getAnnotations**: Get user's highlights and notes from the book");
+  tools.push("- **compareSections**: Compare two sections or chapters of the book");
+
+  // Custom skills
   for (const skill of skills) {
     tools.push(`- **${skill.name}**: ${skill.description}`);
   }
 
   if (tools.length === 0) return "";
-  return `## Available Tools\n${tools.join("\n")}`;
+  return `## Available Tools
+
+You have access to the following tools. Use them proactively when appropriate:
+
+${tools.join("\n")}
+
+### Tool Usage Guidelines:
+- Use **summarize** when the user asks for a summary, overview, or brief
+- Use **extractEntities** when the user asks about characters, people, places, or concepts
+- Use **analyzeArguments** when the user asks about the author's viewpoint or arguments
+- Use **findQuotes** when the user asks for quotes or memorable passages
+- Use **getAnnotations** to reference what the user has highlighted or noted
+- Use **compareSections** when the user wants to compare different parts of the book
+- Use **ragSearch** (if available) for content-specific questions`;
 }
 
 function buildConstraintsSection(language: string): string {
