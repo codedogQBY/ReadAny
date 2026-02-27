@@ -225,9 +225,10 @@ export function ChatPage() {
   }, [setGeneralActiveThread]);
 
   const displayMessages = convertToMessageV2(activeThread?.messages || []);
-  
+
+  // Filter out any store message with the same ID as currentMessage to prevent duplicate keys
   const allMessages: MessageV2[] = isStreaming && currentMessage
-    ? [...displayMessages, currentMessage]
+    ? [...displayMessages.filter((m) => m.id !== currentMessage.id), currentMessage]
     : displayMessages;
 
   return (

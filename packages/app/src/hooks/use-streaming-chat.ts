@@ -169,15 +169,18 @@ export function useStreamingChat(options?: StreamingChatOptions) {
               createdAt: Date.now(),
             };
 
-            // Save assistant message to store
-            await addMessage(thread.id, assistantMessage as any);
-
+            // IMPORTANT: Clear streaming state BEFORE saving to store.
+            // Otherwise both currentMessage and the saved message share the
+            // same ID, causing React duplicate key errors.
             setState({
               isStreaming: false,
               currentMessage: null,
               currentStep: "idle",
             });
             setStreaming(false);
+
+            // Save assistant message to store (now that currentMessage is cleared)
+            await addMessage(thread.id, assistantMessage as any);
           },
           onError: (err) => {
             setError(err);

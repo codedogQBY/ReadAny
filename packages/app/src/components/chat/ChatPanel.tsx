@@ -156,9 +156,11 @@ export function ChatPanel({ book }: ChatPanelProps) {
   };
 
   // Build message list with streaming message
+  // Filter out any store message with the same ID as currentMessage to prevent duplicate keys
+  const storeMessages = convertToMessageV2(displayMessages);
   const allMessages: MessageV2[] = isStreaming && currentMessage
-    ? [...convertToMessageV2(displayMessages), currentMessage]
-    : convertToMessageV2(displayMessages);
+    ? [...storeMessages.filter((m) => m.id !== currentMessage.id), currentMessage]
+    : storeMessages;
 
   const SUGGESTIONS = [
     t("chat.suggestions.summarizeChapter"),
