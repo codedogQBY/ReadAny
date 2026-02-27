@@ -20,9 +20,7 @@ export function resolveActiveEndpoint(config: AIConfig): {
   endpoint: AIEndpoint;
   model: string;
 } {
-  const endpoint = config.endpoints.find(
-    (ep) => ep.id === config.activeEndpointId,
-  );
+  const endpoint = config.endpoints.find((ep) => ep.id === config.activeEndpointId);
   if (!endpoint) {
     throw new Error("No active AI endpoint configured. Go to Settings → AI to add one.");
   }
@@ -65,22 +63,30 @@ export async function createChatModelFromEndpoint(
   switch (endpoint.provider) {
     case "anthropic": {
       const { ChatAnthropic } = await import("@langchain/anthropic");
-      
-      return new ChatAnthropic({
+
+      const anthropicConfig: Record<string, unknown> = {
         model,
         apiKey: endpoint.apiKey,
-        temperature,
+        temperature: options.deepThinking ? 1 : temperature,
         maxTokens,
         streaming,
-        clientOptions: endpoint.baseUrl
-          ? { baseURL: endpoint.baseUrl }
-          : undefined,
-      });
+        clientOptions: endpoint.baseUrl ? { baseURL: endpoint.baseUrl } : undefined,
+      };
+
+      // Enable extended thinking when deepThinking is requested
+      if (options.deepThinking) {
+        anthropicConfig.thinking = {
+          type: "enabled",
+          budget_tokens: Math.min(maxTokens, 10000),
+        };
+      }
+
+      return new ChatAnthropic(anthropicConfig as ConstructorParameters<typeof ChatAnthropic>[0]);
     }
 
     case "google": {
       const { ChatGoogleGenerativeAI } = await import("@langchain/google-genai");
-      
+
       return new ChatGoogleGenerativeAI({
         model,
         apiKey: endpoint.apiKey,
@@ -89,11 +95,9 @@ export async function createChatModelFromEndpoint(
         streaming,
       });
     }
-
-    case "openai":
     default: {
       const { ChatOpenAI } = await import("@langchain/openai");
-      
+
       return new ChatOpenAI({
         model,
         apiKey: endpoint.apiKey,

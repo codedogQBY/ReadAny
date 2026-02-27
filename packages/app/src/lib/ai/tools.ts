@@ -19,7 +19,7 @@ export interface ToolDefinition {
   execute: (args: Record<string, unknown>) => Promise<unknown>;
 }
 
-interface ToolParameter {
+export interface ToolParameter {
   type: "string" | "number" | "boolean";
   description: string;
   required?: boolean;

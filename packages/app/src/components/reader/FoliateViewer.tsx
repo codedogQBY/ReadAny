@@ -240,6 +240,21 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
 
       // Update reading context service
       if (detail.tocItem?.label && detail.fraction !== undefined) {
+        // Extract visible text from the current page
+        let surroundingText = "";
+        try {
+          const view = viewRef.current;
+          const contents = view?.renderer?.getContents?.();
+          if (contents?.[0]?.doc) {
+            const doc = contents[0].doc as Document;
+            const rawText = doc.body?.textContent || "";
+            // Trim and limit to ~2000 chars to avoid overly large context
+            surroundingText = rawText.replace(/\s+/g, " ").trim().slice(0, 2000);
+          }
+        } catch {
+          // Ignore extraction errors
+        }
+
         readingContextService.updateContext({
           bookId: bookKey,
           currentChapter: {
@@ -251,6 +266,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
             cfi: detail.cfi || "",
             percentage: detail.fraction * 100,
           },
+          surroundingText,
         });
       }
     },
