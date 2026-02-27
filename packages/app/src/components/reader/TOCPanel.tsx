@@ -92,7 +92,7 @@ export function TOCPanel({ tocItems, onGoToChapter, onClose, tabId }: TOCPanelPr
   );
 
   return (
-    <div className="flex max-h-full w-72 flex-col overflow-hidden rounded-r-xl bg-background/95 shadow-2xl backdrop-blur-sm border border-l-0 border-border/50">
+    <div className="flex h-full w-72 flex-col overflow-hidden rounded-r-xl bg-background/95 shadow-2xl backdrop-blur-sm border border-l-0 border-border/50">
       {/* Header */}
       <div className="flex h-11 shrink-0 items-center justify-between border-b border-border/50 px-4 rounded-tr-xl">
         <div className="flex items-center gap-2">

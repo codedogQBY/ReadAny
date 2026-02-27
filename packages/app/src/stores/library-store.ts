@@ -17,72 +17,126 @@ interface EpubMeta {
 /** Lightweight EPUB metadata + cover extraction (no full rendering needed) */
 async function extractEpubMetadata(blob: Blob): Promise<EpubMeta> {
   const { entries } = await unzipBlob(blob);
+  console.log("[extractEpubMetadata] entries:", [...entries.keys()]);
+
   const containerXml = await readTextFromMap(entries, "META-INF/container.xml");
   const parser = new DOMParser();
   const containerDoc = parser.parseFromString(containerXml, "application/xml");
   const rootfileEl = containerDoc.querySelector("rootfile");
   const opfPath = rootfileEl?.getAttribute("full-path") || "content.opf";
   const opfDir = opfPath.includes("/") ? opfPath.substring(0, opfPath.lastIndexOf("/") + 1) : "";
+  console.log("[extractEpubMetadata] opfPath:", opfPath, "opfDir:", opfDir);
 
   const opfXml = await readTextFromMap(entries, opfPath);
-  const opfDoc = parser.parseFromString(opfXml, "application/xml");
+  // Parse as text/html for better namespace tolerance (application/xml is strict with namespaces)
+  const opfDoc = parser.parseFromString(opfXml, "text/html");
 
   const title =
-    opfDoc.querySelector("metadata > dc\\:title, metadata > title")?.textContent?.trim() || "";
+    opfDoc.querySelector("metadata dc\\:title, metadata title")?.textContent?.trim() || "";
   const author =
-    opfDoc.querySelector("metadata > dc\\:creator, metadata > creator")?.textContent?.trim() || "";
+    opfDoc.querySelector("metadata dc\\:creator, metadata creator")?.textContent?.trim() || "";
+  console.log("[extractEpubMetadata] title:", title, "author:", author);
 
   // Extract cover image
   let coverBlob: Blob | null = null;
   try {
-    // Method 1: <item properties="cover-image"> (EPUB 3)
     let coverHref: string | null = null;
-    const coverImageItem = opfDoc.querySelector('manifest > item[properties~="cover-image"]');
-    if (coverImageItem) {
-      coverHref = coverImageItem.getAttribute("href");
+
+    // Method 1: <item properties="cover-image"> (EPUB 3)
+    // In text/html mode, attribute selectors work more reliably
+    const allItems = opfDoc.querySelectorAll("item");
+    for (const item of allItems) {
+      const props = item.getAttribute("properties") || "";
+      if (props.split(/\s+/).includes("cover-image")) {
+        coverHref = item.getAttribute("href");
+        console.log("[extractEpubMetadata] Method 1 (EPUB 3 cover-image):", coverHref);
+        break;
+      }
     }
 
     // Method 2: <meta name="cover" content="cover-id"> → find item by id (EPUB 2)
     if (!coverHref) {
-      const coverMeta = opfDoc.querySelector('metadata > meta[name="cover"]');
-      const coverId = coverMeta?.getAttribute("content");
-      if (coverId) {
-        const coverItem = opfDoc.querySelector(`manifest > item[id="${coverId}"]`);
-        coverHref = coverItem?.getAttribute("href") || null;
+      const allMetas = opfDoc.querySelectorAll("meta");
+      for (const meta of allMetas) {
+        if (meta.getAttribute("name") === "cover") {
+          const coverId = meta.getAttribute("content");
+          console.log("[extractEpubMetadata] Method 2 coverId:", coverId);
+          if (coverId) {
+            for (const item of allItems) {
+              if (item.getAttribute("id") === coverId) {
+                coverHref = item.getAttribute("href");
+                console.log("[extractEpubMetadata] Method 2 found href:", coverHref);
+                break;
+              }
+            }
+          }
+          break;
+        }
       }
     }
 
     // Method 3: find any item with media-type image and "cover" in id/href
     if (!coverHref) {
-      const items = opfDoc.querySelectorAll('manifest > item[media-type^="image/"]');
-      for (const item of items) {
-        const id = item.getAttribute("id")?.toLowerCase() || "";
-        const href = item.getAttribute("href")?.toLowerCase() || "";
-        if (id.includes("cover") || href.includes("cover")) {
+      for (const item of allItems) {
+        const mediaType = item.getAttribute("media-type") || "";
+        if (mediaType.startsWith("image/")) {
+          const id = (item.getAttribute("id") || "").toLowerCase();
+          const href = (item.getAttribute("href") || "").toLowerCase();
+          if (id.includes("cover") || href.includes("cover")) {
+            coverHref = item.getAttribute("href");
+            console.log("[extractEpubMetadata] Method 3 found:", coverHref);
+            break;
+          }
+        }
+      }
+    }
+
+    // Method 4: fallback — just grab the first image item in the manifest
+    if (!coverHref) {
+      for (const item of allItems) {
+        const mediaType = item.getAttribute("media-type") || "";
+        if (mediaType.startsWith("image/")) {
           coverHref = item.getAttribute("href");
+          console.log("[extractEpubMetadata] Method 4 (first image):", coverHref);
           break;
         }
       }
     }
 
     if (coverHref) {
+      // Decode URL-encoded paths (e.g., %20 → space)
+      const decodedHref = decodeURIComponent(coverHref);
       // Resolve relative path against OPF directory
-      const coverPath = opfDir + coverHref;
-      // Try exact path first, then try without directory prefix
-      coverBlob = entries.get(coverPath) || entries.get(coverHref) || null;
+      const coverPath = opfDir + decodedHref;
+      const coverPathEncoded = opfDir + coverHref;
+      console.log("[extractEpubMetadata] trying paths:", coverPath, coverPathEncoded);
+
+      // Try multiple path variations
+      coverBlob =
+        entries.get(coverPath) ||
+        entries.get(coverPathEncoded) ||
+        entries.get(decodedHref) ||
+        entries.get(coverHref) ||
+        null;
+
       // Try case-insensitive match as fallback
       if (!coverBlob) {
         const lowerTarget = coverPath.toLowerCase();
+        const lowerTarget2 = coverPathEncoded.toLowerCase();
         for (const [key, value] of entries) {
-          if (key.toLowerCase() === lowerTarget) {
+          const lowerKey = key.toLowerCase();
+          if (lowerKey === lowerTarget || lowerKey === lowerTarget2) {
             coverBlob = value;
             break;
           }
         }
       }
+      console.log("[extractEpubMetadata] coverBlob found:", !!coverBlob, coverBlob?.size);
+    } else {
+      console.log("[extractEpubMetadata] no cover href found in OPF");
     }
-  } catch {
-    // Cover extraction failed, not critical
+  } catch (err) {
+    console.error("[extractEpubMetadata] cover extraction error:", err);
   }
 
   return { title, author, coverBlob };
@@ -194,9 +248,10 @@ async function unzipBlob(blob: Blob): Promise<{ entries: Map<string, Blob> }> {
     const filenameBytes = new Uint8Array(arrayBuffer, pos + 46, filenameLen);
     const filename = new TextDecoder().decode(filenameBytes);
 
-    // Read from local file header
+    // Read from local file header (use local header's own filename/extra lengths)
+    const localFilenameLen = dataView.getUint16(localHeaderOffset + 26, true);
     const localExtraLen = dataView.getUint16(localHeaderOffset + 28, true);
-    const dataStart = localHeaderOffset + 30 + filenameLen + localExtraLen;
+    const dataStart = localHeaderOffset + 30 + localFilenameLen + localExtraLen;
 
     if (compressionMethod === 0) {
       entries.set(filename, new Blob([new Uint8Array(arrayBuffer, dataStart, compressedSize)]));
@@ -333,6 +388,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     set({ isImporting: true });
     try {
       const { readFile } = await import("@tauri-apps/plugin-fs");
+      const { DocumentLoader } = await import("@/lib/reader/document-loader");
+
       for (const filePath of filePaths) {
         try {
           const ext = filePath.split(".").pop()?.toLowerCase();
@@ -346,33 +403,53 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           let coverUrl: string | undefined;
           const bookId = crypto.randomUUID();
 
+          // Use DocumentLoader to open the book (same as Readest approach)
+          // This delegates to foliate-js parsers which handle all formats properly
           const fileBytes = await readFile(filePath);
+          const fileName = filePath.split("/").pop() || "book";
+          const blob = new Blob([fileBytes]);
+          const file = new File([blob], fileName, { type: blob.type || "application/octet-stream" });
 
-          if (format === "epub") {
-            try {
-              const blob = new Blob([fileBytes]);
-              const meta = await extractEpubMetadata(blob);
-              if (meta.title) title = meta.title;
-              if (meta.author) author = meta.author;
-              if (meta.coverBlob) {
-                try {
-                  coverUrl = await saveCoverToAppData(bookId, meta.coverBlob);
-                } catch {
-                  // Cover save failed, not critical
-                }
-              }
-            } catch {
-              // Fall back to filename as title
+          try {
+            const loader = new DocumentLoader(file);
+            const { book: bookDoc } = await loader.open();
+
+            // Extract metadata
+            const meta = bookDoc.metadata;
+            if (meta) {
+              const rawTitle = typeof meta.title === "string"
+                ? meta.title
+                : meta.title ? Object.values(meta.title)[0] : "";
+              if (rawTitle) title = rawTitle;
+
+              const rawAuthor = typeof meta.author === "string"
+                ? meta.author
+                : meta.author?.name || "";
+              if (rawAuthor) author = rawAuthor;
             }
-          } else if (format === "pdf") {
-            // Generate cover from first page
+
+            // Extract cover via foliate-js getCover() — works for EPUB, MOBI, CBZ, FB2, PDF
             try {
-              const coverBlob = await generatePdfCover(fileBytes);
+              const coverBlob = await bookDoc.getCover();
+              console.log("[importBooks] getCover result:", !!coverBlob, coverBlob?.size, coverBlob?.type);
               if (coverBlob) {
                 coverUrl = await saveCoverToAppData(bookId, coverBlob);
               }
-            } catch {
-              // Cover generation failed, not critical
+            } catch (err) {
+              console.warn("[importBooks] getCover failed:", err);
+            }
+          } catch (err) {
+            console.warn("[importBooks] DocumentLoader failed, falling back:", err);
+            // Fallback for PDF: use pdfjs-dist directly for cover generation
+            if (format === "pdf") {
+              try {
+                const coverBlob = await generatePdfCover(fileBytes);
+                if (coverBlob) {
+                  coverUrl = await saveCoverToAppData(bookId, coverBlob);
+                }
+              } catch {
+                // Cover generation failed, not critical
+              }
             }
           }
 

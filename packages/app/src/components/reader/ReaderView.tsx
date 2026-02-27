@@ -294,14 +294,22 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
         );
       }
 
-      // Track pages — for fixed layout (PDF/CBZ), use section index as page counter
-      // because location.total is calculated from sizePerLoc which gives wrong results for PDF
+      // Track pages (reference: Readest progressRelocateHandler)
+      // For fixed layout (PDF/CBZ): use section index (real pages)
+      // For reflowable (EPUB): use location (virtual loc based on sizePerLoc=1500)
+      //   location.current is 0-based; display as current+1 / total
+      //   At end of book, clamp to total to prevent overflow
       if (isFixedLayoutFormat(bookFormat) && detail.section) {
         setTotalPages(detail.section.total);
         setCurrentPage(detail.section.current + 1);
       } else if (detail.location) {
-        setTotalPages(detail.location.total);
-        setCurrentPage(detail.location.current);
+        const { current, total } = detail.location;
+        // Check if renderer is at the very end (same as Readest's atEnd check)
+        const view = foliateRef.current?.getView();
+        const atEnd = view?.renderer?.atEnd || false;
+        const currentLoc = atEnd && total > 0 ? total : current + 1;
+        setTotalPages(total);
+        setCurrentPage(currentLoc);
       }
 
       // Throttled save to DB
@@ -541,29 +549,8 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           />
         )}
 
-        {/* Content area with optional TOC */}
+        {/* Content area */}
         <div className="relative flex flex-1 overflow-hidden">
-          {/* TOC sidebar */}
-          {showToc && (
-            <>
-              <div
-                className="fixed inset-0 z-30 bg-black/20"
-                onClick={() => setShowToc(false)}
-              />
-              <div className="relative z-40 flex h-full max-h-full animate-in slide-in-from-left duration-200">
-                <TOCPanel
-                  tocItems={tocItems}
-                  onGoToChapter={(index) => {
-                    handleGoToChapter(index);
-                    setShowToc(false);
-                  }}
-                  onClose={() => setShowToc(false)}
-                  tabId={tabId}
-                />
-              </div>
-            </>
-          )}
-
           {/* Reading area — FoliateViewer */}
           <div className="relative flex-1 overflow-hidden" ref={containerRef}>
             {bookDoc ? (
@@ -690,6 +677,27 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           onMouseEnter={onControlsEnter}
           onMouseLeave={onControlsLeave}
         />
+
+        {/* TOC overlay — floats above toolbar, content, and footer */}
+        {showToc && (
+          <>
+            <div
+              className="absolute inset-0 z-40 bg-black/20"
+              onClick={() => setShowToc(false)}
+            />
+            <div className="absolute top-2 bottom-2 left-0 z-50 flex animate-in slide-in-from-left duration-200">
+              <TOCPanel
+                tocItems={tocItems}
+                onGoToChapter={(index) => {
+                  handleGoToChapter(index);
+                  setShowToc(false);
+                }}
+                onClose={() => setShowToc(false)}
+                tabId={tabId}
+              />
+            </div>
+          </>
+        )}
       </div>
 
       {/* AI Chat sidebar */}

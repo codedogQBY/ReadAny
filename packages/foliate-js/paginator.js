@@ -15,7 +15,8 @@ const debounce = (f, wait, immediate) => {
 };
 
 const lerp = (min, max, x) => x * (max - min) + min;
-const easeOutQuad = (x) => 1 - (1 - x) * (1 - x);
+// Smooth cubic bezier approximation — feels like a natural page glide
+const easeOutCubic = (x) => 1 - Math.pow(1 - x, 3);
 const animate = (a, b, duration, ease, render) =>
   new Promise((resolve) => {
     let start;
@@ -897,7 +898,7 @@ export class Paginator extends HTMLElement {
     // FIXME: vertical-rl only, not -lr
     if (this.scrolled && this.#vertical) offset = -offset;
     if ((reason === "snap" || smooth) && this.hasAttribute("animated"))
-      return animate(element[scrollProp], offset, 300, easeOutQuad, (x) => (element[scrollProp] = x)).then(() => {
+      return animate(element[scrollProp], offset, 400, easeOutCubic, (x) => (element[scrollProp] = x)).then(() => {
         this.#scrollBounds = [offset, this.atStart ? 0 : size, this.atEnd ? 0 : size];
         this.#afterScroll(reason);
       });
@@ -970,6 +971,15 @@ export class Paginator extends HTMLElement {
     this.#index = index;
     const hasFocus = this.#view?.document?.hasFocus();
     if (src) {
+      // Fade-out old content when crossing sections (if animated)
+      const container = this.#container;
+      const shouldAnimate = this.hasAttribute("animated") && container;
+      if (shouldAnimate) {
+        container.style.transition = "opacity 120ms ease-out";
+        container.style.opacity = "0";
+        await wait(120);
+      }
+
       const view = this.#createView();
       const afterLoad = (doc) => {
         if (doc.head) {
@@ -993,6 +1003,12 @@ export class Paginator extends HTMLElement {
         }),
       );
       this.#view = view;
+
+      // Fade-in new content
+      if (shouldAnimate) {
+        container.style.transition = "opacity 200ms ease-in";
+        container.style.opacity = "1";
+      }
     }
     await this.scrollToAnchor((typeof anchor === "function" ? anchor(this.#view.document) : anchor) ?? 0, select);
     if (hasFocus) this.focusView();
