@@ -670,6 +670,15 @@ export async function insertThread(thread: Thread): Promise<void> {
   );
 }
 
+export async function updateThreadTitle(id: string, title: string): Promise<void> {
+  const database = await getDB();
+  await database.execute("UPDATE threads SET title = ?, updated_at = ? WHERE id = ?", [
+    title,
+    Date.now(),
+    id,
+  ]);
+}
+
 export async function deleteThread(id: string): Promise<void> {
   const database = await getDB();
   await database.execute("DELETE FROM messages WHERE thread_id = ?", [id]);

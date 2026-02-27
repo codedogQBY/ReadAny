@@ -1,0 +1,119 @@
+/**
+ * LLM Provider Factory — creates LangChain ChatModel instances from AIConfig
+ *
+ * Supports:
+ * - OpenAI-compatible endpoints (OpenAI, Ollama, vLLM, DeepSeek, etc.)
+ * - Anthropic Claude (native API)
+ * - Google Gemini (native API)
+ */
+import type { AIConfig, AIEndpoint } from "@/types";
+import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+
+export interface LLMOptions {
+  /** Override temperature (defaults to aiConfig.temperature) */
+  temperature?: number;
+  /** Override maxTokens (defaults to aiConfig.maxTokens) */
+  maxTokens?: number;
+  /** Streaming enabled (default true) */
+  streaming?: boolean;
+}
+
+/**
+ * Resolve the active endpoint and model from the AI config.
+ * Throws if misconfigured.
+ */
+export function resolveActiveEndpoint(config: AIConfig): {
+  endpoint: AIEndpoint;
+  model: string;
+} {
+  const endpoint = config.endpoints.find(
+    (ep) => ep.id === config.activeEndpointId,
+  );
+  if (!endpoint) {
+    throw new Error("No active AI endpoint configured. Go to Settings → AI to add one.");
+  }
+  if (!endpoint.apiKey) {
+    throw new Error(`API key not set for endpoint "${endpoint.name}".`);
+  }
+  const model = config.activeModel;
+  if (!model) {
+    throw new Error("No model selected. Go to Settings → AI to choose a model.");
+  }
+  return { endpoint, model };
+}
+
+/**
+ * Create a LangChain ChatModel instance from the current AI config.
+ * Automatically selects the correct SDK based on the endpoint's provider type.
+ */
+export async function createChatModel(
+  config: AIConfig,
+  options: LLMOptions = {},
+): Promise<BaseChatModel> {
+  const { endpoint, model } = resolveActiveEndpoint(config);
+  return createChatModelFromEndpoint(endpoint, model, {
+    temperature: options.temperature ?? config.temperature,
+    maxTokens: options.maxTokens ?? config.maxTokens,
+    streaming: options.streaming,
+  });
+}
+
+/**
+ * Create a ChatModel from a specific endpoint (not necessarily the active one).
+ * Useful for multi-model workflows in LangGraph.
+ */
+export async function createChatModelFromEndpoint(
+  endpoint: AIEndpoint,
+  model: string,
+  options: LLMOptions = {},
+): Promise<BaseChatModel> {
+  if (!endpoint.apiKey) {
+    throw new Error(`API key not set for endpoint "${endpoint.name}".`);
+  }
+
+  const temperature = options.temperature ?? 0.7;
+  const maxTokens = options.maxTokens ?? 4096;
+  const streaming = options.streaming ?? true;
+
+  switch (endpoint.provider) {
+    case "anthropic": {
+      const { ChatAnthropic } = await import("@langchain/anthropic");
+      return new ChatAnthropic({
+        model,
+        apiKey: endpoint.apiKey,
+        temperature,
+        maxTokens,
+        streaming,
+        clientOptions: endpoint.baseUrl
+          ? { baseURL: endpoint.baseUrl }
+          : undefined,
+      });
+    }
+
+    case "google": {
+      const { ChatGoogleGenerativeAI } = await import("@langchain/google-genai");
+      return new ChatGoogleGenerativeAI({
+        model,
+        apiKey: endpoint.apiKey,
+        temperature,
+        maxOutputTokens: maxTokens,
+        streaming,
+      });
+    }
+
+    case "openai":
+    default: {
+      const { ChatOpenAI } = await import("@langchain/openai");
+      return new ChatOpenAI({
+        model,
+        apiKey: endpoint.apiKey,
+        configuration: {
+          baseURL: endpoint.baseUrl || undefined,
+        },
+        temperature,
+        maxTokens,
+        streaming,
+      });
+    }
+  }
+}

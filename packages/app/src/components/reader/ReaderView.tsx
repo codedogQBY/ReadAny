@@ -674,9 +674,21 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
               <div className="absolute left-1/2 top-1/4 z-50 -translate-x-1/2">
                 <AskAIDialog
                   selectedText={askAIText}
-                  onSubmit={() => {
+                  onSubmit={(question) => {
+                    // Open chat panel and send the question with selected text context
+                    setShowChat(true);
                     setShowAskAI(false);
                     setAskAIText("");
+                    // Dispatch a custom event that ChatPanel can listen for
+                    window.dispatchEvent(
+                      new CustomEvent("ask-ai-from-reader", {
+                        detail: {
+                          question,
+                          selectedText: askAIText,
+                          bookId,
+                        },
+                      }),
+                    );
                   }}
                   onClose={() => {
                     setShowAskAI(false);
@@ -754,7 +766,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
             </button>
           </div>
           <div className="flex-1 overflow-hidden">
-            <ChatPanel />
+            <ChatPanel book={book} />
           </div>
         </div>
       )}

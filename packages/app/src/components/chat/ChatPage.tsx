@@ -1,5 +1,10 @@
 /**
- * ChatPage — standalone full-page chat (sageread style)
+ * ChatPage — standalone full-page chat for general conversations.
+ *
+ * - Shows only threads WITHOUT a bookId (general chat).
+ * - Supports creating new conversations and switching between them.
+ * - Users can optionally select books as context via ContextPopover.
+ * - RAG search uses selected books' context.
  */
 import { Button } from "@/components/ui/button";
 import { useStreamingChat } from "@/hooks/use-streaming-chat";
@@ -16,7 +21,7 @@ import {
   Square,
   X,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChatInput } from "./ChatInput";
 import { ContextPopover } from "./ContextPopover";
@@ -32,30 +37,60 @@ function ThreadsSidebar({
   onSelect: (threadId: string) => void;
 }) {
   const { t } = useTranslation();
-  const { threads, activeThreadId, removeThread } = useChatStore();
+  const { getThreadsForContext, getActiveThreadId, removeThread } =
+    useChatStore();
+  const generalThreads = getThreadsForContext();
+  const activeThreadId = getActiveThreadId();
 
   return (
-    <div className={`absolute inset-0 z-50 ${open ? "pointer-events-auto" : "pointer-events-none"}`}>
-      <div className={`absolute inset-0 transition-opacity duration-300 ${open ? "bg-black/5 opacity-100" : "opacity-0"}`} onClick={onClose} />
-      <div className={`absolute left-0 top-0 h-full w-72 transform rounded-r-2xl border-r bg-background px-3 py-3 shadow-lg transition-all duration-300 ease-out ${open ? "translate-x-0 opacity-100" : "-translate-x-full opacity-0"}`}>
+    <div
+      className={`absolute inset-0 z-50 ${open ? "pointer-events-auto" : "pointer-events-none"}`}
+    >
+      <div
+        className={`absolute inset-0 transition-opacity duration-300 ${open ? "bg-black/5 opacity-100" : "opacity-0"}`}
+        onClick={onClose}
+      />
+      <div
+        className={`absolute left-0 top-0 h-full w-72 transform rounded-r-2xl border-r bg-background px-3 py-3 shadow-lg transition-all duration-300 ease-out ${open ? "translate-x-0 opacity-100" : "-translate-x-full opacity-0"}`}
+      >
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-neutral-900">{t("chat.history")}</h3>
-          <button type="button" onClick={onClose} className="rounded-full p-1 hover:bg-muted">
+          <h3 className="text-sm font-semibold text-neutral-900">
+            {t("chat.history")}
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-1 hover:bg-muted"
+          >
             <X className="size-4" />
           </button>
         </div>
         <div className="flex flex-col gap-0.5 overflow-y-auto">
-          {threads.length === 0 && (
-            <p className="py-8 text-center text-xs text-muted-foreground">{t("chat.noConversations")}</p>
+          {generalThreads.length === 0 && (
+            <p className="py-8 text-center text-xs text-muted-foreground">
+              {t("chat.noConversations")}
+            </p>
           )}
-          {threads.map((thread) => (
+          {generalThreads.map((thread) => (
             <div
               key={thread.id}
-              onClick={() => { onSelect(thread.id); onClose(); }}
+              onClick={() => {
+                onSelect(thread.id);
+                onClose();
+              }}
               className={`group flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors ${thread.id === activeThreadId ? "bg-primary/10 text-primary" : "text-neutral-700 hover:bg-muted"}`}
             >
-              <span className="truncate">{thread.title || t("chat.newChat")}</span>
-              <button type="button" onClick={(e) => { e.stopPropagation(); removeThread(thread.id); }} className="hidden rounded-full p-0.5 text-muted-foreground hover:text-destructive group-hover:block">
+              <span className="truncate">
+                {thread.title || t("chat.newChat")}
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeThread(thread.id);
+                }}
+                className="hidden rounded-full p-0.5 text-muted-foreground hover:text-destructive group-hover:block"
+              >
                 <X className="size-3" />
               </button>
             </div>
@@ -66,7 +101,11 @@ function ThreadsSidebar({
   );
 }
 
-function EmptyState({ onSuggestionClick }: { onSuggestionClick: (text: string) => void }) {
+function EmptyState({
+  onSuggestionClick,
+}: {
+  onSuggestionClick: (text: string) => void;
+}) {
   const { t } = useTranslation();
   const SUGGESTIONS = [
     { key: "chat.suggestions.summarizeReading", icon: ScrollText },
@@ -82,11 +121,17 @@ function EmptyState({ onSuggestionClick }: { onSuggestionClick: (text: string) =
           <div className="rounded-full bg-primary/10 p-3">
             <Brain className="size-10 text-primary" />
           </div>
-          <h1 className="text-2xl font-semibold text-neutral-900">{t("chat.howCanIHelp")}</h1>
-          <p className="text-sm text-muted-foreground">{t("chat.askAboutBooks")}</p>
+          <h1 className="text-2xl font-semibold text-neutral-900">
+            {t("chat.howCanIHelp")}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {t("chat.askAboutBooks")}
+          </p>
         </div>
         <div>
-          <h2 className="mb-2 text-sm font-medium text-muted-foreground">{t("chat.getStarted")}</h2>
+          <h2 className="mb-2 text-sm font-medium text-muted-foreground">
+            {t("chat.getStarted")}
+          </h2>
           <div className="grid grid-cols-2 gap-3">
             {SUGGESTIONS.map(({ key, icon: Icon }) => (
               <div
@@ -107,52 +152,93 @@ function EmptyState({ onSuggestionClick }: { onSuggestionClick: (text: string) =
 
 export function ChatPage() {
   const { t } = useTranslation();
-  const { threads, activeThreadId, isStreaming, streamingContent, setActiveThread, addThread } = useChatStore();
+  const {
+    threads,
+    isStreaming,
+    streamingContent,
+    loadAllThreads,
+    initialized,
+    createThread,
+    setGeneralActiveThread,
+    getActiveThreadId,
+  } = useChatStore();
   const { bookTitle } = useChatReaderStore();
   const { sendMessage, stopStream } = useStreamingChat();
-  const activeThread = threads.find((t) => t.id === activeThreadId);
   const [showThreads, setShowThreads] = useState(false);
 
+  // Load all threads on mount
+  useEffect(() => {
+    if (!initialized) {
+      loadAllThreads();
+    }
+  }, [initialized, loadAllThreads]);
+
+  const activeThreadId = getActiveThreadId();
+  const activeThread = threads.find((t) => t.id === activeThreadId);
+
   const handleSend = useCallback(
-    (content: string) => {
+    async (content: string) => {
       if (!activeThreadId) {
-        const thread = { id: crypto.randomUUID(), title: content.slice(0, 50), messages: [], createdAt: Date.now(), updatedAt: Date.now() };
-        addThread(thread);
-        // sendMessage with the new thread context
+        // Create a new general thread, then send
+        await createThread(undefined, content.slice(0, 50));
+        // sendMessage after state update
         setTimeout(() => sendMessage(content), 0);
       } else {
         sendMessage(content);
       }
     },
-    [activeThreadId, addThread, sendMessage],
+    [activeThreadId, createThread, sendMessage],
   );
 
-  const handleNewThread = () => { setActiveThread(null); };
-  const hasMessages = activeThread && activeThread.messages.length > 0;
+  const handleNewThread = useCallback(() => {
+    setGeneralActiveThread(null);
+  }, [setGeneralActiveThread]);
 
   const displayMessages = activeThread?.messages || [];
   const allMessages =
     isStreaming && streamingContent
-      ? [...displayMessages, { id: "streaming", threadId: activeThread?.id || "", role: "assistant" as const, content: streamingContent, createdAt: Date.now() }]
+      ? [
+          ...displayMessages,
+          {
+            id: "streaming",
+            threadId: activeThread?.id || "",
+            role: "assistant" as const,
+            content: streamingContent,
+            createdAt: Date.now(),
+          },
+        ]
       : displayMessages;
 
   return (
     <div className="relative flex h-full flex-col">
-      <ThreadsSidebar open={showThreads} onClose={() => setShowThreads(false)} onSelect={(id) => setActiveThread(id)} />
+      <ThreadsSidebar
+        open={showThreads}
+        onClose={() => setShowThreads(false)}
+        onSelect={(id) => setGeneralActiveThread(id)}
+      />
       <div className="relative flex h-10 shrink-0 items-center justify-between px-3">
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setShowThreads(true)} className="rounded-full p-1.5 text-neutral-600 hover:bg-muted">
+          <button
+            type="button"
+            onClick={() => setShowThreads(true)}
+            className="rounded-full p-1.5 text-neutral-600 hover:bg-muted"
+          >
             <History className="size-4" />
           </button>
           {bookTitle && (
             <span className="text-xs text-muted-foreground">
-              {t("chat.context")}: <span className="font-medium text-neutral-700">{bookTitle}</span>
+              {t("chat.context")}:{" "}
+              <span className="font-medium text-neutral-700">{bookTitle}</span>
             </span>
           )}
         </div>
         <div className="flex items-center gap-1">
           <ContextPopover />
-          <button type="button" onClick={handleNewThread} className="rounded-full p-1.5 text-neutral-600 hover:bg-muted">
+          <button
+            type="button"
+            onClick={handleNewThread}
+            className="rounded-full p-1.5 text-neutral-600 hover:bg-muted"
+          >
             <MessageCirclePlus className="size-4" />
           </button>
         </div>
@@ -163,20 +249,32 @@ export function ChatPage() {
       <div className="flex flex-1 flex-col overflow-hidden">
         {allMessages.length > 0 ? (
           <>
-            <div className="flex-1 overflow-hidden"><MessageList messages={allMessages} /></div>
+            <div className="flex-1 overflow-hidden">
+              <MessageList messages={allMessages} />
+            </div>
             {isStreaming && (
               <div className="flex justify-center px-3 pb-1">
-                <Button variant="outline" size="sm" className="h-7 gap-1 rounded-full text-xs" onClick={stopStream}>
-                  <Square className="size-3" />{t("common.stop")}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1 rounded-full text-xs"
+                  onClick={stopStream}
+                >
+                  <Square className="size-3" />
+                  {t("common.stop")}
                 </Button>
               </div>
             )}
-            <div className="shrink-0 px-4 pb-3 pt-2"><ChatInput onSend={handleSend} disabled={isStreaming} /></div>
+            <div className="shrink-0 px-4 pb-3 pt-2">
+              <ChatInput onSend={handleSend} disabled={isStreaming} />
+            </div>
           </>
         ) : (
           <div className="flex flex-1 flex-col overflow-hidden">
             <EmptyState onSuggestionClick={handleSend} />
-            <div className="shrink-0 px-4 pb-3 pt-2"><ChatInput onSend={handleSend} disabled={isStreaming} /></div>
+            <div className="shrink-0 px-4 pb-3 pt-2">
+              <ChatInput onSend={handleSend} disabled={isStreaming} />
+            </div>
           </div>
         )}
       </div>

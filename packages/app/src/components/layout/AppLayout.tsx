@@ -34,12 +34,13 @@ function NotesPlaceholder() {
   );
 }
 
-const HOME_VIEWS: Record<string, React.ComponentType> = {
-  home: HomePage,
-  chat: ChatPageComponent,
-  notes: NotesPlaceholder,
-  stats: ReadingStatsPanel,
-};
+/** All home sub-views — each stays mounted and uses display:none to toggle. */
+const HOME_VIEWS: { id: string; Component: React.ComponentType }[] = [
+  { id: "home", Component: HomePage },
+  { id: "chat", Component: ChatPageComponent },
+  { id: "notes", Component: NotesPlaceholder },
+  { id: "stats", Component: ReadingStatsPanel },
+];
 
 export function AppLayout() {
   const tabs = useAppStore((s) => s.tabs);
@@ -52,10 +53,8 @@ export function AppLayout() {
   const readerTabs = tabs.filter((t) => t.type === "reader" && t.bookId);
   const isReaderActive = readerTabs.some((t) => t.id === activeTabId);
 
-  // Determine which home sub-view to show based on activeTabId
-  // "home" → HomePage, "chat" → ChatPage, "notes" → Notes, "stats" → Stats
-  const homeViewKey = isReaderActive ? "home" : (activeTabId ?? "home");
-  const HomeView = HOME_VIEWS[homeViewKey] ?? HomePage;
+  // Determine which home sub-view is active
+  const homeViewKey = isReaderActive ? null : (activeTabId ?? "home");
 
   // Track which reader tabs we've already initialized
   const initializedRef = useRef<Set<string>>(new Set());
@@ -87,8 +86,17 @@ export function AppLayout() {
         >
           <HomeSidebar />
           <div className="h-full flex-1 overflow-hidden pr-1 pb-1">
-            <div className="flex h-full flex-col overflow-hidden rounded-xl border bg-background shadow-around">
-              <HomeView />
+            <div className="relative flex h-full flex-col overflow-hidden rounded-xl border bg-background shadow-around">
+              {/* All home sub-views stay mounted; toggle via display:none */}
+              {HOME_VIEWS.map(({ id, Component }) => (
+                <div
+                  key={id}
+                  className="h-full w-full"
+                  style={{ display: homeViewKey === id ? "block" : "none" }}
+                >
+                  <Component />
+                </div>
+              ))}
             </div>
           </div>
         </div>

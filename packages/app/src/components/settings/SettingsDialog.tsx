@@ -10,19 +10,21 @@ import { GeneralSettings } from "./GeneralSettings";
 import { ReadSettingsPanel } from "./ReadSettings";
 import { SkillManager } from "./SkillManager";
 import { TranslationSettings } from "./TranslationSettings";
+import { VectorModelSettings } from "./VectorModelSettings";
 
-type SettingsTab = "general" | "reading" | "ai" | "translation" | "skills";
+type SettingsTab = "general" | "reading" | "ai" | "vectorModel" | "translation" | "skills";
 
 interface SettingsDialogProps {
   open: boolean;
   onClose: () => void;
 }
 
-const TAB_IDS: SettingsTab[] = ["general", "reading", "ai", "translation", "skills"];
+const TAB_IDS: SettingsTab[] = ["general", "reading", "ai", "vectorModel", "translation", "skills"];
 const TAB_KEYS: Record<SettingsTab, string> = {
   general: "settings.general",
   reading: "settings.reading",
   ai: "settings.ai",
+  vectorModel: "settings.vectorModel",
   translation: "settings.translationTab",
   skills: "settings.skills",
 };
@@ -65,6 +67,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
             {activeTab === "general" && <GeneralSettings />}
             {activeTab === "reading" && <ReadSettingsPanel />}
             {activeTab === "ai" && <AISettings />}
+            {activeTab === "vectorModel" && <VectorModelSettings />}
             {activeTab === "translation" && <TranslationSettings />}
             {activeTab === "skills" && <SkillManager />}
           </div>

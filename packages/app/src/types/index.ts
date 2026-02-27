@@ -20,6 +20,9 @@ export type {
   SemanticContext,
   AIConfig,
   AIModel,
+  AIEndpoint,
+  AIProviderType,
+  VectorModelConfig,
 } from "./chat";
 export type {
   ReadingSession,

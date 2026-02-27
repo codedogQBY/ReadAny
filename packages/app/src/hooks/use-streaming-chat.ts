@@ -1,49 +1,57 @@
-import { StreamingChat, createMessageId, createThreadId } from "@/lib/ai/streaming";
+import { StreamingChat, createMessageId } from "@/lib/ai/streaming";
 import { useChatStore } from "@/stores/chat-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import type { Book, Message, SemanticContext, Thread } from "@/types";
 /**
- * useStreamingChat — React hook for AI streaming chat
+ * useStreamingChat — React hook for AI streaming chat.
+ *
+ * Supports two modes:
+ * 1. **Book chat** (bookId provided): scoped to a single book, RAG tools use that book's index.
+ * 2. **General chat** (no bookId): standalone chat, can optionally reference selected books.
  */
 import { useCallback, useRef, useState } from "react";
 
-export function useStreamingChat(options?: {
+export interface StreamingChatOptions {
+  /** The book context for book-scoped chat */
   book?: Book | null;
+  /** Semantic reading context */
   semanticContext?: SemanticContext | null;
-}) {
+  /** The bookId for scoping (used to find/create thread) */
+  bookId?: string;
+}
+
+export function useStreamingChat(options?: StreamingChatOptions) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [error, setError] = useState<Error | null>(null);
   const streamingRef = useRef<StreamingChat | null>(null);
 
-  const { threads, activeThreadId, addThread, addMessage, setStreaming, setStreamingContent } =
-    useChatStore();
+  const {
+    threads,
+    getActiveThreadId,
+    createThread,
+    addMessage,
+    updateThreadTitle,
+    setStreaming,
+    setStreamingContent,
+  } = useChatStore();
 
   const aiConfig = useSettingsStore((s) => s.aiConfig);
 
   const getOrCreateThread = useCallback(
-    (bookId?: string): Thread => {
-      const existing = activeThreadId ? threads.find((t) => t.id === activeThreadId) : null;
-
+    async (bookId?: string): Promise<Thread> => {
+      const activeId = getActiveThreadId(bookId);
+      const existing = activeId ? threads.find((t) => t.id === activeId) : null;
       if (existing) return existing;
 
-      const thread: Thread = {
-        id: createThreadId(),
-        bookId: bookId || undefined,
-        title: "New Chat",
-        messages: [],
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-
-      addThread(thread);
-      return thread;
+      // Create a new thread scoped to this context
+      return await createThread(bookId);
     },
-    [activeThreadId, threads, addThread],
+    [threads, getActiveThreadId, createThread],
   );
 
   const sendMessage = useCallback(
-    async (content: string, bookId?: string) => {
+    async (content: string, overrideBookId?: string) => {
       if (!content.trim() || isStreaming) return;
 
       setIsStreaming(true);
@@ -52,7 +60,13 @@ export function useStreamingChat(options?: {
       setStreaming(true);
       setStreamingContent("");
 
-      const thread = getOrCreateThread(bookId);
+      const bookId = overrideBookId ?? options?.bookId;
+      const thread = await getOrCreateThread(bookId);
+
+      // Auto-title: use first message as thread title
+      if (thread.messages.length === 0 && !thread.title) {
+        await updateThreadTitle(thread.id, content.slice(0, 50));
+      }
 
       // Add user message
       const userMessage: Message = {
@@ -62,7 +76,7 @@ export function useStreamingChat(options?: {
         content: content.trim(),
         createdAt: Date.now(),
       };
-      addMessage(thread.id, userMessage);
+      await addMessage(thread.id, userMessage);
 
       // Create streaming client
       streamingRef.current = new StreamingChat();
@@ -84,12 +98,11 @@ export function useStreamingChat(options?: {
           onToken: (token) => {
             setStreamingText((prev) => {
               const updated = prev + token;
-              setStreamingContent(updated); // sync full content to store
+              setStreamingContent(updated);
               return updated;
             });
           },
-          onComplete: (fullText, toolCalls) => {
-            // Add assistant message
+          onComplete: async (fullText, toolCalls) => {
             const assistantMessage: Message = {
               id: createMessageId(),
               threadId: thread.id,
@@ -104,7 +117,7 @@ export function useStreamingChat(options?: {
               })),
               createdAt: Date.now(),
             };
-            addMessage(thread.id, assistantMessage);
+            await addMessage(thread.id, assistantMessage);
 
             setIsStreaming(false);
             setStreaming(false);
@@ -117,7 +130,6 @@ export function useStreamingChat(options?: {
             setStreamingContent("");
           },
           onToolCall: (name, args) => {
-            // Could add a pending tool call display
             console.log(`Tool call: ${name}`, args);
           },
           onToolResult: (name, result) => {
@@ -134,10 +146,12 @@ export function useStreamingChat(options?: {
       isStreaming,
       getOrCreateThread,
       addMessage,
+      updateThreadTitle,
       setStreaming,
       setStreamingContent,
       aiConfig,
       options?.book,
+      options?.bookId,
       options?.semanticContext,
     ],
   );

@@ -1,19 +1,17 @@
 /**
- * HomePage — library page with grid/list view
+ * HomePage — library page
  */
 import { useLibraryStore } from "@/stores/library-store";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Grid, List, Plus } from "lucide-react";
-import { useCallback, useState } from "react";
+import { Plus } from "lucide-react";
+import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { BookGrid } from "./BookGrid";
-import { BookList } from "./BookList";
 import { ImportDropZone } from "./ImportDropZone";
 
 export function HomePage() {
   const { t } = useTranslation();
   const { books, filter, importBooks } = useLibraryStore();
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
   const filtered = filter.search
     ? books.filter(
@@ -79,29 +77,7 @@ export function HomePage() {
 
       {/* Book display */}
       <div className="flex-1 overflow-y-auto px-6 pb-4">
-        {viewMode === "grid" ? <BookGrid books={filtered} /> : <BookList books={filtered} />}
-      </div>
-
-      {/* Floating status bar */}
-      <div className="absolute right-4 bottom-4 flex items-center gap-2 rounded-full border bg-background/90 px-3 py-1.5 shadow-sm backdrop-blur">
-        <span className="text-xs text-muted-foreground">
-          {t("common.total")}: {filtered.length}
-        </span>
-        <div className="h-3 w-px bg-border" />
-        <button
-          type="button"
-          className={`rounded p-0.5 ${viewMode === "grid" ? "bg-muted text-foreground" : "text-muted-foreground"}`}
-          onClick={() => setViewMode("grid")}
-        >
-          <Grid className="size-3.5" />
-        </button>
-        <button
-          type="button"
-          className={`rounded p-0.5 ${viewMode === "list" ? "bg-muted text-foreground" : "text-muted-foreground"}`}
-          onClick={() => setViewMode("list")}
-        >
-          <List className="size-3.5" />
-        </button>
+        <BookGrid books={filtered} />
       </div>
     </div>
   );

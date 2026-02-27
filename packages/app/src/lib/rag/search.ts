@@ -1,9 +1,12 @@
 import { getChunks } from "@/lib/db/database";
 /**
  * Hybrid search — vector + BM25 with configurable weighting
- * Full implementation with actual search algorithms
+ * Full implementation with actual search algorithms.
+ *
+ * Optimization: In-memory embedding cache per book to avoid repeated
+ * SQLite BLOB deserialization on every search query.
  */
-import type { SearchQuery, SearchResult } from "@/types";
+import type { Chunk, SearchQuery, SearchResult } from "@/types";
 import { cosineSimilarity } from "./embedding";
 import type { EmbeddingService } from "./embedding-service";
 
@@ -12,6 +15,37 @@ let embeddingService: EmbeddingService | null = null;
 /** Configure the embedding service for vector search */
 export function configureSearch(service: EmbeddingService): void {
   embeddingService = service;
+}
+
+// ---- In-memory chunk cache per book ----
+// Avoids loading + deserializing all embedding BLOBs from SQLite on every query.
+interface CachedBookChunks {
+  chunks: Chunk[];
+  timestamp: number;
+}
+
+const chunkCache = new Map<string, CachedBookChunks>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Get chunks for a book, using cache if available */
+async function getCachedChunks(bookId: string): Promise<Chunk[]> {
+  const cached = chunkCache.get(bookId);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return cached.chunks;
+  }
+  const chunks = await getChunks(bookId);
+  chunkCache.set(bookId, { chunks, timestamp: Date.now() });
+  return chunks;
+}
+
+/** Invalidate cache for a book (call after vectorization) */
+export function invalidateChunkCache(bookId: string): void {
+  chunkCache.delete(bookId);
+}
+
+/** Clear entire cache */
+export function clearChunkCache(): void {
+  chunkCache.clear();
 }
 
 /** Execute a search query against book chunks */
@@ -35,8 +69,8 @@ async function vectorSearch(query: SearchQuery): Promise<SearchResult[]> {
   // Get query embedding
   const queryEmbedding = await embeddingService.embed(query.query);
 
-  // Get all chunks for this book
-  const chunks = await getChunks(query.bookId);
+  // Get all chunks for this book (cached)
+  const chunks = await getCachedChunks(query.bookId);
 
   // Compute cosine similarity against each chunk with an embedding
   const results: SearchResult[] = chunks
@@ -53,44 +87,77 @@ async function vectorSearch(query: SearchQuery): Promise<SearchResult[]> {
   return results;
 }
 
+// ---- BM25 pre-computed index cache ----
+interface BM25Index {
+  bookId: string;
+  avgdl: number;
+  docCount: number;
+  docTokens: string[][]; // tokenized content for each chunk
+  docLengths: number[];
+  chunkIds: string[];
+}
+
+const bm25IndexCache = new Map<string, { index: BM25Index; timestamp: number }>();
+
+function getOrBuildBM25Index(chunks: Chunk[], bookId: string): BM25Index {
+  const cached = bm25IndexCache.get(bookId);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return cached.index;
+  }
+
+  const docTokens = chunks.map((c) => tokenize(c.content));
+  const docLengths = docTokens.map((t) => t.length);
+  const avgdl = docLengths.reduce((s, l) => s + l, 0) / Math.max(chunks.length, 1);
+
+  const index: BM25Index = {
+    bookId,
+    avgdl,
+    docCount: chunks.length,
+    docTokens,
+    docLengths,
+    chunkIds: chunks.map((c) => c.id),
+  };
+
+  bm25IndexCache.set(bookId, { index, timestamp: Date.now() });
+  return index;
+}
+
 /** BM25 keyword search */
 async function bm25Search(query: SearchQuery): Promise<SearchResult[]> {
-  const chunks = await getChunks(query.bookId);
+  const chunks = await getCachedChunks(query.bookId);
   if (chunks.length === 0) return [];
 
   const terms = tokenize(query.query);
   if (terms.length === 0) return [];
 
+  const idx = getOrBuildBM25Index(chunks, query.bookId);
+
   // BM25 parameters
   const k1 = 1.5;
   const b = 0.75;
 
-  // Compute average document length
-  const avgdl = chunks.reduce((sum, c) => sum + c.tokenCount, 0) / chunks.length;
-
-  // Compute IDF for each term
+  // Compute IDF for each query term
   const idfMap = new Map<string, number>();
   for (const term of terms) {
-    const df = chunks.filter((c) => tokenize(c.content).includes(term)).length;
-    const idf = Math.log((chunks.length - df + 0.5) / (df + 0.5) + 1);
+    const df = idx.docTokens.filter((tokens) => tokens.includes(term)).length;
+    const idf = Math.log((idx.docCount - df + 0.5) / (df + 0.5) + 1);
     idfMap.set(term, idf);
   }
 
   // Score each chunk
   const results: SearchResult[] = chunks
-    .map((chunk) => {
-      const docTokens = tokenize(chunk.content);
-      const docLen = docTokens.length;
+    .map((chunk, ci) => {
+      const docTokens = idx.docTokens[ci];
+      const docLen = idx.docLengths[ci];
       let score = 0;
 
       for (const term of terms) {
         const tf = docTokens.filter((t) => t === term).length;
         const idf = idfMap.get(term) || 0;
-        score += idf * ((tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (docLen / avgdl))));
+        score += idf * ((tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (docLen / idx.avgdl))));
       }
 
-      // Find highlight snippets
-      const highlights = findHighlightSnippets(chunk.content, terms);
+      const highlights = score > 0 ? findHighlightSnippets(chunk.content, terms) : [];
 
       return {
         chunk,
