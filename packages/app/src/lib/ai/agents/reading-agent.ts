@@ -1,15 +1,15 @@
 /**
- * Reading Agent — AI-powered reading assistant
+ * Reading Agent — AI-powered reading assistant using LangGraph ReAct agent
  *
  * Architecture:
- * 1. Uses getAvailableTools() to register ALL tools (RAG, analysis, context)
- * 2. Builds proper Zod schemas from ToolDefinition.parameters
- * 3. Uses ToolMessage (not HumanMessage) for tool results
- * 4. Real streaming via model.stream() for final responses
- * 5. System prompt from system-prompt.ts (not hardcoded)
+ * 1. Uses LangGraph's createReactAgent for automatic tool-calling loop (no hard iteration limit)
+ * 2. Uses getAvailableTools() to register ALL tools (RAG, analysis, context)
+ * 3. Builds proper Zod schemas from ToolDefinition.parameters
+ * 4. Real streaming via streamEvents API
+ * 5. System prompt from system-prompt.ts
  */
 import type { AIConfig, Book, SemanticContext, Skill } from "@/types";
-import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
 import { z } from "zod";
 import { createChatModel } from "../llm-provider";
@@ -71,7 +71,7 @@ function buildZodSchema(
   return z.object(shape);
 }
 
-// --- Tool Executor ---
+// --- Tool Executor (error-safe wrapper) ---
 
 async function executeTool(tool: ToolDefinition, args: Record<string, unknown>): Promise<unknown> {
   try {
@@ -101,19 +101,15 @@ export async function* streamReadingAgent(
       deepThinking,
     });
 
-    // P0: Register ALL tools via getAvailableTools (not just context tools)
+    // Register ALL tools via getAvailableTools
     const { getAvailableTools } = await import("../tools");
     const tools = getAvailableTools({
       bookId: book?.id || null,
       isVectorized,
       enabledSkills,
     });
-    const toolMap = new Map<string, ToolDefinition>();
-    for (const tool of tools) {
-      toolMap.set(tool.name, tool);
-    }
 
-    // P1: Use proper system prompt from system-prompt.ts
+    // Build system prompt
     const systemPrompt = buildSystemPrompt({
       book,
       semanticContext,
@@ -121,17 +117,32 @@ export async function* streamReadingAgent(
       isVectorized,
       userLanguage: "zh-CN",
     });
-    const messages: BaseMessage[] = [
-      new SystemMessage(systemPrompt),
+
+    // Build input messages (history + user input, without system — handled by agent prompt)
+    const inputMessages: BaseMessage[] = [
       ...history.map((h) =>
         h.role === "user" ? new HumanMessage(h.content) : new AIMessage(h.content),
       ),
       new HumanMessage(userInput),
     ];
 
-    // P1: Build proper Zod schemas from ToolDefinition.parameters
+    // If no tools available, stream directly without agent graph
+    if (tools.length === 0) {
+      const { SystemMessage } = await import("@langchain/core/messages");
+      const allMessages = [new SystemMessage(systemPrompt), ...inputMessages];
+      const stream = await model.stream(allMessages);
+      for await (const chunk of stream) {
+        const content = typeof chunk.content === "string" ? chunk.content : "";
+        if (content) {
+          yield { type: "token", content };
+        }
+      }
+      return;
+    }
+
+    // Build LangChain tools with proper Zod schemas
     const { DynamicStructuredTool } = await import("@langchain/core/tools");
-    const langChainTools = Array.from(toolMap.values()).map((tool) => {
+    const langChainTools = tools.map((tool) => {
       const schema = buildZodSchema(tool.parameters);
       return new DynamicStructuredTool({
         name: tool.name,
@@ -143,101 +154,61 @@ export async function* streamReadingAgent(
       });
     });
 
-    // If no tools available, stream directly without binding tools
-    if (langChainTools.length === 0) {
-      const stream = await model.stream(messages);
-      for await (const chunk of stream) {
-        const content = typeof chunk.content === "string" ? chunk.content : "";
-        if (content) {
+    // Create LangGraph ReAct agent — handles tool-calling loop automatically
+    const { createReactAgent } = await import("@langchain/langgraph/prebuilt");
+    const agent = createReactAgent({
+      llm: model,
+      tools: langChainTools,
+      prompt: systemPrompt,
+    });
+
+    // Stream events from the agent graph
+    // recursionLimit=50 allows up to ~25 tool-calling rounds (2 graph steps per round)
+    // This supports analyzing all chapters of a book in one conversation turn
+    const eventStream = agent.streamEvents(
+      { messages: inputMessages },
+      { version: "v2", recursionLimit: 50 },
+    );
+
+    for await (const event of eventStream) {
+      // Token streaming from model (works for both intermediate reasoning and final response)
+      if (event.event === "on_chat_model_stream") {
+        const chunk = event.data?.chunk;
+        if (!chunk) continue;
+
+        const content = chunk.content;
+        if (typeof content === "string" && content) {
           yield { type: "token", content };
-        }
-      }
-      return;
-    }
-
-    // Bind tools to model
-    const modelWithTools = model.bindTools?.(langChainTools) ?? model;
-
-    // First call - let AI decide if it needs tools
-    let response = await modelWithTools.invoke(messages);
-
-    // Tool call loop
-    let iterationCount = 0;
-    const maxIterations = 5;
-
-    while (
-      response.tool_calls &&
-      response.tool_calls.length > 0 &&
-      iterationCount < maxIterations
-    ) {
-      iterationCount++;
-
-      // P1: Push the AI response (with tool_calls) into messages
-      messages.push(response);
-
-      // Process each tool call
-      for (const toolCall of response.tool_calls) {
-        const toolName = toolCall.name;
-        const toolArgs = toolCall.args as Record<string, unknown>;
-        const toolCallId = toolCall.id || `${toolName}-${Date.now()}`;
-        const tool = toolMap.get(toolName);
-
-        yield { type: "tool_call", name: toolName, args: toolArgs };
-
-        if (tool) {
-          const result = await executeTool(tool, toolArgs);
-          yield { type: "tool_result", name: toolName, result };
-
-          // P1: Use ToolMessage with correct tool_call_id
-          messages.push(
-            new ToolMessage({
-              content: JSON.stringify(result),
-              tool_call_id: toolCallId,
-              name: toolName,
-            }),
-          );
-        } else {
-          // Tool not found — still need to send a ToolMessage to avoid format error
-          messages.push(
-            new ToolMessage({
-              content: JSON.stringify({ error: `Tool "${toolName}" not found` }),
-              tool_call_id: toolCallId,
-              name: toolName,
-            }),
-          );
+        } else if (Array.isArray(content)) {
+          // Handle Anthropic-style content blocks (text + thinking)
+          for (const block of content) {
+            if (block.type === "text" && block.text) {
+              yield { type: "token", content: block.text };
+            } else if (block.type === "thinking" && block.thinking) {
+              yield { type: "reasoning", content: block.thinking, stepType: "thinking" };
+            }
+          }
         }
       }
 
-      // Continue conversation with tool results
-      response = await modelWithTools.invoke(messages);
-    }
-
-    // P2: Real streaming for final response
-    // If the last response already has content (no more tool calls), stream it
-    // Otherwise use model.stream() for a fresh streaming response
-    if (response.tool_calls && response.tool_calls.length > 0) {
-      // Hit max iterations — still have tool calls, just output what we have
-      const content =
-        typeof response.content === "string" ? response.content : JSON.stringify(response.content);
-      if (content) {
-        yield { type: "token", content };
+      // Tool call started
+      if (event.event === "on_tool_start") {
+        yield {
+          type: "tool_call",
+          name: event.name,
+          args: (event.data?.input as Record<string, unknown>) ?? {},
+        };
       }
-    } else if (response.content) {
-      // We got a non-tool-call response from invoke().
-      // Re-stream: add the tool results to messages, then stream the final answer.
-      // But since we already have the response, let's stream it properly.
-      // The response was from invoke() so we simulate streaming from the buffered content.
-      // For true streaming on the final response, we re-call with stream().
-      messages.push(response);
 
-      // Remove the last AI message and re-stream
-      messages.pop();
-      const stream = await modelWithTools.stream(messages);
-      for await (const chunk of stream) {
-        const content = typeof chunk.content === "string" ? chunk.content : "";
-        if (content) {
-          yield { type: "token", content };
+      // Tool call completed
+      if (event.event === "on_tool_end") {
+        let result: unknown = event.data?.output;
+        try {
+          if (typeof result === "string") result = JSON.parse(result);
+        } catch {
+          /* keep as string */
         }
+        yield { type: "tool_result", name: event.name, result };
       }
     }
   } catch (error) {
