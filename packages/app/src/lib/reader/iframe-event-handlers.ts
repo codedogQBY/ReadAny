@@ -153,26 +153,40 @@ export const handleMouseup = (
   );
 };
 
+/** Single-click detection with double-click exclusion */
+let clickTimer: ReturnType<typeof setTimeout> | null = null;
+let clickCount = 0;
+
 export const handleClick = (
   bookKey: string,
   event: MouseEvent,
 ) => {
-  const element = event.target as HTMLElement | null;
-  // Don't interfere with links
-  if (element?.closest("a, sup, audio, video")) return;
+  // Ignore clicks on interactive elements (links, buttons, inputs)
+  const target = event.target as HTMLElement;
+  if (target?.closest?.("a, button, input, textarea, select, [role='button']")) return;
 
-  window.postMessage(
-    {
-      type: "iframe-click",
-      bookKey,
-      screenX: event.screenX,
-      screenY: event.screenY,
-      clientX: event.clientX,
-      clientY: event.clientY,
-      ...getKeyStatus(event),
-    },
-    "*",
-  );
+  clickCount++;
+  if (clickCount === 1) {
+    clickTimer = setTimeout(() => {
+      // Single click confirmed (not a double click)
+      window.postMessage(
+        {
+          type: "iframe-single-click",
+          bookKey,
+          screenX: event.screenX,
+          screenY: event.screenY,
+          clientX: event.clientX,
+          clientY: event.clientY,
+        },
+        "*",
+      );
+      clickCount = 0;
+    }, 250);
+  } else {
+    // Double click — cancel single click
+    if (clickTimer) clearTimeout(clickTimer);
+    clickCount = 0;
+  }
 };
 
 export const handleWheel = (
@@ -249,6 +263,8 @@ export function registerIframeEventHandlers(
   // biome-ignore lint: runtime flag on Document
   (doc as any).__readany_events_registered = true;
 
+  console.log("[iframe-events] Registered handlers for bookKey:", bookKey);
+
   doc.addEventListener("keydown", handleKeydown.bind(null, bookKey));
   doc.addEventListener("keyup", handleKeyup.bind(null, bookKey));
   doc.addEventListener(
@@ -259,7 +275,10 @@ export function registerIframeEventHandlers(
     "mouseup",
     handleMouseup.bind(null, bookKey),
   );
-  doc.addEventListener("click", handleClick.bind(null, bookKey));
+  doc.addEventListener(
+    "click",
+    handleClick.bind(null, bookKey),
+  );
   doc.addEventListener("wheel", handleWheel.bind(null, bookKey), {
     passive: false,
   });

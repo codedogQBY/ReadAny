@@ -204,7 +204,9 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
   );
 
   // --- Section load handler ---
-  const docLoadHandler = useCallback(
+  // Use stable ref-based handler so openBook can register it once and it always
+  // dispatches to the latest callback, avoiding stale closures and duplicate listeners.
+  const docLoadHandlerImpl = useCallback(
     (event: Event) => {
       const detail = (event as CustomEvent).detail as SectionLoadDetail;
       if (!detail.doc) return;
@@ -226,28 +228,41 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
     },
     [bookKey, viewSettings, onLoaded, isFixedLayout],
   );
+  const docLoadHandlerRef = useRef(docLoadHandlerImpl);
+  docLoadHandlerRef.current = docLoadHandlerImpl;
 
   // --- Relocate handler ---
-  const relocateHandler = useCallback(
+  const relocateHandlerImpl = useCallback(
     (event: Event) => {
       const detail = (event as CustomEvent).detail as RelocateDetail;
       onRelocate?.(detail);
     },
     [onRelocate],
   );
+  const relocateHandlerRef = useRef(relocateHandlerImpl);
+  relocateHandlerRef.current = relocateHandlerImpl;
+
+  // Stable wrapper functions that delegate to latest impl via ref
+  const docLoadHandler = useCallback((event: Event) => docLoadHandlerRef.current(event), []);
+  const relocateHandler = useCallback((event: Event) => relocateHandlerRef.current(event), []);
 
   // --- Selection listener ---
+  // Use ref so the pointerup handler always calls the latest onSelection callback,
+  // even if the React prop has been updated since the listener was attached.
+  const onSelectionRef = useRef(onSelection);
+  onSelectionRef.current = onSelection;
+
   const attachSelectionListener = useCallback(
     (doc: Document) => {
       const handlePointerUp = () => {
         setTimeout(() => {
           const sel = getSelectionFromView();
-          onSelection?.(sel);
+          onSelectionRef.current?.(sel);
         }, 10);
       };
       doc.addEventListener("pointerup", handlePointerUp);
     },
-    [onSelection],
+    [],
   );
 
   const getSelectionFromView = useCallback((): BookSelection | null => {
@@ -277,18 +292,44 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
     }
 
     const rects = Array.from(range.getClientRects());
-    const containerRect = containerRef.current?.getBoundingClientRect();
-    const offsetRects = containerRect
-      ? rects.map(
-          (r) =>
-            new DOMRect(
-              r.x + (containerRect.x || 0),
-              r.y + (containerRect.y || 0),
-              r.width,
-              r.height,
-            ),
-        )
-      : rects;
+
+    // Convert iframe-local coordinates to main window coordinates.
+    // For fixed-layout (PDF), iframes may have CSS transform: scale(),
+    // so we need to account for both the iframe position and the scale factor.
+    const iframe = doc.defaultView?.frameElement as HTMLIFrameElement | null;
+    let offsetRects: DOMRect[];
+
+    if (iframe) {
+      const iframeRect = iframe.getBoundingClientRect();
+      // Compute scale: iframeRect is the scaled size in main window,
+      // iframe.clientWidth is the unscaled content width
+      const scaleX = iframe.clientWidth > 0 ? iframeRect.width / iframe.clientWidth : 1;
+      const scaleY = iframe.clientHeight > 0 ? iframeRect.height / iframe.clientHeight : 1;
+
+      offsetRects = rects.map(
+        (r) =>
+          new DOMRect(
+            iframeRect.left + r.x * scaleX,
+            iframeRect.top + r.y * scaleY,
+            r.width * scaleX,
+            r.height * scaleY,
+          ),
+      );
+    } else {
+      // Fallback: use container offset (for non-iframe renderers)
+      const containerRect = containerRef.current?.getBoundingClientRect();
+      offsetRects = containerRect
+        ? rects.map(
+            (r) =>
+              new DOMRect(
+                r.x + containerRect.x,
+                r.y + containerRect.y,
+                r.width,
+                r.height,
+              ),
+          )
+        : rects;
+    }
 
     return { text, cfi, rects: offsetRects };
   }, []);
@@ -332,7 +373,6 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         // Open the pre-parsed BookDoc
         await view.open(bookDoc);
         viewRef.current = view;
-        setViewReady(true);
 
         console.log("[FoliateViewer] Book opened:", {
           format,
@@ -350,6 +390,16 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
 
         // Apply renderer settings
         applyRendererSettings(view, viewSettings, isFixedLayout);
+
+        // IMPORTANT: Register event listeners BEFORE navigation to avoid race condition.
+        // React's useFoliateEvents relies on viewReady state, but setState + re-render
+        // won't complete before the synchronous navigation below fires the first "load"
+        // event. We attach listeners directly here so the first section load is captured.
+        // useFoliateEvents will also bind them once viewReady is committed, but
+        // addEventListener de-duplicates identical function references, so no double-fire.
+        view.addEventListener("load", docLoadHandler);
+        view.addEventListener("relocate", relocateHandler);
+        setViewReady(true);
 
         // Navigate to last location or start
         if (lastLocation && !isFixedLayout) {

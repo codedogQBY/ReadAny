@@ -1,273 +1,428 @@
 /**
  * PDF adapter for foliate-js
- * Converts PDF pages into foliate-js book format for rendering with fixed-layout renderer
+ * Converts PDF pages into foliate-js book format for rendering with fixed-layout renderer.
+ * Uses PDF.js TextLayer for text selection support.
  */
 import * as pdfjsLib from "pdfjs-dist";
 
-// Configure PDF.js worker
-// Use CDN for worker to avoid version mismatch issues
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.624/build/pdf.worker.min.mjs`;
+// Configure PDF.js worker — always set to match the API version
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+
+// CSS caches (loaded once)
+let textLayerCSS = null;
+let annotationLayerCSS = null;
+
+// Inline text_layer_builder CSS
+const TEXT_LAYER_CSS = `
+.textLayer {
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 0;
+}
+.textLayer.highlighting { touch-action: none; }
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.textLayer --min-font-size: 1;
+.textLayer {
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.textLayer .markedContent { display: contents; }
+.textLayer span[role="img"] { user-select: none; cursor: default; }
+.textLayer ::selection {
+  background: rgba(0, 100, 255, 0.3);
+}
+.textLayer br::selection { background: transparent; }
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  user-select: none;
+}
+.textLayer.selecting .endOfContent { top: 0; }
+`;
+
+const ANNOTATION_LAYER_CSS = `
+.annotationLayer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  transform-origin: 0 0;
+}
+.annotationLayer section {
+  position: absolute;
+  text-align: initial;
+  pointer-events: auto;
+  box-sizing: border-box;
+  transform-origin: 0 0;
+  user-select: none;
+}
+.annotationLayer :is(.linkAnnotation, .buttonWidgetAnnotation.pushButton) > a {
+  position: absolute;
+  font-size: 1em;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+}
+.annotationLayer :is(.linkAnnotation, .buttonWidgetAnnotation.pushButton):not(.hasBorder) > a:hover {
+  opacity: 0.2;
+  background-color: rgb(255 255 0);
+}
+.annotationLayer .linkAnnotation.hasBorder:hover {
+  background-color: rgb(255 255 0 / 0.2);
+}
+`;
+
+/**
+ * Render canvas + text layer + annotation layer for a PDF page inside an iframe document.
+ * Called on initial load and on every zoom change.
+ */
+const render = async (page, doc, zoom) => {
+  if (!doc) return;
+  const scale = zoom * devicePixelRatio;
+
+  doc.documentElement.style.transform = `scale(${1 / devicePixelRatio})`;
+  doc.documentElement.style.transformOrigin = "top left";
+  doc.documentElement.style.setProperty("--total-scale-factor", scale);
+  doc.documentElement.style.setProperty("--user-unit", "1");
+  doc.documentElement.style.setProperty("--scale-round-x", "1px");
+  doc.documentElement.style.setProperty("--scale-round-y", "1px");
+
+  const viewport = page.getViewport({ scale });
+
+  // Render canvas (in main document for font loading, then adopt into iframe)
+  const canvas = document.createElement("canvas");
+  canvas.height = viewport.height;
+  canvas.width = viewport.width;
+  const canvasContext = canvas.getContext("2d");
+  await page.render({ canvasContext, viewport }).promise;
+
+  const canvasContainer = doc.querySelector("#canvas");
+  if (!canvasContainer) return;
+  canvasContainer.replaceChildren(doc.adoptNode(canvas));
+
+  // Render text layer
+  const textContainer = doc.querySelector(".textLayer");
+  if (textContainer) {
+    textContainer.replaceChildren();
+    const textLayer = new pdfjsLib.TextLayer({
+      textContentSource: await page.streamTextContent(),
+      container: textContainer,
+      viewport,
+    });
+    await textLayer.render();
+
+    // Hide offscreen canvases created by TextLayer
+    for (const c of document.querySelectorAll(".hiddenCanvasElement")) {
+      Object.assign(c.style, {
+        position: "absolute", top: "0", left: "0",
+        width: "0", height: "0", display: "none",
+      });
+    }
+
+    // Fix text selection end-of-content marker
+    const endOfContent = document.createElement("div");
+    endOfContent.className = "endOfContent";
+    textContainer.append(endOfContent);
+
+    // Panning + text selection cursor logic
+    let isPanning = false;
+    let startX = 0, startY = 0, scrollLeft = 0, scrollTop = 0, scrollParent = null;
+
+    const findScrollableParent = (element) => {
+      let current = element;
+      while (current) {
+        if (current !== document.body && current.nodeType === 1) {
+          const style = window.getComputedStyle(current);
+          const overflow = style.overflow + style.overflowY + style.overflowX;
+          if (/(auto|scroll)/.test(overflow)) {
+            if (current.scrollHeight > current.clientHeight || current.scrollWidth > current.clientWidth) {
+              return current;
+            }
+          }
+        }
+        if (current.parentElement) current = current.parentElement;
+        else if (current.parentNode && current.parentNode.host) current = current.parentNode.host;
+        else break;
+      }
+      return window;
+    };
+
+    textContainer.onpointerdown = (e) => {
+      const selection = doc.getSelection();
+      const hasTextSelection = selection && selection.toString().length > 0;
+      const elementUnderCursor = doc.elementFromPoint(e.clientX, e.clientY);
+      const hasTextUnderneath = elementUnderCursor &&
+        (elementUnderCursor.tagName === "SPAN" || elementUnderCursor.tagName === "P") &&
+        elementUnderCursor.textContent.trim().length > 0;
+
+      if (!hasTextUnderneath && !hasTextSelection) {
+        isPanning = true;
+        startX = e.screenX;
+        startY = e.screenY;
+        const iframe = doc.defaultView.frameElement;
+        if (iframe) {
+          scrollParent = findScrollableParent(iframe);
+          if (scrollParent === window) {
+            scrollLeft = window.scrollX || window.pageXOffset;
+            scrollTop = window.scrollY || window.pageYOffset;
+          } else {
+            scrollLeft = scrollParent.scrollLeft;
+            scrollTop = scrollParent.scrollTop;
+          }
+          textContainer.style.cursor = "grabbing";
+        }
+      } else {
+        textContainer.classList.add("selecting");
+      }
+    };
+
+    textContainer.onpointermove = (e) => {
+      if (isPanning && scrollParent) {
+        e.preventDefault();
+        const dx = e.screenX - startX;
+        const dy = e.screenY - startY;
+        if (scrollParent === window) window.scrollTo(scrollLeft - dx, scrollTop - dy);
+        else { scrollParent.scrollLeft = scrollLeft - dx; scrollParent.scrollTop = scrollTop - dy; }
+      }
+    };
+
+    textContainer.onpointerup = () => {
+      if (isPanning) { isPanning = false; scrollParent = null; textContainer.style.cursor = "grab"; }
+      else textContainer.classList.remove("selecting");
+    };
+
+    textContainer.onpointerleave = () => {
+      if (isPanning) { isPanning = false; scrollParent = null; textContainer.style.cursor = "grab"; }
+    };
+
+    doc.addEventListener("selectionchange", () => {
+      const selection = doc.getSelection();
+      if (selection && selection.toString().length > 0) textContainer.style.cursor = "text";
+      else if (!isPanning) textContainer.style.cursor = "grab";
+    });
+
+    textContainer.style.cursor = "grab";
+  }
+
+  // Render annotation layer (links etc.)
+  const annotationDiv = doc.querySelector(".annotationLayer");
+  if (annotationDiv) {
+    annotationDiv.replaceChildren();
+    const linkService = {
+      goToDestination: () => {},
+      getDestinationHash: (dest) => JSON.stringify(dest),
+      addLinkAttributes: (link, url) => { link.href = url; },
+    };
+    try {
+      await new pdfjsLib.AnnotationLayer({
+        page, viewport,
+        div: annotationDiv,
+        linkService,
+      }).render({ annotations: await page.getAnnotations() });
+    } catch {
+      // Annotation rendering may fail for some pages
+    }
+  }
+};
+
+/**
+ * Render a single PDF page and return src/onZoom for the fixed-layout renderer.
+ */
+const renderPage = async (page) => {
+  const viewport = page.getViewport({ scale: 1 });
+
+  const data = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=${viewport.width}, height=${viewport.height}">
+<style>
+html, body { margin: 0; padding: 0; }
+${TEXT_LAYER_CSS}
+${ANNOTATION_LAYER_CSS}
+</style>
+</head>
+<body>
+<div id="canvas"></div>
+<div class="textLayer"></div>
+<div class="annotationLayer"></div>
+</body>
+</html>`;
+
+  const src = URL.createObjectURL(new Blob([data], { type: "text/html" }));
+  const onZoom = ({ doc, scale }) => render(page, doc, scale);
+  return { src, data, onZoom };
+};
+
+/**
+ * Render a page to a blob image (for cover)
+ */
+const renderPageAsBlob = async (page) => {
+  const viewport = page.getViewport({ scale: 1 });
+  const canvas = document.createElement("canvas");
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const canvasContext = canvas.getContext("2d");
+  await page.render({ canvasContext, viewport }).promise;
+  return new Promise((resolve) => canvas.toBlob(resolve));
+};
+
+const makeTOCItem = async (item, pdf) => {
+  let pageIndex = undefined;
+  if (item.dest) {
+    try {
+      const dest = typeof item.dest === "string"
+        ? await pdf.getDestination(item.dest)
+        : item.dest;
+      if (dest?.[0]) pageIndex = await pdf.getPageIndex(dest[0]);
+    } catch (e) {
+      console.warn("Failed to get page index for TOC item:", item.title, e);
+    }
+  }
+  return {
+    label: item.title,
+    href: item.dest ? JSON.stringify(item.dest) : "",
+    index: pageIndex,
+    subitems: item.items?.length
+      ? await Promise.all(item.items.map((i) => makeTOCItem(i, pdf)))
+      : null,
+  };
+};
 
 /**
  * Create a foliate-js compatible book object from a PDF file
- * @param {File|Blob} file - The PDF file
- * @returns {Object} A book object compatible with foliate-js
  */
 export const makePDF = async (file) => {
   const arrayBuffer = await file.arrayBuffer();
-  const pdfDoc = await pdfjsLib.getDocument({
+  const pdf = await pdfjsLib.getDocument({
     data: new Uint8Array(arrayBuffer),
     useWorkerFetch: false,
     isEvalSupported: false,
     useSystemFonts: true,
+    cMapUrl: "/vendor/pdfjs/cmaps/",
+    cMapPacked: true,
+    standardFontDataUrl: "/vendor/pdfjs/standard_fonts/",
   }).promise;
 
-  const numPages = pdfDoc.numPages;
-  const cache = new Map();
-  const urls = new Map();
-
-  // Get page dimensions for metadata
-  const firstPage = await pdfDoc.getPage(1);
+  const numPages = pdf.numPages;
+  const firstPage = await pdf.getPage(1);
   const viewport = firstPage.getViewport({ scale: 1 });
 
-  // Render a single page to canvas and return as blob URL
-  const renderPage = async (pageNum, scale = 1) => {
-    const cacheKey = `${pageNum}-${scale}`;
-    if (cache.has(cacheKey)) return cache.get(cacheKey);
-
-    const page = await pdfDoc.getPage(pageNum);
-    const viewport = page.getViewport({ scale });
-    const pixelRatio = window.devicePixelRatio || 1;
-    const renderScale = scale * pixelRatio;
-
-    const canvas = document.createElement("canvas");
-    canvas.width = viewport.width * pixelRatio;
-    canvas.height = viewport.height * pixelRatio;
-
-    const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    await page.render({
-      canvasContext: ctx,
-      viewport: page.getViewport({ scale: renderScale }),
-    }).promise;
-
-    // Create blob URL for the canvas image
-    const blob = await new Promise((resolve) =>
-      canvas.toBlob(resolve, "image/png")
-    );
-    const src = URL.createObjectURL(blob);
-
-    // Create an HTML page that contains the image
-    const pageHtml = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=${viewport.width}, height=${viewport.height}">
-  <style>
-    html, body { margin: 0; padding: 0; }
-    img { display: block; width: 100%; height: auto; }
-  </style>
-</head>
-<body>
-  <img src="${src}" width="${viewport.width}" height="${viewport.height}">
-</body>
-</html>`;
-
-    const pageBlob = new Blob([pageHtml], { type: "text/html" });
-    const pageUrl = URL.createObjectURL(pageBlob);
-
-    urls.set(cacheKey, [src, pageUrl]);
-    cache.set(cacheKey, pageUrl);
-
-    return pageUrl;
-  };
-
-  // Get text content for a page (for searching)
-  const getTextContent = async (pageNum) => {
-    const page = await pdfDoc.getPage(pageNum);
-    return page.getTextContent();
-  };
-
-  // Get outline/bookmarks
-  const getOutline = async () => {
-    try {
-      const outline = await pdfDoc.getOutline();
-      if (!outline) return [];
-
-      const result = [];
-      for (const item of outline) {
-        let pageNum = 1;
-        if (item.dest) {
-          try {
-            const dest =
-              typeof item.dest === "string"
-                ? await pdfDoc.getDestination(item.dest)
-                : item.dest;
-            if (dest) {
-              const ref = dest[0];
-              pageNum = (await pdfDoc.getPageIndex(ref)) + 1;
-            }
-          } catch {
-            // ignore
-          }
-        }
-        result.push({
-          label: item.title,
-          href: `page-${pageNum}`,
-          subitems: item.items
-            ? await parseOutlineItems(item.items, pdfDoc)
-            : undefined,
-        });
-      }
-      return result;
-    } catch {
-      return [];
-    }
-  };
-
-  // Helper for recursive outline parsing
-  const parseOutlineItems = async (items, pdfDoc) => {
-    const result = [];
-    for (const item of items) {
-      let pageNum = 1;
-      if (item.dest) {
-        try {
-          const dest =
-            typeof item.dest === "string"
-              ? await pdfDoc.getDestination(item.dest)
-              : item.dest;
-          if (dest) {
-            const ref = dest[0];
-            pageNum = (await pdfDoc.getPageIndex(ref)) + 1;
-          }
-        } catch {
-          // ignore
-        }
-      }
-      result.push({
-        label: item.title,
-        href: `page-${pageNum}`,
-        subitems: item.items
-          ? await parseOutlineItems(item.items, pdfDoc)
-          : undefined,
-      });
-    }
-    return result;
-  };
-
-  // Build the book object
-  const book = {};
-
-  // Cover: first page as image
-  book.getCover = async () => {
-    const page = await pdfDoc.getPage(1);
-    const viewport = page.getViewport({ scale: 0.5 });
-    const canvas = document.createElement("canvas");
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    await page.render({ canvasContext: ctx, viewport }).promise;
-    return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-  };
+  const book = { rendition: { layout: "pre-paginated" } };
 
   // Metadata
-  const metadata = await pdfDoc.getMetadata().catch(() => null);
+  const { metadata, info } = (await pdf.getMetadata()) ?? {};
   book.metadata = {
-    title: metadata?.info?.Title || file.name.replace(/\.pdf$/i, ""),
-    author: metadata?.info?.Author || undefined,
-    subject: metadata?.info?.Subject || undefined,
-    creator: metadata?.info?.Creator || undefined,
-    producer: metadata?.info?.Producer || undefined,
+    title: metadata?.get?.("dc:title") ?? info?.Title ?? file.name?.replace(/\.pdf$/i, ""),
+    author: metadata?.get?.("dc:creator") ?? info?.Author,
+    contributor: metadata?.get?.("dc:contributor"),
+    description: metadata?.get?.("dc:description") ?? info?.Subject,
+    language: metadata?.get?.("dc:language"),
+    publisher: metadata?.get?.("dc:publisher"),
+    subject: metadata?.get?.("dc:subject"),
+    identifier: metadata?.get?.("dc:identifier"),
+    source: metadata?.get?.("dc:source"),
+    rights: metadata?.get?.("dc:rights"),
   };
 
-  // Sections - one per page
-  book.sections = Array.from({ length: numPages }, (_, i) => ({
-    id: `page-${i + 1}`,
-    load: () => renderPage(i + 1),
-    unload: () => {
-      const key = `${i + 1}-1`;
-      urls.get(key)?.forEach?.(URL.revokeObjectURL);
-      urls.delete(key);
-      cache.delete(key);
-    },
-    size: 1, // Each page counts as 1 for progress
-    createDocument: async () => {
-      // For text search, return a document with the text content
-      const textContent = await getTextContent(i + 1);
-      const text = textContent.items.map((item) => item.str).join(" ");
-      const parser = new DOMParser();
-      return parser.parseFromString(
-        `<!DOCTYPE html><html><body><p>${text}</p></body></html>`,
-        "text/html"
-      );
-    },
-  }));
-
-  // Table of contents
-  book.toc = await getOutline();
+  // TOC
+  const outline = await pdf.getOutline();
+  book.toc = outline
+    ? await Promise.all(outline.map((item) => makeTOCItem(item, pdf)))
+    : null;
 
   // If no outline, create a simple page list
-  if (book.toc.length === 0) {
-    // Create page list entries (every 10 pages)
+  if (!book.toc || book.toc.length === 0) {
     const step = Math.max(1, Math.floor(numPages / 20));
     book.toc = [];
-    for (let i = 1; i <= numPages; i += step) {
-      book.toc.push({ label: `Page ${i}`, href: `page-${i}` });
+    for (let i = 0; i < numPages; i += step) {
+      book.toc.push({ label: `Page ${i + 1}`, href: JSON.stringify(i), index: i });
     }
   }
 
-  // Page list for direct page navigation
-  book.pageList = Array.from({ length: numPages }, (_, i) => ({
-    label: `${i + 1}`,
-    href: `page-${i + 1}`,
+  // Sections - one per page
+  const cache = new Map();
+  book.sections = Array.from({ length: numPages }, (_, i) => ({
+    id: i,
+    load: async () => {
+      const cached = cache.get(i);
+      if (cached) return cached;
+      const result = await renderPage(await pdf.getPage(i + 1));
+      cache.set(i, result);
+      return result;
+    },
+    size: 1000,
   }));
 
-  // Rendition properties - use fixed layout
-  book.rendition = {
-    layout: "pre-paginated",
-    spread: "auto",
-    viewport: { width: viewport.width, height: viewport.height },
-  };
+  // Rendition
+  book.rendition.spread = "auto";
+  book.rendition.viewport = { width: viewport.width, height: viewport.height };
 
-  // Navigation methods
-  book.resolveHref = (href) => {
-    const match = href.match(/page-(\d+)/);
-    if (match) {
-      const pageNum = parseInt(match[1], 10);
-      return { index: pageNum - 1 };
+  // Page list
+  book.pageList = Array.from({ length: numPages }, (_, i) => ({
+    label: `${i + 1}`,
+    href: JSON.stringify(i),
+  }));
+
+  // Navigation
+  book.isExternal = (uri) => /^\w+:/i.test(uri);
+  book.resolveHref = async (href) => {
+    try {
+      const parsed = JSON.parse(href);
+      if (typeof parsed === "number") return { index: parsed };
+      const dest = typeof parsed === "string"
+        ? await pdf.getDestination(parsed)
+        : parsed;
+      const index = await pdf.getPageIndex(dest[0]);
+      return { index };
+    } catch {
+      return { index: 0 };
     }
-    return { index: 0 };
   };
-
-  book.splitTOCHref = (href) => {
-    const match = href.match(/page-(\d+)/);
-    if (match) {
-      return [href, null];
+  book.splitTOCHref = async (href) => {
+    if (!href) return [null, null];
+    try {
+      const parsed = JSON.parse(href);
+      if (typeof parsed === "number") return [parsed, null];
+      const dest = typeof parsed === "string"
+        ? await pdf.getDestination(parsed)
+        : parsed;
+      const index = await pdf.getPageIndex(dest[0]);
+      return [index, null];
+    } catch {
+      return [null, null];
     }
-    return [href, null];
   };
-
-  book.getTOCFragment = (doc, id) => {
-    return doc.documentElement;
-  };
-
-  // Cleanup
-  book.destroy = () => {
-    for (const arr of urls.values()) {
-      for (const url of arr) {
-        URL.revokeObjectURL(url);
-      }
-    }
-    pdfDoc.destroy().catch(() => {});
-  };
-
-  // Store reference for later use
-  book._pdfDoc = pdfDoc;
-  book._renderPage = renderPage;
+  book.getTOCFragment = (doc) => doc.documentElement;
+  book.getCover = async () => renderPageAsBlob(await pdf.getPage(1));
+  book.destroy = () => pdf.destroy();
 
   return book;
 };

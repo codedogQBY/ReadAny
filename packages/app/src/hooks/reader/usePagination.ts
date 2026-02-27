@@ -35,26 +35,6 @@ export function usePagination({
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lockTime = useRef(0);
 
-  /** Handle mouse-click-based page flip (click on left/right thirds) */
-  const handlePageFlip = useCallback(
-    (clientX: number, _clientY: number) => {
-      const view = viewRef.current;
-      const container = containerRef.current;
-      if (!view || !container) return;
-
-      const rect = container.getBoundingClientRect();
-      const relX = clientX - rect.left;
-      const width = rect.width;
-
-      if (relX < width * 0.3) {
-        view.goLeft();
-      } else if (relX > width * 0.7) {
-        view.goRight();
-      }
-    },
-    [viewRef, containerRef],
-  );
-
   /**
    * Handle wheel event with leading-edge throttle + idle unlock:
    * - First event → immediate page turn
@@ -131,9 +111,6 @@ export function usePagination({
       if (!data?.type || data.bookKey !== bookKey) return;
 
       switch (data.type) {
-        case "iframe-click":
-          handlePageFlip(data.clientX, data.clientY);
-          break;
         case "iframe-wheel":
           handleWheel(data.deltaY, data.deltaX);
           break;
@@ -142,7 +119,7 @@ export function usePagination({
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [bookKey, handlePageFlip, handleWheel]);
+  }, [bookKey, handleWheel]);
 
   // Also listen for main-window wheel events on container
   useEffect(() => {
@@ -158,5 +135,5 @@ export function usePagination({
     return () => container.removeEventListener("wheel", onWheel);
   }, [containerRef, handleWheel]);
 
-  return { handlePageFlip, handleWheel };
+  return { handleWheel };
 }

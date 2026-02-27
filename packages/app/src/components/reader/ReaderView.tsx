@@ -100,7 +100,16 @@ async function loadAndParseBook(
 }
 
 // --- Auto-hide controls hook ---
-function useAutoHideControls(delay = 5000, keepVisible = false) {
+// Strategy:
+// - Toolbar/FooterBar each have an invisible hover trigger zone (onMouseEnter → show)
+// - Inside iframe: any single-click toggles visibility (no coordinate conversion needed)
+// - Tauri's window.screenX is unreliable, so we avoid screen-to-page coord mapping
+
+function useAutoHideControls(
+  containerRef: React.RefObject<HTMLDivElement | null>,
+  delay = 5000,
+  keepVisible = false,
+) {
   const [isVisible, setIsVisible] = useState(true);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isHoveringRef = useRef(false);
@@ -128,6 +137,29 @@ function useAutoHideControls(delay = 5000, keepVisible = false) {
     isHoveringRef.current = false;
     hideAfterDelay();
   }, [hideAfterDelay]);
+
+  // Listen for iframe-single-click to toggle toolbar
+  // Any single click inside the iframe toggles controls visibility
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (data?.type !== "iframe-single-click") return;
+      if (!containerRef.current) return;
+
+      setIsVisible((prev) => {
+        if (prev) {
+          isHoveringRef.current = false;
+          clearTimer();
+          return false;
+        }
+        hideAfterDelay();
+        return true;
+      });
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [containerRef, clearTimer, hideAfterDelay]);
 
   useEffect(() => {
     hideAfterDelay();
@@ -216,7 +248,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     isVisible: controlsVisible,
     handleMouseEnter: onControlsEnter,
     handleMouseLeave: onControlsLeave,
-  } = useAutoHideControls(5000, keepControlsVisible);
+  } = useAutoHideControls(containerRef, 1500, keepControlsVisible);
 
   // Throttled progress save
   const throttledSaveProgress = useRef(
@@ -338,9 +370,15 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
         setSelectedText(tabId, sel.text, null);
         if (sel.rects.length > 0) {
           const firstRect = sel.rects[0];
+          // SelectionPopover uses absolute positioning relative to containerRef,
+          // so we need to convert window coordinates to container-relative coordinates
+          const containerRect = containerRef.current?.getBoundingClientRect();
+          const offsetX = containerRect?.left ?? 0;
+          const offsetY = containerRect?.top ?? 0;
+          const rawY = firstRect.top - 40 - offsetY;
           setSelectionPos({
-            x: firstRect.left + firstRect.width / 2,
-            y: firstRect.top - 40,
+            x: firstRect.left + firstRect.width / 2 - offsetX,
+            y: rawY < 0 ? firstRect.bottom + 8 - offsetY : rawY,
           });
         }
       } else {
@@ -516,23 +554,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     <div className="flex h-full bg-muted/30 p-1">
       {/* Main reading area */}
       <div className="relative flex flex-1 flex-col overflow-hidden rounded-lg border border-border/60 bg-background shadow-sm">
-        {/* Toolbar */}
-        <ReaderToolbar
-          tabId={tabId}
-          isVisible={controlsVisible}
-          onPrev={handleNavPrev}
-          onNext={handleNavNext}
-          tocItems={tocItems}
-          onGoToChapter={handleGoToChapter}
-          onToggleSearch={handleToggleSearch}
-          onToggleToc={handleToggleToc}
-          onToggleChat={handleToggleChat}
-          isChatOpen={showChat}
-          onMouseEnter={onControlsEnter}
-          onMouseLeave={onControlsLeave}
-        />
-
-        {/* Search bar */}
+        {/* Search bar — stacked above content when visible */}
         {showSearch && (
           <SearchBar
             onSearch={handleSearch}
@@ -549,7 +571,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           />
         )}
 
-        {/* Content area */}
+        {/* Content area — takes full remaining space */}
         <div className="relative flex flex-1 overflow-hidden">
           {/* Reading area — FoliateViewer */}
           <div className="relative flex-1 overflow-hidden" ref={containerRef}>
@@ -664,19 +686,35 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
               </div>
             )}
           </div>
-        </div>
 
-        {/* Footer bar */}
-        <FooterBar
-          tabId={tabId}
-          totalPages={totalPages}
-          currentPage={currentPage}
-          isVisible={controlsVisible}
-          onPrev={handleNavPrev}
-          onNext={handleNavNext}
-          onMouseEnter={onControlsEnter}
-          onMouseLeave={onControlsLeave}
-        />
+          {/* Floating Toolbar — overlays content area */}
+          <ReaderToolbar
+            tabId={tabId}
+            isVisible={controlsVisible}
+            onPrev={handleNavPrev}
+            onNext={handleNavNext}
+            tocItems={tocItems}
+            onGoToChapter={handleGoToChapter}
+            onToggleSearch={handleToggleSearch}
+            onToggleToc={handleToggleToc}
+            onToggleChat={handleToggleChat}
+            isChatOpen={showChat}
+            onMouseEnter={onControlsEnter}
+            onMouseLeave={onControlsLeave}
+          />
+
+          {/* Floating Footer bar — overlays content area */}
+          <FooterBar
+            tabId={tabId}
+            totalPages={totalPages}
+            currentPage={currentPage}
+            isVisible={controlsVisible}
+            onPrev={handleNavPrev}
+            onNext={handleNavNext}
+            onMouseEnter={onControlsEnter}
+            onMouseLeave={onControlsLeave}
+          />
+        </div>
 
         {/* TOC overlay — floats above toolbar, content, and footer */}
         {showToc && (

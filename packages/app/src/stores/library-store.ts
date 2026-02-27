@@ -147,16 +147,9 @@ async function generatePdfCover(fileBytes: Uint8Array): Promise<Blob | null> {
   try {
     const pdfjsLib = await import("pdfjs-dist");
 
-    // Set worker if not already configured
-    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-      try {
-        const workerUrl = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url);
-        pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl.href;
-      } catch {
-        pdfjsLib.GlobalWorkerOptions.workerSrc =
-          `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-      }
-    }
+    // Always set worker to match the API version
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
     const pdfDoc = await pdfjsLib.getDocument({
       data: new Uint8Array(fileBytes),

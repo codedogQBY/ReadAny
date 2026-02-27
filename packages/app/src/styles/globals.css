@@ -244,8 +244,7 @@
 }
 
 .textLayer ::selection {
-  background: rgba(0, 0, 255, 0.25);
-  background: color-mix(in srgb, AccentColor, transparent 75%);
+  background: rgba(0, 100, 255, 0.3);
 }
 
 .textLayer br::selection {
