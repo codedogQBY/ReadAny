@@ -1,11 +1,12 @@
 /**
  * MessageBubble — sageread-style message display
- * - Assistant: left-aligned, no bubble, prose text
- * - User: right-aligned, muted rounded card
+ * - Assistant: left-aligned, no bubble, markdown-rendered prose
+ * - User: right-aligned, muted rounded card, plain text
  */
 import type { Message } from "@/types";
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
+import { MarkdownRenderer } from "./MarkdownRenderer";
 import { ToolCallDisplay } from "./ToolCallDisplay";
 
 interface MessageBubbleProps {
@@ -34,9 +35,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
   return (
     <div className="group flex w-full flex-col gap-0.5">
-      {/* assistant text — no bubble, left aligned */}
-      <div className="prose prose-neutral max-w-none text-sm leading-relaxed">
-        <div className="whitespace-pre-wrap">{message.content}</div>
+      {/* assistant text — markdown rendered, left aligned */}
+      <div className="chat-markdown max-w-none text-sm leading-relaxed">
+        <MarkdownRenderer content={message.content} />
       </div>
 
       {/* citations */}
