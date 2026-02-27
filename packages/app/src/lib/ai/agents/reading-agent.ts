@@ -12,19 +12,33 @@
  *
  * The agent uses a state graph where:
  * - Router: classifies user intent (question, summary, analysis, search, general)
- * - RAG Node: retrieves relevant book content for context-grounded answers
- * - Tool Node: executes registered tools (highlight, navigate, translate, etc.)
- * - Summarize Node: generates summaries of chapters/sections
- * - Respond Node: final LLM call with all gathered context
+ * - RAG Node: retrieves relevant book content via LangChain tools
+ * - Respond Node: final LLM call with all gathered context, streamed token by token
  *
- * This is the foundation; individual nodes will be fleshed out as features are built.
+ * Tool calling uses LangChain's bindTools() so the LLM can autonomously
+ * decide when to call ragSearch, ragToc, ragContext tools.
  */
 import type { AIConfig, Book, SemanticContext, Skill } from "@/types";
-import { HumanMessage, SystemMessage, AIMessage } from "@langchain/core/messages";
+import {
+  HumanMessage,
+  SystemMessage,
+  AIMessage,
+  ToolMessage,
+} from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
+import { DynamicStructuredTool } from "@langchain/core/tools";
 import { Annotation, StateGraph, END } from "@langchain/langgraph/web";
+import { z } from "zod";
 import { createChatModel } from "../llm-provider";
 import { buildSystemPrompt } from "../system-prompt";
+import { getAvailableTools } from "../tools";
+
+// --- Stream Event Types ---
+
+export type AgentStreamEvent =
+  | { type: "token"; content: string }
+  | { type: "tool_call"; name: string; args: Record<string, unknown> }
+  | { type: "tool_result"; name: string; result: unknown };
 
 // --- State Definition ---
 
@@ -63,12 +77,62 @@ export interface ReadingAgentOptions {
 }
 
 /**
+ * Convert our ToolDefinition[] to LangChain DynamicStructuredTool[].
+ */
+function buildLangChainTools(options: ReadingAgentOptions): DynamicStructuredTool[] {
+  const toolDefs = getAvailableTools({
+    bookId: options.book?.id || null,
+    isVectorized: options.isVectorized,
+    enabledSkills: options.enabledSkills,
+  });
+
+  return toolDefs.map((td) => {
+    // Build zod schema from our parameter definitions
+    const schemaFields: Record<string, z.ZodTypeAny> = {};
+    for (const [name, param] of Object.entries(td.parameters)) {
+      let field: z.ZodTypeAny;
+      switch (param.type) {
+        case "number":
+          field = z.number().describe(param.description);
+          break;
+        case "boolean":
+          field = z.boolean().describe(param.description);
+          break;
+        case "string":
+        default:
+          field = z.string().describe(param.description);
+          break;
+      }
+      schemaFields[name] = param.required ? field : field.optional();
+    }
+
+    return new DynamicStructuredTool({
+      name: td.name,
+      description: td.description,
+      schema: z.object(schemaFields),
+      func: async (args: Record<string, unknown>) => {
+        const result = await td.execute(args);
+        return JSON.stringify(result);
+      },
+    });
+  });
+}
+
+/**
  * Build the LangGraph reading agent.
  * Returns a compiled graph that can be invoked or streamed.
  */
 export async function buildReadingAgent(options: ReadingAgentOptions) {
   const { aiConfig, book, semanticContext, enabledSkills, isVectorized } = options;
-  const llm = await createChatModel(aiConfig);
+  const baseLlm = await createChatModel(aiConfig);
+
+  // Build LangChain tools from our tool definitions
+  const langchainTools = buildLangChainTools(options);
+
+  // Bind tools to LLM so it can autonomously decide to call them
+  const llm = langchainTools.length > 0
+    ? baseLlm.bindTools!(langchainTools)
+    : baseLlm;
 
   // Build system prompt using existing logic
   const systemPrompt = buildSystemPrompt({
@@ -79,11 +143,12 @@ export async function buildReadingAgent(options: ReadingAgentOptions) {
     userLanguage: book?.meta.language || "",
   });
 
+  // Map tool name → tool for execution
+  const toolMap = new Map(langchainTools.map((t) => [t.name, t]));
+
   // --- Node: Router ---
   async function routerNode(state: AgentStateType): Promise<Partial<AgentStateType>> {
-    // Simple intent classification — can be upgraded to LLM-based routing later
     const input = state.userInput.toLowerCase();
-
     let intent: AgentStateType["intent"] = "general";
 
     if (/summar|概括|总结|摘要/.test(input)) {
@@ -99,26 +164,65 @@ export async function buildReadingAgent(options: ReadingAgentOptions) {
     return { intent };
   }
 
-  // --- Node: RAG Retrieval ---
+  // --- Node: RAG Retrieval (via tool calling) ---
   async function ragNode(state: AgentStateType): Promise<Partial<AgentStateType>> {
     if (!isVectorized || !book) {
-      return { retrievedContext: "" };
+      // No vector index — just pass through semantic context if available
+      const ctx = semanticContext
+        ? `Current chapter: ${semanticContext.currentChapter}\nSurrounding text: ${semanticContext.surroundingText}`
+        : "";
+      return { retrievedContext: ctx };
     }
 
-    // TODO: integrate with the existing RAG search system
-    // For now, pass through semantic context
-    const ctx = semanticContext
-      ? `Current chapter: ${semanticContext.currentChapter}\nSurrounding text: ${semanticContext.surroundingText}`
-      : "";
+    // Use LLM with bound tools to do RAG retrieval
+    const ragMessages: BaseMessage[] = [
+      new SystemMessage(
+        `You are a RAG retrieval assistant. Based on the user's question, use the available tools to search the book for relevant content. Call ragSearch with an appropriate query. Return ONLY the tool calls, no text response.`
+      ),
+      new HumanMessage(state.userInput),
+    ];
 
-    return { retrievedContext: ctx };
+    try {
+      const response = await llm.invoke(ragMessages);
+      let retrievedContext = "";
+
+      // Check if the LLM made tool calls
+      if (response.tool_calls && response.tool_calls.length > 0) {
+        const newMessages: BaseMessage[] = [...ragMessages, response];
+
+        for (const toolCall of response.tool_calls) {
+          const tool = toolMap.get(toolCall.name);
+          if (tool) {
+            const result = await tool.invoke(toolCall.args);
+            retrievedContext += `\n\n[${toolCall.name}] Results:\n${result}`;
+            newMessages.push(
+              new ToolMessage({
+                content: typeof result === "string" ? result : JSON.stringify(result),
+                tool_call_id: toolCall.id || toolCall.name,
+              }),
+            );
+          }
+        }
+      }
+
+      // Also include semantic context if available
+      if (semanticContext) {
+        retrievedContext = `Current chapter: ${semanticContext.currentChapter}\nSurrounding text: ${semanticContext.surroundingText}\n${retrievedContext}`;
+      }
+
+      return { retrievedContext };
+    } catch {
+      // Fallback to semantic context
+      const ctx = semanticContext
+        ? `Current chapter: ${semanticContext.currentChapter}\nSurrounding text: ${semanticContext.surroundingText}`
+        : "";
+      return { retrievedContext: ctx };
+    }
   }
 
   // --- Node: Respond ---
   async function respondNode(state: AgentStateType): Promise<Partial<AgentStateType>> {
-    const messagesForLLM: BaseMessage[] = [
-      new SystemMessage(systemPrompt),
-    ];
+    const messagesForLLM: BaseMessage[] = [new SystemMessage(systemPrompt)];
 
     // Add retrieved context if any
     if (state.retrievedContext) {
@@ -130,7 +234,7 @@ export async function buildReadingAgent(options: ReadingAgentOptions) {
     // Add conversation history
     messagesForLLM.push(...state.messages);
 
-    const result = await llm.invoke(messagesForLLM);
+    const result = await baseLlm.invoke(messagesForLLM);
     const responseText = typeof result.content === "string" ? result.content : "";
 
     return {
@@ -141,7 +245,10 @@ export async function buildReadingAgent(options: ReadingAgentOptions) {
 
   // --- Conditional Edge: should we do RAG? ---
   function shouldRetrieve(state: AgentStateType): string {
-    if (isVectorized && (state.intent === "question" || state.intent === "search" || state.intent === "analysis")) {
+    if (
+      isVectorized &&
+      (state.intent === "question" || state.intent === "search" || state.intent === "analysis")
+    ) {
       return "rag";
     }
     return "respond";
@@ -160,7 +267,7 @@ export async function buildReadingAgent(options: ReadingAgentOptions) {
     .addEdge("rag", "respond")
     .addEdge("respond", END);
 
-  return graph.compile();
+  return { graph: graph.compile(), baseLlm, systemPrompt, toolMap };
 }
 
 /**
@@ -172,15 +279,14 @@ export async function runReadingAgent(
   userInput: string,
   history: Array<{ role: "user" | "assistant"; content: string }> = [],
 ): Promise<string> {
-  const agent = await buildReadingAgent(options);
+  const { graph } = await buildReadingAgent(options);
 
-  // Convert history to LangChain messages
   const messages: BaseMessage[] = history.map((m) =>
     m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content),
   );
   messages.push(new HumanMessage(userInput));
 
-  const result = await agent.invoke({
+  const result = await graph.invoke({
     messages,
     userInput,
   });
@@ -190,29 +296,100 @@ export async function runReadingAgent(
 
 /**
  * Stream the reading agent's response.
- * Yields text chunks as they arrive.
+ * Yields structured events: token chunks, tool calls, and tool results.
  */
 export async function* streamReadingAgent(
   options: ReadingAgentOptions,
   userInput: string,
   history: Array<{ role: "user" | "assistant"; content: string }> = [],
-): AsyncGenerator<string> {
-  const agent = await buildReadingAgent(options);
+): AsyncGenerator<AgentStreamEvent> {
+  const { baseLlm, systemPrompt, toolMap } = await buildReadingAgent(options);
 
-  const messages: BaseMessage[] = history.map((m) =>
+  const { isVectorized, book, semanticContext } = options;
+
+  // Convert history to LangChain messages
+  const chatMessages: BaseMessage[] = history.map((m) =>
     m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content),
   );
-  messages.push(new HumanMessage(userInput));
+  chatMessages.push(new HumanMessage(userInput));
 
-  const stream = await agent.stream({
-    messages,
-    userInput,
-  });
+  // --- Simple intent classification ---
+  const input = userInput.toLowerCase();
+  let needsRag = false;
+  if (isVectorized && book) {
+    if (
+      /summar|概括|总结|摘要/.test(input) ||
+      /analy|分析|论证|观点/.test(input) ||
+      /search|find|查找|搜索|在.*中找/.test(input) ||
+      /\?|？|what|how|why|who|when|where|explain|为什么|怎么|什么|谁|哪/.test(input)
+    ) {
+      needsRag = true;
+    }
+  }
 
-  for await (const event of stream) {
-    // The respond node emits the response
-    if (event.respond?.response) {
-      yield event.respond.response;
+  // --- RAG retrieval phase ---
+  let retrievedContext = "";
+
+  if (needsRag && toolMap.size > 0) {
+    try {
+      const llmWithTools = baseLlm.bindTools!(Array.from(toolMap.values()));
+      const ragMessages: BaseMessage[] = [
+        new SystemMessage(
+          `You are a RAG retrieval assistant. Based on the user's question, use the available tools to search the book for relevant content. Call ragSearch with an appropriate query. Return ONLY the tool calls, no text response.`,
+        ),
+        new HumanMessage(userInput),
+      ];
+
+      const ragResponse = await llmWithTools.invoke(ragMessages);
+
+      if (ragResponse.tool_calls && ragResponse.tool_calls.length > 0) {
+        for (const toolCall of ragResponse.tool_calls) {
+          yield { type: "tool_call", name: toolCall.name, args: toolCall.args as Record<string, unknown> };
+
+          const tool = toolMap.get(toolCall.name);
+          if (tool) {
+            const result = await tool.invoke(toolCall.args);
+            retrievedContext += `\n\n[${toolCall.name}] Results:\n${result}`;
+
+            let parsedResult: unknown;
+            try {
+              parsedResult = JSON.parse(typeof result === "string" ? result : JSON.stringify(result));
+            } catch {
+              parsedResult = result;
+            }
+            yield { type: "tool_result", name: toolCall.name, result: parsedResult };
+          }
+        }
+      }
+    } catch {
+      // Fallback — no RAG results
+    }
+  }
+
+  // Add semantic context
+  if (semanticContext) {
+    const scCtx = `Current chapter: ${semanticContext.currentChapter}\nSurrounding text: ${semanticContext.surroundingText}`;
+    retrievedContext = retrievedContext ? `${scCtx}\n${retrievedContext}` : scCtx;
+  }
+
+  // --- Final response phase (streamed) ---
+  const finalMessages: BaseMessage[] = [new SystemMessage(systemPrompt)];
+
+  if (retrievedContext) {
+    finalMessages.push(
+      new SystemMessage(`Relevant book content:\n${retrievedContext}`),
+    );
+  }
+
+  finalMessages.push(...chatMessages);
+
+  // Stream the response token by token
+  const stream = await baseLlm.stream(finalMessages);
+
+  for await (const chunk of stream) {
+    const text = typeof chunk.content === "string" ? chunk.content : "";
+    if (text) {
+      yield { type: "token", content: text };
     }
   }
 }
