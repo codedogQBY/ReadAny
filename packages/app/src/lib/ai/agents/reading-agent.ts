@@ -170,10 +170,13 @@ export async function* streamReadingAgent(
       { version: "v2", recursionLimit: 50 },
     );
 
-    // Track tool calls emitted early from on_chat_model_end so we skip
-    // the duplicate on_tool_start events. We count how many early emissions
-    // are pending to be "consumed" by on_tool_start events.
+    // Track tool calls already emitted (from streaming chunks or on_chat_model_end)
+    // so we can deduplicate against on_tool_start events.
     let pendingEarlyToolCalls = 0;
+
+    // Accumulate tool_call_chunks from streaming to emit tool_call as early as possible.
+    // Key: chunk index, Value: { name accumulated so far, args accumulated so far }
+    const streamingToolCalls = new Map<number, { name: string; args: string; emitted: boolean }>();
 
     for await (const event of eventStream) {
       // Token streaming from model
@@ -198,16 +201,52 @@ export async function* streamReadingAgent(
             }
           }
         }
+
+        // Detect tool_call_chunks in streaming and emit tool_call as soon as we have the name.
+        // This eliminates the delay between the last text token and on_chat_model_end.
+        const toolCallChunks = chunk.tool_call_chunks;
+        if (Array.isArray(toolCallChunks)) {
+          for (const tcc of toolCallChunks) {
+            const idx = tcc.index ?? 0;
+            let entry = streamingToolCalls.get(idx);
+            if (!entry) {
+              entry = { name: "", args: "", emitted: false };
+              streamingToolCalls.set(idx, entry);
+            }
+            if (tcc.name) entry.name += tcc.name;
+            if (tcc.args) entry.args += tcc.args;
+
+            // Emit as soon as we have a tool name (don't wait for full args)
+            if (entry.name && !entry.emitted) {
+              entry.emitted = true;
+              pendingEarlyToolCalls++;
+              yield {
+                type: "tool_call" as const,
+                name: entry.name,
+                args: {}, // args will arrive later; show pending UI immediately
+              };
+            }
+          }
+        }
       }
 
-      // When LLM finishes a turn, immediately emit any tool_calls it decided to make.
-      // This fires BEFORE on_tool_start, giving instant "pending" UI feedback.
+      // When LLM finishes a turn, emit any tool_calls that weren't already
+      // emitted from streaming chunks (e.g. non-OpenAI models that don't
+      // send tool_call_chunks).
       if (event.event === "on_chat_model_end") {
+        // Clear streaming accumulator for the next LLM turn
+        streamingToolCalls.clear();
+
         const output = event.data?.output;
         if (output) {
           const toolCalls = output.tool_calls ?? output.additional_kwargs?.tool_calls;
           if (Array.isArray(toolCalls)) {
             for (const tc of toolCalls) {
+              // Check if already emitted from streaming chunks
+              if (pendingEarlyToolCalls > 0) {
+                // Already emitted — skip but don't decrement yet (that's for on_tool_start)
+                continue;
+              }
               let args: Record<string, unknown>;
               try {
                 args = (typeof tc.args === "string" ? JSON.parse(tc.args) : tc.args) as Record<string, unknown>;
@@ -225,7 +264,7 @@ export async function* streamReadingAgent(
         }
       }
 
-      // Tool call started — skip if already emitted from on_chat_model_end
+      // Tool call started — skip if already emitted earlier
       if (event.event === "on_tool_start") {
         if (pendingEarlyToolCalls > 0) {
           pendingEarlyToolCalls--;

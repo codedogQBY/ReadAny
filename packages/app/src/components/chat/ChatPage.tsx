@@ -278,7 +278,7 @@ export function ChatPage() {
     setGeneralActiveThread,
     getActiveThreadId,
   } = useChatStore();
-  const { bookTitle } = useChatReaderStore();
+  const { bookId: contextBookId, bookTitle } = useChatReaderStore();
   
   const {
     isStreaming,
@@ -286,7 +286,9 @@ export function ChatPage() {
     currentStep,
     sendMessage,
     stopStream,
-  } = useStreamingChat();
+  } = useStreamingChat({
+    bookId: contextBookId || undefined,
+  });
   
   const [showThreads, setShowThreads] = useState(false);
 
@@ -303,12 +305,12 @@ export function ChatPage() {
     async (content: string, deepThinking: boolean = false) => {
       if (!activeThreadId) {
         await createThread(undefined, content.slice(0, 50));
-        setTimeout(() => sendMessage(content, undefined, deepThinking), 50);
+        setTimeout(() => sendMessage(content, contextBookId || undefined, deepThinking), 50);
       } else {
-        sendMessage(content, undefined, deepThinking);
+        sendMessage(content, contextBookId || undefined, deepThinking);
       }
     },
-    [activeThreadId, createThread, sendMessage],
+    [activeThreadId, createThread, sendMessage, contextBookId],
   );
 
   const handleNewThread = useCallback(() => {

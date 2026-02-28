@@ -159,17 +159,22 @@ const mdComponents = {
   },
 };
 
+let mdStreamIdCounter = 0;
+
 export const MarkdownRenderer = React.memo(function MarkdownRenderer({
   content,
   className,
   isStreaming,
 }: MarkdownRendererProps) {
+  // Stable unique id per instance so the streaming cursor CSS is scoped
+  const scopeId = useMemo(() => `md-stream-${++mdStreamIdCounter}`, []);
+
   // Append a unicode cursor placeholder that we style via CSS when streaming.
   // This keeps the cursor inline with the last text rather than on a new line.
   const displayContent = isStreaming ? `${content}\u200B` : content;
 
   return (
-    <div className={className}>
+    <div className={className} data-md-scope={isStreaming ? scopeId : undefined}>
       <Markdown
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}
@@ -179,7 +184,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
       </Markdown>
       {isStreaming && (
         <style>{`
-          .chat-markdown > div > *:last-child::after {
+          [data-md-scope="${scopeId}"] > *:last-child::after {
             content: "";
             display: inline-block;
             width: 3px;
