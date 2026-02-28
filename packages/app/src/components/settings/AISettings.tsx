@@ -371,21 +371,64 @@ export function AISettings() {
       </section>
 
       {/* Parameters */}
-      <section className="rounded-lg bg-muted/60 p-4">
-        <h2 className="mb-4 text-sm font-medium text-foreground">
-          {t("settings.temperature", { value: aiConfig.temperature })}
-        </h2>
-        <Slider
-          min={0}
-          max={1}
-          step={0.1}
-          value={[aiConfig.temperature]}
-          onValueChange={([v]) => updateAIConfig({ temperature: v })}
-        />
-        <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-          <span>0</span>
-          <span>0.5</span>
-          <span>1</span>
+      <section className="rounded-lg bg-muted/60 p-4 space-y-5">
+        <h2 className="text-sm font-medium text-foreground">{t("settings.parameters")}</h2>
+
+        {/* Temperature */}
+        <div>
+          <h3 className="mb-2 text-xs text-muted-foreground">
+            {t("settings.temperature", { value: aiConfig.temperature })}
+          </h3>
+          <Slider
+            min={0}
+            max={1}
+            step={0.1}
+            value={[aiConfig.temperature]}
+            onValueChange={([v]) => updateAIConfig({ temperature: v })}
+          />
+          <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+            <span>0</span>
+            <span>0.5</span>
+            <span>1</span>
+          </div>
+        </div>
+
+        {/* Max Tokens */}
+        <div>
+          <h3 className="mb-2 text-xs text-muted-foreground">
+            {t("settings.maxTokens", { value: aiConfig.maxTokens ?? 4096 })}
+          </h3>
+          <Slider
+            min={1024}
+            max={32768}
+            step={1024}
+            value={[aiConfig.maxTokens ?? 4096]}
+            onValueChange={([v]) => updateAIConfig({ maxTokens: v })}
+          />
+          <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+            <span>1024</span>
+            <span>16384</span>
+            <span>32768</span>
+          </div>
+        </div>
+
+        {/* Sliding Window Size */}
+        <div>
+          <h3 className="mb-2 text-xs text-muted-foreground">
+            {t("settings.slidingWindowSize", { value: aiConfig.slidingWindowSize ?? 8 })}
+          </h3>
+          <Slider
+            min={2}
+            max={30}
+            step={2}
+            value={[aiConfig.slidingWindowSize ?? 8]}
+            onValueChange={([v]) => updateAIConfig({ slidingWindowSize: v })}
+          />
+          <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+            <span>2</span>
+            <span>16</span>
+            <span>30</span>
+          </div>
         </div>
       </section>
     </div>

@@ -139,7 +139,7 @@ function createSummarizeTool(bookId: string): ToolDefinition {
   return {
     name: "summarize",
     description:
-      "Generate a summary of a chapter or the entire book. Use this when the user asks for a summary, overview, or brief of the content.",
+      "Generate a summary of a chapter or the entire book. Returns book content that YOU must summarize. After receiving the results, write your summary — do NOT call more tools.",
     parameters: {
       scope: {
         type: "string",
@@ -222,7 +222,7 @@ function createExtractEntitiesTool(bookId: string): ToolDefinition {
   return {
     name: "extractEntities",
     description:
-      "Extract named entities from the book content such as characters, places, concepts, organizations, and key terms. Use this when the user asks about characters, people, places, or concepts in the book.",
+      "Extract named entities from the book content. Returns raw text from the book — YOU must read through it and identify the entities (characters, places, concepts, etc.) yourself. Do NOT call this tool again after receiving results; instead, analyze the returned content and answer the user.",
     parameters: {
       entityType: {
         type: "string",
@@ -246,26 +246,33 @@ function createExtractEntitiesTool(bookId: string): ToolDefinition {
         return { error: "No content found" };
       }
 
-      const content = targetChunks
-        .slice(0, 20)
+      // Sample content from across the book (take first chunk from each chapter for broader coverage)
+      let sampledChunks: typeof targetChunks;
+      if (chapterIndex !== undefined) {
+        // Single chapter: take up to 10 chunks
+        sampledChunks = targetChunks.slice(0, 10);
+      } else {
+        // Whole book: take first 2 chunks from each chapter for breadth
+        const byChapter = new Map<number, typeof targetChunks>();
+        for (const c of targetChunks) {
+          const list = byChapter.get(c.chapterIndex) || [];
+          if (list.length < 2) list.push(c);
+          byChapter.set(c.chapterIndex, list);
+        }
+        sampledChunks = Array.from(byChapter.values()).flat();
+      }
+
+      const content = sampledChunks
         .map((c) => `[${c.chapterTitle}]\n${c.content}`)
         .join("\n\n")
-        .slice(0, 8000);
-
-      const entityInstructions: Record<string, string> = {
-        characters: "Extract all character/person names mentioned. For each character, note their role and first appearance context.",
-        places: "Extract all place names (cities, countries, locations). For each place, note its significance in the story.",
-        concepts: "Extract key concepts, themes, and abstract ideas discussed. Explain each concept briefly.",
-        organizations: "Extract organization names (companies, institutions, groups). Note their role in the content.",
-        all: "Extract all named entities: characters, places, organizations, and key concepts. Categorize each entity.",
-      };
+        .slice(0, 5000);
 
       return {
         entityType,
         chapterIndex,
         chapterTitle: targetChunks[0]?.chapterTitle,
         content,
-        instruction: entityInstructions[entityType] || entityInstructions.all,
+        instruction: `The above is raw book content. Read through it carefully and identify all ${entityType === "all" ? "named entities (characters, places, organizations, key concepts)" : entityType}. List each entity with a brief description based ONLY on what appears in this text. This is all the data you need — do NOT call any more tools.`,
       };
     },
   };
@@ -276,7 +283,7 @@ function createAnalyzeArgumentsTool(bookId: string): ToolDefinition {
   return {
     name: "analyzeArguments",
     description:
-      "Analyze the author's arguments, reasoning, and logical structure. Use this when the user asks about the author's viewpoint, arguments, logic, or critical analysis of the content.",
+      "Analyze the author's arguments, reasoning, and logical structure. Returns book content that YOU must analyze. After receiving the results, write your analysis — do NOT call more tools.",
     parameters: {
       chapterIndex: {
         type: "number",
@@ -328,7 +335,7 @@ function createFindQuotesTool(bookId: string): ToolDefinition {
   return {
     name: "findQuotes",
     description:
-      "Find notable quotes, passages, and memorable sentences from the book. Use this when the user asks for quotes, memorable passages, or beautiful language.",
+      "Find notable quotes, passages, and memorable sentences from the book. Returns book content that YOU must search through for quotes. After receiving the results, present the quotes — do NOT call more tools.",
     parameters: {
       quoteType: {
         type: "string",

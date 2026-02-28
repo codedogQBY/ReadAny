@@ -1,4 +1,3 @@
-import type { FontFamily, Theme, ViewMode, ViewSettings } from "@/types";
 import type { TOCItem } from "@/components/reader/FoliateViewer";
 /**
  * Reader store — per-tab reading state, progress, CFI
@@ -20,7 +19,6 @@ export interface ReaderTab {
 
 export interface ReaderState {
   tabs: Record<string, ReaderTab>; // keyed by tab id
-  viewSettings: ViewSettings;
   tocItems: TOCItem[];
   goToChapterFn: ((index: number) => void) | null;
 
@@ -32,28 +30,12 @@ export interface ReaderState {
   setSelectedText: (tabId: string, text: string, cfi: string | null) => void;
   setSearchQuery: (tabId: string, query: string) => void;
   setSearchResults: (tabId: string, results: string[]) => void;
-  setFontSize: (size: number) => void;
-  setLineHeight: (height: number) => void;
-  setFontFamily: (family: FontFamily) => void;
-  setTheme: (theme: Theme) => void;
-  setViewMode: (mode: ViewMode) => void;
   setTocItems: (items: TOCItem[]) => void;
   setGoToChapterFn: (fn: ((index: number) => void) | null) => void;
 }
 
-const defaultViewSettings: ViewSettings = {
-  fontSize: 16,
-  lineHeight: 1.6,
-  fontFamily: "serif",
-  theme: "light",
-  viewMode: "paginated",
-  pageMargin: 40,
-  paragraphSpacing: 16,
-};
-
 export const useReaderStore = create<ReaderState>((set) => ({
   tabs: {},
-  viewSettings: defaultViewSettings,
   tocItems: [],
   goToChapterFn: null,
 
@@ -131,31 +113,6 @@ export const useReaderStore = create<ReaderState>((set) => ({
           ? { ...state.tabs[tabId], searchResults: results }
           : state.tabs[tabId],
       },
-    })),
-
-  setFontSize: (size) =>
-    set((state) => ({
-      viewSettings: { ...state.viewSettings, fontSize: size },
-    })),
-
-  setLineHeight: (height) =>
-    set((state) => ({
-      viewSettings: { ...state.viewSettings, lineHeight: height },
-    })),
-
-  setFontFamily: (family) =>
-    set((state) => ({
-      viewSettings: { ...state.viewSettings, fontFamily: family },
-    })),
-
-  setTheme: (theme) =>
-    set((state) => ({
-      viewSettings: { ...state.viewSettings, theme },
-    })),
-
-  setViewMode: (mode) =>
-    set((state) => ({
-      viewSettings: { ...state.viewSettings, viewMode: mode },
     })),
 
   setTocItems: (items) => set({ tocItems: items }),

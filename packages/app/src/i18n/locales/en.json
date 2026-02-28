@@ -49,6 +49,7 @@
     "history": "History",
     "newChat": "New Chat",
     "noConversations": "No conversations yet",
+    "justNow": "just now",
     "howCanIHelp": "How can I help you today?",
     "askAboutBooks": "Ask questions about your books, get summaries, and more",
     "getStarted": "Get started",
@@ -71,7 +72,8 @@
     "aiAssistant": "AI Reading Assistant",
     "aiAssistantDesc": "Analyze content, answer questions, and help you understand your books better.",
     "deepThinking": "Deep Thinking",
-    "deepThinkingHint": "Enable deeper analysis and reasoning, response time may be longer"
+    "deepThinkingHint": "Enable deeper analysis and reasoning, response time may be longer",
+    "currentModel": "Model"
   },
   "reader": {
     "untitled": "Untitled",
@@ -232,7 +234,10 @@
     "model": "Model",
     "apiKey": "API Key",
     "baseUrl": "Base URL (optional)",
+    "parameters": "Parameters",
     "temperature": "Temperature: {{value}}",
+    "maxTokens": "Max Tokens: {{value}}",
+    "slidingWindowSize": "Context Length: {{value}} turns",
     "translation_title": "Translation",
     "translation_desc": "Configure translation settings",
     "enableTranslation": "Enable Translation",

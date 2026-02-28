@@ -71,22 +71,6 @@ export function ReadSettingsPanel() {
             </Select>
           </div>
 
-          {/* View Mode */}
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-neutral-800">{t("settings.viewMode")}</span>
-            <Select
-              value={readSettings.viewMode}
-              onValueChange={(v) => updateReadSettings({ viewMode: v as "paginated" | "scroll" })}
-            >
-              <SelectTrigger className="w-[140px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="paginated">{t("settings.paginated")}</SelectItem>
-                <SelectItem value="scroll">{t("settings.scroll")}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
         </div>
       </section>
     </div>

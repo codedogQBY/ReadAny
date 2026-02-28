@@ -139,39 +139,35 @@ function buildWorkflowSection(isVectorized: boolean): string {
   const steps: string[] = [
     "## Core Workflow",
     "",
-    `**Before answering any question about the book's content, you MUST follow this workflow:**`,
+    "**Before answering any question about the book's content, follow this workflow:**",
     "",
     "1. **Understand the question** — What does the user want to know?",
-    "2. **Gather content** — Use tools to retrieve the relevant book content:",
+    "2. **Gather content** — Use the right tools to retrieve relevant content:",
   ];
 
   if (isVectorized) {
-    steps.push("   - Use **ragToc** to understand the book structure");
-    steps.push("   - Use **ragSearch** to find specific content related to the question");
-    steps.push("   - Use **ragContext** to get more surrounding text for a chapter");
+    steps.push("   - **ragSearch**: for finding specific content by topic/keyword");
+    steps.push("   - **ragToc**: for understanding book structure");
   }
 
-  steps.push("   - Use **getSurroundingContext** to see what the user is currently reading");
-  steps.push("   - Use **getCurrentChapter** to know which chapter the user is on");
-  steps.push("   - Use **summarize** to get chapter/book summaries");
+  steps.push("   - **extractEntities**: for finding characters, places, concepts");
+  steps.push("   - **summarize**: for chapter or book summaries");
+  steps.push("   - **getSurroundingContext**: for current page content");
 
-  steps.push("3. **Answer based on retrieved content** — Only use information from tool results");
+  steps.push("3. **Synthesize and answer** — Analyze the tool results and write your answer");
   steps.push("");
-  steps.push("### Strict Rules");
-  steps.push(
-    "- **NEVER answer content questions without first calling a tool** to get the actual text",
-  );
-  steps.push(
-    "- **NEVER fabricate quotes, chapter content, or plot details** from your own knowledge",
-  );
-  steps.push(
-    "- If a tool returns no results or errors, tell the user honestly instead of guessing",
-  );
-  steps.push(
-    `- When the user asks "summarize this chapter", call **summarize** with the current chapterIndex`,
-  );
-  steps.push("- When the user asks about specific topics, use **ragSearch** with a relevant query");
-  steps.push("- For general chat (greetings, opinions), you can respond directly without tools");
+  steps.push("### Tool-Calling Discipline (CRITICAL)");
+  steps.push("- **NEVER call the same tool repeatedly with similar/identical arguments.** If ragSearch(\"人物\") returned results, DO NOT call ragSearch(\"人物介绍\"), ragSearch(\"人物关系\") etc. Use the results you already have.");
+  steps.push("- **When a tool returns `content` + `instruction` fields**: the `content` IS your data. Read it, follow the `instruction` to analyze it, then write your answer. Do NOT call more tools to \"find more\".");
+  steps.push("- **Each tool call must have a distinct purpose.** Good: ragToc → summarize(chapter 1) → summarize(chapter 2). Bad: ragSearch(\"主题\") → ragSearch(\"主要主题\") → ragSearch(\"书的主题\").");
+  steps.push("- If a tool returns enough information to answer (even partially), STOP calling tools and answer with what you have.");
+  steps.push("- If a tool returns no results or an error, tell the user honestly. Do NOT retry with rephrased queries.");
+  steps.push("- For multi-step tasks (e.g. \"summarize each chapter\"), you MAY call tools many times — but each call must target a DIFFERENT chapter/scope. Never repeat the same query.");
+  steps.push("");
+  steps.push("### Content Rules");
+  steps.push("- **NEVER fabricate** quotes, chapter content, or details from your own knowledge");
+  steps.push("- For general chat (greetings, opinions), respond directly without tools");
+  steps.push("- When citing book content, include chapter references");
 
   return steps.join("\n");
 }

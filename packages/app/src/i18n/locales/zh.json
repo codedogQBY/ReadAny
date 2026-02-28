@@ -49,6 +49,7 @@
     "history": "历史记录",
     "newChat": "新对话",
     "noConversations": "暂无对话",
+    "justNow": "刚刚",
     "howCanIHelp": "有什么可以帮到你？",
     "askAboutBooks": "向 AI 提问关于你的书籍，获取摘要等",
     "getStarted": "快速开始",
@@ -71,7 +72,8 @@
     "aiAssistant": "AI 阅读助手",
     "aiAssistantDesc": "分析内容、回答问题，帮助你更好地理解书籍。",
     "deepThinking": "深度思考",
-    "deepThinkingHint": "启用更深入的分析和推理过程，响应时间可能更长"
+    "deepThinkingHint": "启用更深入的分析和推理过程，响应时间可能更长",
+    "currentModel": "模型"
   },
   "reader": {
     "untitled": "无标题",
@@ -232,7 +234,10 @@
     "model": "模型",
     "apiKey": "API 密钥",
     "baseUrl": "API 地址（可选）",
+    "parameters": "参数",
     "temperature": "温度：{{value}}",
+    "maxTokens": "最大 Token 数：{{value}}",
+    "slidingWindowSize": "上下文长度：{{value}} 轮",
     "translation_title": "翻译设置",
     "translation_desc": "配置翻译选项",
     "enableTranslation": "启用翻译",

@@ -12,6 +12,7 @@
  * - Managing reading state (progress, location, selection)
  * - Rendering the FoliateViewer and surrounding UI (toolbar, footer, panels)
  */
+import { ReadSettingsPanel } from "@/components/settings/ReadSettings";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { useReadingSession } from "@/hooks/use-reading-session";
 import { DocumentLoader } from "@/lib/reader/document-loader";
@@ -28,6 +29,7 @@ import { throttle } from "@/lib/utils/throttle";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useReaderStore } from "@/stores/reader-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useNotebookStore } from "@/stores/notebook-store";
 import type { HighlightColor } from "@/types";
 import { X } from "lucide-react";
@@ -189,7 +191,7 @@ interface ReaderViewProps {
 
 export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const tab = useReaderStore((s) => s.tabs[tabId]);
-  const viewSettings = useReaderStore((s) => s.viewSettings);
+  const viewSettings = useSettingsStore((s) => s.readSettings);
   const setProgress = useReaderStore((s) => s.setProgress);
   const setChapter = useReaderStore((s) => s.setChapter);
   const setSelectedText = useReaderStore((s) => s.setSelectedText);
@@ -291,13 +293,14 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const [totalPages, setTotalPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(0);
   const [showChat, setShowChat] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const { t } = useTranslation();
   const isInitializedRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Auto-hide controls
-  const keepControlsVisible = showSearch || showToc;
+  const keepControlsVisible = showSearch || showToc || showSettings;
   const {
     isVisible: controlsVisible,
     handleMouseEnter: onControlsEnter,
@@ -664,6 +667,10 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     () => setShowChat((p) => !p),
     [],
   );
+  const handleToggleSettings = useCallback(
+    () => setShowSettings((p) => !p),
+    [],
+  );
 
   // --- Search logic ---
   const searchGeneratorRef = useRef<AsyncGenerator | null>(null);
@@ -893,6 +900,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
             onGoToChapter={handleGoToChapter}
             onToggleSearch={handleToggleSearch}
             onToggleToc={handleToggleToc}
+            onToggleSettings={handleToggleSettings}
             onToggleChat={handleToggleChat}
             isChatOpen={showChat}
             onMouseEnter={onControlsEnter}
@@ -929,6 +937,29 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
                 onClose={() => setShowToc(false)}
                 tabId={tabId}
               />
+            </div>
+          </>
+        )}
+
+        {/* Settings overlay */}
+        {showSettings && (
+          <>
+            <div
+              className="absolute inset-0 z-40 bg-black/20"
+              onClick={() => setShowSettings(false)}
+            />
+            <div className="absolute top-12 right-2 z-50 w-80 animate-in slide-in-from-top-2 duration-200 rounded-lg border border-border/60 bg-background shadow-lg">
+              <div className="flex items-center justify-between border-b border-border/40 px-4 py-2">
+                <span className="text-xs font-medium">{t("settings.reading_title")}</span>
+                <button
+                  type="button"
+                  className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                  onClick={() => setShowSettings(false)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <ReadSettingsPanel />
             </div>
           </>
         )}

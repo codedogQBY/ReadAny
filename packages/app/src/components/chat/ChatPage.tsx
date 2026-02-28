@@ -13,6 +13,7 @@ import {
   MessageCirclePlus,
   ScrollText,
   Search,
+  Trash2,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -20,6 +21,20 @@ import { useTranslation } from "react-i18next";
 import { ChatInput } from "./ChatInput";
 import { ContextPopover } from "./ContextPopover";
 import { MessageList } from "./MessageList";
+import { ModelSelector } from "./ModelSelector";
+
+function formatRelativeTime(ts: number, t: (key: string) => string): string {
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return t("chat.justNow");
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d`;
+  const months = Math.floor(days / 30);
+  return `${months}mo`;
+}
 
 function ThreadsSidebar({
   open,
@@ -50,34 +65,54 @@ function ThreadsSidebar({
             <X className="size-4" />
           </button>
         </div>
-        <div className="flex flex-col gap-0.5 overflow-y-auto">
+        <div className="flex flex-col gap-1 overflow-y-auto">
           {generalThreads.length === 0 && (
             <p className="py-8 text-center text-xs text-muted-foreground">
               {t("chat.noConversations")}
             </p>
           )}
-          {generalThreads.map((thread) => (
-            <div
-              key={thread.id}
-              onClick={() => {
-                onSelect(thread.id);
-                onClose();
-              }}
-              className={`group flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors ${thread.id === activeThreadId ? "bg-primary/10 text-primary" : "text-neutral-700 hover:bg-muted"}`}
-            >
-              <span className="truncate">{thread.title || t("chat.newChat")}</span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  removeThread(thread.id);
+          {generalThreads.map((thread) => {
+            const lastMsg = thread.messages.length > 0
+              ? thread.messages[thread.messages.length - 1]
+              : null;
+            const preview = lastMsg?.content?.slice(0, 80) || "";
+            return (
+              <div
+                key={thread.id}
+                onClick={() => {
+                  onSelect(thread.id);
+                  onClose();
                 }}
-                className="hidden rounded-full p-0.5 text-muted-foreground hover:text-destructive group-hover:block"
+                className={`group flex cursor-pointer items-start gap-2 rounded-lg px-3 py-2.5 transition-colors ${thread.id === activeThreadId ? "bg-primary/10 text-primary" : "text-neutral-700 hover:bg-muted"}`}
               >
-                <X className="size-3" />
-              </button>
-            </div>
-          ))}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate text-sm font-medium">
+                      {thread.title || t("chat.newChat")}
+                    </span>
+                    <span className="shrink-0 text-[10px] text-muted-foreground/50">
+                      {formatRelativeTime(thread.updatedAt, t)}
+                    </span>
+                  </div>
+                  {preview && (
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {preview}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeThread(thread.id);
+                  }}
+                  className="mt-0.5 hidden shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:block"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -199,6 +234,7 @@ export function ChatPage() {
           )}
         </div>
         <div className="flex items-center gap-1">
+          <ModelSelector />
           <ContextPopover />
           <button
             type="button"

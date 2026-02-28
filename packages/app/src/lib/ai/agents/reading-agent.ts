@@ -167,7 +167,7 @@ export async function* streamReadingAgent(
     // This supports analyzing all chapters of a book in one conversation turn
     const eventStream = agent.streamEvents(
       { messages: inputMessages },
-      { version: "v2", recursionLimit: 50 },
+      { version: "v2", recursionLimit: 200 },
     );
 
     // Track tool calls already emitted (from streaming chunks or on_chat_model_end)
