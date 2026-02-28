@@ -100,7 +100,7 @@ export class StreamingChat {
 
           case "error":
             options.onError(new Error(event.error));
-            break;
+            return; // Stop processing further events after error
         }
       }
 

@@ -101,32 +101,13 @@ export async function* streamReadingAgent(
       deepThinking,
     });
 
-    // Detect DeepSeek by baseUrl or model name
-    const { resolveActiveEndpoint } = await import("../llm-provider");
-    const { endpoint: activeEndpoint, model: activeModel } = resolveActiveEndpoint(aiConfig);
-    const isDeepSeek =
-      activeEndpoint.baseUrl?.toLowerCase().includes("deepseek") ||
-      activeModel.toLowerCase().includes("deepseek");
-    // DeepSeek reasoner models (e.g. deepseek-reasoner) always use reasoning_content,
-    // which is incompatible with LangChain's multi-turn tool calling loop.
-    // Also, deepThinking + DeepSeek has the same issue.
-    const isDeepSeekReasoner = isDeepSeek && (
-      activeModel.toLowerCase().includes("reasoner") ||
-      activeModel.toLowerCase().includes("think") ||
-      deepThinking
-    );
-
     // Register ALL tools via getAvailableTools
-    // DeepSeek reasoner/thinking mode doesn't support tool calling in multi-turn,
-    // so disable tools to avoid "Missing reasoning_content" errors
     const { getAvailableTools } = await import("../tools");
-    const tools = isDeepSeekReasoner
-      ? []
-      : getAvailableTools({
-          bookId: book?.id || null,
-          isVectorized,
-          enabledSkills,
-        });
+    const tools = getAvailableTools({
+      bookId: book?.id || null,
+      isVectorized,
+      enabledSkills,
+    });
 
     // Build system prompt
     const systemPrompt = buildSystemPrompt({

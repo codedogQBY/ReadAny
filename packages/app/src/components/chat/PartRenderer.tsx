@@ -105,8 +105,18 @@ function TextPartView({ part }: { part: TextPart }) {
 }
 
 function ReasoningPartView({ part }: { part: ReasoningPart }) {
-  const [isOpen, setIsOpen] = useState(false);
+  // Auto-expand when streaming (running), auto-collapse when completed
+  const [isOpen, setIsOpen] = useState(part.status === "running");
   const throttledText = useThrottledText(part.text);
+
+  // Sync isOpen with part status: expand on running, collapse on completed
+  useEffect(() => {
+    if (part.status === "running") {
+      setIsOpen(true);
+    } else if (part.status === "completed") {
+      setIsOpen(false);
+    }
+  }, [part.status]);
 
   if (!throttledText.trim()) return null;
 

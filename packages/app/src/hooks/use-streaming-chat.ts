@@ -192,6 +192,10 @@ export function useStreamingChat(options?: StreamingChatOptions) {
               currentTextPart.status = "completed";
               currentTextPart.updatedAt = Date.now();
             }
+            if (currentReasoningPart) {
+              currentReasoningPart.status = "completed";
+              currentReasoningPart.updatedAt = Date.now();
+            }
 
             // Extract text content from parts for database storage
             const textContent = currentParts
@@ -249,10 +253,62 @@ export function useStreamingChat(options?: StreamingChatOptions) {
             // Save assistant message to store (now that currentMessage is cleared)
             await addMessage(thread.id, assistantMessage as any);
           },
-          onError: (err) => {
+          onError: async (err) => {
             setError(err);
-            setState((prev) => ({ ...prev, isStreaming: false, currentStep: "idle" }));
+
+            // Add error as a visible text part so the user can see what went wrong
+            const errorPart = createTextPart(`⚠️ ${err.message || "Unknown error"}`);
+            errorPart.status = "error";
+            currentParts.push(errorPart);
+
+            // Close any in-progress parts
+            if (currentTextPart) {
+              currentTextPart.status = "completed";
+              currentTextPart.updatedAt = Date.now();
+            }
+            if (currentReasoningPart) {
+              currentReasoningPart.status = "completed";
+              currentReasoningPart.updatedAt = Date.now();
+            }
+
+            // Build and save the partial assistant message so it persists in chat
+            const textContent = currentParts
+              .filter((p) => p.type === "text")
+              .map((p) => (p as TextPart).text)
+              .join("\n");
+
+            const partsOrder = currentParts.map((p) => ({
+              type: p.type as "text" | "reasoning" | "tool_call" | "citation",
+              id: p.id,
+              ...(p.type === "text" ? { text: (p as TextPart).text } : {}),
+            }));
+
+            const errorMessage = {
+              id: messageId,
+              threadId: thread.id,
+              role: "assistant" as const,
+              content: textContent,
+              toolCalls: currentParts
+                .filter((p) => p.type === "tool_call")
+                .map((p) => ({
+                  id: p.id,
+                  name: (p as ToolCallPart).name,
+                  args: (p as ToolCallPart).args,
+                  result: (p as ToolCallPart).result,
+                  status: (p as ToolCallPart).status,
+                })),
+              partsOrder: partsOrder.length > 0 ? partsOrder : undefined,
+              createdAt: Date.now(),
+            };
+
+            setState({
+              isStreaming: false,
+              currentMessage: null,
+              currentStep: "idle",
+            });
             setStreaming(false);
+
+            await addMessage(thread.id, errorMessage as any);
           },
           onToolCall: (name, args) => {
             // Close the previous text part so it stops showing the streaming cursor
@@ -260,9 +316,14 @@ export function useStreamingChat(options?: StreamingChatOptions) {
               currentTextPart.status = "completed";
               currentTextPart.updatedAt = Date.now();
             }
-            // Reset currentTextPart so text before tool calls becomes a separate part
-            // from text after tool calls, preserving correct display order
+            // Close reasoning part too
+            if (currentReasoningPart) {
+              currentReasoningPart.status = "completed";
+              currentReasoningPart.updatedAt = Date.now();
+            }
+            // Reset so text/reasoning after tool calls become separate parts
             currentTextPart = null;
+            currentReasoningPart = null;
             currentToolCallPart = createToolCallPart(name, args);
             currentParts.push(currentToolCallPart);
             setState((prev) => ({
@@ -299,8 +360,15 @@ export function useStreamingChat(options?: StreamingChatOptions) {
             }
           },
           onReasoning: (content, type) => {
-            currentReasoningPart = createReasoningPart(content, type);
-            currentParts.push(currentReasoningPart);
+            // Accumulate reasoning content into the same part (like onToken does for text)
+            // DeepSeek sends reasoning_content in small streaming chunks
+            if (!currentReasoningPart) {
+              currentReasoningPart = createReasoningPart("", type);
+              currentParts.push(currentReasoningPart);
+            }
+            currentReasoningPart.text += content;
+            currentReasoningPart.status = "running";
+            currentReasoningPart.updatedAt = Date.now();
             setState((prev) => ({
               ...prev,
               currentMessage: prev.currentMessage

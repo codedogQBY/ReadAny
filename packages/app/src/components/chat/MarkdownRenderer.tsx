@@ -97,6 +97,21 @@ const mdComponents = {
 
     // Mermaid diagram
     if (lang === "mermaid") {
+      // mermaid mindmap syntax is not supported by beautiful-mermaid,
+      // render as a styled code block instead of crashing
+      if (text.trim().startsWith("mindmap")) {
+        return (
+          <div className="group/code relative">
+            <div className="absolute left-3 top-0 z-10 rounded-b-md bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+              mindmap
+            </div>
+            <CopyButton text={text} />
+            <pre className="!mt-0 !mb-0 rounded-lg border bg-muted/30 p-4">
+              <code className="text-sm">{text}</code>
+            </pre>
+          </div>
+        );
+      }
       return <MermaidBlock code={text} />;
     }
 
