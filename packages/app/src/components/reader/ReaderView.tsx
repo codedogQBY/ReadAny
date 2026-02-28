@@ -13,6 +13,7 @@
  * - Rendering the FoliateViewer and surrounding UI (toolbar, footer, panels)
  */
 import { ChatPanel } from "@/components/chat/ChatPanel";
+import { useReadingSession } from "@/hooks/use-reading-session";
 import { DocumentLoader } from "@/lib/reader/document-loader";
 import type { BookDoc, BookFormat } from "@/lib/reader/document-loader";
 import { isFixedLayoutFormat } from "@/lib/reader/document-loader";
@@ -196,6 +197,9 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
   const highlights = useAnnotationStore((s) => s.highlights);
   const loadAnnotations = useAnnotationStore((s) => s.loadAnnotations);
+
+  // Track reading session for statistics
+  useReadingSession(bookId);
 
   // Ref to FoliateViewer imperative handle
   const foliateRef = useRef<FoliateViewerHandle>(null);

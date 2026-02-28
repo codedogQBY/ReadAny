@@ -5,7 +5,7 @@ import { BookOpen, Clock, Flame, TrendingUp } from "lucide-react";
 /**
  * ReadingStatsPanel — displays reading statistics with heatmap
  */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 export function ReadingStatsPanel() {
@@ -117,18 +117,38 @@ export function ReadingStatsPanel() {
 
 function HeatmapChart({ dailyStats, lang }: { dailyStats: DailyStats[]; lang: string }) {
   const { t } = useTranslation();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [cellSize, setCellSize] = useState(12);
+  const gap = 2;
+  const labelWidth = 28;
+
+  // Measure container and compute cell size to fill available width
+  const updateSize = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const availableWidth = el.clientWidth - labelWidth;
+    // 53 columns, with gap between each: 53 * (cell + gap) - gap = availableWidth
+    const computed = Math.floor((availableWidth + gap) / 53 - gap);
+    setCellSize(Math.max(6, Math.min(computed, 16)));
+  }, []);
+
+  useEffect(() => {
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    if (containerRef.current) observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [updateSize]);
+
+  const unit = cellSize + gap;
 
   const { weeks, monthLabels } = useMemo(() => {
-    // Build a lookup map: date -> totalTime
     const statsMap = new Map<string, number>();
     for (const s of dailyStats) {
       statsMap.set(s.date, s.totalTime);
     }
 
-    // Generate 53 weeks ending on today
     const today = new Date();
-    const todayDay = today.getDay(); // 0=Sun
-    // Find the start: go back to ~53 weeks ago, aligned to Sunday
+    const todayDay = today.getDay();
     const startDate = new Date(today);
     startDate.setDate(startDate.getDate() - (52 * 7 + todayDay));
 
@@ -173,7 +193,6 @@ function HeatmapChart({ dailyStats, lang }: { dailyStats: DailyStats[]; lang: st
     const days = lang === "zh"
       ? ["日", "一", "二", "三", "四", "五", "六"]
       : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    // Only show Mon, Wed, Fri
     return [
       { idx: 1, label: days[1] },
       { idx: 3, label: days[3] },
@@ -183,9 +202,9 @@ function HeatmapChart({ dailyStats, lang }: { dailyStats: DailyStats[]; lang: st
 
   return (
     <TooltipProvider delayDuration={100}>
-      <div className="overflow-x-auto">
+      <div ref={containerRef} className="w-full">
         {/* Month labels */}
-        <div className="flex" style={{ paddingLeft: "32px" }}>
+        <div className="flex" style={{ paddingLeft: `${labelWidth}px` }}>
           {monthLabels.map((m, i) => {
             const nextCol = i + 1 < monthLabels.length ? monthLabels[i + 1].col : weeks.length;
             const span = nextCol - m.col;
@@ -193,7 +212,7 @@ function HeatmapChart({ dailyStats, lang }: { dailyStats: DailyStats[]; lang: st
               <div
                 key={`${m.label}-${m.col}`}
                 className="text-xs text-neutral-400"
-                style={{ width: `${span * 14}px`, minWidth: `${span * 14}px` }}
+                style={{ width: `${span * unit}px`, minWidth: `${span * unit}px` }}
               >
                 {span >= 2 ? m.label : ""}
               </div>
@@ -203,11 +222,11 @@ function HeatmapChart({ dailyStats, lang }: { dailyStats: DailyStats[]; lang: st
 
         <div className="flex gap-0">
           {/* Day of week labels */}
-          <div className="flex flex-col justify-between pr-1.5" style={{ width: "28px", height: `${7 * 14 - 2}px` }}>
+          <div className="flex flex-col justify-between pr-1.5" style={{ width: `${labelWidth}px`, height: `${7 * unit - gap}px` }}>
             {[0, 1, 2, 3, 4, 5, 6].map((d) => {
               const label = dayLabels.find((l) => l.idx === d);
               return (
-                <div key={d} className="flex h-[12px] items-center">
+                <div key={d} className="flex items-center" style={{ height: `${cellSize}px` }}>
                   <span className="text-[10px] text-neutral-400">{label?.label || ""}</span>
                 </div>
               );
@@ -215,19 +234,19 @@ function HeatmapChart({ dailyStats, lang }: { dailyStats: DailyStats[]; lang: st
           </div>
 
           {/* Heatmap grid */}
-          <div className="flex gap-[2px]">
+          <div className="flex" style={{ gap: `${gap}px` }}>
             {weeks.map((week, wi) => (
-              <div key={wi} className="flex flex-col gap-[2px]">
-                {/* Fill empty cells at start of week */}
+              <div key={wi} className="flex flex-col" style={{ gap: `${gap}px` }}>
                 {week[0] && week[0].dayOfWeek > 0 && wi === 0 &&
                   Array.from({ length: week[0].dayOfWeek }).map((_, i) => (
-                    <div key={`empty-${i}`} className="h-[12px] w-[12px]" />
+                    <div key={`empty-${i}`} style={{ height: `${cellSize}px`, width: `${cellSize}px` }} />
                   ))}
                 {week.map((day) => (
                   <Tooltip key={day.date}>
                     <TooltipTrigger asChild>
                       <div
-                        className={`h-[12px] w-[12px] rounded-[2px] transition-colors ${getHeatColor(day.time)}`}
+                        className={`rounded-[2px] transition-colors ${getHeatColor(day.time)}`}
+                        style={{ height: `${cellSize}px`, width: `${cellSize}px` }}
                       />
                     </TooltipTrigger>
                     <TooltipContent side="top" className="bg-neutral-800 text-white">
