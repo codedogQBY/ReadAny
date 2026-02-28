@@ -10,8 +10,19 @@ import {
   createReasoningPart,
   createToolCallPart,
   createQuotePart,
+  createMindmapPart,
 } from "@/types/message";
 import type { AttachedQuote } from "@/components/chat/ChatInput";
+
+/** Type guard for mindmap tool result */
+function isMindmapResult(result: unknown): result is { type: "mindmap"; title: string; markdown: string } {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    (result as Record<string, unknown>).type === "mindmap" &&
+    typeof (result as Record<string, unknown>).markdown === "string"
+  );
+}
 
 export interface StreamingChatOptions {
   book?: Book | null;
@@ -214,11 +225,24 @@ export function useStreamingChat(options?: StreamingChatOptions) {
               }));
 
             // Build partsOrder to preserve the exact sequence of parts
-            const partsOrder = currentParts.map((p) => ({
-              type: p.type as "text" | "reasoning" | "tool_call" | "citation",
-              id: p.id,
-              ...(p.type === "text" ? { text: (p as TextPart).text } : {}),
-            }));
+            const partsOrder = currentParts.map((p) => {
+              const base = {
+                type: p.type as "text" | "reasoning" | "tool_call" | "citation" | "mindmap",
+                id: p.id,
+              };
+              if (p.type === "text") {
+                return { ...base, text: (p as TextPart).text };
+              }
+              if (p.type === "mindmap") {
+                // Store mindmap data so it can be reconstructed from database
+                return {
+                  ...base,
+                  title: (p as import("@/types/message").MindmapPart).title,
+                  markdown: (p as import("@/types/message").MindmapPart).markdown,
+                };
+              }
+              return base;
+            });
 
             // Create assistant message compatible with database schema
             const assistantMessage = {
@@ -278,7 +302,7 @@ export function useStreamingChat(options?: StreamingChatOptions) {
               .join("\n");
 
             const partsOrder = currentParts.map((p) => ({
-              type: p.type as "text" | "reasoning" | "tool_call" | "citation",
+              type: p.type as "text" | "reasoning" | "tool_call" | "citation" | "mindmap",
               id: p.id,
               ...(p.type === "text" ? { text: (p as TextPart).text } : {}),
             }));
@@ -349,6 +373,13 @@ export function useStreamingChat(options?: StreamingChatOptions) {
               part.result = result;
               part.status = "completed";
               part.updatedAt = Date.now();
+
+              // If this is a mindmap tool result, create a separate MindmapPart for display
+              if (name === "mindmap" && isMindmapResult(result)) {
+                const mindmapPart = createMindmapPart(result.title, result.markdown);
+                currentParts.push(mindmapPart);
+              }
+
               // Reset currentTextPart so text after tool results becomes a new part
               currentTextPart = null;
               setState((prev) => ({

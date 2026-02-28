@@ -35,13 +35,16 @@ export function HomeSidebar() {
       setActiveTab("home");
     } else {
       // Add the tab if it doesn't exist, then activate
-      addTab({ id: tabType, type: tabType, title: tabType });
+      // Use translated title for the tab
+      const item = NAV_ITEMS.find((n) => n.tabType === tabType);
+      const title = item ? t(item.labelKey) : tabType;
+      addTab({ id: tabType, type: tabType, title });
       setActiveTab(tabType);
     }
   };
 
   const handleStatsClick = () => {
-    addTab({ id: "stats", type: "home" as "home", title: "Stats" });
+    addTab({ id: "stats", type: "home" as "home", title: t("stats.title") });
     // Use a special convention: we set activeTab to "stats" but type is home
     // Actually, let's keep it simple — stats is a home sub-view triggered by a special tab id
     setActiveTab("stats");

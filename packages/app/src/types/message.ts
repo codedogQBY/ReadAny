@@ -52,7 +52,14 @@ export interface QuotePart extends BasePart {
   source?: string;
 }
 
-export type Part = TextPart | ReasoningPart | ToolCallPart | CitationPart | QuotePart;
+/** A mindmap visualization generated from content */
+export interface MindmapPart extends BasePart {
+  type: "mindmap";
+  title: string;
+  markdown: string;
+}
+
+export type Part = TextPart | ReasoningPart | ToolCallPart | CitationPart | QuotePart | MindmapPart;
 
 export interface MessageV2 {
   id: string;
@@ -164,12 +171,27 @@ export function isQuotePart(part: Part): part is QuotePart {
   return part.type === "quote";
 }
 
+export function isMindmapPart(part: Part): part is MindmapPart {
+  return part.type === "mindmap";
+}
+
 export function createQuotePart(text: string, source?: string): QuotePart {
   return {
     id: `quote-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     type: "quote",
     text,
     source,
+    status: "completed",
+    createdAt: Date.now(),
+  };
+}
+
+export function createMindmapPart(title: string, markdown: string): MindmapPart {
+  return {
+    id: `mindmap-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type: "mindmap",
+    title,
+    markdown,
     status: "completed",
     createdAt: Date.now(),
   };

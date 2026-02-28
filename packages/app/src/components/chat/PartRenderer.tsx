@@ -16,7 +16,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
-import type { Part, TextPart, ReasoningPart, ToolCallPart, CitationPart } from "@/types/message";
+import type { Part, TextPart, ReasoningPart, ToolCallPart, CitationPart, MindmapPart } from "@/types/message";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 
 const TEXT_RENDER_THROTTLE_MS = 100;
@@ -76,6 +76,8 @@ export function PartRenderer({ part, onCitationClick }: PartProps) {
       return <ToolCallPartView part={part} />;
     case "citation":
       return <CitationPartView part={part} onCitationClick={onCitationClick} />;
+    case "mindmap":
+      return <MindmapPartView part={part} />;
     default:
       return null;
   }
@@ -270,23 +272,13 @@ function ToolCallPartView({ part }: { part: ToolCallPart }) {
               {part.result !== undefined && (
                 <div>
                   <h4 className="mb-1.5 text-xs font-medium text-neutral-500">结果</h4>
-                  {/* Special rendering for mindmap tool */}
-                  {part.name === "mindmap" && isMindmapResult(part.result) ? (
-                    <Suspense fallback={<div className="p-4 text-sm text-neutral-400">加载思维导图...</div>}>
-                      <LazyMindmapView
-                        markdown={part.result.markdown}
-                        title={part.result.title}
-                      />
-                    </Suspense>
-                  ) : (
-                    <div className="max-h-48 overflow-auto rounded border border-neutral-200 bg-white p-2 font-mono text-xs">
-                      <pre className="whitespace-pre-wrap text-neutral-600">
-                        {typeof part.result === "string" && part.result.length > 500
-                          ? part.result.slice(0, 500) + "..."
-                          : JSON.stringify(part.result, null, 2)}
-                      </pre>
-                    </div>
-                  )}
+                  <div className="max-h-48 overflow-auto rounded border border-neutral-200 bg-white p-2 font-mono text-xs">
+                    <pre className="whitespace-pre-wrap text-neutral-600">
+                      {typeof part.result === "string" && part.result.length > 500
+                        ? part.result.slice(0, 500) + "..."
+                        : JSON.stringify(part.result, null, 2)}
+                    </pre>
+                  </div>
                 </div>
               )}
 
@@ -327,12 +319,12 @@ function CitationPartView({
   );
 }
 
-/** Type guard for mindmap tool result */
-function isMindmapResult(result: unknown): result is { type: "mindmap"; title: string; markdown: string } {
+function MindmapPartView({ part }: { part: MindmapPart }) {
   return (
-    typeof result === "object" &&
-    result !== null &&
-    (result as Record<string, unknown>).type === "mindmap" &&
-    typeof (result as Record<string, unknown>).markdown === "string"
+    <div className="my-2">
+      <Suspense fallback={<div className="p-4 text-sm text-neutral-400">加载思维导图...</div>}>
+        <LazyMindmapView markdown={part.markdown} title={part.title} />
+      </Suspense>
+    </div>
   );
 }
