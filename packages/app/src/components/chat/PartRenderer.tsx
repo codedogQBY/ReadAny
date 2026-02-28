@@ -92,14 +92,8 @@ function TextPartView({ part }: { part: TextPart }) {
 }
 
 function ReasoningPartView({ part }: { part: ReasoningPart }) {
-  const [isOpen, setIsOpen] = useState(part.status === "running");
+  const [isOpen, setIsOpen] = useState(false);
   const throttledText = useThrottledText(part.text);
-
-  useEffect(() => {
-    if (part.status === "running") {
-      setIsOpen(true);
-    }
-  }, [part.status]);
 
   if (!throttledText.trim()) return null;
 
@@ -168,7 +162,7 @@ const TOOL_LABELS: Record<string, string> = {
 };
 
 function ToolCallPartView({ part }: { part: ToolCallPart }) {
-  const [isOpen, setIsOpen] = useState(part.status === "running");
+  const [isOpen, setIsOpen] = useState(false);
 
   const getStatusIcon = () => {
     switch (part.status) {
@@ -229,7 +223,7 @@ function ToolCallPartView({ part }: { part: ToolCallPart }) {
               {Object.keys(part.args).length > 0 && (
                 <div>
                   <h4 className="mb-1.5 text-xs font-medium text-neutral-500">参数</h4>
-                  <div className="rounded border border-neutral-200 bg-white p-2 font-mono text-xs">
+                  <div className="rounded border border-neutral-200 bg-white p-2 font-mono text-xs break-all">
                     {Object.entries(part.args).map(([key, value]) => (
                       <div key={key} className="mb-0.5 last:mb-0">
                         <span className="text-neutral-400">{key}:</span>{" "}

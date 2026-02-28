@@ -5,6 +5,7 @@
 import type { MessageV2, CitationPart } from "@/types/message";
 import { useEffect, useRef } from "react";
 import { PartRenderer } from "./PartRenderer";
+import { StreamingIndicator } from "./StreamingIndicator";
 
 interface MessageListProps {
   messages: MessageV2[];
@@ -14,7 +15,7 @@ interface MessageListProps {
   onStop?: () => void;
 }
 
-export function MessageList({ messages, onCitationClick }: MessageListProps) {
+export function MessageList({ messages, onCitationClick, isStreaming, currentStep }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -22,12 +23,25 @@ export function MessageList({ messages, onCitationClick }: MessageListProps) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, messages[messages.length - 1]?.parts.length]);
 
+  // Show streaming indicator when streaming but the last assistant message has no visible parts yet
+  const lastMsg = messages[messages.length - 1];
+  const showStreamingIndicator =
+    isStreaming &&
+    currentStep &&
+    currentStep !== "idle" &&
+    (!lastMsg ||
+      lastMsg.role !== "assistant" ||
+      lastMsg.parts.length === 0);
+
   return (
     <div ref={containerRef} className="flex h-full flex-col overflow-y-auto py-4">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4">
         {messages.map((msg) => (
           <MessageBubble key={msg.id} message={msg} onCitationClick={onCitationClick} />
         ))}
+        {showStreamingIndicator && (
+          <StreamingIndicator step={currentStep!} />
+        )}
         <div ref={bottomRef} />
       </div>
     </div>
