@@ -18,12 +18,7 @@ import { useReadingSession } from "@/hooks/use-reading-session";
 import { DocumentLoader } from "@/lib/reader/document-loader";
 import type { BookDoc, BookFormat } from "@/lib/reader/document-loader";
 import { isFixedLayoutFormat } from "@/lib/reader/document-loader";
-import type {
-  RelocateDetail,
-  TOCItem,
-  BookSelection,
-  FoliateViewerHandle,
-} from "./FoliateViewer";
+import type { RelocateDetail, TOCItem, BookSelection, FoliateViewerHandle } from "./FoliateViewer";
 import { FoliateViewer } from "./FoliateViewer";
 import { throttle } from "@/lib/utils/throttle";
 import { useAnnotationStore } from "@/stores/annotation-store";
@@ -87,20 +82,14 @@ async function loadAndParseBook(
   const blob = await getCachedBlob(filePath);
   console.log("[loadAndParseBook] blob loaded, size:", blob.size);
 
-  const fileName =
-    filePath.split("/").pop() || "book.epub";
+  const fileName = filePath.split("/").pop() || "book.epub";
   const file = new File([blob], fileName, {
     type: blob.type || "application/octet-stream",
   });
 
   const loader = new DocumentLoader(file);
   const { book, format } = await loader.open();
-  console.log(
-    "[loadAndParseBook] parsed, format:",
-    format,
-    "sections:",
-    book.sections?.length,
-  );
+  console.log("[loadAndParseBook] parsed, format:", format, "sections:", book.sections?.length);
   return { bookDoc: book, format };
 }
 
@@ -109,10 +98,11 @@ async function loadAndParseBook(
 // - Toolbar/FooterBar each have an invisible hover trigger zone (onMouseEnter → show)
 // - Inside iframe: any single-click toggles visibility (no coordinate conversion needed)
 // - Tauri's window.screenX is unreliable, so we avoid screen-to-page coord mapping
+// - When clicking inside a selection, the click is not forwarded (handled in iframe-event-handlers)
 
 function useAutoHideControls(
   containerRef: React.RefObject<HTMLDivElement | null>,
-  delay = 5000,
+  delay = 2000,
   keepVisible = false,
 ) {
   const [isVisible, setIsVisible] = useState(true);
@@ -127,44 +117,53 @@ function useAutoHideControls(
   }, []);
 
   const hideAfterDelay = useCallback(() => {
-    if (keepVisible) return;
+    if (keepVisible || isHoveringRef.current) return;
     clearTimer();
     timeoutRef.current = setTimeout(() => setIsVisible(false), delay);
   }, [clearTimer, delay, keepVisible]);
 
-  const handleMouseEnter = useCallback(() => {
-    isHoveringRef.current = true;
+  const showAndScheduleHide = useCallback(() => {
     setIsVisible(true);
-    clearTimer();
-  }, [clearTimer]);
-
-  const handleMouseLeave = useCallback(() => {
-    isHoveringRef.current = false;
     hideAfterDelay();
   }, [hideAfterDelay]);
 
-  // Listen for iframe-single-click to toggle toolbar
-  // Any single click inside the iframe toggles controls visibility
+  // Listen for iframe events
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       const data = event.data;
-      if (data?.type !== "iframe-single-click") return;
       if (!containerRef.current) return;
 
+      // Handle single-click toggle
+      if (data?.type !== "iframe-single-click") return;
+
+      console.log("[ReaderView] received iframe-single-click, current isVisible:");
+
       setIsVisible((prev) => {
+        console.log("[ReaderView] prev:", prev, "-> new:", !prev);
         if (prev) {
-          isHoveringRef.current = false;
           clearTimer();
           return false;
         }
-        hideAfterDelay();
+        showAndScheduleHide();
         return true;
       });
     };
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [containerRef, clearTimer, hideAfterDelay]);
+  }, [containerRef, clearTimer, showAndScheduleHide]);
+
+  // Mouse enter/leave handlers for toolbar area
+  const handleMouseEnter = useCallback(() => {
+    isHoveringRef.current = true;
+    clearTimer();
+    setIsVisible(true);
+  }, [clearTimer]);
+
+  const handleMouseLeave = useCallback(() => {
+    isHoveringRef.current = false;
+    hideAfterDelay();
+  }, [hideAfterDelay]);
 
   useEffect(() => {
     hideAfterDelay();
@@ -174,7 +173,7 @@ function useAutoHideControls(
   useEffect(() => {
     if (keepVisible) {
       setIsVisible(true);
-    } else if (!isHoveringRef.current) {
+    } else {
       hideAfterDelay();
     }
   }, [keepVisible, hideAfterDelay]);
@@ -208,13 +207,13 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
   // Ref to FoliateViewer imperative handle
   const foliateRef = useRef<FoliateViewerHandle>(null);
-  
+
   // Track which highlights have been rendered (id -> {cfi, note}) to detect changes
   const renderedHighlightsRef = useRef<Map<string, { cfi: string; hasNote: boolean }>>(new Map());
-  
+
   // Track when foliate is ready to receive annotations
   const [foliateReady, setFoliateReady] = useState(false);
-  
+
   // Reset rendered highlights tracking when book changes
   useEffect(() => {
     renderedHighlightsRef.current.clear();
@@ -225,15 +224,15 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   // Use a timeout to ensure the foliate view is fully initialized
   useEffect(() => {
     if (!foliateReady) return;
-    
+
     // Delay to ensure foliate view is fully ready
     const timer = setTimeout(() => {
       if (!foliateRef.current) return;
-      
+
       // Filter highlights for this book
-      const bookHighlights = highlights.filter(h => h.bookId === bookId);
-      const currentIds = new Set(bookHighlights.map(h => h.id));
-      
+      const bookHighlights = highlights.filter((h) => h.bookId === bookId);
+      const currentIds = new Set(bookHighlights.map((h) => h.id));
+
       // Remove highlights that are no longer in the store
       for (const [id, data] of renderedHighlightsRef.current) {
         if (!currentIds.has(id)) {
@@ -241,23 +240,23 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           renderedHighlightsRef.current.delete(id);
         }
       }
-      
+
       // Add new highlights or update existing ones if note status changed
       for (const h of bookHighlights) {
         if (!h.cfi) continue;
-        
+
         const existing = renderedHighlightsRef.current.get(h.id);
         const hasNote = !!h.note;
-        
+
         // Check if we need to re-render (new highlight or note status changed)
         const needsRender = !existing || existing.hasNote !== hasNote;
-        
+
         if (needsRender) {
           // Remove old annotation if exists
           if (existing) {
             foliateRef.current.deleteAnnotation({ value: existing.cfi });
           }
-          
+
           // Add new/updated annotation
           foliateRef.current.addAnnotation({
             value: h.cfi,
@@ -269,7 +268,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
         }
       }
     }, 100);
-    
+
     return () => clearTimeout(timer);
   }, [highlights, foliateReady, bookId]);
 
@@ -303,9 +302,9 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const keepControlsVisible = showSearch || showToc || showSettings;
   const {
     isVisible: controlsVisible,
-    handleMouseEnter: onControlsEnter,
-    handleMouseLeave: onControlsLeave,
-  } = useAutoHideControls(containerRef, 1500, keepControlsVisible);
+    handleMouseEnter,
+    handleMouseLeave,
+  } = useAutoHideControls(containerRef, 2000, keepControlsVisible);
 
   // Throttled progress save
   const throttledSaveProgress = useRef(
@@ -332,9 +331,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
         setBookFormat(format);
       } catch (err) {
         console.error("[ReaderView] Failed to load book:", err);
-        setError(
-          err instanceof Error ? err.message : "Failed to load book",
-        );
+        setError(err instanceof Error ? err.message : "Failed to load book");
         setIsLoading(false);
       }
     };
@@ -368,19 +365,14 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const handleRelocate = useCallback(
     (detail: RelocateDetail) => {
       const progress = detail.fraction ?? 0;
-      const cfi =
-        detail.cfi || `section-${detail.section?.current ?? 0}`;
+      const cfi = detail.cfi || `section-${detail.section?.current ?? 0}`;
 
       // Update reader store (immediate)
       setProgress(tabId, progress, cfi);
 
       // Update chapter info
       if (detail.tocItem?.label) {
-        setChapter(
-          tabId,
-          detail.section?.current ?? 0,
-          detail.tocItem.label,
-        );
+        setChapter(tabId, detail.section?.current ?? 0, detail.tocItem.label);
       }
 
       // Track pages (reference: Readest progressRelocateHandler)
@@ -421,33 +413,38 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   // This is critical: when foliate-js loads a new section (chapter),
   // it replaces the iframe content and all previously added annotations are lost.
   // We need to re-add all highlights for the current book.
-  const handleSectionLoad = useCallback((sectionIndex: number) => {
-    // Delay slightly to ensure foliate view is ready
-    setTimeout(() => {
-      if (!foliateRef.current) return;
-      
-      // Get all highlights for this book
-      const bookHighlights = highlights.filter(h => h.bookId === bookId);
-      
-      // Clear tracking since we're reloading
-      renderedHighlightsRef.current.clear();
-      
-      // Re-add all highlights
-      for (const h of bookHighlights) {
-        if (h.cfi) {
-          foliateRef.current.addAnnotation({
-            value: h.cfi,
-            type: "highlight",
-            color: h.color || "yellow",
-            note: h.note, // Pass note for wavy underline + tooltip
-          });
-          renderedHighlightsRef.current.set(h.id, { cfi: h.cfi, hasNote: !!h.note });
+  const handleSectionLoad = useCallback(
+    (sectionIndex: number) => {
+      // Delay slightly to ensure foliate view is ready
+      setTimeout(() => {
+        if (!foliateRef.current) return;
+
+        // Get all highlights for this book
+        const bookHighlights = highlights.filter((h) => h.bookId === bookId);
+
+        // Clear tracking since we're reloading
+        renderedHighlightsRef.current.clear();
+
+        // Re-add all highlights
+        for (const h of bookHighlights) {
+          if (h.cfi) {
+            foliateRef.current.addAnnotation({
+              value: h.cfi,
+              type: "highlight",
+              color: h.color || "yellow",
+              note: h.note, // Pass note for wavy underline + tooltip
+            });
+            renderedHighlightsRef.current.set(h.id, { cfi: h.cfi, hasNote: !!h.note });
+          }
         }
-      }
-      
-      console.log(`[ReaderView] Section ${sectionIndex} loaded, re-rendered ${bookHighlights.length} highlights`);
-    }, 100);
-  }, [highlights, bookId]);
+
+        console.log(
+          `[ReaderView] Section ${sectionIndex} loaded, re-rendered ${bookHighlights.length} highlights`,
+        );
+      }, 100);
+    },
+    [highlights, bookId],
+  );
 
   const handleError = useCallback((err: Error) => {
     setError(err.message);
@@ -461,22 +458,61 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
         setSelectedText(tabId, sel.text, null);
         if (sel.rects.length > 0) {
           const firstRect = sel.rects[0];
-          // SelectionPopover uses absolute positioning relative to containerRef,
-          // so we need to convert window coordinates to container-relative coordinates
+          const lastRect = sel.rects[sel.rects.length - 1];
+
+          // SelectionPopover uses absolute positioning relative to containerRef
           const containerRect = containerRef.current?.getBoundingClientRect();
-          const offsetX = containerRect?.left ?? 0;
-          const offsetY = containerRect?.top ?? 0;
-          const rawY = firstRect.top - 40 - offsetY;
-          setSelectionPos({
-            x: firstRect.left + firstRect.width / 2 - offsetX,
-            y: rawY < 0 ? firstRect.bottom + 8 - offsetY : rawY,
-          });
+          if (!containerRect) return;
+
+          const offsetX = containerRect.left;
+          const offsetY = containerRect.top;
+          const containerW = containerRect.width;
+          const containerH = containerRect.height;
+
+          // Popover dimensions
+          const popoverHalfW = 100;
+          const popoverH = 44;
+          const gap = 8; // Gap between selection and popover
+
+          // Calculate X position (centered on selection)
+          let x = firstRect.left + firstRect.width / 2 - offsetX;
+          // Clamp X so popover doesn't overflow left/right
+          x = Math.max(popoverHalfW + gap, Math.min(x, containerW - popoverHalfW - gap));
+
+          // Calculate Y position
+          // firstRect/lastRect are in viewport coordinates
+          // Convert to container-relative coordinates
+          const selectionTop = firstRect.top - offsetY;
+          const selectionBottom = lastRect.bottom - offsetY;
+
+          // Determine if we should show above or below selection
+          const toolbarHeight = controlsVisible ? 44 : 0;
+          const spaceAbove = selectionTop - toolbarHeight;
+          const spaceBelow = containerH - selectionBottom;
+
+          let y: number;
+          if (spaceAbove >= popoverH + gap) {
+            // Enough space above - position above selection
+            y = selectionTop - popoverH - gap;
+          } else if (spaceBelow >= popoverH + gap) {
+            // Not enough above, but enough below - position below selection
+            y = selectionBottom + gap;
+          } else {
+            // Not enough space either way - prefer the side with more space
+            if (spaceAbove > spaceBelow) {
+              y = Math.max(toolbarHeight + gap, selectionTop - popoverH - gap);
+            } else {
+              y = Math.min(containerH - popoverH - gap, selectionBottom + gap);
+            }
+          }
+
+          setSelectionPos({ x, y });
         }
       } else {
         setSelectedText(tabId, "", null);
       }
     },
-    [tabId, setSelectedText],
+    [tabId, setSelectedText, controlsVisible],
   );
 
   // --- Navigation (for toolbar buttons) ---
@@ -487,51 +523,57 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     foliateRef.current?.goNext();
   }, []);
 
-  const handleGoToChapter = useCallback((index: number) => {
-    const item = tocItems[index];
-    if (item?.href) {
-      foliateRef.current?.goToHref(item.href);
-    }
-  }, [tocItems]);
+  const handleGoToChapter = useCallback(
+    (index: number) => {
+      const item = tocItems[index];
+      if (item?.href) {
+        foliateRef.current?.goToHref(item.href);
+      }
+    },
+    [tocItems],
+  );
 
   // --- Selection actions ---
-  const handleHighlight = useCallback((color: HighlightColor = "yellow") => {
-    if (selection && selection.cfi) {
-      const highlightId = crypto.randomUUID();
-      
-      // Add to store (for persistence)
-      useAnnotationStore.getState().addHighlight({
-        id: highlightId,
-        bookId,
-        text: selection.text,
-        cfi: selection.cfi,
-        color,
-        chapterTitle: tab?.chapterTitle || undefined,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
-      
-      // Immediately render on page (don't wait for useEffect)
-      foliateRef.current?.addAnnotation({
-        value: selection.cfi,
-        type: "highlight",
-        color,
-      });
-      
-      // Track as rendered
-      renderedHighlightsRef.current.set(highlightId, { cfi: selection.cfi, hasNote: false });
-    }
-    setSelection(null);
-  }, [selection, bookId, tab?.chapterTitle]);
+  const handleHighlight = useCallback(
+    (color: HighlightColor = "yellow") => {
+      if (selection && selection.cfi) {
+        const highlightId = crypto.randomUUID();
+
+        // Add to store (for persistence)
+        useAnnotationStore.getState().addHighlight({
+          id: highlightId,
+          bookId,
+          text: selection.text,
+          cfi: selection.cfi,
+          color,
+          chapterTitle: tab?.chapterTitle || undefined,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+
+        // Immediately render on page (don't wait for useEffect)
+        foliateRef.current?.addAnnotation({
+          value: selection.cfi,
+          type: "highlight",
+          color,
+        });
+
+        // Track as rendered
+        renderedHighlightsRef.current.set(highlightId, { cfi: selection.cfi, hasNote: false });
+      }
+      setSelection(null);
+    },
+    [selection, bookId, tab?.chapterTitle],
+  );
 
   // Handle note button - open notebook panel with pending note
   const handleNote = useCallback(() => {
     if (selection && selection.cfi) {
       // Check if this selection is already highlighted
       const existingHighlight = highlights.find(
-        h => h.bookId === bookId && h.cfi === selection.cfi
+        (h) => h.bookId === bookId && h.cfi === selection.cfi,
       );
-      
+
       if (existingHighlight) {
         // Edit note on existing highlight
         useNotebookStore.getState().startEditNote(existingHighlight);
@@ -557,10 +599,10 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     if (selection?.annotated && selection?.highlightId && selection?.cfi) {
       // Remove from store
       useAnnotationStore.getState().removeHighlight(selection.highlightId);
-      
+
       // Remove from view
       foliateRef.current?.deleteAnnotation({ value: selection.cfi });
-      
+
       // Remove from rendered tracking
       renderedHighlightsRef.current.delete(selection.highlightId);
     }
@@ -568,62 +610,76 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   }, [selection]);
 
   // Handle show-annotation event (user clicked on existing highlight)
-  const handleShowAnnotation = useCallback((cfi: string, range: Range, index: number) => {
-    // Find the highlight with this CFI
-    const highlight = highlights.find(h => h.bookId === bookId && h.cfi === cfi);
-    if (!highlight) return;
-    
-    // Get rects for positioning the popover
-    const rects = Array.from(range.getClientRects());
-    
-    // Get container and iframe for coordinate transformation
-    const containerRect = containerRef.current?.getBoundingClientRect();
-    const view = foliateRef.current?.getView();
-    const contents = view?.renderer?.getContents?.();
-    
-    let offsetRects: DOMRect[] = rects;
-    if (contents?.[0]?.element) {
-      const iframe = contents[0].element as HTMLIFrameElement;
-      const iframeRect = iframe.getBoundingClientRect();
-      const scaleX = iframe.clientWidth > 0 ? iframeRect.width / iframe.clientWidth : 1;
-      const scaleY = iframe.clientHeight > 0 ? iframeRect.height / iframe.clientHeight : 1;
-      
-      offsetRects = rects.map(
-        (r) =>
-          new DOMRect(
-            iframeRect.left + r.x * scaleX,
-            iframeRect.top + r.y * scaleY,
-            r.width * scaleX,
-            r.height * scaleY,
-          ),
-      );
-    }
-    
-    // Create selection object for the existing annotation
-    const sel: BookSelection = {
-      text: highlight.text,
-      cfi,
-      chapterIndex: index,
-      rects: offsetRects,
-      annotated: true,
-      highlightId: highlight.id,
-      color: highlight.color,
-    };
-    
-    setSelection(sel);
-    
-    // Position the popover
-    if (offsetRects.length > 0) {
-      const firstRect = offsetRects[0];
-      const offsetX = containerRect?.left ?? 0;
-      const offsetY = containerRect?.top ?? 0;
-      const rawY = firstRect.top - 40 - offsetY;
-      setSelectionPos({
-        x: firstRect.left + firstRect.width / 2 - offsetX,
-        y: rawY < 0 ? firstRect.bottom + 8 - offsetY : rawY,
-      });
-    }
-  }, [highlights, bookId]);
+  const handleShowAnnotation = useCallback(
+    (cfi: string, range: Range, index: number) => {
+      // Find the highlight with this CFI
+      const highlight = highlights.find((h) => h.bookId === bookId && h.cfi === cfi);
+      if (!highlight) return;
+
+      // Get rects for positioning the popover
+      const rects = Array.from(range.getClientRects());
+
+      // Get container and iframe for coordinate transformation
+      const containerRect = containerRef.current?.getBoundingClientRect();
+      const view = foliateRef.current?.getView();
+      const contents = view?.renderer?.getContents?.();
+
+      let offsetRects: DOMRect[] = rects;
+      if (contents?.[0]?.element) {
+        const iframe = contents[0].element as HTMLIFrameElement;
+        const iframeRect = iframe.getBoundingClientRect();
+        const scaleX = iframe.clientWidth > 0 ? iframeRect.width / iframe.clientWidth : 1;
+        const scaleY = iframe.clientHeight > 0 ? iframeRect.height / iframe.clientHeight : 1;
+
+        offsetRects = rects.map(
+          (r) =>
+            new DOMRect(
+              iframeRect.left + r.x * scaleX,
+              iframeRect.top + r.y * scaleY,
+              r.width * scaleX,
+              r.height * scaleY,
+            ),
+        );
+      }
+
+      // Create selection object for the existing annotation
+      const sel: BookSelection = {
+        text: highlight.text,
+        cfi,
+        chapterIndex: index,
+        rects: offsetRects,
+        annotated: true,
+        highlightId: highlight.id,
+        color: highlight.color,
+      };
+
+      setSelection(sel);
+
+      // Position the popover
+      if (offsetRects.length > 0) {
+        const firstRect = offsetRects[0];
+        const offsetX = containerRect?.left ?? 0;
+        const offsetY = containerRect?.top ?? 0;
+        const containerW = containerRect?.width ?? 800;
+        const containerH = containerRect?.height ?? 600;
+
+        const popoverHalfW = 100;
+        const popoverH = 44;
+
+        let x = firstRect.left + firstRect.width / 2 - offsetX;
+        x = Math.max(popoverHalfW + 4, Math.min(x, containerW - popoverHalfW - 4));
+
+        let y = firstRect.top - popoverH - 4 - offsetY;
+        if (y < 4) {
+          y = firstRect.bottom + 8 - offsetY;
+        }
+        y = Math.max(4, Math.min(y, containerH - popoverH - 4));
+
+        setSelectionPos({ x, y });
+      }
+    },
+    [highlights, bookId],
+  );
 
   const handleTranslate = useCallback(() => {
     if (selection?.text) {
@@ -651,106 +707,79 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     setSelection(null);
   }, [selection, bookId, tab?.chapterTitle]);
 
-  const handleCloseSelection = useCallback(
-    () => setSelection(null),
-    [],
-  );
-  const handleToggleSearch = useCallback(
-    () => setShowSearch((p) => !p),
-    [],
-  );
-  const handleToggleToc = useCallback(
-    () => setShowToc((p) => !p),
-    [],
-  );
-  const handleToggleChat = useCallback(
-    () => setShowChat((p) => !p),
-    [],
-  );
-  const handleToggleSettings = useCallback(
-    () => setShowSettings((p) => !p),
-    [],
-  );
+  const handleCloseSelection = useCallback(() => setSelection(null), []);
+  const handleToggleSearch = useCallback(() => setShowSearch((p) => !p), []);
+  const handleToggleToc = useCallback(() => setShowToc((p) => !p), []);
+  const handleToggleChat = useCallback(() => setShowChat((p) => !p), []);
+  const handleToggleSettings = useCallback(() => setShowSettings((p) => !p), []);
 
   // --- Search logic ---
   const searchGeneratorRef = useRef<AsyncGenerator | null>(null);
-  const searchResultsListRef = useRef<Array<{ cfi: string; excerpt: string }>>(
-    [],
-  );
+  const searchResultsListRef = useRef<Array<{ cfi: string; excerpt: string }>>([]);
 
-  const handleSearch = useCallback(
-    async (query: string) => {
-      // Clear previous search
-      foliateRef.current?.clearSearch();
-      searchResultsListRef.current = [];
+  const handleSearch = useCallback(async (query: string) => {
+    // Clear previous search
+    foliateRef.current?.clearSearch();
+    searchResultsListRef.current = [];
 
-      if (!query.trim()) {
-        setSearchResults(0);
-        setSearchIndex(0);
-        return;
-      }
+    if (!query.trim()) {
+      setSearchResults(0);
+      setSearchIndex(0);
+      return;
+    }
 
-      const gen = foliateRef.current?.search({ query });
-      if (!gen) {
-        setSearchResults(0);
-        setSearchIndex(0);
-        return;
-      }
-      searchGeneratorRef.current = gen;
+    const gen = foliateRef.current?.search({ query });
+    if (!gen) {
+      setSearchResults(0);
+      setSearchIndex(0);
+      return;
+    }
+    searchGeneratorRef.current = gen;
 
-      // Collect results from the async generator
-      const results: Array<{ cfi: string; excerpt: string }> = [];
-      try {
-        for await (const result of gen) {
-          const r = result as { cfi?: string; excerpt?: string } | undefined;
-          if (r?.cfi) {
-            results.push({ cfi: r.cfi, excerpt: r.excerpt || "" });
-          }
+    // Collect results from the async generator
+    const results: Array<{ cfi: string; excerpt: string }> = [];
+    try {
+      for await (const result of gen) {
+        const r = result as { cfi?: string; excerpt?: string } | undefined;
+        if (r?.cfi) {
+          results.push({ cfi: r.cfi, excerpt: r.excerpt || "" });
         }
-      } catch {
-        // Generator may be interrupted by a new search
       }
+    } catch {
+      // Generator may be interrupted by a new search
+    }
 
-      searchResultsListRef.current = results;
-      setSearchResults(results.length);
-      if (results.length > 0) {
-        setSearchIndex(0);
-        foliateRef.current?.goToCFI(results[0].cfi);
-      }
-    },
-    [],
-  );
+    searchResultsListRef.current = results;
+    setSearchResults(results.length);
+    if (results.length > 0) {
+      setSearchIndex(0);
+      foliateRef.current?.goToCFI(results[0].cfi);
+    }
+  }, []);
 
-  const navigateSearchResult = useCallback(
-    (direction: "next" | "prev") => {
-      const results = searchResultsListRef.current;
-      if (results.length === 0) return;
+  const navigateSearchResult = useCallback((direction: "next" | "prev") => {
+    const results = searchResultsListRef.current;
+    if (results.length === 0) return;
 
-      setSearchIndex((prev) => {
-        const next =
-          direction === "next"
-            ? (prev + 1) % results.length
-            : (prev - 1 + results.length) % results.length;
-        foliateRef.current?.goToCFI(results[next].cfi);
-        return next;
-      });
-    },
-    [],
-  );
+    setSearchIndex((prev) => {
+      const next =
+        direction === "next"
+          ? (prev + 1) % results.length
+          : (prev - 1 + results.length) % results.length;
+      foliateRef.current?.goToCFI(results[next].cfi);
+      return next;
+    });
+  }, []);
 
   if (!tab) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        {t("common.loading")}
-      </div>
-    );
+    return <div className="flex h-full items-center justify-center">{t("common.loading")}</div>;
   }
 
   return (
     <div className="flex h-full bg-muted/30 p-1">
       {/* Notebook sidebar — LEFT side */}
-      <NotebookSidebarWrapper 
-        bookId={bookId} 
+      <NotebookSidebarWrapper
+        bookId={bookId}
         onGoToCfi={(cfi) => foliateRef.current?.goToCFI(cfi)}
         onAddAnnotation={(cfi, color, note) => {
           foliateRef.current?.addAnnotation({
@@ -811,9 +840,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
               <div className="absolute inset-0 flex items-center justify-center bg-background">
                 <div className="flex flex-col items-center gap-3">
                   <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
-                  <p className="text-sm text-muted-foreground">
-                    {t("reader.loadingBook")}
-                  </p>
+                  <p className="text-sm text-muted-foreground">{t("reader.loadingBook")}</p>
                 </div>
               </div>
             ) : null}
@@ -825,9 +852,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
                     <span className="text-lg text-destructive">!</span>
                   </div>
-                  <p className="text-sm font-medium text-destructive">
-                    {t("reader.loadFailed")}
-                  </p>
+                  <p className="text-sm font-medium text-destructive">{t("reader.loadFailed")}</p>
                   <p className="text-xs text-muted-foreground">{error}</p>
                   <button
                     type="button"
@@ -839,16 +864,16 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
                         setBookDoc(null);
                         // Trigger re-init
                         setIsLoading(true);
-                        loadAndParseBook(book.filePath).then(
-                          ({ bookDoc, format }) => {
+                        loadAndParseBook(book.filePath)
+                          .then(({ bookDoc, format }) => {
                             setBookDoc(bookDoc);
                             setBookFormat(format);
                             isInitializedRef.current = true;
-                          },
-                        ).catch((err) => {
-                          setError(err instanceof Error ? err.message : "Failed");
-                          setIsLoading(false);
-                        });
+                          })
+                          .catch((err) => {
+                            setError(err instanceof Error ? err.message : "Failed");
+                            setIsLoading(false);
+                          });
                       }
                     }}
                   >
@@ -887,7 +912,6 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
                 }}
               />
             )}
-
           </div>
 
           {/* Floating Toolbar — overlays content area */}
@@ -903,8 +927,8 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
             onToggleSettings={handleToggleSettings}
             onToggleChat={handleToggleChat}
             isChatOpen={showChat}
-            onMouseEnter={onControlsEnter}
-            onMouseLeave={onControlsLeave}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
           />
 
           {/* Floating Footer bar — overlays content area */}
@@ -915,18 +939,15 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
             isVisible={controlsVisible}
             onPrev={handleNavPrev}
             onNext={handleNavNext}
-            onMouseEnter={onControlsEnter}
-            onMouseLeave={onControlsLeave}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
           />
         </div>
 
         {/* TOC overlay — floats above toolbar, content, and footer */}
         {showToc && (
           <>
-            <div
-              className="absolute inset-0 z-40 bg-black/20"
-              onClick={() => setShowToc(false)}
-            />
+            <div className="absolute inset-0 z-40 bg-black/20" onClick={() => setShowToc(false)} />
             <div className="absolute top-2 bottom-2 left-0 z-50 flex animate-in slide-in-from-left duration-200">
               <TOCPanel
                 tocItems={tocItems}
@@ -969,9 +990,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       {showChat && (
         <div className="ml-1 flex w-80 shrink-0 flex-col overflow-hidden rounded-lg border border-border/60 bg-background shadow-sm">
           <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/40 px-3">
-            <span className="text-xs font-medium text-foreground">
-              {t("chat.aiAssistant")}
-            </span>
+            <span className="text-xs font-medium text-foreground">{t("chat.aiAssistant")}</span>
             <button
               type="button"
               className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -990,13 +1009,13 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 }
 
 // Separate component to use notebook store hook
-function NotebookSidebarWrapper({ 
-  bookId, 
+function NotebookSidebarWrapper({
+  bookId,
   onGoToCfi,
   onAddAnnotation,
   onDeleteAnnotation,
-}: { 
-  bookId: string; 
+}: {
+  bookId: string;
   onGoToCfi: (cfi: string) => void;
   onAddAnnotation: (cfi: string, color: string, note?: string) => void;
   onDeleteAnnotation: (cfi: string) => void;
@@ -1008,8 +1027,8 @@ function NotebookSidebarWrapper({
 
   return (
     <div className="mr-1 flex w-80 shrink-0 flex-col overflow-hidden rounded-lg border border-border/60 bg-background shadow-sm">
-      <NotebookPanel 
-        bookId={bookId} 
+      <NotebookPanel
+        bookId={bookId}
         onClose={closeNotebook}
         onGoToCfi={onGoToCfi}
         onAddAnnotation={onAddAnnotation}

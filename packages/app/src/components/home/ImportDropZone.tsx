@@ -68,8 +68,11 @@ export function ImportDropZone() {
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
         >
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-neutral-200">
-            <Upload className="h-7 w-7 text-neutral-500" />
+          <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
+            <img src="/logo.svg" alt="" className="h-16 w-16" />
+          </div>
+          <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-neutral-200">
+            <Upload className="h-5 w-5 text-neutral-500" />
           </div>
           <p className="mb-1 text-sm font-medium text-neutral-700">{t("home.dropToUpload")}</p>
           <p className="mb-4 text-xs text-muted-foreground">{t("home.supportedFormat")}</p>

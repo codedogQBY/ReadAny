@@ -3,14 +3,7 @@ import type { TOCItem } from "./FoliateViewer";
 import { useAppStore } from "@/stores/app-store";
 import { useReaderStore } from "@/stores/reader-store";
 import { useNotebookStore } from "@/stores/notebook-store";
-import {
-  ArrowLeft,
-  List,
-  MessageSquare,
-  Search,
-  Settings,
-  StickyNote,
-} from "lucide-react";
+import { ArrowLeft, List, MessageSquare, Search, Settings, StickyNote } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 interface ReaderToolbarProps {
@@ -53,93 +46,85 @@ export function ReaderToolbar({
 
   return (
     <div
-      className="absolute top-0 left-0 right-0 z-50"
+      className={`absolute top-0 left-0 right-0 z-50 flex h-10 items-center justify-between bg-background/95 backdrop-blur-sm px-2 shadow-sm transition-all duration-300 ${
+        isVisible
+          ? "translate-y-0 opacity-100 pointer-events-auto"
+          : "-translate-y-full opacity-0 pointer-events-none"
+      }`}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      {/* Invisible hover trigger zone */}
-      <div className="h-11 pointer-events-auto" />
+      {/* Left: back + TOC + notebook */}
+      <div className="flex items-center gap-0.5">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={() => setActiveTab("home")}
+          title={t("common.back")}
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+        </Button>
 
-      {/* Actual toolbar content — slides in/out */}
-      <div
-        className={`absolute top-0 left-0 right-0 flex h-10 items-center justify-between bg-background/95 backdrop-blur-sm px-2 shadow-sm transition-all duration-300 ${
-          isVisible
-            ? "translate-y-0 opacity-100 pointer-events-auto"
-            : "-translate-y-full opacity-0 pointer-events-none"
-        }`}
-      >
-        {/* Left: back + TOC + notebook */}
-        <div className="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => setActiveTab("home")}
-            title={t("common.back")}
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-          </Button>
+        <div className="mx-0.5 h-3.5 w-px bg-border/40" />
 
-          <div className="mx-0.5 h-3.5 w-px bg-border/40" />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={onToggleToc}
+          title={t("reader.toc")}
+        >
+          <List className="h-3.5 w-3.5" />
+        </Button>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={onToggleToc}
-            title={t("reader.toc")}
-          >
-            <List className="h-3.5 w-3.5" />
-          </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`h-7 w-7 ${isNotebookOpen ? "bg-primary/10 text-primary" : ""}`}
+          onClick={toggleNotebook}
+          title={t("notebook.title")}
+        >
+          <StickyNote className="h-3.5 w-3.5" />
+        </Button>
+      </div>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className={`h-7 w-7 ${isNotebookOpen ? "bg-primary/10 text-primary" : ""}`}
-            onClick={toggleNotebook}
-            title={t("notebook.title")}
-          >
-            <StickyNote className="h-3.5 w-3.5" />
-          </Button>
-        </div>
+      {/* Center: chapter title */}
+      <div className="absolute inset-x-0 flex justify-center pointer-events-none">
+        <span className="max-w-[200px] truncate text-xs text-foreground">
+          {tab.chapterTitle || t("reader.untitled")}
+        </span>
+      </div>
 
-        {/* Center: chapter title */}
-        <div className="absolute inset-x-0 flex justify-center pointer-events-none">
-          <span className="max-w-[200px] truncate text-xs text-foreground">
-            {tab.chapterTitle || t("reader.untitled")}
-          </span>
-        </div>
-
-        {/* Right: search + AI chat + settings */}
-        <div className="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={onToggleSearch}
-            title={t("reader.search")}
-          >
-            <Search className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={`h-7 w-7 ${isChatOpen ? "bg-primary/10 text-primary" : ""}`}
-            onClick={onToggleChat}
-            title={t("reader.askAI")}
-          >
-            <MessageSquare className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={onToggleSettings}
-            title={t("reader.settings")}
-          >
-            <Settings className="h-3.5 w-3.5" />
-          </Button>
-        </div>
+      {/* Right: search + AI chat + settings */}
+      <div className="flex items-center gap-0.5">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={onToggleSearch}
+          title={t("reader.search")}
+        >
+          <Search className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`h-7 w-7 ${isChatOpen ? "bg-primary/10 text-primary" : ""}`}
+          onClick={onToggleChat}
+          title={t("reader.askAI")}
+        >
+          <MessageSquare className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={onToggleSettings}
+          title={t("reader.settings")}
+        >
+          <Settings className="h-3.5 w-3.5" />
+        </Button>
       </div>
     </div>
   );

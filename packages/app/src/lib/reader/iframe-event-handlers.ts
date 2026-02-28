@@ -23,9 +23,7 @@ let keyboardState = {
   metaKey: false,
 };
 
-const getKeyStatus = (
-  event?: MouseEvent | WheelEvent | TouchEvent,
-) => {
+const getKeyStatus = (event?: MouseEvent | WheelEvent | TouchEvent) => {
   if (event && "ctrlKey" in event) {
     return {
       key: keyboardState.key,
@@ -39,10 +37,7 @@ const getKeyStatus = (
   return { ...keyboardState };
 };
 
-export const handleKeydown = (
-  bookKey: string,
-  event: KeyboardEvent,
-) => {
+export const handleKeydown = (bookKey: string, event: KeyboardEvent) => {
   keyboardState = {
     key: event.key,
     code: event.code,
@@ -74,10 +69,7 @@ export const handleKeydown = (
   );
 };
 
-export const handleKeyup = (
-  bookKey: string,
-  event: KeyboardEvent,
-) => {
+export const handleKeyup = (bookKey: string, event: KeyboardEvent) => {
   keyboardState = {
     key: "",
     code: "",
@@ -102,10 +94,7 @@ export const handleKeyup = (
   );
 };
 
-export const handleMousedown = (
-  bookKey: string,
-  event: MouseEvent,
-) => {
+export const handleMousedown = (bookKey: string, event: MouseEvent) => {
   longHoldTimeout = setTimeout(() => {
     longHoldTimeout = null;
   }, LONG_HOLD_THRESHOLD);
@@ -125,10 +114,7 @@ export const handleMousedown = (
   );
 };
 
-export const handleMouseup = (
-  bookKey: string,
-  event: MouseEvent,
-) => {
+export const handleMouseup = (bookKey: string, event: MouseEvent) => {
   const isLongHold = !longHoldTimeout;
   if (longHoldTimeout) {
     clearTimeout(longHoldTimeout);
@@ -157,42 +143,29 @@ export const handleMouseup = (
 let clickTimer: ReturnType<typeof setTimeout> | null = null;
 let clickCount = 0;
 
-export const handleClick = (
-  bookKey: string,
-  event: MouseEvent,
-) => {
+export const handleClick = (bookKey: string, event: MouseEvent) => {
   // Ignore clicks on interactive elements (links, buttons, inputs)
   const target = event.target as HTMLElement;
   if (target?.closest?.("a, button, input, textarea, select, [role='button']")) return;
 
+  // Note: Toolbar toggle logic is handled in FoliateViewer's pointerup handler
+  // This click handler is no longer used for toolbar toggling
+  // It's kept for potential future use (e.g., double-click detection)
+
   clickCount++;
   if (clickCount === 1) {
     clickTimer = setTimeout(() => {
-      // Single click confirmed (not a double click)
-      window.postMessage(
-        {
-          type: "iframe-single-click",
-          bookKey,
-          screenX: event.screenX,
-          screenY: event.screenY,
-          clientX: event.clientX,
-          clientY: event.clientY,
-        },
-        "*",
-      );
+      // Reset counter after timeout
       clickCount = 0;
     }, 250);
   } else {
-    // Double click — cancel single click
+    // Double click detected
     if (clickTimer) clearTimeout(clickTimer);
     clickCount = 0;
   }
 };
 
-export const handleWheel = (
-  bookKey: string,
-  event: WheelEvent,
-) => {
+export const handleWheel = (bookKey: string, event: WheelEvent) => {
   event.preventDefault();
   window.postMessage(
     {
@@ -207,11 +180,7 @@ export const handleWheel = (
   );
 };
 
-const handleTouchEv = (
-  bookKey: string,
-  event: TouchEvent,
-  type: string,
-) => {
+const handleTouchEv = (bookKey: string, event: TouchEvent, type: string) => {
   const touch = event.targetTouches[0];
   const touches = [];
   if (touch) {
@@ -234,29 +203,20 @@ const handleTouchEv = (
   );
 };
 
-export const handleTouchStart = (
-  bookKey: string,
-  event: TouchEvent,
-) => handleTouchEv(bookKey, event, "iframe-touchstart");
+export const handleTouchStart = (bookKey: string, event: TouchEvent) =>
+  handleTouchEv(bookKey, event, "iframe-touchstart");
 
-export const handleTouchMove = (
-  bookKey: string,
-  event: TouchEvent,
-) => handleTouchEv(bookKey, event, "iframe-touchmove");
+export const handleTouchMove = (bookKey: string, event: TouchEvent) =>
+  handleTouchEv(bookKey, event, "iframe-touchmove");
 
-export const handleTouchEnd = (
-  bookKey: string,
-  event: TouchEvent,
-) => handleTouchEv(bookKey, event, "iframe-touchend");
+export const handleTouchEnd = (bookKey: string, event: TouchEvent) =>
+  handleTouchEv(bookKey, event, "iframe-touchend");
 
 /**
  * Register all iframe event handlers on a loaded document.
  * Called each time a new section is loaded by foliate-view.
  */
-export function registerIframeEventHandlers(
-  bookKey: string,
-  doc: Document,
-): void {
+export function registerIframeEventHandlers(bookKey: string, doc: Document): void {
   // Avoid double-registering
   // biome-ignore lint: runtime flag on Document
   if ((doc as any).__readany_events_registered) return;
@@ -267,31 +227,13 @@ export function registerIframeEventHandlers(
 
   doc.addEventListener("keydown", handleKeydown.bind(null, bookKey));
   doc.addEventListener("keyup", handleKeyup.bind(null, bookKey));
-  doc.addEventListener(
-    "mousedown",
-    handleMousedown.bind(null, bookKey),
-  );
-  doc.addEventListener(
-    "mouseup",
-    handleMouseup.bind(null, bookKey),
-  );
-  doc.addEventListener(
-    "click",
-    handleClick.bind(null, bookKey),
-  );
+  doc.addEventListener("mousedown", handleMousedown.bind(null, bookKey));
+  doc.addEventListener("mouseup", handleMouseup.bind(null, bookKey));
+  doc.addEventListener("click", handleClick.bind(null, bookKey));
   doc.addEventListener("wheel", handleWheel.bind(null, bookKey), {
     passive: false,
   });
-  doc.addEventListener(
-    "touchstart",
-    handleTouchStart.bind(null, bookKey),
-  );
-  doc.addEventListener(
-    "touchmove",
-    handleTouchMove.bind(null, bookKey),
-  );
-  doc.addEventListener(
-    "touchend",
-    handleTouchEnd.bind(null, bookKey),
-  );
+  doc.addEventListener("touchstart", handleTouchStart.bind(null, bookKey));
+  doc.addEventListener("touchmove", handleTouchMove.bind(null, bookKey));
+  doc.addEventListener("touchend", handleTouchEnd.bind(null, bookKey));
 }
