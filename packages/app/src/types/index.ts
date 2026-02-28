@@ -11,6 +11,7 @@ export type {
   SortOrder,
 } from "./book";
 export type { Highlight, Note, Bookmark, Annotation, HighlightColor } from "./annotation";
+export { HIGHLIGHT_COLORS, HIGHLIGHT_COLOR_HEX } from "./annotation";
 export type {
   Thread,
   Message,

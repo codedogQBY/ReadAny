@@ -24,6 +24,7 @@ import type { FoliateView } from "@/hooks/reader/useFoliateView";
 import { wrappedFoliateView } from "@/hooks/reader/useFoliateView";
 import type { ViewSettings } from "@/types";
 import { readingContextService } from "@/lib/ai/reading-context-service";
+import { Overlayer } from "foliate-js/overlayer.js";
 
 // Polyfills required by foliate-js
 // biome-ignore lint: polyfill for foliate-js
@@ -84,6 +85,9 @@ export interface BookSelection {
   cfi?: string;
   chapterIndex?: number;
   rects: DOMRect[];
+  annotated?: boolean; // true if this is an existing annotation
+  highlightId?: string; // the existing highlight's id
+  color?: string; // the existing highlight's color
 }
 
 /** Imperative handle exposed to parent via ref */
@@ -111,8 +115,10 @@ interface FoliateViewerProps {
   onRelocate?: (detail: RelocateDetail) => void;
   onTocReady?: (toc: TOCItem[]) => void;
   onLoaded?: () => void;
+  onSectionLoad?: (index: number) => void;
   onError?: (error: Error) => void;
   onSelection?: (selection: BookSelection | null) => void;
+  onShowAnnotation?: (cfi: string, range: Range, index: number) => void;
   onToggleSearch?: () => void;
   onToggleToc?: () => void;
   onToggleChat?: () => void;
@@ -127,8 +133,10 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
   onRelocate,
   onTocReady,
   onLoaded,
+  onSectionLoad,
   onError,
   onSelection,
+  onShowAnnotation,
   onToggleSearch,
   onToggleToc,
   onToggleChat,
@@ -226,8 +234,15 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
 
       setLoading(false);
       onLoaded?.();
+      
+      // Notify parent that a section has loaded (for re-rendering annotations)
+      // This is critical: when switching chapters, foliate-js reloads the content
+      // and all annotations need to be re-added
+      if (detail.index !== undefined) {
+        onSectionLoad?.(detail.index);
+      }
     },
-    [bookKey, viewSettings, onLoaded, isFixedLayout],
+    [bookKey, viewSettings, onLoaded, onSectionLoad, isFixedLayout],
   );
   const docLoadHandlerRef = useRef(docLoadHandlerImpl);
   docLoadHandlerRef.current = docLoadHandlerImpl;
@@ -278,6 +293,64 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
   // Stable wrapper functions that delegate to latest impl via ref
   const docLoadHandler = useCallback((event: Event) => docLoadHandlerRef.current(event), []);
   const relocateHandler = useCallback((event: Event) => relocateHandlerRef.current(event), []);
+
+  // --- Draw annotation handler ---
+  // This is called by foliate-js when an annotation needs to be rendered
+  const drawAnnotationHandler = useCallback((event: Event) => {
+    const detail = (event as CustomEvent).detail;
+    const { draw, annotation, doc, range } = detail;
+    
+    if (!draw || !annotation) return;
+    
+    // Get color from annotation, default to yellow
+    const color = annotation.color || "yellow";
+    
+    // Map color names to hex values
+    // Map color names to rgba values for highlight rendering
+    // Match readest's HIGHLIGHT_COLOR_HEX with alpha for background highlight
+    const colorMap: Record<string, string> = {
+      red: "rgba(248, 113, 113, 0.4)",    // red-400
+      yellow: "rgba(250, 204, 21, 0.4)",   // yellow-400
+      green: "rgba(74, 222, 128, 0.4)",    // green-400
+      blue: "rgba(96, 165, 250, 0.4)",     // blue-400
+      violet: "rgba(167, 139, 250, 0.4)",  // violet-400
+    };
+    
+    const hexColor = colorMap[color] || colorMap.yellow;
+    
+    // Check writing mode for vertical text support
+    let vertical = false;
+    if (doc && range) {
+      try {
+        const node = range.startContainer;
+        const el = node.nodeType === 1 ? node : node.parentElement;
+        if (el && doc.defaultView) {
+          const { writingMode } = doc.defaultView.getComputedStyle(el);
+          vertical = writingMode?.includes("vertical") || false;
+        }
+      } catch {
+        // Ignore errors in getting writing mode
+      }
+    }
+    
+    // Draw the highlight using Overlayer
+    draw(Overlayer.highlight, { color: hexColor, vertical });
+  }, []);
+
+  // --- Show annotation handler ---
+  // This is called when user clicks on an existing annotation
+  const onShowAnnotationRef = useRef(onShowAnnotation);
+  onShowAnnotationRef.current = onShowAnnotation;
+  
+  const showAnnotationHandler = useCallback((event: Event) => {
+    const detail = (event as CustomEvent).detail;
+    const { value, index, range } = detail;
+    
+    if (!value || !range) return;
+    
+    // Call the callback with annotation info
+    onShowAnnotationRef.current?.(value, range, index);
+  }, []);
 
   // --- Selection listener ---
   // Use ref so the pointerup handler always calls the latest onSelection callback,
@@ -383,6 +456,8 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
   useFoliateEvents(viewReady ? viewRef.current : null, {
     onLoad: docLoadHandler,
     onRelocate: relocateHandler,
+    onDrawAnnotation: drawAnnotationHandler,
+    onShowAnnotation: showAnnotationHandler,
   });
 
   // --- Open book ---
@@ -444,6 +519,8 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         // addEventListener de-duplicates identical function references, so no double-fire.
         view.addEventListener("load", docLoadHandler);
         view.addEventListener("relocate", relocateHandler);
+        view.addEventListener("draw-annotation", drawAnnotationHandler);
+        view.addEventListener("show-annotation", showAnnotationHandler);
         setViewReady(true);
 
         // Navigate to last location or start

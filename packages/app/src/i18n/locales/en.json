@@ -85,6 +85,7 @@
     "askAI": "Ask AI",
     "askQuestion": "Ask a question about this text...",
     "highlight": "Highlight",
+    "highlightNotSupportedPdf": "Highlight not supported for PDF",
     "note": "Note",
     "translate": "Translate",
     "toc": "Table of Contents",

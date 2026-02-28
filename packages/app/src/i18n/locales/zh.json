@@ -85,6 +85,7 @@
     "askAI": "AI 提问",
     "askQuestion": "关于这段文字的问题...",
     "highlight": "高亮",
+    "highlightNotSupportedPdf": "PDF 暂不支持高亮",
     "note": "笔记",
     "translate": "翻译",
     "toc": "目录",
