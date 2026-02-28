@@ -58,6 +58,7 @@
     "noBooksInLibrary": "书库中没有书籍",
     "askPlaceholder": "输入你的问题...",
     "askBookPlaceholder": "关于这本书的问题...",
+    "askAboutQuote": "关于选中的文本提问...",
     "suggestions": {
       "summarizeReading": "总结我最近的阅读",
       "analyzeArguments": "分析核心论点",

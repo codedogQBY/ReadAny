@@ -170,13 +170,22 @@ export async function* streamReadingAgent(
       { version: "v2", recursionLimit: 50 },
     );
 
+    // Track tool calls emitted early from on_chat_model_end so we skip
+    // the duplicate on_tool_start events. We count how many early emissions
+    // are pending to be "consumed" by on_tool_start events.
+    let pendingEarlyToolCalls = 0;
+
     for await (const event of eventStream) {
-      // Token streaming from model (works for both intermediate reasoning and final response)
+      // Token streaming from model
       if (event.event === "on_chat_model_stream") {
         const chunk = event.data?.chunk;
         if (!chunk) continue;
 
         const content = chunk.content;
+
+        // Always extract text content, even when the chunk also contains tool_call_chunks.
+        // OpenAI models often send text (the "reason" before calling a tool) and
+        // tool_call_chunks in the same stream of chunks.
         if (typeof content === "string" && content) {
           yield { type: "token", content };
         } else if (Array.isArray(content)) {
@@ -191,18 +200,53 @@ export async function* streamReadingAgent(
         }
       }
 
-      // Tool call started
+      // When LLM finishes a turn, immediately emit any tool_calls it decided to make.
+      // This fires BEFORE on_tool_start, giving instant "pending" UI feedback.
+      if (event.event === "on_chat_model_end") {
+        const output = event.data?.output;
+        if (output) {
+          const toolCalls = output.tool_calls ?? output.additional_kwargs?.tool_calls;
+          if (Array.isArray(toolCalls)) {
+            for (const tc of toolCalls) {
+              let args: Record<string, unknown>;
+              try {
+                args = (typeof tc.args === "string" ? JSON.parse(tc.args) : tc.args) as Record<string, unknown>;
+              } catch {
+                args = {};
+              }
+              pendingEarlyToolCalls++;
+              yield {
+                type: "tool_call" as const,
+                name: tc.name,
+                args,
+              };
+            }
+          }
+        }
+      }
+
+      // Tool call started — skip if already emitted from on_chat_model_end
       if (event.event === "on_tool_start") {
-        yield {
-          type: "tool_call",
-          name: event.name,
-          args: (event.data?.input as Record<string, unknown>) ?? {},
-        };
+        if (pendingEarlyToolCalls > 0) {
+          pendingEarlyToolCalls--;
+        } else {
+          // Fallback: emit if not already emitted (e.g. non-OpenAI model)
+          yield {
+            type: "tool_call",
+            name: event.name,
+            args: (event.data?.input as Record<string, unknown>) ?? {},
+          };
+        }
       }
 
       // Tool call completed
       if (event.event === "on_tool_end") {
         let result: unknown = event.data?.output;
+        // ToolMessage objects need to have their content extracted
+        const resultContent = (result as any)?.content ?? (result as any)?.lc_kwargs?.content;
+        if (resultContent !== undefined) {
+          result = resultContent;
+        }
         try {
           if (typeof result === "string") result = JSON.parse(result);
         } catch {

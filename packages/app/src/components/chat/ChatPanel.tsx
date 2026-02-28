@@ -7,7 +7,7 @@ import type { Book, MessageV2 } from "@/types";
 import { Brain, History, MessageCirclePlus, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChatInput } from "./ChatInput";
+import { ChatInput, type AttachedQuote } from "./ChatInput";
 import { MessageList } from "./MessageList";
 
 interface ChatPanelProps {
@@ -52,28 +52,41 @@ export function ChatPanel({ book }: ChatPanelProps) {
   const bookThreads = bookId ? getThreadsForContext(bookId) : [];
 
   const [showThreadList, setShowThreadList] = useState(false);
+  const [attachedQuotes, setAttachedQuotes] = useState<AttachedQuote[]>([]);
 
   const handleSend = useCallback(
-    (content: string, deepThinking: boolean = false) => {
-      sendMessage(content, bookId, deepThinking);
+    (content: string, deepThinking: boolean = false, quotes?: AttachedQuote[]) => {
+      sendMessage(content, bookId, deepThinking, quotes);
+      // Clear quotes after sending
+      setAttachedQuotes([]);
     },
     [sendMessage, bookId],
   );
 
-  // Listen for "Ask AI" from reader selection
+  const handleRemoveQuote = useCallback((id: string) => {
+    setAttachedQuotes((prev) => prev.filter((q) => q.id !== id));
+  }, []);
+
+  // Listen for "Ask AI" from reader selection — now adds quote to input instead of sending immediately
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      if (detail?.bookId === bookId && detail?.question) {
-        const prompt = detail.selectedText
-          ? `关于以下文本：\n> ${detail.selectedText.slice(0, 300)}\n\n${detail.question}`
-          : detail.question;
-        handleSend(prompt);
+      if (detail?.bookId === bookId && detail?.selectedText) {
+        const newQuote: AttachedQuote = {
+          id: crypto.randomUUID(),
+          text: detail.selectedText,
+          source: detail.chapterTitle,
+        };
+        setAttachedQuotes((prev) => {
+          // Avoid duplicate text
+          if (prev.some((q) => q.text === newQuote.text)) return prev;
+          return [...prev, newQuote];
+        });
       }
     };
     window.addEventListener("ask-ai-from-reader", handler);
     return () => window.removeEventListener("ask-ai-from-reader", handler);
-  }, [bookId, handleSend]);
+  }, [bookId]);
 
   const handleNewThread = useCallback(async () => {
     if (bookId) {
@@ -103,6 +116,17 @@ export function ChatPanel({ book }: ChatPanelProps) {
   // Convert old message format to MessageV2 format with parts
   const convertToMessageV2 = (messages: any[]): MessageV2[] => {
     return messages.map((m) => {
+      // If message already has properly typed parts (new format), use them directly
+      if (m.parts && Array.isArray(m.parts) && m.parts.length > 0 && m.parts[0]?.type) {
+        return {
+          id: m.id,
+          threadId: m.threadId,
+          role: m.role,
+          parts: m.parts,
+          createdAt: m.createdAt,
+        };
+      }
+
       // If partsOrder is available, use it to reconstruct parts in the correct order
       if (m.partsOrder && Array.isArray(m.partsOrder) && m.partsOrder.length > 0) {
         const parts: any[] = [];
@@ -127,6 +151,16 @@ export function ChatPanel({ book }: ChatPanelProps) {
                 id: entry.id,
                 type: "text",
                 text: entry.text || m.content,
+                status: "completed",
+                createdAt: m.createdAt,
+              });
+              break;
+            case "quote":
+              parts.push({
+                id: entry.id,
+                type: "quote",
+                text: entry.text || "",
+                source: entry.source,
                 status: "completed",
                 createdAt: m.createdAt,
               });
@@ -342,6 +376,8 @@ export function ChatPanel({ book }: ChatPanelProps) {
           onSend={handleSend}
           disabled={isStreaming}
           placeholder={t("chat.askBookPlaceholder")}
+          quotes={attachedQuotes}
+          onRemoveQuote={handleRemoveQuote}
         />
       </div>
     </div>

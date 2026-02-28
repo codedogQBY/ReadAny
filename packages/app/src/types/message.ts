@@ -44,7 +44,15 @@ export interface CitationPart extends BasePart {
   text: string;
 }
 
-export type Part = TextPart | ReasoningPart | ToolCallPart | CitationPart;
+/** A user-attached quote from selected text (used in user messages) */
+export interface QuotePart extends BasePart {
+  type: "quote";
+  text: string;
+  /** Optional source info, e.g. chapter title */
+  source?: string;
+}
+
+export type Part = TextPart | ReasoningPart | ToolCallPart | CitationPart | QuotePart;
 
 export interface MessageV2 {
   id: string;
@@ -150,4 +158,19 @@ export function isToolCallPart(part: Part): part is ToolCallPart {
 
 export function isCitationPart(part: Part): part is CitationPart {
   return part.type === "citation";
+}
+
+export function isQuotePart(part: Part): part is QuotePart {
+  return part.type === "quote";
+}
+
+export function createQuotePart(text: string, source?: string): QuotePart {
+  return {
+    id: `quote-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type: "quote",
+    text,
+    source,
+    status: "completed",
+    createdAt: Date.now(),
+  };
 }

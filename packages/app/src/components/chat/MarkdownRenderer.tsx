@@ -66,6 +66,7 @@ function CopyButton({ text }: { text: string }) {
 interface MarkdownRendererProps {
   content: string;
   className?: string;
+  isStreaming?: boolean;
 }
 
 const remarkPlugins = [remarkGfm];
@@ -161,7 +162,12 @@ const mdComponents = {
 export const MarkdownRenderer = React.memo(function MarkdownRenderer({
   content,
   className,
+  isStreaming,
 }: MarkdownRendererProps) {
+  // Append a unicode cursor placeholder that we style via CSS when streaming.
+  // This keeps the cursor inline with the last text rather than on a new line.
+  const displayContent = isStreaming ? `${content}\u200B` : content;
+
   return (
     <div className={className}>
       <Markdown
@@ -169,8 +175,27 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
         rehypePlugins={rehypePlugins}
         components={mdComponents}
       >
-        {content}
+        {displayContent}
       </Markdown>
+      {isStreaming && (
+        <style>{`
+          .chat-markdown > div > *:last-child::after {
+            content: "";
+            display: inline-block;
+            width: 3px;
+            height: 1em;
+            background: var(--primary);
+            border-radius: 1px;
+            margin-left: 2px;
+            vertical-align: text-bottom;
+            animation: cursor-blink 1s step-end infinite;
+          }
+          @keyframes cursor-blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+          }
+        `}</style>
+      )}
     </div>
   );
 });

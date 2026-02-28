@@ -30,7 +30,6 @@ import { useReaderStore } from "@/stores/reader-store";
 import { X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AskAIDialog } from "./AskAIDialog";
 import { FooterBar } from "./FooterBar";
 import { ReaderToolbar } from "./ReaderToolbar";
 import { SearchBar } from "./SearchBar";
@@ -230,8 +229,6 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const [showTranslation, setShowTranslation] = useState(false);
   const [translationText, setTranslationText] = useState("");
   const [translationPos, setTranslationPos] = useState({ x: 0, y: 0 });
-  const [showAskAI, setShowAskAI] = useState(false);
-  const [askAIText, setAskAIText] = useState("");
   const [searchResults, setSearchResults] = useState<number>(0);
   const [searchIndex, setSearchIndex] = useState<number>(0);
   const [totalPages, setTotalPages] = useState(0);
@@ -453,11 +450,20 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
   const handleAskAI = useCallback(() => {
     if (selection?.text) {
-      setAskAIText(selection.text);
-      setShowAskAI(true);
+      // Open chat panel and attach selected text as a quote chip
+      setShowChat(true);
+      window.dispatchEvent(
+        new CustomEvent("ask-ai-from-reader", {
+          detail: {
+            selectedText: selection.text,
+            bookId,
+            chapterTitle: tab?.chapterTitle,
+          },
+        }),
+      );
     }
     setSelection(null);
-  }, [selection]);
+  }, [selection, bookId, tab?.chapterTitle]);
 
   const handleCloseSelection = useCallback(
     () => setSelection(null),
@@ -669,34 +675,6 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
               />
             )}
 
-            {/* Ask AI dialog */}
-            {showAskAI && askAIText && (
-              <div className="absolute left-1/2 top-1/4 z-50 -translate-x-1/2">
-                <AskAIDialog
-                  selectedText={askAIText}
-                  onSubmit={(question) => {
-                    // Open chat panel and send the question with selected text context
-                    setShowChat(true);
-                    setShowAskAI(false);
-                    setAskAIText("");
-                    // Dispatch a custom event that ChatPanel can listen for
-                    window.dispatchEvent(
-                      new CustomEvent("ask-ai-from-reader", {
-                        detail: {
-                          question,
-                          selectedText: askAIText,
-                          bookId,
-                        },
-                      }),
-                    );
-                  }}
-                  onClose={() => {
-                    setShowAskAI(false);
-                    setAskAIText("");
-                  }}
-                />
-              </div>
-            )}
           </div>
 
           {/* Floating Toolbar — overlays content area */}

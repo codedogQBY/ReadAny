@@ -58,6 +58,7 @@
     "noBooksInLibrary": "No books in library",
     "askPlaceholder": "Ask about your books...",
     "askBookPlaceholder": "Ask about your book...",
+    "askAboutQuote": "Ask about the selected text...",
     "suggestions": {
       "summarizeReading": "Summarize my recent reading",
       "analyzeArguments": "Analyze key arguments",

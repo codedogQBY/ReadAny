@@ -84,8 +84,11 @@ export class StreamingChat {
 
           case "tool_result":
             options.onToolResult?.(event.name, event.result);
-            const existing = toolCalls.find((tc) => tc.name === event.name);
-            if (existing) existing.result = event.result;
+            // Find the last tool call with matching name that doesn't have a result yet
+            const existingTc = [...toolCalls]
+              .reverse()
+              .find((tc) => tc.name === event.name && !tc.result);
+            if (existingTc) existingTc.result = event.result;
             break;
 
           case "reasoning":

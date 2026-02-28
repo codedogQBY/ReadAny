@@ -31,6 +31,7 @@ export type {
   ReasoningPart,
   ToolCallPart,
   CitationPart,
+  QuotePart,
   MessageV2,
   ThreadV2,
   PartStatus,

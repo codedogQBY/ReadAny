@@ -125,6 +125,17 @@ function EmptyState({ onSuggestionClick }: { onSuggestionClick: (text: string) =
 
 function convertToMessageV2(messages: any[]): MessageV2[] {
   return messages.map((m) => {
+    // If message already has properly typed parts (new format), use them directly
+    if (m.parts && Array.isArray(m.parts) && m.parts.length > 0 && m.parts[0]?.type) {
+      return {
+        id: m.id,
+        threadId: m.threadId,
+        role: m.role,
+        parts: m.parts,
+        createdAt: m.createdAt,
+      };
+    }
+
     // If partsOrder is available, use it to reconstruct parts in the correct order
     if (m.partsOrder && Array.isArray(m.partsOrder) && m.partsOrder.length > 0) {
       const parts: any[] = [];
@@ -149,6 +160,16 @@ function convertToMessageV2(messages: any[]): MessageV2[] {
               id: entry.id,
               type: "text",
               text: entry.text || m.content,
+              status: "completed",
+              createdAt: m.createdAt,
+            });
+            break;
+          case "quote":
+            parts.push({
+              id: entry.id,
+              type: "quote",
+              text: entry.text || "",
+              source: entry.source,
               status: "completed",
               createdAt: m.createdAt,
             });

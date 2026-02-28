@@ -7,7 +7,9 @@ import {
   createTextPart,
   createReasoningPart,
   createToolCallPart,
+  createQuotePart,
 } from "@/types/message";
+import type { AttachedQuote } from "@/components/chat/ChatInput";
 
 export interface StreamingChatOptions {
   book?: Book | null;
@@ -52,8 +54,8 @@ export function useStreamingChat(options?: StreamingChatOptions) {
   );
 
   const sendMessage = useCallback(
-    async (content: string, overrideBookId?: string, deepThinking: boolean = false) => {
-      if (!content.trim() || state.isStreaming) return;
+    async (content: string, overrideBookId?: string, deepThinking: boolean = false, quotes?: AttachedQuote[]) => {
+      if ((!content.trim() && (!quotes || quotes.length === 0)) || state.isStreaming) return;
 
       const messageId = createMessageId();
       const initialMessage = {
@@ -79,12 +81,41 @@ export function useStreamingChat(options?: StreamingChatOptions) {
         await updateThreadTitle(thread.id, content.slice(0, 50));
       }
 
+      // Build the actual prompt sent to AI (includes quotes as context)
+      let aiPrompt = content.trim();
+      if (quotes && quotes.length > 0) {
+        const quotesText = quotes
+          .map((q) => `> ${q.text.slice(0, 300)}`)
+          .join("\n\n");
+        aiPrompt = content.trim()
+          ? `关于以下文本：\n${quotesText}\n\n${content.trim()}`
+          : `关于以下文本：\n${quotesText}\n\n请帮我分析这段文本。`;
+      }
+
+      // Build user message with QuotePart + TextPart for display
       const userMessageId = createMessageId();
+      const userParts: Part[] = [];
+      if (quotes && quotes.length > 0) {
+        for (const q of quotes) {
+          userParts.push(createQuotePart(q.text, q.source));
+        }
+      }
+      if (content.trim()) {
+        userParts.push(createTextPart(content.trim()));
+      }
+
       const userMessage = {
         id: userMessageId,
         threadId: thread.id,
         role: "user" as const,
-        content: content.trim(),
+        content: aiPrompt,
+        parts: userParts,
+        partsOrder: userParts.map((p) => ({
+          type: p.type as "text" | "quote",
+          id: p.id,
+          ...(p.type === "text" ? { text: (p as TextPart).text } : {}),
+          ...(p.type === "quote" ? { text: (p as any).text, source: (p as any).source } : {}),
+        })),
         createdAt: Date.now(),
       };
 
@@ -196,6 +227,11 @@ export function useStreamingChat(options?: StreamingChatOptions) {
             setStreaming(false);
           },
           onToolCall: (name, args) => {
+            // Close the previous text part so it stops showing the streaming cursor
+            if (currentTextPart) {
+              currentTextPart.status = "completed";
+              currentTextPart.updatedAt = Date.now();
+            }
             // Reset currentTextPart so text before tool calls becomes a separate part
             // from text after tool calls, preserving correct display order
             currentTextPart = null;
@@ -210,9 +246,16 @@ export function useStreamingChat(options?: StreamingChatOptions) {
             }));
           },
           onToolResult: (name, result) => {
-            const part = currentParts.find(
-              (p) => p.type === "tool_call" && (p as ToolCallPart).name === name
-            ) as ToolCallPart | undefined;
+            // Find the last tool_call part with matching name that doesn't have a result yet
+            // (supports multiple calls to the same tool)
+            const part = [...currentParts]
+              .reverse()
+              .find(
+                (p) =>
+                  p.type === "tool_call" &&
+                  (p as ToolCallPart).name === name &&
+                  !(p as ToolCallPart).result
+              ) as ToolCallPart | undefined;
             if (part) {
               part.result = result;
               part.status = "completed";

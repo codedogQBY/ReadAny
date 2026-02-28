@@ -78,15 +78,23 @@ export function PartRenderer({ part, onCitationClick }: PartProps) {
 
 function TextPartView({ part }: { part: TextPart }) {
   const throttledText = useThrottledText(part.text);
+  const isStreaming = part.status === "running";
 
-  if (!throttledText.trim()) return null;
+  if (!throttledText.trim()) {
+    // Even if no text yet, show cursor when streaming
+    if (isStreaming) {
+      return (
+        <div className="chat-markdown max-w-none text-sm leading-relaxed">
+          <span className="inline-block h-4 w-[3px] animate-pulse rounded-sm bg-primary" />
+        </div>
+      );
+    }
+    return null;
+  }
 
   return (
     <div className="chat-markdown max-w-none text-sm leading-relaxed">
-      <MarkdownRenderer content={throttledText} />
-      {part.status === "running" && (
-        <span className="inline-block h-4 w-1 animate-pulse bg-primary ml-0.5" />
-      )}
+      <MarkdownRenderer content={throttledText} isStreaming={isStreaming} />
     </div>
   );
 }
