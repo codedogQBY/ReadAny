@@ -15,11 +15,16 @@ import {
   BookOpen,
   ExternalLink,
 } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import type { Part, TextPart, ReasoningPart, ToolCallPart, CitationPart } from "@/types/message";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 
 const TEXT_RENDER_THROTTLE_MS = 100;
+
+// Lazy load MindmapView to avoid bundling markmap for non-mindmap messages
+const LazyMindmapView = lazy(() =>
+  import("@/components/common/MindmapView").then((m) => ({ default: m.MindmapView }))
+);
 
 function useThrottledText(text: string): string {
   const [throttledText, setThrottledText] = useState(text);
@@ -167,6 +172,12 @@ const TOOL_LABELS: Record<string, string> = {
   getReadingProgress: "获取阅读进度",
   getRecentHighlights: "获取最近标注",
   getSurroundingContext: "获取上下文",
+  listBooks: "查询书籍列表",
+  searchAllHighlights: "搜索所有高亮",
+  searchAllNotes: "搜索所有笔记",
+  getReadingStats: "获取阅读统计",
+  getSkills: "查询技能",
+  mindmap: "生成思维导图",
 };
 
 function ToolCallPartView({ part }: { part: ToolCallPart }) {
@@ -249,13 +260,23 @@ function ToolCallPartView({ part }: { part: ToolCallPart }) {
               {part.result !== undefined && (
                 <div>
                   <h4 className="mb-1.5 text-xs font-medium text-neutral-500">结果</h4>
-                  <div className="max-h-48 overflow-auto rounded border border-neutral-200 bg-white p-2 font-mono text-xs">
-                    <pre className="whitespace-pre-wrap text-neutral-600">
-                      {typeof part.result === "string" && part.result.length > 500
-                        ? part.result.slice(0, 500) + "..."
-                        : JSON.stringify(part.result, null, 2)}
-                    </pre>
-                  </div>
+                  {/* Special rendering for mindmap tool */}
+                  {part.name === "mindmap" && isMindmapResult(part.result) ? (
+                    <Suspense fallback={<div className="p-4 text-sm text-neutral-400">加载思维导图...</div>}>
+                      <LazyMindmapView
+                        markdown={part.result.markdown}
+                        title={part.result.title}
+                      />
+                    </Suspense>
+                  ) : (
+                    <div className="max-h-48 overflow-auto rounded border border-neutral-200 bg-white p-2 font-mono text-xs">
+                      <pre className="whitespace-pre-wrap text-neutral-600">
+                        {typeof part.result === "string" && part.result.length > 500
+                          ? part.result.slice(0, 500) + "..."
+                          : JSON.stringify(part.result, null, 2)}
+                      </pre>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -293,5 +314,15 @@ function CitationPartView({
       </div>
       <p className="line-clamp-3 text-sm leading-relaxed text-neutral-700">{part.text}</p>
     </div>
+  );
+}
+
+/** Type guard for mindmap tool result */
+function isMindmapResult(result: unknown): result is { type: "mindmap"; title: string; markdown: string } {
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    (result as Record<string, unknown>).type === "mindmap" &&
+    typeof (result as Record<string, unknown>).markdown === "string"
   );
 }

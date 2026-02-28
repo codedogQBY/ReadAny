@@ -1,4 +1,5 @@
-import { getChunks, getHighlights, getNotes, getBooks, getAllHighlights, getAllNotes, getReadingSessionsByDateRange } from "@/lib/db/database";
+import { getChunks, getHighlights, getNotes, getBooks, getAllHighlights, getAllNotes, getReadingSessionsByDateRange, getSkills as getDbSkills } from "@/lib/db/database";
+import { getBuiltinSkills } from "./skills/builtin-skills";
 import { search } from "@/lib/rag/search";
 import { getContextTools } from "./context-tools";
 /**
@@ -499,6 +500,19 @@ function createListBooksTool(): ToolDefinition {
     description:
       "List all books in the user's library, including titles, authors, reading progress, and basic metadata. Use this when the user asks about their books, reading list, or library.",
     parameters: {
+      reasoning: {
+        type: "string",
+        description: "Brief explanation of why you are calling this tool",
+        required: true,
+      },
+      search: {
+        type: "string",
+        description: "Search keyword to filter by title or author",
+      },
+      status: {
+        type: "string",
+        description: "Filter by reading status: 'unread' (0%), 'reading' (1-99%), or 'completed' (100%)",
+      },
       limit: {
         type: "number",
         description: "Maximum number of books to return (default: 20)",
@@ -506,18 +520,39 @@ function createListBooksTool(): ToolDefinition {
     },
     execute: async (args) => {
       const limit = (args.limit as number) || 20;
-      const books = await getBooks();
+      const searchTerm = (args.search as string)?.toLowerCase();
+      const status = args.status as string | undefined;
+      let books = await getBooks();
+
+      // Filter by search keyword
+      if (searchTerm) {
+        books = books.filter(
+          (b) =>
+            b.meta.title.toLowerCase().includes(searchTerm) ||
+            (b.meta.author && b.meta.author.toLowerCase().includes(searchTerm)),
+        );
+      }
+
+      // Filter by reading status
+      if (status === "unread") {
+        books = books.filter((b) => !b.progress || b.progress === 0);
+      } else if (status === "reading") {
+        books = books.filter((b) => b.progress > 0 && b.progress < 1);
+      } else if (status === "completed") {
+        books = books.filter((b) => b.progress >= 1);
+      }
+
       const result = books.slice(0, limit).map((b) => ({
         id: b.id,
         title: b.meta.title,
         author: b.meta.author,
         format: b.format,
-        progress: b.progress,
+        progress: Math.round((b.progress || 0) * 100) + "%",
         isVectorized: b.isVectorized,
         addedAt: b.addedAt,
         lastOpenedAt: b.lastOpenedAt,
       }));
-      return { total: books.length, books: result };
+      return { total: books.length, showing: result.length, books: result };
     },
   };
 }
@@ -529,6 +564,15 @@ function createSearchAllHighlightsTool(): ToolDefinition {
     description:
       "Get the user's recent highlights and annotations across ALL books. Use this when the user asks about their highlights, marked passages, or important notes without specifying a particular book.",
     parameters: {
+      reasoning: {
+        type: "string",
+        description: "Brief explanation of why you are calling this tool",
+        required: true,
+      },
+      days: {
+        type: "number",
+        description: "Only return highlights from the last N days (e.g. 7=last week, 30=last month)",
+      },
       limit: {
         type: "number",
         description: "Maximum number of highlights to return (default: 20)",
@@ -536,9 +580,18 @@ function createSearchAllHighlightsTool(): ToolDefinition {
     },
     execute: async (args) => {
       const limit = (args.limit as number) || 20;
-      const highlights = await getAllHighlights(limit);
+      const days = args.days as number | undefined;
+      let highlights = await getAllHighlights(limit * 2); // fetch extra for filtering
       const books = await getBooks();
       const bookMap = new Map(books.map((b) => [b.id, b.meta.title]));
+
+      // Filter by time range
+      if (days) {
+        const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+        highlights = highlights.filter((h) => h.createdAt >= cutoff);
+      }
+
+      highlights = highlights.slice(0, limit);
 
       return {
         total: highlights.length,
@@ -562,6 +615,19 @@ function createSearchAllNotesTool(): ToolDefinition {
     description:
       "Get the user's notes across ALL books. Use this when the user asks about their notes, thoughts, or writings without specifying a particular book.",
     parameters: {
+      reasoning: {
+        type: "string",
+        description: "Brief explanation of why you are calling this tool",
+        required: true,
+      },
+      days: {
+        type: "number",
+        description: "Only return notes from the last N days (e.g. 7=last week, 30=last month)",
+      },
+      bookTitle: {
+        type: "string",
+        description: "Filter notes by book title (fuzzy match)",
+      },
       limit: {
         type: "number",
         description: "Maximum number of notes to return (default: 20)",
@@ -569,9 +635,27 @@ function createSearchAllNotesTool(): ToolDefinition {
     },
     execute: async (args) => {
       const limit = (args.limit as number) || 20;
-      const notes = await getAllNotes(limit);
+      const days = args.days as number | undefined;
+      const bookTitleSearch = (args.bookTitle as string)?.toLowerCase();
+      let notes = await getAllNotes(limit * 2);
       const books = await getBooks();
       const bookMap = new Map(books.map((b) => [b.id, b.meta.title]));
+
+      // Filter by time range
+      if (days) {
+        const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+        notes = notes.filter((n) => n.createdAt >= cutoff);
+      }
+
+      // Filter by book title
+      if (bookTitleSearch) {
+        notes = notes.filter((n) => {
+          const title = bookMap.get(n.bookId)?.toLowerCase() || "";
+          return title.includes(bookTitleSearch);
+        });
+      }
+
+      notes = notes.slice(0, limit);
 
       return {
         total: notes.length,
@@ -595,6 +679,11 @@ function createReadingStatsTool(): ToolDefinition {
     description:
       "Get the user's reading statistics, including total books, reading time, and recent activity. Use this when the user asks about their reading habits, statistics, or activity summary.",
     parameters: {
+      reasoning: {
+        type: "string",
+        description: "Brief explanation of why you are calling this tool",
+        required: true,
+      },
       days: {
         type: "number",
         description: "Number of recent days to include for activity stats (default: 30)",
@@ -642,7 +731,130 @@ function getGeneralTools(): ToolDefinition[] {
     createSearchAllHighlightsTool(),
     createSearchAllNotesTool(),
     createReadingStatsTool(),
+    createGetSkillsTool(),
+    createMindmapTool(),
   ];
+}
+
+/** Query available skills/SOPs */
+function createGetSkillsTool(): ToolDefinition {
+  return {
+    name: "getSkills",
+    description:
+      "Query the available skills (SOPs / standard operating procedures) that define how to perform specific tasks. Use this when you need guidance on how to execute a complex task like generating a mindmap, writing a summary, analyzing arguments, etc.",
+    parameters: {
+      reasoning: {
+        type: "string",
+        description: "Brief explanation of why you are calling this tool",
+        required: true,
+      },
+      task: {
+        type: "string",
+        description: "The task type or keyword to search for (e.g. '思维导图', '摘要', 'summary')",
+        required: true,
+      },
+    },
+    execute: async (args) => {
+      const task = (args.task as string).toLowerCase();
+
+      // Merge builtin and custom skills
+      const builtins = getBuiltinSkills();
+      let dbSkills: Skill[] = [];
+      try {
+        dbSkills = await getDbSkills();
+      } catch { /* ignore */ }
+
+      const allSkills = [
+        ...builtins,
+        ...dbSkills.filter((s) => !s.builtIn && s.enabled),
+      ];
+
+      // Fuzzy match by name or description
+      const matched = allSkills.filter(
+        (s) =>
+          s.name.toLowerCase().includes(task) ||
+          s.description.toLowerCase().includes(task) ||
+          s.id.toLowerCase().includes(task),
+      );
+
+      if (matched.length > 0) {
+        return {
+          found: matched.length,
+          skills: matched.map((s) => ({
+            id: s.id,
+            name: s.name,
+            description: s.description,
+            prompt: s.prompt,
+            parameters: s.parameters.map((p) => ({
+              name: p.name,
+              type: p.type,
+              description: p.description,
+              required: p.required,
+            })),
+          })),
+        };
+      }
+
+      // No match — return all available skill names
+      return {
+        found: 0,
+        message: `No skill matched "${task}". Available skills:`,
+        availableSkills: allSkills.map((s) => ({
+          id: s.id,
+          name: s.name,
+          description: s.description,
+        })),
+      };
+    },
+  };
+}
+
+/** Generate a mindmap from content */
+function createMindmapTool(): ToolDefinition {
+  return {
+    name: "mindmap",
+    description:
+      "Generate a mindmap visualization from content. The output will be rendered as an interactive mindmap. Use this when the user asks you to create a mindmap, knowledge map, concept map, or visual structure of a topic, chapter, or book.",
+    parameters: {
+      reasoning: {
+        type: "string",
+        description: "Brief explanation of why you are calling this tool",
+        required: true,
+      },
+      title: {
+        type: "string",
+        description: "The title of the mindmap",
+        required: true,
+      },
+      markdown: {
+        type: "string",
+        description: "The mindmap content in Markdown format. Use # headings for main branches and - lists for sub-branches. Example:\n# Main Topic\n## Branch 1\n- Sub item 1\n- Sub item 2\n## Branch 2\n- Sub item 3",
+        required: true,
+      },
+    },
+    execute: async (args) => {
+      const title = args.title as string;
+      const markdown = args.markdown as string;
+
+      // Count nodes and depth for stats
+      const lines = markdown.split("\n").filter((l) => l.trim());
+      const nodeCount = lines.length;
+      const maxDepth = lines.reduce((max, line) => {
+        const headingMatch = line.match(/^(#{1,6})\s/);
+        const listMatch = line.match(/^(\s*)-\s/);
+        if (headingMatch) return Math.max(max, headingMatch[1].length);
+        if (listMatch) return Math.max(max, 7 + Math.floor((listMatch[1].length) / 2));
+        return max;
+      }, 0);
+
+      return {
+        type: "mindmap",
+        title,
+        markdown,
+        stats: { nodeCount, maxDepth },
+      };
+    },
+  };
 }
 
 /** Get available tools based on current state */
@@ -690,7 +902,13 @@ export function getAvailableTools(options: {
 
 /** Convert a Skill to a ToolDefinition */
 function skillToTool(skill: Skill): ToolDefinition {
-  const parameters: Record<string, ToolParameter> = {};
+  const parameters: Record<string, ToolParameter> = {
+    reasoning: {
+      type: "string",
+      description: "Brief explanation of why you are calling this skill",
+      required: true,
+    },
+  };
   for (const param of skill.parameters) {
     parameters[param.name] = {
       type: param.type,
@@ -700,12 +918,19 @@ function skillToTool(skill: Skill): ToolDefinition {
   }
 
   return {
-    name: skill.name,
-    description: skill.description,
+    name: skill.id,
+    description: `[${skill.name}] ${skill.description}`,
     parameters,
     execute: async (args) => {
-      // Custom skill execution — placeholder for user-defined logic
-      return { result: `Skill '${skill.name}' executed`, args };
+      // Return the skill's prompt + args so the agent can use the skill's SOP
+      // The LLM will use the skill prompt as guidance for its response
+      return {
+        skillId: skill.id,
+        skillName: skill.name,
+        skillPrompt: skill.prompt,
+        args,
+        instruction: "Follow the skill prompt above to complete this task. Use the provided parameters and context.",
+      };
     },
   };
 }

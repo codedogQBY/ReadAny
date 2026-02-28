@@ -1,7 +1,9 @@
 import { StreamingChat, createMessageId } from "@/lib/ai/streaming";
 import { useChatStore } from "@/stores/chat-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import type { Book, SemanticContext, Thread, Part, TextPart, ToolCallPart, MessageV2, ReasoningPart } from "@/types";
+import { getSkills as getDbSkills } from "@/lib/db/database";
+import { getBuiltinSkills } from "@/lib/ai/skills/builtin-skills";
+import type { Book, SemanticContext, Skill, Thread, Part, TextPart, ToolCallPart, MessageV2, ReasoningPart } from "@/types";
 import { useCallback, useRef, useState } from "react";
 import {
   createTextPart,
@@ -42,6 +44,29 @@ export function useStreamingChat(options?: StreamingChatOptions) {
   } = useChatStore();
 
   const aiConfig = useSettingsStore((s) => s.aiConfig);
+
+  /** Load enabled skills (merge builtin definitions with DB enabled state) */
+  const loadEnabledSkills = useCallback(async (): Promise<Skill[]> => {
+    try {
+      const dbSkills = await getDbSkills();
+      const builtins = getBuiltinSkills();
+
+      // Merge builtin skills: use code definition but DB enabled state
+      const mergedBuiltins = builtins
+        .map((builtin) => {
+          const dbSkill = dbSkills.find((s) => s.id === builtin.id);
+          return dbSkill ? { ...builtin, enabled: dbSkill.enabled } : builtin;
+        })
+        .filter((s) => s.enabled);
+
+      // Custom skills from DB
+      const customSkills = dbSkills.filter((s) => !s.builtIn && s.enabled);
+
+      return [...mergedBuiltins, ...customSkills];
+    } catch {
+      return [];
+    }
+  }, []);
 
   const getOrCreateThread = useCallback(
     async (bookId?: string): Promise<Thread> => {
@@ -124,6 +149,9 @@ export function useStreamingChat(options?: StreamingChatOptions) {
 
       streamingRef.current = new StreamingChat();
 
+      // Load enabled skills from DB
+      const enabledSkills = await loadEnabledSkills();
+
       const updatedThread: Thread = {
         ...thread,
         messages: [...thread.messages, userMessage as any],
@@ -139,7 +167,7 @@ export function useStreamingChat(options?: StreamingChatOptions) {
           thread: updatedThread,
           book: options?.book || null,
           semanticContext: options?.semanticContext || null,
-          enabledSkills: [],
+          enabledSkills,
           isVectorized: options?.book?.isVectorized || false,
           aiConfig,
           deepThinking,
@@ -295,6 +323,7 @@ export function useStreamingChat(options?: StreamingChatOptions) {
       updateThreadTitle,
       setStreaming,
       aiConfig,
+      loadEnabledSkills,
       options?.book,
       options?.bookId,
       options?.semanticContext,

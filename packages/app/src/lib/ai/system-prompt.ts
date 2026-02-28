@@ -68,7 +68,17 @@ function buildSemanticSection(ctx: SemanticContext | null): string {
 function buildToolsSection(skills: Skill[], isVectorized: boolean): string {
   const tools: string[] = [];
 
+  // General tools (always available)
+  tools.push("### General Tools (always available)");
+  tools.push("- **listBooks**: List books in the library with search/status filters (params: reasoning, search, status, limit)");
+  tools.push("- **searchAllHighlights**: Get highlights across all books (params: reasoning, days, limit)");
+  tools.push("- **searchAllNotes**: Get notes across all books (params: reasoning, days, bookTitle, limit)");
+  tools.push("- **getReadingStats**: Get reading statistics (params: reasoning, days)");
+  tools.push("- **getSkills**: Query available skills/SOPs for guidance (params: reasoning, task)");
+  tools.push("- **mindmap**: Generate an interactive mindmap visualization (params: reasoning, title, markdown)");
+
   // Context tools (always available when reading a book)
+  tools.push("");
   tools.push("### Reading Context Tools");
   tools.push("- **getCurrentChapter**: Get current chapter title, index, and reading position");
   tools.push("- **getSelection**: Get the text the user has currently selected");
