@@ -45,7 +45,16 @@ export interface Message {
   citations?: Citation[];
   toolCalls?: ToolCall[];
   reasoning?: ReasoningStep[];
+  partsOrder?: PartsOrderEntry[];
   createdAt: number;
+}
+
+/** Records the order of parts as they appeared during streaming */
+export interface PartsOrderEntry {
+  type: "text" | "reasoning" | "tool_call" | "citation";
+  id: string;
+  /** For text parts, stores the text content so we can reconstruct separate text segments */
+  text?: string;
 }
 
 export interface Thread {

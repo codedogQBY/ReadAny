@@ -150,6 +150,13 @@ export function useStreamingChat(options?: StreamingChatOptions) {
                 timestamp: p.createdAt,
               }));
 
+            // Build partsOrder to preserve the exact sequence of parts
+            const partsOrder = currentParts.map((p) => ({
+              type: p.type as "text" | "reasoning" | "tool_call" | "citation",
+              id: p.id,
+              ...(p.type === "text" ? { text: (p as TextPart).text } : {}),
+            }));
+
             // Create assistant message compatible with database schema
             const assistantMessage = {
               id: messageId,
@@ -166,6 +173,7 @@ export function useStreamingChat(options?: StreamingChatOptions) {
                   status: (p as ToolCallPart).status,
                 })),
               reasoning: reasoning.length > 0 ? reasoning : undefined,
+              partsOrder: partsOrder.length > 0 ? partsOrder : undefined,
               createdAt: Date.now(),
             };
 
@@ -188,6 +196,9 @@ export function useStreamingChat(options?: StreamingChatOptions) {
             setStreaming(false);
           },
           onToolCall: (name, args) => {
+            // Reset currentTextPart so text before tool calls becomes a separate part
+            // from text after tool calls, preserving correct display order
+            currentTextPart = null;
             currentToolCallPart = createToolCallPart(name, args);
             currentParts.push(currentToolCallPart);
             setState((prev) => ({
@@ -206,6 +217,8 @@ export function useStreamingChat(options?: StreamingChatOptions) {
               part.result = result;
               part.status = "completed";
               part.updatedAt = Date.now();
+              // Reset currentTextPart so text after tool results becomes a new part
+              currentTextPart = null;
               setState((prev) => ({
                 ...prev,
                 currentMessage: prev.currentMessage

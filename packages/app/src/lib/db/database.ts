@@ -188,6 +188,11 @@ export async function initDatabase(): Promise<void> {
   } catch {
     // Column already exists, ignore
   }
+  try {
+    await database.execute("ALTER TABLE messages ADD COLUMN parts_order TEXT");
+  } catch {
+    // Column already exists, ignore
+  }
 
   dbInitialized = true;
 }
@@ -704,6 +709,7 @@ export async function getMessages(threadId: string): Promise<Message[]> {
       citations: string | null;
       tool_calls: string | null;
       reasoning: string | null;
+      parts_order: string | null;
       created_at: number;
     }>
   >("SELECT * FROM messages WHERE thread_id = ? ORDER BY created_at ASC", [threadId]);
@@ -715,6 +721,7 @@ export async function getMessages(threadId: string): Promise<Message[]> {
     citations: parseJSON(r.citations, undefined),
     toolCalls: parseJSON(r.tool_calls, undefined),
     reasoning: parseJSON(r.reasoning, undefined),
+    partsOrder: parseJSON(r.parts_order, undefined),
     createdAt: r.created_at,
   }));
 }
@@ -722,7 +729,7 @@ export async function getMessages(threadId: string): Promise<Message[]> {
 export async function insertMessage(message: Message): Promise<void> {
   const database = await getDB();
   await database.execute(
-    "INSERT INTO messages (id, thread_id, role, content, citations, tool_calls, reasoning, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO messages (id, thread_id, role, content, citations, tool_calls, reasoning, parts_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
       message.id,
       message.threadId,
@@ -731,6 +738,7 @@ export async function insertMessage(message: Message): Promise<void> {
       message.citations ? JSON.stringify(message.citations) : null,
       message.toolCalls ? JSON.stringify(message.toolCalls) : null,
       message.reasoning ? JSON.stringify(message.reasoning) : null,
+      (message as any).partsOrder ? JSON.stringify((message as any).partsOrder) : null,
       message.createdAt,
     ],
   );

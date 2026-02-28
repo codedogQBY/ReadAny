@@ -125,6 +125,76 @@ function EmptyState({ onSuggestionClick }: { onSuggestionClick: (text: string) =
 
 function convertToMessageV2(messages: any[]): MessageV2[] {
   return messages.map((m) => {
+    // If partsOrder is available, use it to reconstruct parts in the correct order
+    if (m.partsOrder && Array.isArray(m.partsOrder) && m.partsOrder.length > 0) {
+      const parts: any[] = [];
+      const reasoningMap = new Map<string, any>();
+      const toolCallMap = new Map<string, any>();
+
+      if (m.reasoning) {
+        for (const r of m.reasoning) {
+          reasoningMap.set(r.id || `reasoning-${r.timestamp}`, r);
+        }
+      }
+      if (m.toolCalls) {
+        for (const tc of m.toolCalls) {
+          toolCallMap.set(tc.id, tc);
+        }
+      }
+
+      for (const entry of m.partsOrder) {
+        switch (entry.type) {
+          case "text":
+            parts.push({
+              id: entry.id,
+              type: "text",
+              text: entry.text || m.content,
+              status: "completed",
+              createdAt: m.createdAt,
+            });
+            break;
+          case "reasoning": {
+            const r = reasoningMap.get(entry.id);
+            if (r) {
+              parts.push({
+                id: entry.id,
+                type: "reasoning",
+                text: r.content,
+                thinkingType: r.type,
+                status: "completed",
+                createdAt: r.timestamp || m.createdAt,
+              });
+            }
+            break;
+          }
+          case "tool_call": {
+            const tc = toolCallMap.get(entry.id);
+            if (tc) {
+              parts.push({
+                id: tc.id,
+                type: "tool_call",
+                name: tc.name,
+                args: tc.args,
+                result: tc.result,
+                status: tc.status || "completed",
+                createdAt: m.createdAt,
+              });
+            }
+            break;
+          }
+        }
+      }
+
+      return {
+        id: m.id,
+        threadId: m.threadId,
+        role: m.role,
+        parts,
+        createdAt: m.createdAt,
+      };
+    }
+
+    // Fallback: legacy format without partsOrder
     const parts: any[] = [];
     
     // Add reasoning parts
