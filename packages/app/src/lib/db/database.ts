@@ -436,6 +436,26 @@ export async function getHighlights(bookId: string): Promise<Highlight[]> {
   }));
 }
 
+/** Get all highlights across all books (for general chat without bookId) */
+export async function getAllHighlights(limit = 50): Promise<Highlight[]> {
+  const database = await getDB();
+  const rows = await database.select<HighlightRow[]>(
+    "SELECT * FROM highlights ORDER BY created_at DESC LIMIT ?",
+    [limit],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    bookId: r.book_id,
+    cfi: r.cfi,
+    text: r.text,
+    color: r.color as Highlight["color"],
+    note: r.note || undefined,
+    chapterTitle: r.chapter_title || undefined,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
+}
+
 export async function insertHighlight(highlight: Highlight): Promise<void> {
   const database = await getDB();
   await database.execute(
@@ -502,6 +522,37 @@ export async function getNotes(bookId: string): Promise<Note[]> {
       updated_at: number;
     }>
   >("SELECT * FROM notes WHERE book_id = ? ORDER BY created_at DESC", [bookId]);
+  return rows.map((r) => ({
+    id: r.id,
+    bookId: r.book_id,
+    highlightId: r.highlight_id || undefined,
+    cfi: r.cfi || undefined,
+    title: r.title,
+    content: r.content,
+    chapterTitle: r.chapter_title || undefined,
+    tags: parseJSON(r.tags, []),
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
+}
+
+/** Get all notes across all books (for general chat without bookId) */
+export async function getAllNotes(limit = 50): Promise<Note[]> {
+  const database = await getDB();
+  const rows = await database.select<
+    Array<{
+      id: string;
+      book_id: string;
+      highlight_id: string | null;
+      cfi: string | null;
+      title: string;
+      content: string;
+      chapter_title: string | null;
+      tags: string;
+      created_at: number;
+      updated_at: number;
+    }>
+  >("SELECT * FROM notes ORDER BY created_at DESC LIMIT ?", [limit]);
   return rows.map((r) => ({
     id: r.id,
     bookId: r.book_id,

@@ -1,4 +1,4 @@
-import { getChunks, getHighlights, getNotes } from "@/lib/db/database";
+import { getChunks, getHighlights, getNotes, getBooks, getAllHighlights, getAllNotes, getReadingSessionsByDateRange } from "@/lib/db/database";
 import { search } from "@/lib/rag/search";
 import { getContextTools } from "./context-tools";
 /**
@@ -488,6 +488,163 @@ function createCompareSectionsTool(bookId: string): ToolDefinition {
   };
 }
 
+// ============================================
+// General Tools (no bookId required)
+// ============================================
+
+/** List all books in the user's library */
+function createListBooksTool(): ToolDefinition {
+  return {
+    name: "listBooks",
+    description:
+      "List all books in the user's library, including titles, authors, reading progress, and basic metadata. Use this when the user asks about their books, reading list, or library.",
+    parameters: {
+      limit: {
+        type: "number",
+        description: "Maximum number of books to return (default: 20)",
+      },
+    },
+    execute: async (args) => {
+      const limit = (args.limit as number) || 20;
+      const books = await getBooks();
+      const result = books.slice(0, limit).map((b) => ({
+        id: b.id,
+        title: b.meta.title,
+        author: b.meta.author,
+        format: b.format,
+        progress: b.progress,
+        isVectorized: b.isVectorized,
+        addedAt: b.addedAt,
+        lastOpenedAt: b.lastOpenedAt,
+      }));
+      return { total: books.length, books: result };
+    },
+  };
+}
+
+/** Search highlights across all books */
+function createSearchAllHighlightsTool(): ToolDefinition {
+  return {
+    name: "searchAllHighlights",
+    description:
+      "Get the user's recent highlights and annotations across ALL books. Use this when the user asks about their highlights, marked passages, or important notes without specifying a particular book.",
+    parameters: {
+      limit: {
+        type: "number",
+        description: "Maximum number of highlights to return (default: 20)",
+      },
+    },
+    execute: async (args) => {
+      const limit = (args.limit as number) || 20;
+      const highlights = await getAllHighlights(limit);
+      const books = await getBooks();
+      const bookMap = new Map(books.map((b) => [b.id, b.meta.title]));
+
+      return {
+        total: highlights.length,
+        highlights: highlights.map((h) => ({
+          text: h.text,
+          note: h.note,
+          bookTitle: bookMap.get(h.bookId) || "Unknown",
+          chapterTitle: h.chapterTitle,
+          color: h.color,
+          createdAt: h.createdAt,
+        })),
+      };
+    },
+  };
+}
+
+/** Search notes across all books */
+function createSearchAllNotesTool(): ToolDefinition {
+  return {
+    name: "searchAllNotes",
+    description:
+      "Get the user's notes across ALL books. Use this when the user asks about their notes, thoughts, or writings without specifying a particular book.",
+    parameters: {
+      limit: {
+        type: "number",
+        description: "Maximum number of notes to return (default: 20)",
+      },
+    },
+    execute: async (args) => {
+      const limit = (args.limit as number) || 20;
+      const notes = await getAllNotes(limit);
+      const books = await getBooks();
+      const bookMap = new Map(books.map((b) => [b.id, b.meta.title]));
+
+      return {
+        total: notes.length,
+        notes: notes.map((n) => ({
+          title: n.title,
+          content: n.content,
+          bookTitle: bookMap.get(n.bookId) || "Unknown",
+          chapterTitle: n.chapterTitle,
+          tags: n.tags,
+          createdAt: n.createdAt,
+        })),
+      };
+    },
+  };
+}
+
+/** Get reading statistics across all books */
+function createReadingStatsTool(): ToolDefinition {
+  return {
+    name: "getReadingStats",
+    description:
+      "Get the user's reading statistics, including total books, reading time, and recent activity. Use this when the user asks about their reading habits, statistics, or activity summary.",
+    parameters: {
+      days: {
+        type: "number",
+        description: "Number of recent days to include for activity stats (default: 30)",
+      },
+    },
+    execute: async (args) => {
+      const days = (args.days as number) || 30;
+      const books = await getBooks();
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      const sessions = await getReadingSessionsByDateRange(startDate, endDate);
+
+      const totalReadingTimeMs = sessions.reduce((sum, s) => sum + s.totalActiveTime, 0);
+      const totalPagesRead = sessions.reduce((sum, s) => sum + s.pagesRead, 0);
+      const booksInProgress = books.filter((b) => b.progress > 0 && b.progress < 1);
+      const booksCompleted = books.filter((b) => b.progress >= 1);
+
+      return {
+        library: {
+          totalBooks: books.length,
+          inProgress: booksInProgress.length,
+          completed: booksCompleted.length,
+        },
+        recentActivity: {
+          periodDays: days,
+          totalSessions: sessions.length,
+          totalReadingMinutes: Math.round(totalReadingTimeMs / 60000),
+          totalPagesRead,
+        },
+        recentBooks: books.slice(0, 5).map((b) => ({
+          title: b.meta.title,
+          author: b.meta.author,
+          progress: Math.round((b.progress || 0) * 100),
+        })),
+      };
+    },
+  };
+}
+
+/** Get general (non-book-specific) tools */
+function getGeneralTools(): ToolDefinition[] {
+  return [
+    createListBooksTool(),
+    createSearchAllHighlightsTool(),
+    createSearchAllNotesTool(),
+    createReadingStatsTool(),
+  ];
+}
+
 /** Get available tools based on current state */
 export function getAvailableTools(options: {
   bookId?: string | null;
@@ -495,6 +652,9 @@ export function getAvailableTools(options: {
   enabledSkills: Skill[];
 }): ToolDefinition[] {
   const tools: ToolDefinition[] = [];
+
+  // General tools are always available (no bookId required)
+  tools.push(...getGeneralTools());
 
   if (options.bookId) {
     // Context tools (always available when book is loaded)
