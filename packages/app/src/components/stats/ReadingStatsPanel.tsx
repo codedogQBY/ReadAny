@@ -7,16 +7,23 @@ import { BookOpen, Clock, Flame, TrendingUp } from "lucide-react";
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useAppStore } from "@/stores/app-store";
+import { useReadingSessionStore } from "@/stores/reading-session-store";
 
 export function ReadingStatsPanel() {
   const { t, i18n } = useTranslation();
+  const activeTabId = useAppStore((s) => s.activeTabId);
+  const saveCurrentSession = useReadingSessionStore((s) => s.saveCurrentSession);
   const [dailyStats, setDailyStats] = useState<DailyStats[]>([]);
   const [overall, setOverall] = useState<OverallStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadStats();
-  }, []);
+    if (activeTabId === "stats") {
+      // Flush any in-memory reading session to DB before loading stats
+      saveCurrentSession().then(() => loadStats());
+    }
+  }, [activeTabId]);
 
   const loadStats = async () => {
     setLoading(true);

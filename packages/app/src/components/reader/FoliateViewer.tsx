@@ -319,13 +319,15 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
     const hexColor = colorMap[color] || colorMap.yellow;
     
     // Check writing mode for vertical text support
+    let writingMode = "horizontal-tb";
     let vertical = false;
     if (doc && range) {
       try {
         const node = range.startContainer;
         const el = node.nodeType === 1 ? node : node.parentElement;
         if (el && doc.defaultView) {
-          const { writingMode } = doc.defaultView.getComputedStyle(el);
+          const style = doc.defaultView.getComputedStyle(el);
+          writingMode = style.writingMode || "horizontal-tb";
           vertical = writingMode?.includes("vertical") || false;
         }
       } catch {
@@ -333,8 +335,29 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       }
     }
     
-    // Draw the highlight using Overlayer
-    draw(Overlayer.highlight, { color: hexColor, vertical });
+    // If annotation has a note, only draw wavy underline (no highlight background)
+    if (annotation.note) {
+      // Black wavy underline to indicate note presence — no highlight color
+      draw(Overlayer.squiggly, { color: '#000000', width: 1.5, writingMode });
+      // Hover tooltip
+      if (doc && range) {
+        try {
+          createNoteTooltip(doc, range, annotation.note, annotation.value);
+        } catch {
+          // Ignore tooltip creation errors
+        }
+      }
+    } else {
+      // Draw regular highlight
+      draw(Overlayer.highlight, { color: hexColor, vertical });
+    }
+  }, []);
+
+  // --- Delete annotation handler ---
+  // Clean up tooltip registry when an annotation is removed
+  const deleteAnnotationHandler = useCallback((event: Event) => {
+    const { value, doc } = (event as CustomEvent).detail;
+    if (value && doc) removeNoteTooltip(doc, value);
   }, []);
 
   // --- Show annotation handler ---
@@ -520,6 +543,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         view.addEventListener("load", docLoadHandler);
         view.addEventListener("relocate", relocateHandler);
         view.addEventListener("draw-annotation", drawAnnotationHandler);
+        view.addEventListener("delete-annotation", deleteAnnotationHandler);
         view.addEventListener("show-annotation", showAnnotationHandler);
         setViewReady(true);
 
@@ -705,4 +729,169 @@ function applyRendererStyles(
     img: { "max-width": "100%", height: "auto" },
     "::selection": { background: "rgba(59, 130, 246, 0.3)" },
   });
+}
+
+/**
+ * Note tooltip system — uses event delegation with real-time position calculation.
+ * No fixed-position hover divs; works correctly after resize/reflow.
+ */
+const NOTE_TOOLTIP_STYLES = `
+  .foliate-note-tooltip {
+    position: absolute;
+    z-index: 9999;
+    max-width: 320px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.95);
+    color: #f1f5f9;
+    font-size: 13px;
+    line-height: 1.5;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25), 0 2px 8px rgba(0,0,0,0.15);
+    backdrop-filter: blur(8px);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    word-break: break-word;
+    white-space: pre-wrap;
+    border: 1px solid rgba(100, 116, 139, 0.3);
+  }
+  .foliate-note-tooltip.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .foliate-note-tooltip::before {
+    content: '';
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 6px solid rgba(15, 23, 42, 0.95);
+  }
+  .foliate-note-tooltip.below::before {
+    top: -6px; bottom: auto;
+    border-top: none;
+    border-bottom: 6px solid rgba(15, 23, 42, 0.95);
+  }
+  .foliate-note-tooltip .note-content {
+    display: -webkit-box;
+    -webkit-line-clamp: 6;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+`;
+
+// Per-doc registry: cfi -> { range, note }
+const docNoteRegistries = new WeakMap<Document, Map<string, { range: Range; note: string }>>();
+
+function ensureNoteTooltipSystem(doc: Document) {
+  if (doc.getElementById('foliate-note-tooltip-styles')) return;
+
+  // Inject styles
+  const style = doc.createElement('style');
+  style.id = 'foliate-note-tooltip-styles';
+  style.textContent = NOTE_TOOLTIP_STYLES;
+  doc.head.appendChild(style);
+
+  // Create shared tooltip element
+  const tooltip = doc.createElement('div');
+  tooltip.className = 'foliate-note-tooltip';
+  tooltip.id = 'foliate-note-shared-tooltip';
+  const content = doc.createElement('div');
+  content.className = 'note-content';
+  tooltip.appendChild(content);
+  doc.body.appendChild(tooltip);
+
+  let activeCfi: string | null = null;
+  let hideTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const showTooltip = (note: string, range: Range) => {
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+    content.textContent = note;
+    tooltip.classList.remove('below');
+    // Make visible off-screen to measure
+    tooltip.style.left = '-9999px';
+    tooltip.style.top = '-9999px';
+    tooltip.classList.add('visible');
+
+    // Get fresh rects from range (correct after resize)
+    const rects = range.getClientRects();
+    if (rects.length === 0) { tooltip.classList.remove('visible'); return; }
+    const firstRect = rects[0];
+    const scrollX = doc.defaultView?.scrollX || 0;
+    const scrollY = doc.defaultView?.scrollY || 0;
+    const tooltipW = tooltip.offsetWidth;
+    const tooltipH = tooltip.offsetHeight;
+    const viewW = doc.documentElement.clientWidth;
+
+    let left = firstRect.left + scrollX + firstRect.width / 2 - tooltipW / 2;
+    left = Math.max(8, Math.min(left, viewW - tooltipW - 8 + scrollX));
+    let top = firstRect.top + scrollY - tooltipH - 10;
+    if (top < scrollY + 8) {
+      // Show below
+      const lastRect = rects[rects.length - 1];
+      top = lastRect.bottom + scrollY + 10;
+      tooltip.classList.add('below');
+    }
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  };
+
+  const hideTooltip = () => {
+    hideTimer = setTimeout(() => {
+      tooltip.classList.remove('visible');
+      activeCfi = null;
+    }, 100);
+  };
+
+  // Check if a point is inside any rect of a range
+  const isPointInRange = (range: Range, x: number, y: number): boolean => {
+    for (const rect of range.getClientRects()) {
+      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // Event delegation on doc body
+  doc.addEventListener('mousemove', (e: MouseEvent) => {
+    const registry = docNoteRegistries.get(doc);
+    if (!registry || registry.size === 0) return;
+
+    let found: { cfi: string; range: Range; note: string } | null = null;
+    for (const [cfi, entry] of registry) {
+      if (isPointInRange(entry.range, e.clientX, e.clientY)) {
+        found = { cfi, ...entry };
+        break;
+      }
+    }
+
+    if (found) {
+      if (activeCfi !== found.cfi) {
+        activeCfi = found.cfi;
+        showTooltip(found.note, found.range);
+      }
+    } else if (activeCfi) {
+      hideTooltip();
+    }
+  });
+}
+
+function createNoteTooltip(doc: Document, range: Range, note: string, cfi?: string) {
+  if (!cfi) return;
+  ensureNoteTooltipSystem(doc);
+  let registry = docNoteRegistries.get(doc);
+  if (!registry) {
+    registry = new Map();
+    docNoteRegistries.set(doc, registry);
+  }
+  registry.set(cfi, { range, note });
+}
+
+function removeNoteTooltip(doc: Document, cfi: string) {
+  const registry = docNoteRegistries.get(doc);
+  if (registry) registry.delete(cfi);
 }

@@ -12,34 +12,22 @@
  */
 import { ChatPage as ChatPageComponent } from "@/components/chat/ChatPage";
 import { HomePage } from "@/components/home/HomePage";
+import { NotesPage } from "@/components/notes/NotesPage";
 import { ReaderView } from "@/components/reader/ReaderView";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { ReadingStatsPanel } from "@/components/stats/ReadingStatsPanel";
 import SkillsPage from "@/pages/Skills";
 import { useAppStore } from "@/stores/app-store";
 import { useReaderStore } from "@/stores/reader-store";
-import { Construction } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { useTranslation } from "react-i18next";
 import { HomeSidebar } from "./Sidebar";
 import { TabBar } from "./TabBar";
-
-function NotesPlaceholder() {
-  const { t } = useTranslation();
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 text-muted-foreground">
-      <Construction className="h-16 w-16" />
-      <h2 className="text-xl font-medium">{t("notes.title")}</h2>
-      <p className="text-sm">{t("notes.underDevelopment")}</p>
-    </div>
-  );
-}
 
 /** All home sub-views — each stays mounted and uses display:none to toggle. */
 const HOME_VIEWS: { id: string; Component: React.ComponentType }[] = [
   { id: "home", Component: HomePage },
   { id: "chat", Component: ChatPageComponent },
-  { id: "notes", Component: NotesPlaceholder },
+  { id: "notes", Component: NotesPage },
   { id: "skills", Component: SkillsPage },
   { id: "stats", Component: ReadingStatsPanel },
 ];

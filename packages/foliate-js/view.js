@@ -384,6 +384,8 @@ export class View extends HTMLElement {
         const { overlayer, doc } = obj;
         if (remove) {
           overlayer.remove(value);
+          overlayer.remove(`${value}::underline`);
+          overlayer.remove(`${value}::tooltip`);
           return;
         }
         const range = doc ? anchor(doc) : anchor;
@@ -409,9 +411,18 @@ export class View extends HTMLElement {
     if (obj) {
       const { overlayer, doc } = obj;
       overlayer.remove(value);
+      overlayer.remove(`${value}::underline`);
+      overlayer.remove(`${value}::tooltip`);
+      // Emit event to clean up HTML tooltip elements
+      if (remove) {
+        this.#emit("delete-annotation", { value, doc });
+      }
       if (!remove) {
         const range = doc ? anchor(doc) : anchor;
-        const draw = (func, opts) => overlayer.add(value, range, func, opts);
+        const draw = (func, opts, keySuffix) => {
+          const key = keySuffix ? `${value}::${keySuffix}` : value;
+          overlayer.add(key, range, func, opts);
+        };
         this.#emit("draw-annotation", { draw, annotation, doc, range });
       }
     }

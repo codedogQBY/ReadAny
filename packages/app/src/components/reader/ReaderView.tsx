@@ -28,11 +28,13 @@ import { throttle } from "@/lib/utils/throttle";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useReaderStore } from "@/stores/reader-store";
+import { useNotebookStore } from "@/stores/notebook-store";
 import type { HighlightColor } from "@/types";
 import { X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FooterBar } from "./FooterBar";
+import { NotebookPanel } from "./NotebookPanel";
 import { ReaderToolbar } from "./ReaderToolbar";
 import { SearchBar } from "./SearchBar";
 import { SelectionPopover } from "./SelectionPopover";
@@ -200,13 +202,13 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const loadAnnotations = useAnnotationStore((s) => s.loadAnnotations);
 
   // Track reading session for statistics
-  useReadingSession(bookId);
+  useReadingSession(bookId, tabId);
 
   // Ref to FoliateViewer imperative handle
   const foliateRef = useRef<FoliateViewerHandle>(null);
   
-  // Track which highlights have been rendered (id -> cfi) to avoid duplicates and enable removal
-  const renderedHighlightsRef = useRef<Map<string, string>>(new Map());
+  // Track which highlights have been rendered (id -> {cfi, note}) to detect changes
+  const renderedHighlightsRef = useRef<Map<string, { cfi: string; hasNote: boolean }>>(new Map());
   
   // Track when foliate is ready to receive annotations
   const [foliateReady, setFoliateReady] = useState(false);
@@ -231,22 +233,37 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       const currentIds = new Set(bookHighlights.map(h => h.id));
       
       // Remove highlights that are no longer in the store
-      for (const [id, cfi] of renderedHighlightsRef.current) {
+      for (const [id, data] of renderedHighlightsRef.current) {
         if (!currentIds.has(id)) {
-          foliateRef.current.deleteAnnotation({ value: cfi });
+          foliateRef.current.deleteAnnotation({ value: data.cfi });
           renderedHighlightsRef.current.delete(id);
         }
       }
       
-      // Add new highlights
+      // Add new highlights or update existing ones if note status changed
       for (const h of bookHighlights) {
-        if (h.cfi && !renderedHighlightsRef.current.has(h.id)) {
+        if (!h.cfi) continue;
+        
+        const existing = renderedHighlightsRef.current.get(h.id);
+        const hasNote = !!h.note;
+        
+        // Check if we need to re-render (new highlight or note status changed)
+        const needsRender = !existing || existing.hasNote !== hasNote;
+        
+        if (needsRender) {
+          // Remove old annotation if exists
+          if (existing) {
+            foliateRef.current.deleteAnnotation({ value: existing.cfi });
+          }
+          
+          // Add new/updated annotation
           foliateRef.current.addAnnotation({
             value: h.cfi,
             type: "highlight",
             color: h.color || "yellow",
+            note: h.note, // Pass note for wavy underline + tooltip
           });
-          renderedHighlightsRef.current.set(h.id, h.cfi);
+          renderedHighlightsRef.current.set(h.id, { cfi: h.cfi, hasNote });
         }
       }
     }, 100);
@@ -419,8 +436,9 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
             value: h.cfi,
             type: "highlight",
             color: h.color || "yellow",
+            note: h.note, // Pass note for wavy underline + tooltip
           });
-          renderedHighlightsRef.current.set(h.id, h.cfi);
+          renderedHighlightsRef.current.set(h.id, { cfi: h.cfi, hasNote: !!h.note });
         }
       }
       
@@ -498,27 +516,33 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       });
       
       // Track as rendered
-      renderedHighlightsRef.current.set(highlightId, selection.cfi);
+      renderedHighlightsRef.current.set(highlightId, { cfi: selection.cfi, hasNote: false });
     }
     setSelection(null);
   }, [selection, bookId, tab?.chapterTitle]);
 
+  // Handle note button - open notebook panel with pending note
   const handleNote = useCallback(() => {
-    if (selection) {
-      useAnnotationStore.getState().addNote({
-        id: crypto.randomUUID(),
-        bookId,
-        title: selection.text.slice(0, 50),
-        content: "",
-        cfi: selection.cfi || "",
-        chapterTitle: tab?.chapterTitle || undefined,
-        tags: [],
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
+    if (selection && selection.cfi) {
+      // Check if this selection is already highlighted
+      const existingHighlight = highlights.find(
+        h => h.bookId === bookId && h.cfi === selection.cfi
+      );
+      
+      if (existingHighlight) {
+        // Edit note on existing highlight
+        useNotebookStore.getState().startEditNote(existingHighlight);
+      } else {
+        // Start new note
+        useNotebookStore.getState().startNewNote({
+          text: selection.text,
+          cfi: selection.cfi,
+          chapterTitle: tab?.chapterTitle,
+        });
+      }
     }
     setSelection(null);
-  }, [selection, bookId, tab?.chapterTitle]);
+  }, [selection, bookId, highlights, tab?.chapterTitle]);
 
   const handleCopy = useCallback(() => {
     if (selection?.text) navigator.clipboard.writeText(selection.text);
@@ -717,6 +741,23 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
   return (
     <div className="flex h-full bg-muted/30 p-1">
+      {/* Notebook sidebar — LEFT side */}
+      <NotebookSidebarWrapper 
+        bookId={bookId} 
+        onGoToCfi={(cfi) => foliateRef.current?.goToCFI(cfi)}
+        onAddAnnotation={(cfi, color, note) => {
+          foliateRef.current?.addAnnotation({
+            value: cfi,
+            type: "highlight",
+            color,
+            note,
+          });
+        }}
+        onDeleteAnnotation={(cfi) => {
+          foliateRef.current?.deleteAnnotation({ value: cfi });
+        }}
+      />
+
       {/* Main reading area */}
       <div className="relative flex flex-1 flex-col overflow-hidden rounded-lg border border-border/60 bg-background shadow-sm">
         {/* Search bar — stacked above content when visible */}
@@ -893,7 +934,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
         )}
       </div>
 
-      {/* AI Chat sidebar */}
+      {/* AI Chat sidebar — RIGHT side */}
       {showChat && (
         <div className="ml-1 flex w-80 shrink-0 flex-col overflow-hidden rounded-lg border border-border/60 bg-background shadow-sm">
           <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/40 px-3">
@@ -913,6 +954,36 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Separate component to use notebook store hook
+function NotebookSidebarWrapper({ 
+  bookId, 
+  onGoToCfi,
+  onAddAnnotation,
+  onDeleteAnnotation,
+}: { 
+  bookId: string; 
+  onGoToCfi: (cfi: string) => void;
+  onAddAnnotation: (cfi: string, color: string, note?: string) => void;
+  onDeleteAnnotation: (cfi: string) => void;
+}) {
+  const isOpen = useNotebookStore((s) => s.isOpen);
+  const closeNotebook = useNotebookStore((s) => s.closeNotebook);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="mr-1 flex w-80 shrink-0 flex-col overflow-hidden rounded-lg border border-border/60 bg-background shadow-sm">
+      <NotebookPanel 
+        bookId={bookId} 
+        onClose={closeNotebook}
+        onGoToCfi={onGoToCfi}
+        onAddAnnotation={onAddAnnotation}
+        onDeleteAnnotation={onDeleteAnnotation}
+      />
     </div>
   );
 }

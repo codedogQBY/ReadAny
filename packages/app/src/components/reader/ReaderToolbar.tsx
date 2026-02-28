@@ -2,14 +2,14 @@ import { Button } from "@/components/ui/button";
 import type { TOCItem } from "./FoliateViewer";
 import { useAppStore } from "@/stores/app-store";
 import { useReaderStore } from "@/stores/reader-store";
+import { useNotebookStore } from "@/stores/notebook-store";
 import {
   ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
   List,
   MessageSquare,
   Search,
   Settings,
+  StickyNote,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -32,8 +32,8 @@ interface ReaderToolbarProps {
 export function ReaderToolbar({
   tabId,
   isVisible,
-  onPrev,
-  onNext,
+  onPrev: _onPrev,
+  onNext: _onNext,
   tocItems: _tocItems = [],
   onGoToChapter: _onGoToChapter,
   onToggleSearch,
@@ -47,6 +47,7 @@ export function ReaderToolbar({
   const { t } = useTranslation();
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const tab = useReaderStore((s) => s.tabs[tabId]);
+  const { isOpen: isNotebookOpen, toggleNotebook } = useNotebookStore();
 
   if (!tab) return null;
 
@@ -67,7 +68,7 @@ export function ReaderToolbar({
             : "-translate-y-full opacity-0 pointer-events-none"
         }`}
       >
-        {/* Left: back + TOC + nav */}
+        {/* Left: back + TOC + notebook */}
         <div className="flex items-center gap-0.5">
           <Button
             variant="ghost"
@@ -91,11 +92,14 @@ export function ReaderToolbar({
             <List className="h-3.5 w-3.5" />
           </Button>
 
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onPrev}>
-            <ChevronLeft className="h-3.5 w-3.5" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onNext}>
-            <ChevronRight className="h-3.5 w-3.5" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className={`h-7 w-7 ${isNotebookOpen ? "bg-primary/10 text-primary" : ""}`}
+            onClick={toggleNotebook}
+            title={t("notebook.title")}
+          >
+            <StickyNote className="h-3.5 w-3.5" />
           </Button>
         </div>
 

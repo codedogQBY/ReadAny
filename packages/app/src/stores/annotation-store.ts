@@ -1,15 +1,26 @@
 import type { Bookmark, Highlight, HighlightColor, Note } from "@/types";
 import * as db from "@/lib/db/database";
+import type { HighlightWithBook } from "@/lib/db/database";
 /**
  * Annotation store — highlights, notes, bookmarks management
  * Connected to SQLite for persistence
  */
 import { create } from "zustand";
 
+export interface HighlightStats {
+  totalHighlights: number;
+  highlightsWithNotes: number;
+  totalBooks: number;
+  colorDistribution: Record<string, number>;
+  recentCount: number;
+}
+
 export interface AnnotationState {
   highlights: Highlight[];
+  highlightsWithBooks: HighlightWithBook[];
   notes: Note[];
   bookmarks: Bookmark[];
+  stats: HighlightStats | null;
 
   // Actions
   setHighlights: (highlights: Highlight[]) => void;
@@ -28,12 +39,17 @@ export interface AnnotationState {
   removeBookmark: (id: string) => void;
 
   loadAnnotations: (bookId: string) => Promise<void>;
+  loadAllHighlights: (limit?: number) => Promise<void>;
+  loadAllHighlightsWithBooks: (limit?: number) => Promise<void>;
+  loadStats: () => Promise<void>;
 }
 
 export const useAnnotationStore = create<AnnotationState>((set) => ({
   highlights: [],
+  highlightsWithBooks: [],
   notes: [],
   bookmarks: [],
+  stats: null,
 
   setHighlights: (highlights) => set({ highlights }),
   addHighlight: (highlight) => {
@@ -119,6 +135,33 @@ export const useAnnotationStore = create<AnnotationState>((set) => ({
       set({ highlights, notes, bookmarks });
     } catch (err) {
       console.error("Failed to load annotations:", err);
+    }
+  },
+
+  loadAllHighlights: async (limit = 500) => {
+    try {
+      const highlights = await db.getAllHighlights(limit);
+      set({ highlights });
+    } catch (err) {
+      console.error("Failed to load all highlights:", err);
+    }
+  },
+
+  loadAllHighlightsWithBooks: async (limit = 500) => {
+    try {
+      const highlightsWithBooks = await db.getAllHighlightsWithBooks(limit);
+      set({ highlightsWithBooks });
+    } catch (err) {
+      console.error("Failed to load highlights with books:", err);
+    }
+  },
+
+  loadStats: async () => {
+    try {
+      const stats = await db.getHighlightStats();
+      set({ stats });
+    } catch (err) {
+      console.error("Failed to load highlight stats:", err);
     }
   },
 }));
