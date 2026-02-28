@@ -19,9 +19,11 @@ export interface ReadingSessionState {
   updateActiveTime: () => void;
   incrementPagesRead: (count: number) => void;
   loadStats: (bookId: string) => Promise<void>;
+  /** Save current session to DB without stopping (for periodic saves) */
+  saveCurrentSession: () => Promise<void>;
 }
 
-export const useReadingSessionStore = create<ReadingSessionState>((set) => ({
+export const useReadingSessionStore = create<ReadingSessionState>((set, get) => ({
   currentSession: null,
   sessionState: "STOPPED",
   stats: null,
@@ -56,7 +58,7 @@ export const useReadingSessionStore = create<ReadingSessionState>((set) => ({
 
   stopSession: () =>
     set((state) => {
-      if (state.currentSession) {
+      if (state.currentSession && state.currentSession.totalActiveTime > 0) {
         const session = {
           ...state.currentSession,
           state: "STOPPED" as const,
@@ -89,6 +91,34 @@ export const useReadingSessionStore = create<ReadingSessionState>((set) => ({
           }
         : null,
     })),
+
+  saveCurrentSession: async () => {
+    const { currentSession } = get();
+    if (currentSession && currentSession.totalActiveTime > 0) {
+      try {
+        // Save a snapshot of current session
+        const session = {
+          ...currentSession,
+          endedAt: Date.now(),
+        };
+        await db.insertReadingSession(session);
+        
+        // Start a new session to continue tracking
+        // Keep the same bookId but reset timing
+        set({
+          currentSession: {
+            ...currentSession,
+            id: crypto.randomUUID(),
+            startedAt: Date.now(),
+            totalActiveTime: 0,
+            pagesRead: 0,
+          },
+        });
+      } catch (err) {
+        console.error("Failed to save reading session:", err);
+      }
+    }
+  },
 
   loadStats: async (bookId) => {
     try {
