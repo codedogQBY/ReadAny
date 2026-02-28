@@ -20,7 +20,6 @@ interface MessageListProps {
 const BOTTOM_THRESHOLD = 80;
 
 export function MessageList({ messages, onCitationClick, isStreaming, currentStep }: MessageListProps) {
-  const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   /** Whether the user has intentionally scrolled away from the bottom */
   const [showScrollDown, setShowScrollDown] = useState(false);
@@ -34,7 +33,17 @@ export function MessageList({ messages, onCitationClick, isStreaming, currentSte
   }, []);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
-    bottomRef.current?.scrollIntoView({ behavior });
+    const el = containerRef.current;
+    if (!el) return;
+    
+    if (behavior === "smooth") {
+      el.scrollTo({
+        top: el.scrollHeight,
+        behavior: "smooth",
+      });
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
   }, []);
 
   // Listen to scroll events to detect if user scrolled away
@@ -106,7 +115,6 @@ export function MessageList({ messages, onCitationClick, isStreaming, currentSte
         {showStreamingIndicator && (
           <StreamingIndicator step={currentStep!} />
         )}
-        <div ref={bottomRef} />
       </div>
 
       {/* Sticky scroll-to-bottom button — stays at visible bottom of scroll container */}

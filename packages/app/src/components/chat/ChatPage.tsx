@@ -210,29 +210,24 @@ export function ChatPage() {
         </div>
       </div>
       <div className="flex flex-1 flex-col overflow-hidden">
-        {allMessages.length > 0 ? (
-          <>
-            <div className="flex-1 overflow-hidden">
-              <MessageList 
-                messages={allMessages} 
-                isStreaming={isStreaming}
-                currentStep={currentStep}
-                onStop={stopStream}
-              />
-            </div>
-
-            <div className="shrink-0 px-4 pb-3 pt-2">
-              <ChatInput onSend={handleSend} disabled={isStreaming} />
-            </div>
-          </>
-        ) : (
-          <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Message list or empty state - consistent container structure */}
+        <div className="flex-1 overflow-hidden">
+          {allMessages.length > 0 ? (
+            <MessageList 
+              messages={allMessages} 
+              isStreaming={isStreaming}
+              currentStep={currentStep}
+              onStop={stopStream}
+            />
+          ) : (
             <EmptyState onSuggestionClick={handleSend} />
-            <div className="shrink-0 px-4 pb-3 pt-2">
-              <ChatInput onSend={handleSend} disabled={isStreaming} />
-            </div>
-          </div>
-        )}
+          )}
+        </div>
+
+        {/* Input always at bottom with consistent position */}
+        <div className="shrink-0 px-4 pb-3 pt-2">
+          <ChatInput onSend={handleSend} disabled={isStreaming} />
+        </div>
       </div>
     </div>
   );
