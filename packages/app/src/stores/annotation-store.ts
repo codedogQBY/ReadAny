@@ -61,6 +61,7 @@ export const useAnnotationStore = create<AnnotationState>((set) => ({
   updateHighlight: (id, updates) => {
     set((state) => ({
       highlights: state.highlights.map((h) => (h.id === id ? { ...h, ...updates } : h)),
+      highlightsWithBooks: state.highlightsWithBooks.map((h) => (h.id === id ? { ...h, ...updates } : h)),
     }));
     db.updateHighlight(id, updates).catch((err) =>
       console.error("Failed to update highlight:", err),
@@ -69,6 +70,7 @@ export const useAnnotationStore = create<AnnotationState>((set) => ({
   removeHighlight: (id) => {
     set((state) => ({
       highlights: state.highlights.filter((h) => h.id !== id),
+      highlightsWithBooks: state.highlightsWithBooks.filter((h) => h.id !== id),
     }));
     db.deleteHighlight(id).catch((err) =>
       console.error("Failed to delete highlight:", err),

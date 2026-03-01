@@ -726,6 +726,19 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     [highlights, bookId],
   );
 
+  // Handle show-note-panel event (user clicked on wavy underline with note)
+  const handleShowNotePanel = useCallback(
+    (cfi: string) => {
+      // Find the highlight with this CFI
+      const highlight = highlights.find((h) => h.bookId === bookId && h.cfi === cfi);
+      if (!highlight) return;
+
+      // Start editing this highlight's note (this also opens the notebook panel)
+      useNotebookStore.getState().startEditNote(highlight);
+    },
+    [highlights, bookId],
+  );
+
   const handleTranslate = useCallback(() => {
     if (selection?.text) {
       setTranslationText(selection.text);
@@ -890,6 +903,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
                 onError={handleError}
                 onSelection={handleSelection}
                 onShowAnnotation={handleShowAnnotation}
+                onShowNotePanel={handleShowNotePanel}
                 onToggleSearch={handleToggleSearch}
                 onToggleToc={handleToggleToc}
                 onToggleChat={handleToggleChat}

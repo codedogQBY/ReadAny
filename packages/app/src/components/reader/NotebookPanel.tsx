@@ -1,7 +1,7 @@
 /**
  * NotebookPanel — left sidebar for viewing and editing notes/highlights
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { 
   X, 
@@ -18,8 +18,10 @@ import { useNotebookStore } from "@/stores/notebook-store";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import type { Highlight, HighlightColor } from "@/types";
 import { HIGHLIGHT_COLOR_HEX } from "@/types";
-import { Textarea } from "@/components/ui/textarea";
+import { MarkdownEditor } from "@/components/ui/markdown-editor";
 import { Button } from "@/components/ui/button";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface NotebookPanelProps {
   bookId: string;
@@ -31,7 +33,6 @@ interface NotebookPanelProps {
 
 export function NotebookPanel({ bookId, onClose, onGoToCfi, onAddAnnotation, onDeleteAnnotation }: NotebookPanelProps) {
   const { t } = useTranslation();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   
   const { 
     pendingNote, 
@@ -71,11 +72,8 @@ export function NotebookPanel({ bookId, onClose, onGoToCfi, onAddAnnotation, onD
       // Check for saved draft
       const draft = getDraft(pendingNote.text);
       setNoteContent(draft || pendingNote.existingNote || "");
-      // Focus textarea
-      setTimeout(() => textareaRef.current?.focus(), 100);
     } else if (editingHighlight) {
       setNoteContent(editingHighlight.note || "");
-      setTimeout(() => textareaRef.current?.focus(), 100);
     }
   }, [pendingNote, editingHighlight, getDraft]);
 
@@ -232,12 +230,12 @@ export function NotebookPanel({ bookId, onClose, onGoToCfi, onAddAnnotation, onD
             </div>
 
             {/* Note input */}
-            <Textarea
-              ref={textareaRef}
+            <MarkdownEditor
               value={noteContent}
-              onChange={(e) => setNoteContent(e.target.value)}
+              onChange={setNoteContent}
               placeholder={t("notebook.addNote")}
-              className="min-h-[120px] resize-none text-sm"
+              className="min-h-[120px]"
+              autoFocus
             />
 
             {/* Actions */}
@@ -390,9 +388,11 @@ function HighlightNoteItem({ highlight, onClick, onEdit, onDeleteNote, isActive 
             "{highlight.text}"
           </p>
           {highlight.note && (
-            <p className="mt-1.5 text-xs text-muted-foreground line-clamp-2 bg-muted/50 rounded px-2 py-1">
-              {highlight.note}
-            </p>
+            <div className="mt-1.5 text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1.5 prose prose-xs dark:prose-invert max-w-none">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {highlight.note}
+              </ReactMarkdown>
+            </div>
           )}
           {highlight.chapterTitle && (
             <p className="mt-1 text-xs text-muted-foreground/70">

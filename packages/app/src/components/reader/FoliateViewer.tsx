@@ -26,6 +26,7 @@ import type { ViewSettings } from "@/types";
 import { readingContextService } from "@/lib/ai/reading-context-service";
 import { Overlayer } from "foliate-js/overlayer.js";
 import { getFontTheme } from "@/lib/reader/font-themes";
+import { marked } from "marked";
 
 // Polyfills required by foliate-js
 // biome-ignore lint: polyfill for foliate-js
@@ -131,6 +132,7 @@ interface FoliateViewerProps {
   onError?: (error: Error) => void;
   onSelection?: (selection: BookSelection | null) => void;
   onShowAnnotation?: (cfi: string, range: Range, index: number) => void;
+  onShowNotePanel?: (cfi: string) => void;
   onToggleSearch?: () => void;
   onToggleToc?: () => void;
   onToggleChat?: () => void;
@@ -151,6 +153,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       onError,
       onSelection,
       onShowAnnotation,
+      onShowNotePanel,
       onToggleSearch,
       onToggleToc,
       onToggleChat,
@@ -373,6 +376,8 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
 
       // If annotation has a note, only draw wavy underline (no highlight background)
       if (annotation.note) {
+        // Track that this CFI has a note
+        cfisWithNotes.add(annotation.value);
         // Black wavy underline to indicate note presence — no highlight color
         draw(Overlayer.squiggly, { color: "#000000", width: 1.5, writingMode });
         // Hover tooltip
@@ -384,6 +389,8 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           }
         }
       } else {
+        // No note - remove from tracking set if present
+        cfisWithNotes.delete(annotation.value);
         // Draw regular highlight
         draw(Overlayer.highlight, { color: hexColor, vertical });
       }
@@ -393,7 +400,10 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
     // Clean up tooltip registry when an annotation is removed
     const deleteAnnotationHandler = useCallback((event: Event) => {
       const { value, doc } = (event as CustomEvent).detail;
-      if (value && doc) removeNoteTooltip(doc, value);
+      if (value) {
+        cfisWithNotes.delete(value);
+        if (doc) removeNoteTooltip(doc, value);
+      }
     }, []);
 
     // --- Show annotation handler ---
@@ -401,11 +411,26 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
     const onShowAnnotationRef = useRef(onShowAnnotation);
     onShowAnnotationRef.current = onShowAnnotation;
 
+    // --- Show note panel handler ---
+    // This is called when user clicks on a wavy underline (note annotation)
+    const onShowNotePanelRef = useRef(onShowNotePanel);
+    onShowNotePanelRef.current = onShowNotePanel;
+
     const showAnnotationHandler = useCallback((event: Event) => {
       const detail = (event as CustomEvent).detail;
       const { value, index, range } = detail;
 
       if (!value || !range) return;
+
+      // Suppress the pointerup handler from sending iframe-single-click
+      // show-annotation fires synchronously before the setTimeout(10ms) in pointerup
+      annotationClickedRef.current = true;
+
+      // Check if this annotation has a note - if so, open note panel instead of popover
+      if (cfisWithNotes.has(value) && onShowNotePanelRef.current) {
+        onShowNotePanelRef.current(value);
+        return;
+      }
 
       // Call the callback with annotation info
       onShowAnnotationRef.current?.(value, range, index);
@@ -422,6 +447,8 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
     const currentSelectionIndex = useRef<number | undefined>(undefined);
     // Track if there was a selection before pointerdown (for toolbar toggle prevention)
     const hadSelectionOnPointerDown = useRef(false);
+    // Track if show-annotation handler fired (suppress pointerup side effects)
+    const annotationClickedRef = useRef(false);
 
     const attachSelectionListener = useCallback((doc: Document) => {
       // Avoid double-registering
@@ -431,6 +458,8 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       (doc as any).__readany_selection_registered = true;
 
       const handlePointerDown = () => {
+        // Reset annotation click flag
+        annotationClickedRef.current = false;
         // Record if there's a selection when pointer goes down
         const view = viewRef.current;
         const contents = view?.renderer?.getContents?.();
@@ -447,6 +476,12 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         const clientY = ev.clientY;
 
         setTimeout(() => {
+          // If show-annotation handler already handled this click, skip
+          if (annotationClickedRef.current) {
+            annotationClickedRef.current = false;
+            return;
+          }
+
           const view = viewRef.current;
           const contents = view?.renderer?.getContents?.();
           if (!contents?.[0]?.doc) return;
@@ -911,7 +946,6 @@ const NOTE_TOOLTIP_STYLES = `
     transform: translateY(4px);
     transition: opacity 0.15s ease, transform 0.15s ease;
     word-break: break-word;
-    white-space: pre-wrap;
     border: 1px solid rgba(100, 116, 139, 0.3);
   }
   .foliate-note-tooltip.visible {
@@ -939,10 +973,111 @@ const NOTE_TOOLTIP_STYLES = `
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+  /* Markdown styles for tooltip */
+  .foliate-note-tooltip .note-content strong { font-weight: 600; color: #fff; }
+  .foliate-note-tooltip .note-content em { font-style: italic; color: #e2e8f0; }
+  .foliate-note-tooltip .note-content del { text-decoration: line-through; opacity: 0.7; }
+  .foliate-note-tooltip .note-content code {
+    background: rgba(255,255,255,0.1);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+  }
+  .foliate-note-tooltip .note-content pre {
+    background: rgba(0,0,0,0.3);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin: 6px 0;
+    overflow-x: auto;
+  }
+  .foliate-note-tooltip .note-content pre code {
+    background: none;
+    padding: 0;
+    border-radius: 0;
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: pre;
+  }
+  .foliate-note-tooltip .note-content h1,
+  .foliate-note-tooltip .note-content h2,
+  .foliate-note-tooltip .note-content h3 {
+    color: #fff;
+    font-weight: 600;
+    margin: 6px 0 2px;
+    line-height: 1.3;
+  }
+  .foliate-note-tooltip .note-content h1 { font-size: 16px; }
+  .foliate-note-tooltip .note-content h2 { font-size: 15px; }
+  .foliate-note-tooltip .note-content h3 { font-size: 14px; }
+  .foliate-note-tooltip .note-content hr {
+    border: none;
+    border-top: 1px solid rgba(148, 163, 184, 0.3);
+    margin: 6px 0;
+  }
+  .foliate-note-tooltip .note-content ul,
+  .foliate-note-tooltip .note-content ol {
+    margin: 4px 0;
+    padding-left: 18px;
+  }
+  .foliate-note-tooltip .note-content ol { list-style: decimal; }
+  .foliate-note-tooltip .note-content ul { list-style: disc; }
+  .foliate-note-tooltip .note-content li { margin: 2px 0; }
+  .foliate-note-tooltip .note-content blockquote {
+    margin: 4px 0;
+    padding-left: 10px;
+    border-left: 2px solid rgba(148, 163, 184, 0.5);
+    color: #cbd5e1;
+    font-style: italic;
+  }
+  .foliate-note-tooltip .note-content a { color: #60a5fa; text-decoration: underline; }
+  .foliate-note-tooltip .note-content p { margin: 2px 0; }
+  .foliate-note-tooltip .note-content table {
+    border-collapse: collapse;
+    margin: 6px 0;
+    font-size: 12px;
+    width: 100%;
+  }
+  .foliate-note-tooltip .note-content th,
+  .foliate-note-tooltip .note-content td {
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    padding: 3px 8px;
+    text-align: left;
+  }
+  .foliate-note-tooltip .note-content th {
+    background: rgba(255,255,255,0.06);
+    font-weight: 600;
+    color: #fff;
+  }
+  .foliate-note-tooltip .note-content input[type="checkbox"] {
+    margin-right: 4px;
+    vertical-align: middle;
+  }
 `;
 
 // Per-doc registry: cfi -> { range, note }
 const docNoteRegistries = new WeakMap<Document, Map<string, { range: Range; note: string }>>();
+
+// Global set to track CFIs that have notes (for showAnnotationHandler)
+const cfisWithNotes = new Set<string>();
+
+// Configure marked for tooltip rendering (GFM: tables, strikethrough, task lists etc.)
+marked.setOptions({ gfm: true, breaks: true });
+
+// Markdown to HTML converter for tooltip — powered by marked
+function noteMarkdownToHtml(text: string): string {
+  if (!text || typeof text !== "string") return "";
+  try {
+    return marked.parse(text) as string;
+  } catch {
+    // Fallback: escape HTML and convert newlines
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\n/g, "<br>");
+  }
+}
 
 function ensureNoteTooltipSystem(doc: Document) {
   if (doc.getElementById("foliate-note-tooltip-styles")) return;
@@ -970,7 +1105,8 @@ function ensureNoteTooltipSystem(doc: Document) {
       clearTimeout(hideTimer);
       hideTimer = null;
     }
-    content.textContent = note;
+    // Render markdown as HTML
+    try { content.innerHTML = noteMarkdownToHtml(note); } catch { content.textContent = note; }
     tooltip.classList.remove("below");
     // Make visible off-screen to measure
     tooltip.style.left = "-9999px";
@@ -1010,10 +1146,18 @@ function ensureNoteTooltipSystem(doc: Document) {
     }, 100);
   };
 
-  // Check if a point is inside any rect of a range
+  // Check if a point is inside any rect of a range (with padding for wavy underline)
   const isPointInRange = (range: Range, x: number, y: number): boolean => {
+    const padX = 2;
+    const padTop = 2;
+    const padBottom = 8; // extra padding below for the wavy underline drawn beneath text
     for (const rect of range.getClientRects()) {
-      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+      if (
+        x >= rect.left - padX &&
+        x <= rect.right + padX &&
+        y >= rect.top - padTop &&
+        y <= rect.bottom + padBottom
+      ) {
         return true;
       }
     }

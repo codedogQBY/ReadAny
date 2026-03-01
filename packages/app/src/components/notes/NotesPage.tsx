@@ -23,8 +23,11 @@ import { useAnnotationStore } from "@/stores/annotation-store";
 import { useAppStore } from "@/stores/app-store";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { MarkdownEditor } from "@/components/ui/markdown-editor";
 import type { HighlightWithBook } from "@/lib/db/database";
 import { HIGHLIGHT_COLOR_HEX } from "@/types";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 type DetailTab = "notes" | "highlights";
 
@@ -527,12 +530,11 @@ function NoteDetailCard({
         {/* Note content */}
         {isEditing ? (
           <div className="mt-2 flex items-start gap-2">
-            <textarea
+            <MarkdownEditor
               value={editNote}
-              onChange={(e) => setEditNote(e.target.value)}
-              className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary"
-              rows={3}
+              onChange={setEditNote}
               placeholder={t("notebook.addNote")}
+              className="flex-1"
               autoFocus
             />
             <div className="flex flex-col gap-1">
@@ -549,9 +551,11 @@ function NoteDetailCard({
             className="mt-2 cursor-pointer"
             onClick={onStartEdit}
           >
-            <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
-              {highlight.note}
-            </p>
+            <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {highlight.note || ""}
+              </ReactMarkdown>
+            </div>
           </div>
         )}
 
