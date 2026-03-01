@@ -474,9 +474,6 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       if (sel) {
         setSelectedText(tabId, sel.text, null);
         if (sel.rects.length > 0) {
-          const firstRect = sel.rects[0];
-          const lastRect = sel.rects[sel.rects.length - 1];
-
           // SelectionPopover uses absolute positioning relative to containerRef
           const containerRect = containerRef.current?.getBoundingClientRect();
           if (!containerRect) return;
@@ -515,14 +512,6 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           const firstLeft = topmostRect.left;
           const firstRight = topmostRect.right;
           const lastBottom = bottommostRect.bottom;
-
-          // Debug: log values when selection is at top
-          console.log("[SelectionPos]", {
-            rectsCount: sel.rects.length,
-            topmostRect,
-            bottommostRect,
-            containerH,
-          });
 
           // Calculate X position (centered on selection)
           const centerX = (firstLeft + firstRight) / 2;
@@ -996,6 +985,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
             onToggleSettings={handleToggleSettings}
             onToggleChat={handleToggleChat}
             isChatOpen={showChat}
+            isFixedLayout={isFixedLayoutFormat(bookFormat)}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
           />

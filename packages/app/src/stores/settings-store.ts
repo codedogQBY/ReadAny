@@ -2,9 +2,8 @@ import type {
   AIConfig,
   AIEndpoint,
   ReadSettings,
-  TranslationConfig,
-  TranslationTargetLang,
 } from "@/types";
+import type { TranslationConfig, TranslationTargetLang } from "@/types/translation";
 /**
  * Settings store — global reading settings, AI config, translation config
  */
@@ -39,22 +38,15 @@ export interface SettingsState {
 const defaultReadSettings: ReadSettings = {
   fontSize: 16,
   lineHeight: 1.6,
-  fontFamily: "serif",
-  theme: "light",
+  fontTheme: "classic",
   viewMode: "paginated",
   pageMargin: 40,
   paragraphSpacing: 16,
-  autoSaveInterval: 30000,
-  enableTranslation: false,
-  translationTargetLang: "zh-CN",
-  showOriginalText: true,
 };
 
 const defaultTranslationConfig: TranslationConfig = {
-  provider: { id: "default", name: "Default" },
+  provider: { id: "ai", name: "AI 翻译" },
   targetLang: "zh-CN",
-  showOriginal: true,
-  autoTranslate: false,
 };
 
 const defaultEndpoint: AIEndpoint = {
@@ -290,7 +282,6 @@ export const useSettingsStore = create<SettingsState>()(
 
   setTranslationLang: (lang) =>
     set((state) => ({
-      readSettings: { ...state.readSettings, translationTargetLang: lang },
       translationConfig: { ...state.translationConfig, targetLang: lang },
     })),
 

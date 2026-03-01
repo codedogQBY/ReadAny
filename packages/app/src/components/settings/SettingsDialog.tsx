@@ -5,26 +5,28 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AboutSettings } from "./AboutSettings";
 import { AISettings } from "./AISettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { ReadSettingsPanel } from "./ReadSettings";
 import { TranslationSettings } from "./TranslationSettings";
 import { VectorModelSettings } from "./VectorModelSettings";
 
-type SettingsTab = "general" | "reading" | "ai" | "vectorModel" | "translation";
+type SettingsTab = "general" | "reading" | "ai" | "vectorModel" | "translation" | "about";
 
 interface SettingsDialogProps {
   open: boolean;
   onClose: () => void;
 }
 
-const TAB_IDS: SettingsTab[] = ["general", "reading", "ai", "vectorModel", "translation"];
+const TAB_IDS: SettingsTab[] = ["general", "reading", "ai", "vectorModel", "translation", "about"];
 const TAB_KEYS: Record<SettingsTab, string> = {
   general: "settings.general",
   reading: "settings.reading",
   ai: "settings.ai",
   vectorModel: "settings.vectorModel",
   translation: "settings.translationTab",
+  about: "settings.about",
 };
 
 export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
@@ -67,6 +69,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
             {activeTab === "ai" && <AISettings />}
             {activeTab === "vectorModel" && <VectorModelSettings />}
             {activeTab === "translation" && <TranslationSettings />}
+            {activeTab === "about" && <AboutSettings />}
           </div>
         </div>
       </DialogContent>

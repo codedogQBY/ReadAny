@@ -5,6 +5,12 @@ import { useReaderStore } from "@/stores/reader-store";
 import { useNotebookStore } from "@/stores/notebook-store";
 import { ArrowLeft, List, MessageSquare, Search, Settings, StickyNote } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface ReaderToolbarProps {
   tabId: string;
@@ -18,6 +24,7 @@ interface ReaderToolbarProps {
   onToggleSettings?: () => void;
   onToggleChat?: () => void;
   isChatOpen?: boolean;
+  isFixedLayout?: boolean;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
 }
@@ -34,6 +41,7 @@ export function ReaderToolbar({
   onToggleSettings,
   onToggleChat,
   isChatOpen,
+  isFixedLayout = false,
   onMouseEnter,
   onMouseLeave,
 }: ReaderToolbarProps) {
@@ -116,15 +124,28 @@ export function ReaderToolbar({
         >
           <MessageSquare className="h-3.5 w-3.5" />
         </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          onClick={onToggleSettings}
-          title={t("reader.settings")}
-        >
-          <Settings className="h-3.5 w-3.5" />
-        </Button>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={isFixedLayout ? undefined : onToggleSettings}
+                  disabled={isFixedLayout}
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                </Button>
+              </span>
+            </TooltipTrigger>
+            {isFixedLayout && (
+              <TooltipContent>
+                <p className="text-xs">{t("settings.notAvailableForPdf", "PDF 不支持此设置")}</p>
+              </TooltipContent>
+            )}
+          </Tooltip>
+        </TooltipProvider>
       </div>
     </div>
   );

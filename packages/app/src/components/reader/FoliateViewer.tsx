@@ -25,6 +25,7 @@ import { wrappedFoliateView } from "@/hooks/reader/useFoliateView";
 import type { ViewSettings } from "@/types";
 import { readingContextService } from "@/lib/ai/reading-context-service";
 import { Overlayer } from "foliate-js/overlayer.js";
+import { getFontTheme } from "@/lib/reader/font-themes";
 
 // Polyfills required by foliate-js
 // biome-ignore lint: polyfill for foliate-js
@@ -700,8 +701,8 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
     }, [
       viewSettings.fontSize,
       viewSettings.lineHeight,
-      viewSettings.theme,
-      viewSettings.fontFamily,
+      viewSettings.fontTheme,
+      viewSettings.paragraphSpacing,
       isFixedLayout,
     ]);
 
@@ -741,15 +742,11 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
 // --- Helper functions ---
 
 /** Apply CSS styles to a loaded section document */
-function applyDocumentStyles(doc: Document, settings: ViewSettings, isFixedLayout: boolean) {
+function applyDocumentStyles(doc: Document, _settings: ViewSettings, isFixedLayout: boolean) {
   if (isFixedLayout) {
     // PDF/CBZ: don't inject styles that would break layout
     return;
   }
-
-  // Apply theme class
-  doc.documentElement.classList.remove("theme-light", "theme-dark", "theme-sepia");
-  doc.documentElement.classList.add(`theme-${settings.theme}`);
 
   // Basic styles for images
   const images = doc.querySelectorAll("img");
@@ -787,48 +784,109 @@ function applyRendererSettings(view: FoliateView, settings: ViewSettings, isFixe
   applyRendererStyles(view, settings, isFixedLayout);
 }
 
+/** Generate CSS string for renderer styles */
+function getRendererStyles(settings: ViewSettings): string {
+  const bgColor = "#ffffff";
+  const fgColor = "#1a1a1a";
+  const linkColor = "#2563eb";
+
+  // Get font theme
+  const fontTheme = getFontTheme(settings.fontTheme);
+  
+  // Use CJK font for Chinese/Japanese/Korean text, serif for others
+  const fontFamily = `'${fontTheme.cjk}', '${fontTheme.serif}', serif`;
+
+  return `
+/* Font styles */
+html {
+  --serif-font: "${fontTheme.serif}";
+  --sans-serif-font: "${fontTheme.sansSerif}";
+  --cjk-font: "${fontTheme.cjk}";
+}
+
+html, body {
+  background-color: ${bgColor} !important;
+  color: ${fgColor} !important;
+  font-family: ${fontFamily} !important;
+  font-size: ${settings.fontSize}px !important;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+}
+
+/* Line height for text blocks */
+p, div, blockquote, dd, li, span {
+  line-height: ${settings.lineHeight} !important;
+}
+
+/* Paragraph spacing */
+p {
+  margin-top: ${settings.paragraphSpacing}px !important;
+  margin-bottom: ${settings.paragraphSpacing}px !important;
+}
+
+/* Links */
+a, a:any-link {
+  color: ${linkColor} !important;
+  text-decoration: none !important;
+}
+
+/* Images */
+img, svg {
+  max-width: 100% !important;
+  height: auto !important;
+}
+
+/* Selection */
+::selection {
+  background: rgba(59, 130, 246, 0.3) !important;
+}
+
+/* Override font[size] attributes */
+font[size="1"] { font-size: 0.6rem !important; }
+font[size="2"] { font-size: 0.75rem !important; }
+font[size="3"] { font-size: 1rem !important; }
+font[size="4"] { font-size: 1.2rem !important; }
+font[size="5"] { font-size: 1.5rem !important; }
+font[size="6"] { font-size: 2rem !important; }
+font[size="7"] { font-size: 3rem !important; }
+
+/* Override hardcoded black text */
+*[style*="color: rgb(0,0,0)"],
+*[style*="color: #000"],
+*[style*="color: black"] {
+  color: ${fgColor} !important;
+}
+
+/* Code blocks */
+pre {
+  white-space: pre-wrap !important;
+  tab-size: 2;
+}
+`;
+}
+
 /** Apply CSS styles to the renderer (lightweight update path) */
 function applyRendererStyles(view: FoliateView, settings: ViewSettings, isFixedLayout: boolean) {
   const renderer = view.renderer;
   if (!renderer?.setStyles) return;
 
-  const themes: Record<string, { bg: string; fg: string; link: string }> = {
-    light: { bg: "#ffffff", fg: "#1a1a1a", link: "#2563eb" },
-    dark: { bg: "#1a1a1a", fg: "#e5e5e5", link: "#60a5fa" },
-    sepia: { bg: "#f4ecd8", fg: "#5b4636", link: "#8b6914" },
-  };
-
-  const t = themes[settings.theme] || themes.light;
+  // Default theme colors (light)
+  const bgColor = "#ffffff";
 
   if (isFixedLayout) {
     // Fixed layout (PDF/CBZ): only set background, don't override font/size/lineHeight
     // as it would break the TextLayer positioning in PDF
-    renderer.setStyles({
-      "html, body": {
-        "background-color": t.bg,
-      },
-    });
+    renderer.setStyles(`
+      html, body {
+        background-color: ${bgColor} !important;
+      }
+    `);
     return;
   }
 
-  const fontFamilyMap: Record<string, string> = {
-    sans: "system-ui, -apple-system, sans-serif",
-    serif: "Georgia, 'Times New Roman', serif",
-    mono: "'Courier New', monospace",
-  };
-
-  renderer.setStyles({
-    "html, body": {
-      "background-color": t.bg,
-      color: t.fg,
-      "font-size": `${settings.fontSize}px`,
-      "line-height": `${settings.lineHeight}`,
-      "font-family": fontFamilyMap[settings.fontFamily] || fontFamilyMap.serif,
-    },
-    a: { color: t.link },
-    img: { "max-width": "100%", height: "auto" },
-    "::selection": { background: "rgba(59, 130, 246, 0.3)" },
-  });
+  // Apply CSS string styles
+  const styles = getRendererStyles(settings);
+  renderer.setStyles(styles);
 }
 
 /**

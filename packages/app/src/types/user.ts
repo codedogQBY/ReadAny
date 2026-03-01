@@ -19,40 +19,5 @@ export interface UserProfile {
   createdAt: number;
 }
 
-export interface TranslationProvider {
-  id: string;
-  name: string;
-  apiKey?: string;
-  baseUrl?: string;
-}
-
-export type TranslationTargetLang =
-  | "zh-CN"
-  | "zh-TW"
-  | "ja"
-  | "ko"
-  | "en"
-  | "fr"
-  | "de"
-  | "es"
-  | "pt"
-  | "it"
-  | "ru"
-  | "ar"
-  | "hi"
-  | "th"
-  | "vi"
-  | "id"
-  | "ms"
-  | "tr"
-  | "pl"
-  | "nl"
-  | "sv"
-  | "da";
-
-export interface TranslationConfig {
-  provider: TranslationProvider;
-  targetLang: TranslationTargetLang;
-  showOriginal: boolean;
-  autoTranslate: boolean;
-}
+// Translation types moved to types/translation.ts
+export type { TranslationConfig, TranslationProvider, TranslationTargetLang, TranslatorName } from "./translation";

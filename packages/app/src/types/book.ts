@@ -31,24 +31,28 @@ export interface Book {
 }
 
 export type ViewMode = "paginated" | "scroll";
-export type Theme = "light" | "dark" | "sepia";
-export type FontFamily = "sans" | "serif" | "mono";
+
+/** Font theme preset */
+export interface FontTheme {
+  id: string;
+  name: string;
+  nameEn: string;
+  serif: string;
+  sansSerif: string;
+  cjk: string;
+}
 
 export interface ViewSettings {
   fontSize: number; // 12-32
   lineHeight: number; // 1.2-2.5
-  fontFamily: FontFamily;
-  theme: Theme;
+  fontTheme: string; // FontTheme id
   viewMode: ViewMode;
   pageMargin: number; // px
   paragraphSpacing: number;
 }
 
 export interface ReadSettings extends ViewSettings {
-  autoSaveInterval: number; // ms
-  enableTranslation: boolean;
-  translationTargetLang: string;
-  showOriginalText: boolean;
+  // Add any additional settings here if needed
 }
 
 export type SortField = "title" | "author" | "addedAt" | "lastOpenedAt" | "progress";
