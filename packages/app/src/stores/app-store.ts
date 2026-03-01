@@ -11,6 +11,7 @@ export interface Tab {
   title: string;
   bookId?: string; // for reader tabs
   threadId?: string; // for chat tabs
+  initialCfi?: string; // for reader tabs - initial location to navigate to
   isModified?: boolean;
 }
 
@@ -42,8 +43,15 @@ export const useAppStore = create<AppState>((set) => ({
 
   addTab: (tab) =>
     set((state) => {
-      const exists = state.tabs.some((t) => t.id === tab.id);
-      if (exists) {
+      const existingIndex = state.tabs.findIndex((t) => t.id === tab.id);
+      if (existingIndex >= 0) {
+        // Update existing tab with new initialCfi if provided
+        const existingTab = state.tabs[existingIndex];
+        if (tab.initialCfi && existingTab) {
+          const updatedTabs = [...state.tabs];
+          updatedTabs[existingIndex] = { ...existingTab, initialCfi: tab.initialCfi };
+          return { tabs: updatedTabs, activeTabId: tab.id };
+        }
         return { activeTabId: tab.id };
       }
       return {

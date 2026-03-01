@@ -134,9 +134,9 @@ export function NotesPage() {
     return chapters;
   }, [currentList, t]);
 
-  const handleOpenBook = (bookId: string, title: string) => {
+  const handleOpenBook = (bookId: string, title: string, cfi?: string) => {
     const tabId = `reader-${bookId}`;
-    addTab({ id: tabId, type: "reader", title, bookId });
+    addTab({ id: tabId, type: "reader", title, bookId, initialCfi: cfi });
     setActiveTab(tabId);
   };
 
@@ -455,7 +455,7 @@ export function NotesPage() {
                             onSaveNote={() => saveNote(item.id)}
                             onCancelEdit={cancelEdit}
                             onDeleteNote={() => handleDeleteNote(item)}
-                            onNavigate={() => handleOpenBook(selectedBook.bookId, selectedBook.title)}
+                            onNavigate={() => handleOpenBook(selectedBook.bookId, selectedBook.title, item.cfi)}
                             t={t}
                           />
                         ) : (
@@ -463,7 +463,7 @@ export function NotesPage() {
                             key={item.id}
                             highlight={item}
                             onDelete={() => handleDeleteHighlight(item)}
-                            onNavigate={() => handleOpenBook(selectedBook.bookId, selectedBook.title)}
+                            onNavigate={() => handleOpenBook(selectedBook.bookId, selectedBook.title, item.cfi)}
                             t={t}
                           />
                         )

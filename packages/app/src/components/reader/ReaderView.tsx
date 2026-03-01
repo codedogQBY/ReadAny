@@ -22,6 +22,7 @@ import type { RelocateDetail, TOCItem, BookSelection, FoliateViewerHandle } from
 import { FoliateViewer } from "./FoliateViewer";
 import { throttle } from "@/lib/utils/throttle";
 import { useAnnotationStore } from "@/stores/annotation-store";
+import { useAppStore } from "@/stores/app-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useReaderStore } from "@/stores/reader-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -189,7 +190,8 @@ interface ReaderViewProps {
 }
 
 export function ReaderView({ bookId, tabId }: ReaderViewProps) {
-  const tab = useReaderStore((s) => s.tabs[tabId]);
+  const readerTab = useReaderStore((s) => s.tabs[tabId]);
+  const appTab = useAppStore((s) => s.tabs.find((t) => t.id === tabId));
   const viewSettings = useSettingsStore((s) => s.readSettings);
   const setProgress = useReaderStore((s) => s.setProgress);
   const setChapter = useReaderStore((s) => s.setChapter);
@@ -219,6 +221,21 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     renderedHighlightsRef.current.clear();
     setFoliateReady(false);
   }, [bookId]);
+
+  // Navigate to initialCfi when foliate is ready (from NotesPage navigation)
+  useEffect(() => {
+    if (!foliateReady || !appTab?.initialCfi) return;
+
+    const timer = setTimeout(() => {
+      if (foliateRef.current && appTab.initialCfi) {
+        foliateRef.current.goToCFI(appTab.initialCfi);
+        // Clear the initialCfi after navigation to prevent re-navigation
+        useAppStore.getState().addTab({ ...appTab, initialCfi: undefined });
+      }
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [foliateReady, appTab]);
 
   // Sync highlights to FoliateViewer when they change or when foliate becomes ready
   // Use a timeout to ensure the foliate view is fully initialized
@@ -546,7 +563,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           text: selection.text,
           cfi: selection.cfi,
           color,
-          chapterTitle: tab?.chapterTitle || undefined,
+          chapterTitle: readerTab?.chapterTitle || undefined,
           createdAt: Date.now(),
           updatedAt: Date.now(),
         });
@@ -563,7 +580,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       }
       setSelection(null);
     },
-    [selection, bookId, tab?.chapterTitle],
+    [selection, bookId, readerTab?.chapterTitle],
   );
 
   // Handle note button - open notebook panel with pending note
@@ -582,12 +599,12 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
         useNotebookStore.getState().startNewNote({
           text: selection.text,
           cfi: selection.cfi,
-          chapterTitle: tab?.chapterTitle,
+          chapterTitle: readerTab?.chapterTitle,
         });
       }
     }
     setSelection(null);
-  }, [selection, bookId, highlights, tab?.chapterTitle]);
+  }, [selection, bookId, highlights, readerTab?.chapterTitle]);
 
   const handleCopy = useCallback(() => {
     if (selection?.text) navigator.clipboard.writeText(selection.text);
@@ -692,20 +709,33 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
   const handleAskAI = useCallback(() => {
     if (selection?.text) {
-      // Open chat panel and attach selected text as a quote chip
+      // Store in sessionStorage in case ChatPanel is not mounted yet
+      // ChatPanel will check and consume this on mount
+      sessionStorage.setItem(
+        `pending-ai-quote-${bookId}`,
+        JSON.stringify({
+          selectedText: selection.text,
+          bookId,
+          chapterTitle: readerTab?.chapterTitle,
+        }),
+      );
+
+      // Open chat panel
       setShowChat(true);
+
+      // Also dispatch event for immediate handling if panel is already open
       window.dispatchEvent(
         new CustomEvent("ask-ai-from-reader", {
           detail: {
             selectedText: selection.text,
             bookId,
-            chapterTitle: tab?.chapterTitle,
+            chapterTitle: readerTab?.chapterTitle,
           },
         }),
       );
     }
     setSelection(null);
-  }, [selection, bookId, tab?.chapterTitle]);
+  }, [selection, bookId, readerTab?.chapterTitle]);
 
   const handleCloseSelection = useCallback(() => setSelection(null), []);
   const handleToggleSearch = useCallback(() => setShowSearch((p) => !p), []);
@@ -771,7 +801,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     });
   }, []);
 
-  if (!tab) {
+  if (!readerTab) {
     return <div className="flex h-full items-center justify-center">{t("common.loading")}</div>;
   }
 

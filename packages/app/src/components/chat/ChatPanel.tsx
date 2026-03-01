@@ -95,6 +95,31 @@ export function ChatPanel({ book }: ChatPanelProps) {
     setAttachedQuotes((prev) => prev.filter((q) => q.id !== id));
   }, []);
 
+  // Check for pending quote when component mounts (from reader selection when panel was closed)
+  useEffect(() => {
+    const pendingKey = `pending-ai-quote-${bookId}`;
+    const pending = sessionStorage.getItem(pendingKey);
+    if (pending) {
+      try {
+        const detail = JSON.parse(pending);
+        if (detail?.selectedText) {
+          const newQuote: AttachedQuote = {
+            id: crypto.randomUUID(),
+            text: detail.selectedText,
+            source: detail.chapterTitle,
+          };
+          setAttachedQuotes((prev) => {
+            if (prev.some((q) => q.text === newQuote.text)) return prev;
+            return [...prev, newQuote];
+          });
+        }
+      } catch {
+        // Ignore parse errors
+      }
+      sessionStorage.removeItem(pendingKey);
+    }
+  }, [bookId]);
+
   // Listen for "Ask AI" from reader selection — now adds quote to input instead of sending immediately
   useEffect(() => {
     const handler = (e: Event) => {
