@@ -5,6 +5,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import {
   StickyNote,
   Highlighter,
@@ -175,12 +176,21 @@ export function NotesPage() {
     setEditNote("");
   };
 
-  const doExport = (format: ExportFormat, book: { id: string; meta: { title: string } }, highlights: Highlight[], exportNotes: Note[], content: string) => {
-    if (format === "notion") {
-      annotationExporter.copyToClipboard(content);
-    } else {
-      const ext = format === "json" ? "json" : "md";
-      annotationExporter.downloadAsFile(content, `${book.meta.title}-${format}.${ext}`, format);
+  const doExport = (format: ExportFormat, book: { id: string; meta: { title: string } }, content: string) => {
+    try {
+      if (format === "notion") {
+        annotationExporter.copyToClipboard(content);
+        toast.success(t("notes.copiedToClipboard"));
+      } else {
+        const ext = format === "json" ? "json" : "md";
+        annotationExporter.downloadAsFile(content, `${book.meta.title}-${format}.${ext}`, format);
+        toast.success(t("notes.exportSuccess"), {
+          description: `${book.meta.title}.${ext}`,
+        });
+      }
+    } catch (error) {
+      toast.error(t("notes.exportFailed"));
+      console.error("Export failed:", error);
     }
   };
 
@@ -194,7 +204,7 @@ export function NotesPage() {
       book,
       { format },
     );
-    doExport(format, book, selectedBook.highlights as Highlight[], [], content);
+    doExport(format, book, content);
   };
 
   const handleMultiBookExport = (format: ExportFormat) => {
@@ -206,12 +216,21 @@ export function NotesPage() {
       })
       .filter((d): d is NonNullable<typeof d> => d !== null);
     if (booksData.length === 0) return;
-    const content = annotationExporter.exportMultipleBooks(booksData, { format });
-    if (format === "notion") {
-      annotationExporter.copyToClipboard(content);
-    } else {
-      const ext = format === "json" ? "json" : "md";
-      annotationExporter.downloadAsFile(content, `all-annotations.${ext}`, format);
+    try {
+      const content = annotationExporter.exportMultipleBooks(booksData, { format });
+      if (format === "notion") {
+        annotationExporter.copyToClipboard(content);
+        toast.success(t("notes.copiedToClipboard"));
+      } else {
+        const ext = format === "json" ? "json" : "md";
+        annotationExporter.downloadAsFile(content, `all-annotations.${ext}`, format);
+        toast.success(t("notes.exportSuccess"), {
+          description: `all-annotations.${ext}`,
+        });
+      }
+    } catch (error) {
+      toast.error(t("notes.exportFailed"));
+      console.error("Export failed:", error);
     }
   };
 
@@ -311,7 +330,6 @@ export function NotesPage() {
                     setEditingId(null);
                     setDetailTab("notes");
                   }}
-                  t={t}
                 />
               ))}
             </div>
@@ -473,10 +491,9 @@ interface NotebookCardProps {
     highlightsOnlyCount: number;
   };
   onClick: () => void;
-  t: (key: string) => string;
 }
 
-function NotebookCard({ book, onClick, t }: NotebookCardProps) {
+function NotebookCard({ book, onClick }: NotebookCardProps) {
   return (
     <div
       className="group flex h-full cursor-pointer flex-col justify-end"

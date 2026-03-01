@@ -3,7 +3,13 @@
  * All opened tabs stay mounted; visibility controlled by CSS display.
  */
 import { AppLayout } from "@/components/layout/AppLayout";
+import { Toaster } from "sonner";
 
 export default function App() {
-  return <AppLayout />;
+  return (
+    <>
+      <AppLayout />
+      <Toaster position="top-center" richColors duration={2000} />
+    </>
+  );
 }

@@ -165,7 +165,11 @@
     "tapToReveal": "点击显示笔记",
     "previous": "上一条",
     "next": "下一条",
-    "openInBook": "在书中查看"
+    "openInBook": "在书中查看",
+    "exportSuccess": "导出成功",
+    "exportFailed": "导出失败",
+    "copiedToClipboard": "已复制到剪贴板",
+    "downloaded": "已下载"
   },
   "notebook": {
     "title": "笔记本",
