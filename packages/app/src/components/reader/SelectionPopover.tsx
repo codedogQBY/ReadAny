@@ -84,7 +84,7 @@ export function SelectionPopover({
   return (
     <div
       className="absolute z-50 flex flex-col items-center gap-1"
-      style={{ left: position.x, top: position.y, transform: "translateX(-50%)" }}
+      style={{ left: position.x, top: position.y }}
     >
       {/* Color picker row */}
       {showColors && !isPdf && (

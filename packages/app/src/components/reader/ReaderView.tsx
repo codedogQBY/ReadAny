@@ -481,45 +481,84 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           const containerRect = containerRef.current?.getBoundingClientRect();
           if (!containerRect) return;
 
-          const offsetX = containerRect.left;
-          const offsetY = containerRect.top;
           const containerW = containerRect.width;
           const containerH = containerRect.height;
 
           // Popover dimensions
-          const popoverHalfW = 100;
+          const popoverW = 200;
           const popoverH = 44;
           const gap = 8; // Gap between selection and popover
+          const padding = 8; // Minimum padding from edges
+
+          // Reference: readest getPosition & getPopupPosition
+          // firstRect/lastRect are already in viewport coordinates (converted in FoliateViewer)
+          // Convert to container-relative coordinates
+          // IMPORTANT: rects from getClientRects() are NOT sorted by position!
+          // We need to find the actual topmost and bottommost rects.
+          const containerRelativeRects = sel.rects.map((r) => ({
+            top: r.top - containerRect.top,
+            bottom: r.bottom - containerRect.top,
+            left: r.left - containerRect.left,
+            right: r.right - containerRect.left,
+          }));
+          
+          // Find the topmost rect (smallest top value)
+          const topmostRect = containerRelativeRects.reduce((min, r) => 
+            r.top < min.top ? r : min
+          );
+          // Find the bottommost rect (largest bottom value)
+          const bottommostRect = containerRelativeRects.reduce((max, r) => 
+            r.bottom > max.bottom ? r : max
+          );
+
+          const firstTop = topmostRect.top;
+          const firstLeft = topmostRect.left;
+          const firstRight = topmostRect.right;
+          const lastBottom = bottommostRect.bottom;
+
+          // Debug: log values when selection is at top
+          console.log("[SelectionPos]", {
+            rectsCount: sel.rects.length,
+            topmostRect,
+            bottommostRect,
+            containerH,
+          });
 
           // Calculate X position (centered on selection)
-          let x = firstRect.left + firstRect.width / 2 - offsetX;
+          const centerX = (firstLeft + firstRight) / 2;
+          let x = centerX - popoverW / 2;
           // Clamp X so popover doesn't overflow left/right
-          x = Math.max(popoverHalfW + gap, Math.min(x, containerW - popoverHalfW - gap));
+          x = Math.max(padding, Math.min(x, containerW - popoverW - padding));
 
-          // Calculate Y position
-          // firstRect/lastRect are in viewport coordinates
-          // Convert to container-relative coordinates
-          const selectionTop = firstRect.top - offsetY;
-          const selectionBottom = lastRect.bottom - offsetY;
-
-          // Determine if we should show above or below selection
+          // Calculate potential positions above and below
           const toolbarHeight = controlsVisible ? 44 : 0;
-          const spaceAbove = selectionTop - toolbarHeight;
-          const spaceBelow = containerH - selectionBottom;
+          
+          // Position above selection (y is the top of popover)
+          const yAbove = firstTop - popoverH - gap;
+          // Position below selection (y is the top of popover)  
+          const yBelow = lastBottom + gap;
+
+          // Check if positions are valid (within visible container area)
+          const aboveValid = yAbove >= toolbarHeight + padding;
+          const belowValid = yBelow + popoverH + padding <= containerH;
 
           let y: number;
-          if (spaceAbove >= popoverH + gap) {
-            // Enough space above - position above selection
-            y = selectionTop - popoverH - gap;
-          } else if (spaceBelow >= popoverH + gap) {
-            // Not enough above, but enough below - position below selection
-            y = selectionBottom + gap;
+          if (aboveValid && belowValid) {
+            // Both positions valid - choose the one with more space
+            const spaceAbove = firstTop - toolbarHeight;
+            const spaceBelow = containerH - lastBottom;
+            y = spaceAbove > spaceBelow ? yAbove : yBelow;
+          } else if (aboveValid) {
+            y = yAbove;
+          } else if (belowValid) {
+            y = yBelow;
           } else {
-            // Not enough space either way - prefer the side with more space
-            if (spaceAbove > spaceBelow) {
-              y = Math.max(toolbarHeight + gap, selectionTop - popoverH - gap);
+            // Neither position ideal - pick the one that fits better
+            // Prefer below if there's any space, otherwise clamp to toolbar area
+            if (lastBottom + popoverH + padding <= containerH) {
+              y = yBelow;
             } else {
-              y = Math.min(containerH - popoverH - gap, selectionBottom + gap);
+              y = Math.max(toolbarHeight + padding, Math.min(yAbove, yBelow));
             }
           }
 
