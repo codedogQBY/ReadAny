@@ -31,7 +31,7 @@
     "tryDifferentSearch": "试试其他搜索词",
     "emptyLibrary": "书库是空的，导入书籍开始阅读吧",
     "dropToUpload": "拖拽书籍到这里上传",
-    "supportedFormat": "支持格式：.epub、.pdf",
+    "supportedFormat": "支持格式：.epub、.pdf、.mobi、.azw、.azw3、.fb2、.fbz",
     "importBooks": "导入书籍",
     "new": "新书",
     "complete": "已读完",

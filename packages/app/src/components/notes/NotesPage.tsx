@@ -3,7 +3,7 @@
  * Layout: Left panel (book notebooks grid) + Right panel (selected book's notes & highlights)
  * Notes and highlights are displayed separately.
  */
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   StickyNote,
@@ -11,7 +11,6 @@ import {
   BookOpen,
   Trash2,
   Search,
-  Download,
   Edit3,
   Check,
   X,
@@ -168,57 +167,6 @@ export function NotesPage() {
     setEditNote("");
   };
 
-  const exportBookMarkdown = useCallback(() => {
-    if (!selectedBook) return;
-    let md = `# ${selectedBook.title}\n`;
-    md += `*${selectedBook.author}*\n\n`;
-    md += `> ${t("notes.exportedOn", { date: new Date().toLocaleDateString() })}\n\n`;
-
-    md += "## Notes\n\n";
-    for (const h of notes) {
-      md += `> ${h.text}\n\n`;
-      md += `📝 ${h.note}\n\n`;
-      md += `— ${h.chapterTitle || ""} · ${new Date(h.createdAt).toLocaleDateString()}\n\n`;
-    }
-
-    md += "## Highlights\n\n";
-    for (const h of highlightsOnly) {
-      md += `> ${h.text}\n\n`;
-      md += `— ${h.chapterTitle || ""} · ${new Date(h.createdAt).toLocaleDateString()}\n\n`;
-    }
-
-    const blob = new Blob([md], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${selectedBook.title}-notes.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [selectedBook, notes, highlightsOnly, t]);
-
-  const exportAllMarkdown = useCallback(() => {
-    let md = `# ${t("notes.title")}\n\n`;
-    md += `> ${t("notes.exportedOn", { date: new Date().toLocaleDateString() })}\n\n`;
-
-    for (const book of bookNotebooks) {
-      md += `## ${book.title}\n*${book.author}*\n\n`;
-      for (const h of book.highlights.sort((a, b) => b.createdAt - a.createdAt)) {
-        md += `> ${h.text}\n`;
-        if (h.note) md += `\n📝 ${h.note}\n`;
-        md += `\n— ${h.chapterTitle || ""} · ${new Date(h.createdAt).toLocaleDateString()}\n\n`;
-      }
-      md += "---\n\n";
-    }
-
-    const blob = new Blob([md], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `notes-${new Date().toISOString().slice(0, 10)}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [bookNotebooks, t]);
-
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -261,15 +209,7 @@ export function NotesPage() {
               </p>
             </div>
             {!selectedBookId && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={exportAllMarkdown}
-                className="gap-1.5 h-7 text-xs"
-              >
-                <Download className="h-3 w-3" />
-                {t("notes.export")}
-              </Button>
+              <div />
             )}
           </div>
         </div>
@@ -367,15 +307,6 @@ export function NotesPage() {
                 >
                   <BookOpen className="h-3 w-3" />
                   {t("notes.openBook")}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={exportBookMarkdown}
-                  className="gap-1.5 h-7 text-xs"
-                >
-                  <Download className="h-3 w-3" />
-                  {t("notes.export")}
                 </Button>
               </div>
             </div>

@@ -25,7 +25,7 @@ export function HomePage() {
     try {
       const selected = await open({
         multiple: true,
-        filters: [{ name: "Books", extensions: ["epub", "pdf"] }],
+        filters: [{ name: "Books", extensions: ["epub", "pdf", "mobi", "azw", "azw3", "fb2", "fbz"] }],
       } as const);
       if (selected) {
         const paths = Array.isArray(selected) ? selected : [selected];
