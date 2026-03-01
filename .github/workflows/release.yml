@@ -1,0 +1,153 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - master
+      - main
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin
+            target: aarch64-apple-darwin
+            suffix: '-aarch64'
+          - platform: macos-latest
+            args: --target x86_64-apple-darwin
+            target: x86_64-apple-darwin
+            suffix: '-x64'
+          - platform: ubuntu-22.04
+            args: ""
+            target: x86_64-unknown-linux-gnu
+            suffix: ''
+          - platform: windows-latest
+            args: ""
+            target: x86_64-pc-windows-msvc
+            suffix: ''
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./packages/app/src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: "./packages/app"
+          tagName: v__VERSION__
+          releaseName: "ReadAny v__VERSION__"
+          releaseBody: "See ASSETS to download and install this version."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  create-updater-json:
+    needs: build
+    runs-on: ubuntu-latest
+    if: success()
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get version from package.json
+        id: version
+        run: |
+          VERSION=$(cat packages/app/package.json | grep '"version"' | head -1 | sed 's/.*: *"//;s/".*//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Get latest release
+        id: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE=$(gh release view v${{ steps.version.outputs.version }} --json tagName,name,assets --jq '.' 2>/dev/null || echo "not_found")
+          echo "release=$RELEASE" >> $GITHUB_OUTPUT
+
+      - name: Generate latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          REPO="${{ github.repository }}"
+          
+          # Download signature files and get download URLs
+          MAC_ARM_URL="https://github.com/${REPO}/releases/download/v${VERSION}/ReadAny_aarch64.app.tar.gz"
+          MAC_X64_URL="https://github.com/${REPO}/releases/download/v${VERSION}/ReadAny_x64.app.tar.gz"
+          WIN_URL="https://github.com/${REPO}/releases/download/v${VERSION}/ReadAny_${VERSION}_x64-setup.exe"
+          LINUX_URL="https://github.com/${REPO}/releases/download/v${VERSION}/readany_${VERSION}_amd64.deb"
+          
+          # Create latest.json for Tauri updater
+          cat > latest.json << EOF
+          {
+            "version": "${VERSION}",
+            "notes": "See https://github.com/${REPO}/releases/tag/v${VERSION} for details",
+            "pub_date": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "platforms": {
+              "darwin-aarch64": {
+                "signature": "",
+                "url": "${MAC_ARM_URL}"
+              },
+              "darwin-x86_64": {
+                "signature": "",
+                "url": "${MAC_X64_URL}"
+              },
+              "windows-x86_64": {
+                "signature": "",
+                "url": "${WIN_URL}"
+              },
+              "linux-x86_64": {
+                "signature": "",
+                "url": "${LINUX_URL}"
+              }
+            }
+          }
+          EOF
+          
+          echo "Generated latest.json:"
+          cat latest.json
+
+      - name: Upload latest.json to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          gh release upload v${VERSION} latest.json --clobber || echo "Release not found, skipping upload"

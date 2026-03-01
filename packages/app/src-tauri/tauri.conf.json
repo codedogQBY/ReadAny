@@ -62,7 +62,9 @@
   },
   "plugins": {
     "updater": {
-      "endpoints": ["https://readany.app/api/update/{{target}}/{{arch}}/{{current_version}}"],
+      "endpoints": [
+        "https://github.com/codedogQBY/ReadAny/releases/latest/download/latest.json"
+      ],
       "pubkey": ""
     }
   }
