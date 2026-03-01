@@ -525,24 +525,6 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       doc.addEventListener("pointerup", handlePointerUp);
     }, [bookKey]);
 
-    // Helper: check if point is inside a range
-    const isPointerInsideRange = (range: Range, x: number, y: number): boolean => {
-      const rects = range.getClientRects();
-      const padding = 30;
-      for (let i = 0; i < rects.length; i++) {
-        const rect = rects[i]!;
-        if (
-          x >= rect.left - padding &&
-          x <= rect.right + padding &&
-          y >= rect.top - padding &&
-          y <= rect.bottom + padding
-        ) {
-          return true;
-        }
-      }
-      return false;
-    };
-
     const getSelectionFromView = useCallback((): BookSelection | null => {
       const view = viewRef.current;
       if (!view) return null;

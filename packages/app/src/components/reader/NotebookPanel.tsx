@@ -48,7 +48,6 @@ export function NotebookPanel({ bookId, onClose, onGoToCfi, onAddAnnotation, onD
   
   const {
     highlights,
-    notes,
     addHighlight,
     updateHighlight,
     removeHighlight,
