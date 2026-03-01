@@ -143,7 +143,7 @@ export const handleMouseup = (bookKey: string, event: MouseEvent) => {
 let clickTimer: ReturnType<typeof setTimeout> | null = null;
 let clickCount = 0;
 
-export const handleClick = (bookKey: string, event: MouseEvent) => {
+export const handleClick = (_bookKey: string, event: MouseEvent) => {
   // Ignore clicks on interactive elements (links, buttons, inputs)
   const target = event.target as HTMLElement;
   if (target?.closest?.("a, button, input, textarea, select, [role='button']")) return;

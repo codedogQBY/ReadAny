@@ -7,11 +7,13 @@ import { Highlighter } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 const COLOR_CLASSES: Record<HighlightColor, string> = {
+  red: "bg-highlight-red",
   yellow: "bg-highlight-yellow",
   green: "bg-highlight-green",
   blue: "bg-highlight-blue",
   pink: "bg-highlight-pink",
   purple: "bg-highlight-purple",
+  violet: "bg-highlight-violet",
 };
 
 export function HighlightList() {

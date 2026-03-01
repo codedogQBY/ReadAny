@@ -500,13 +500,6 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
             onSelectionRef.current?.(newSel);
           } else if (currentSelectionRange.current) {
             // No new selection, but we had a previous selection
-            // Check if click was inside the old selection
-            const isInsideSelection = isPointerInsideRange(
-              currentSelectionRange.current,
-              clientX,
-              clientY,
-            );
-
             // Selection was cleared (either by clicking inside to dismiss, or outside)
             // Always notify parent to hide the popover
             currentSelectionRange.current = null;

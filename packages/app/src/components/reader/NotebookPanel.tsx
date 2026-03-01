@@ -65,7 +65,6 @@ export function NotebookPanel({ bookId, onClose, onGoToCfi, onAddAnnotation, onD
 
   // Filter annotations for current book
   const bookHighlights = highlights.filter(h => h.bookId === bookId);
-  const bookNotes = notes.filter(n => n.bookId === bookId);
   
   // Highlights with notes vs without
   const highlightsWithNotes = bookHighlights.filter(h => h.note);
