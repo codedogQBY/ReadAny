@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { getSkills, updateSkill } from "@/lib/db/database";
+import { getSkills, updateSkill, insertSkill, deleteSkill } from "@/lib/db/database";
 import { builtinSkills } from "@/lib/ai/skills/builtin-skills";
 import type { Skill } from "@/types";
 import { Badge } from "@/components/ui/badge";
@@ -48,15 +48,31 @@ export default function SkillsPage() {
 
   async function handleSaveSkill(skill: Skill) {
     try {
-      await updateSkill(skill.id, {
-        description: skill.description,
-        prompt: skill.prompt,
-      });
-      setSkills((prev) =>
-        prev.map((s) => (s.id === skill.id ? { ...s, ...skill } : s)),
-      );
+      const exists = skills.some((s) => s.id === skill.id);
+      if (exists) {
+        await updateSkill(skill.id, {
+          name: skill.name,
+          description: skill.description,
+          prompt: skill.prompt,
+        });
+        setSkills((prev) =>
+          prev.map((s) => (s.id === skill.id ? { ...s, ...skill } : s)),
+        );
+      } else {
+        await insertSkill(skill);
+        setSkills((prev) => [...prev, skill]);
+      }
     } catch (error) {
       console.error("Failed to save skill:", error);
+    }
+  }
+
+  async function handleDeleteSkill(skillId: string) {
+    try {
+      await deleteSkill(skillId);
+      setSkills((prev) => prev.filter((s) => s.id !== skillId));
+    } catch (error) {
+      console.error("Failed to delete skill:", error);
     }
   }
 
@@ -115,6 +131,7 @@ export default function SkillsPage() {
                 skill={skill}
                 onToggle={toggleSkill}
                 onEdit={handleEdit}
+                onDelete={handleDeleteSkill}
               />
             ))}
           </div>
@@ -135,9 +152,10 @@ interface SkillItemProps {
   skill: Skill;
   onToggle: (id: string, enabled: boolean) => void;
   onEdit: (skill: Skill) => void;
+  onDelete: (id: string) => void;
 }
 
-function SkillItem({ skill, onToggle, onEdit }: SkillItemProps) {
+function SkillItem({ skill, onToggle, onEdit, onDelete }: SkillItemProps) {
   const { t } = useTranslation();
 
   const formatDate = (timestamp: number) => {
@@ -174,7 +192,7 @@ function SkillItem({ skill, onToggle, onEdit }: SkillItemProps) {
             <Pencil className="size-3.5" />
           </Button>
           {!skill.builtIn && (
-            <Button variant="ghost" size="icon" className="size-7 hover:text-red-500">
+            <Button variant="ghost" size="icon" className="size-7 hover:text-red-500" onClick={() => onDelete(skill.id)}>
               <Trash2 className="size-3.5" />
             </Button>
           )}

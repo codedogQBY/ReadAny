@@ -37,13 +37,27 @@ export default function SkillEditorDialog({ isOpen, onClose, skill, onSave }: Sk
   const handleSave = () => {
     if (!name.trim() || !prompt.trim()) return;
 
-    const updatedSkill: Skill = {
-      ...skill!,
-      name: isBuiltin ? skill!.name : name.trim(),
-      description: description.trim(),
-      prompt: prompt.trim(),
-      updatedAt: Date.now(),
-    };
+    const now = Date.now();
+    const updatedSkill: Skill = isEditing
+      ? {
+          ...skill!,
+          name: isBuiltin ? skill!.name : name.trim(),
+          description: description.trim(),
+          prompt: prompt.trim(),
+          updatedAt: now,
+        }
+      : {
+          id: `custom-${now}`,
+          name: name.trim(),
+          description: description.trim(),
+          icon: undefined,
+          enabled: true,
+          parameters: [],
+          prompt: prompt.trim(),
+          builtIn: false,
+          createdAt: now,
+          updatedAt: now,
+        };
 
     onSave?.(updatedSkill);
     onClose();
