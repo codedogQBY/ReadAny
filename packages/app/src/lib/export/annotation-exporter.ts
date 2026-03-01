@@ -270,6 +270,55 @@ export class AnnotationExporter {
     }
     return grouped;
   }
+
+  /** Export multiple books into a single merged output */
+  exportMultipleBooks(
+    booksData: Array<{ book: Book; highlights: Highlight[]; notes: Note[] }>,
+    options: Partial<ExportOptions> = {},
+  ): string {
+    const opts = { ...DEFAULT_OPTIONS, ...options };
+    const nonEmpty = booksData.filter(
+      (d) => d.highlights.length > 0 || d.notes.length > 0,
+    );
+
+    if (opts.format === "json") {
+      return JSON.stringify(
+        {
+          exportedAt: new Date().toISOString(),
+          totalBooks: nonEmpty.length,
+          books: nonEmpty.map((d) => ({
+            book: {
+              id: d.book.id,
+              title: d.book.meta.title,
+              author: d.book.meta.author,
+              language: d.book.meta.language,
+            },
+            highlights: d.highlights.map((h) => ({
+              id: h.id,
+              text: h.text,
+              color: h.color,
+              note: h.note,
+              chapter: h.chapterTitle,
+              createdAt: new Date(h.createdAt).toISOString(),
+            })),
+            notes: d.notes.map((n) => ({
+              id: n.id,
+              title: n.title,
+              content: n.content,
+              chapter: n.chapterTitle,
+              createdAt: new Date(n.createdAt).toISOString(),
+            })),
+          })),
+        },
+        null,
+        2,
+      );
+    }
+
+    return nonEmpty
+      .map((d) => this.export(d.highlights, d.notes, d.book, options))
+      .join("\n\n---\n\n");
+  }
 }
 
 /** Singleton exporter instance */

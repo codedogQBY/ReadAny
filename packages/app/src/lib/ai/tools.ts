@@ -59,10 +59,12 @@ function createRagSearchTool(bookId: string): ToolDefinition {
       return {
         results: results.map((r) => ({
           chapter: r.chunk.chapterTitle,
+          chapterIndex: r.chunk.chapterIndex,
           content: r.chunk.content.slice(0, 500), // Truncate for context window
           score: Math.round(r.score * 1000) / 1000,
           matchType: r.matchType,
           highlights: r.highlights,
+          cfi: r.chunk.startCfi || "",
         })),
         totalResults: results.length,
       };

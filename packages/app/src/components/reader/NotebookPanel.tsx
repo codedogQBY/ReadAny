@@ -16,7 +16,10 @@ import {
 import { cn } from "@/lib/utils";
 import { useNotebookStore } from "@/stores/notebook-store";
 import { useAnnotationStore } from "@/stores/annotation-store";
-import type { Highlight, HighlightColor } from "@/types";
+import { useLibraryStore } from "@/stores/library-store";
+import { ExportDropdown } from "@/components/notes/ExportDropdown";
+import { annotationExporter, type ExportFormat } from "@/lib/export/annotation-exporter";
+import type { Highlight, HighlightColor, Note } from "@/types";
 import { HIGHLIGHT_COLOR_HEX } from "@/types";
 import { MarkdownEditor } from "@/components/ui/markdown-editor";
 import { Button } from "@/components/ui/button";
@@ -43,13 +46,15 @@ export function NotebookPanel({ bookId, onClose, onGoToCfi, onAddAnnotation, onD
     clearDraft,
   } = useNotebookStore();
   
-  const { 
-    highlights, 
+  const {
+    highlights,
     notes,
-    addHighlight, 
+    addHighlight,
     updateHighlight,
     removeHighlight,
   } = useAnnotationStore();
+
+  const books = useLibraryStore((s) => s.books);
 
   // Local state for note content being edited
   const [noteContent, setNoteContent] = useState("");
@@ -188,6 +193,23 @@ export function NotebookPanel({ bookId, onClose, onGoToCfi, onAddAnnotation, onD
     }));
   };
 
+  const handleExport = (format: ExportFormat) => {
+    const book = books.find((b) => b.id === bookId);
+    if (!book) return;
+    const content = annotationExporter.export(
+      bookHighlights as Highlight[],
+      [] as Note[],
+      book,
+      { format },
+    );
+    if (format === "notion") {
+      annotationExporter.copyToClipboard(content);
+    } else {
+      const ext = format === "json" ? "json" : "md";
+      annotationExporter.downloadAsFile(content, `${book.meta.title}-${format}.${ext}`, format);
+    }
+  };
+
   // Check if we're in editing mode
   const isEditing = pendingNote || editingHighlight;
   const editingText = pendingNote?.text || editingHighlight?.text || "";
@@ -199,13 +221,19 @@ export function NotebookPanel({ bookId, onClose, onGoToCfi, onAddAnnotation, onD
         <span className="text-xs font-medium text-foreground">
           {t("notebook.title")}
         </span>
-        <button
-          type="button"
-          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          onClick={onClose}
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <ExportDropdown
+            onExport={handleExport}
+            disabled={bookHighlights.length === 0}
+          />
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            onClick={onClose}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Content */}

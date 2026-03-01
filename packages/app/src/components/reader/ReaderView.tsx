@@ -808,13 +808,40 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     searchGeneratorRef.current = gen;
 
     // Collect results from the async generator
+    // foliate-js full-book search yields two formats:
+    //   - { progress: number }  (progress update, skip)
+    //   - { label, subitems: [{ cfi, excerpt }] }  (per-section results)
+    // Single-section search yields { cfi, excerpt } directly.
     const results: Array<{ cfi: string; excerpt: string }> = [];
     try {
       for await (const result of gen) {
-        const r = result as { cfi?: string; excerpt?: string } | undefined;
-        if (r?.cfi) {
+        const r = result as {
+          cfi?: string;
+          excerpt?: string;
+          progress?: number;
+          subitems?: Array<{ cfi: string; excerpt: string }>;
+        } | undefined;
+        if (!r) continue;
+
+        if (r.subitems) {
+          // Full-book search: per-section grouped results
+          for (const item of r.subitems) {
+            if (item.cfi) {
+              results.push({ cfi: item.cfi, excerpt: item.excerpt || "" });
+            }
+          }
+          // Incrementally update UI as results come in
+          searchResultsListRef.current = results;
+          setSearchResults(results.length);
+          if (results.length === 1) {
+            setSearchIndex(0);
+            foliateRef.current?.goToCFI(results[0].cfi);
+          }
+        } else if (r.cfi) {
+          // Single-section search: flat results
           results.push({ cfi: r.cfi, excerpt: r.excerpt || "" });
         }
+        // Skip progress-only events ({ progress: number })
       }
     } catch {
       // Generator may be interrupted by a new search
@@ -822,7 +849,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
     searchResultsListRef.current = results;
     setSearchResults(results.length);
-    if (results.length > 0) {
+    if (results.length > 0 && searchResultsListRef.current.length <= results.length) {
       setSearchIndex(0);
       foliateRef.current?.goToCFI(results[0].cfi);
     }

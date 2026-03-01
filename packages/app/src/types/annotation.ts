@@ -1,7 +1,7 @@
 /** Annotation types: highlights, notes, bookmarks */
 
 // Predefined highlight colors (matching readest)
-export type HighlightColor = "red" | "yellow" | "green" | "blue" | "violet";
+export type HighlightColor = "red" | "yellow" | "green" | "blue" | "pink" | "purple" | "violet";
 
 // Hex color values for each highlight color
 export const HIGHLIGHT_COLOR_HEX: Record<HighlightColor, string> = {
@@ -9,11 +9,13 @@ export const HIGHLIGHT_COLOR_HEX: Record<HighlightColor, string> = {
   yellow: "#facc15",   // yellow-400
   green: "#4ade80",    // green-400
   blue: "#60a5fa",     // blue-400
+  pink: "#f472b6",     // pink-400
+  purple: "#c084fc",   // purple-400
   violet: "#a78bfa",   // violet-400
 };
 
 // All available highlight colors in display order
-export const HIGHLIGHT_COLORS: HighlightColor[] = ["red", "violet", "blue", "green", "yellow"];
+export const HIGHLIGHT_COLORS: HighlightColor[] = ["yellow", "green", "blue", "pink", "purple"];
 
 export interface Highlight {
   id: string;

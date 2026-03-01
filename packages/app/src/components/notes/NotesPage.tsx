@@ -20,11 +20,15 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAnnotationStore } from "@/stores/annotation-store";
+import { useLibraryStore } from "@/stores/library-store";
 import { useAppStore } from "@/stores/app-store";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MarkdownEditor } from "@/components/ui/markdown-editor";
+import { ExportDropdown } from "./ExportDropdown";
+import { annotationExporter, type ExportFormat } from "@/lib/export/annotation-exporter";
 import type { HighlightWithBook } from "@/lib/db/database";
+import type { Highlight, Note } from "@/types";
 import { HIGHLIGHT_COLOR_HEX } from "@/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -42,6 +46,7 @@ export function NotesPage() {
     loadStats,
   } = useAnnotationStore();
   const { addTab, setActiveTab, activeTabId } = useAppStore();
+  const books = useLibraryStore((s) => s.books);
 
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -170,6 +175,46 @@ export function NotesPage() {
     setEditNote("");
   };
 
+  const doExport = (format: ExportFormat, book: { id: string; meta: { title: string } }, highlights: Highlight[], exportNotes: Note[], content: string) => {
+    if (format === "notion") {
+      annotationExporter.copyToClipboard(content);
+    } else {
+      const ext = format === "json" ? "json" : "md";
+      annotationExporter.downloadAsFile(content, `${book.meta.title}-${format}.${ext}`, format);
+    }
+  };
+
+  const handleSingleBookExport = (format: ExportFormat) => {
+    if (!selectedBook) return;
+    const book = books.find((b) => b.id === selectedBook.bookId);
+    if (!book) return;
+    const content = annotationExporter.export(
+      selectedBook.highlights as Highlight[],
+      [] as Note[],
+      book,
+      { format },
+    );
+    doExport(format, book, selectedBook.highlights as Highlight[], [], content);
+  };
+
+  const handleMultiBookExport = (format: ExportFormat) => {
+    const booksData = bookNotebooks
+      .map((notebook) => {
+        const book = books.find((b) => b.id === notebook.bookId);
+        if (!book) return null;
+        return { book, highlights: notebook.highlights as Highlight[], notes: [] as Note[] };
+      })
+      .filter((d): d is NonNullable<typeof d> => d !== null);
+    if (booksData.length === 0) return;
+    const content = annotationExporter.exportMultipleBooks(booksData, { format });
+    if (format === "notion") {
+      annotationExporter.copyToClipboard(content);
+    } else {
+      const ext = format === "json" ? "json" : "md";
+      annotationExporter.downloadAsFile(content, `all-annotations.${ext}`, format);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -212,7 +257,7 @@ export function NotesPage() {
               </p>
             </div>
             {!selectedBookId && (
-              <div />
+              <ExportDropdown onExport={handleMultiBookExport} />
             )}
           </div>
         </div>
@@ -311,6 +356,7 @@ export function NotesPage() {
                   <BookOpen className="h-3 w-3" />
                   {t("notes.openBook")}
                 </Button>
+                <ExportDropdown onExport={handleSingleBookExport} variant="outline" size="sm" />
               </div>
             </div>
 

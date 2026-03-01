@@ -4,6 +4,7 @@ import { deleteChunks, insertChunks } from "@/lib/db/database";
  */
 import type { Chunk, VectorConfig, VectorizeProgress } from "@/types";
 import { chunkContent } from "./chunker";
+import type { TextSegment } from "./book-extractor";
 import { EmbeddingService } from "./embedding-service";
 
 export type VectorizeCallback = (progress: VectorizeProgress) => void;
@@ -11,7 +12,7 @@ export type VectorizeCallback = (progress: VectorizeProgress) => void;
 /** Run the full vectorization pipeline for a book */
 export async function vectorizeBook(
   bookId: string,
-  chapters: Array<{ index: number; title: string; content: string }>,
+  chapters: Array<{ index: number; title: string; content: string; segments?: TextSegment[] }>,
   config: VectorConfig,
   apiKey: string,
   onProgress?: VectorizeCallback,
@@ -33,7 +34,7 @@ export async function vectorizeBook(
       targetTokens: config.chunkSize,
       minTokens: config.chunkMinSize,
       overlapRatio: config.chunkOverlap,
-    });
+    }, chapter.segments);
     allChunks.push(...chunks);
   }
 
