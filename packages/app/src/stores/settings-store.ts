@@ -80,6 +80,8 @@ async function fetchModelsFromEndpoint(endpoint: AIEndpoint): Promise<string[]> 
       return fetchAnthropicModels(endpoint);
     case "google":
       return fetchGoogleModels(endpoint);
+    case "deepseek":
+      return fetchDeepSeekModels(endpoint);
     case "openai":
     default:
       return fetchOpenAIModels(endpoint);
@@ -158,6 +160,27 @@ async function fetchGoogleModels(endpoint: AIEndpoint): Promise<string[]> {
     )
     .map((m: { name: string }) => m.name.replace("models/", ""))
     .sort((a: string, b: string) => a.localeCompare(b));
+}
+
+/** DeepSeek — uses OpenAI-compatible /models endpoint with fallback */
+async function fetchDeepSeekModels(endpoint: AIEndpoint): Promise<string[]> {
+  const baseUrl = (endpoint.baseUrl || "https://api.deepseek.com").replace(/\/+$/, "");
+  try {
+    const response = await fetch(`${baseUrl}/models`, {
+      headers: { Authorization: `Bearer ${endpoint.apiKey}` },
+    });
+    if (response.ok) {
+      const data = await response.json();
+      const models = (data.data || [])
+        .map((m: { id: string }) => m.id)
+        .sort((a: string, b: string) => a.localeCompare(b));
+      if (models.length > 0) return models;
+    }
+  } catch {
+    // Fall through to fallback
+  }
+  // Fallback: well-known DeepSeek models
+  return ["deepseek-chat", "deepseek-reasoner"];
 }
 
 export const useSettingsStore = create<SettingsState>()(

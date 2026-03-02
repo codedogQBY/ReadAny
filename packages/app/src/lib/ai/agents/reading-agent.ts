@@ -88,7 +88,7 @@ async function executeTool(tool: ToolDefinition, args: Record<string, unknown>):
 export async function* streamReadingAgent(
   options: ReadingAgentOptions,
   userInput: string,
-  history: Array<{ role: "user" | "assistant"; content: string }> = [],
+  history: Array<{ role: "user" | "assistant"; content: string; reasoning?: string }> = [],
 ): AsyncGenerator<AgentStreamEvent> {
   const { aiConfig, book, semanticContext, enabledSkills, isVectorized, deepThinking } = options;
 
@@ -119,10 +119,26 @@ export async function* streamReadingAgent(
     });
 
     // Build input messages (history + user input, without system — handled by agent prompt)
+    // For DeepSeek reasoner, we must include reasoning_content in assistant messages
+    // to avoid 400 errors during multi-turn tool-calling conversations.
+    const isDeepSeek = aiConfig.endpoints.find(
+      (e) => e.id === aiConfig.activeEndpointId,
+    )?.provider === "deepseek";
+
     const inputMessages: BaseMessage[] = [
-      ...history.map((h) =>
-        h.role === "user" ? new HumanMessage(h.content) : new AIMessage(h.content),
-      ),
+      ...history.map((h) => {
+        if (h.role === "user") {
+          return new HumanMessage(h.content);
+        }
+        // For DeepSeek, include reasoning_content in additional_kwargs
+        if (isDeepSeek && h.reasoning) {
+          return new AIMessage({
+            content: h.content,
+            additional_kwargs: { reasoning_content: h.reasoning },
+          });
+        }
+        return new AIMessage(h.content);
+      }),
       new HumanMessage(userInput),
     ];
 
@@ -200,6 +216,13 @@ export async function* streamReadingAgent(
               yield { type: "reasoning", content: block.thinking, stepType: "thinking" };
             }
           }
+        }
+
+        // Handle DeepSeek reasoning_content from @langchain/deepseek
+        // ChatDeepSeek puts reasoning_content in additional_kwargs.reasoning_content
+        const reasoningContent = chunk.additional_kwargs?.reasoning_content;
+        if (typeof reasoningContent === "string" && reasoningContent) {
+          yield { type: "reasoning", content: reasoningContent, stepType: "thinking" };
         }
 
         // Detect tool_call_chunks in streaming and emit tool_call as soon as we have the name.

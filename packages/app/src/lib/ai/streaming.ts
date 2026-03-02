@@ -48,6 +48,7 @@ export class StreamingChat {
     const history = messages.slice(0, -1).map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
+      reasoning: m.reasoning,
     }));
 
     try {

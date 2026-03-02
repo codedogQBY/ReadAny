@@ -23,6 +23,9 @@ importers:
       '@langchain/core':
         specifier: ^1.1.29
         version: 1.1.29(@opentelemetry/api@1.9.0)(openai@6.25.0(zod@4.3.6))
+      '@langchain/deepseek':
+        specifier: ^1.0.15
+        version: 1.0.15(@langchain/core@1.1.29(@opentelemetry/api@1.9.0)(openai@6.25.0(zod@4.3.6)))
       '@langchain/google-genai':
         specifier: ^2.1.21
         version: 2.1.21(@langchain/core@1.1.29(@opentelemetry/api@1.9.0)(openai@6.25.0(zod@4.3.6)))
@@ -747,6 +750,12 @@ packages:
   '@langchain/core@1.1.29':
     resolution: {integrity: sha512-BPoegTtIdZX4gl2kxcSXAlLrrJFl1cxeRsk9DM/wlIuvyPrFwjWqrEK5NwF5diDt5XSArhQxIFaifGAl4F7fgw==}
     engines: {node: '>=20'}
+
+  '@langchain/deepseek@1.0.15':
+    resolution: {integrity: sha512-BHx8843NREj7S6iRqysD1qAmMn67gwYtw5akL70yHwyBSb1jeSqZhbLA6Ijd/4V9OV5keA3M0TXArhskybsBSA==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@langchain/core': ^1.0.0
 
   '@langchain/google-genai@2.1.21':
     resolution: {integrity: sha512-wHFeaH5abfBNEF4xi88pdrQfKUoLMyoiOkbLQJbMIZ6JStUJAuu4h61rRMD05DtEnuIi3IOCgd/DU7zSY3u7CQ==}
@@ -3821,6 +3830,13 @@ snapshots:
       - '@opentelemetry/exporter-trace-otlp-proto'
       - '@opentelemetry/sdk-trace-base'
       - openai
+
+  '@langchain/deepseek@1.0.15(@langchain/core@1.1.29(@opentelemetry/api@1.9.0)(openai@6.25.0(zod@4.3.6)))':
+    dependencies:
+      '@langchain/core': 1.1.29(@opentelemetry/api@1.9.0)(openai@6.25.0(zod@4.3.6))
+      '@langchain/openai': 1.2.11(@langchain/core@1.1.29(@opentelemetry/api@1.9.0)(openai@6.25.0(zod@4.3.6)))
+    transitivePeerDependencies:
+      - ws
 
   '@langchain/google-genai@2.1.21(@langchain/core@1.1.29(@opentelemetry/api@1.9.0)(openai@6.25.0(zod@4.3.6)))':
     dependencies:

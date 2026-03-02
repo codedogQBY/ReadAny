@@ -230,6 +230,7 @@
     "ai_provider_openai": "OpenAI Compatible",
     "ai_provider_anthropic": "Anthropic Claude",
     "ai_provider_google": "Google Gemini",
+    "ai_provider_deepseek": "DeepSeek",
     "ai_endpointName": "Name",
     "ai_endpointNamePlaceholder": "e.g. OpenAI, Ollama, Claude...",
     "ai_apiKey": "API Key",

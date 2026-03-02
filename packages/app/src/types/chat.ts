@@ -103,7 +103,7 @@ export interface SemanticContext {
   operationType: "reading" | "highlighting" | "searching" | "navigating";
 }
 
-export type AIProviderType = "openai" | "anthropic" | "google";
+export type AIProviderType = "openai" | "anthropic" | "google" | "deepseek";
 
 export interface AIEndpoint {
   id: string;

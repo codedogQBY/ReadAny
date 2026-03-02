@@ -27,6 +27,7 @@ const PROVIDER_DEFAULTS: Record<AIProviderType, { baseUrl: string; placeholder: 
   openai: { baseUrl: "https://api.openai.com/v1", placeholder: "https://api.openai.com/v1", keyPlaceholder: "sk-..." },
   anthropic: { baseUrl: "", placeholder: "https://api.anthropic.com", keyPlaceholder: "sk-ant-..." },
   google: { baseUrl: "", placeholder: "https://generativelanguage.googleapis.com", keyPlaceholder: "AIza..." },
+  deepseek: { baseUrl: "https://api.deepseek.com", placeholder: "https://api.deepseek.com", keyPlaceholder: "sk-..." },
 };
 
 function EndpointCard({
@@ -128,6 +129,7 @@ function EndpointCard({
             <SelectItem value="openai">{t("settings.ai_provider_openai")}</SelectItem>
             <SelectItem value="anthropic">{t("settings.ai_provider_anthropic")}</SelectItem>
             <SelectItem value="google">{t("settings.ai_provider_google")}</SelectItem>
+            <SelectItem value="deepseek">{t("settings.ai_provider_deepseek")}</SelectItem>
           </SelectContent>
         </Select>
       </div>

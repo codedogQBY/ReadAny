@@ -95,6 +95,75 @@ export async function createChatModelFromEndpoint(
         streaming,
       });
     }
+
+    case "deepseek": {
+      const { ChatDeepSeek } = await import("@langchain/deepseek");
+
+      // Create a subclass that fixes the missing reasoning_content issue.
+      // Bug: @langchain/deepseek stores reasoning_content in additional_kwargs
+      // when receiving, but doesn't inject it back when sending requests.
+      // DeepSeek API requires reasoning_content on every assistant message
+      // during tool-calling loops, or it returns a 400 error.
+      class ChatDeepSeekFixed extends ChatDeepSeek {
+        private _reasoningMap = new Map<number, string>();
+
+        // biome-ignore lint: override needs any
+        async _generate(messages: any[], options: any, runManager?: any) {
+          this._buildReasoningMap(messages);
+          return super._generate(messages, options, runManager);
+        }
+
+        // biome-ignore lint: override needs any
+        async *_streamResponseChunks(messages: any[], options: any, runManager?: any) {
+          this._buildReasoningMap(messages);
+          yield* super._streamResponseChunks(messages, options, runManager);
+        }
+
+        // biome-ignore lint: override needs any
+        // @ts-expect-error -- overloaded signature; runtime type is correct
+        async completionWithRetry(request: any, requestOptions?: any) {
+          // Inject reasoning_content into assistant messages in the API request
+          if (request.messages && this._reasoningMap.size > 0) {
+            let assistantIdx = 0;
+            for (const msg of request.messages) {
+              if (msg.role === "assistant") {
+                const reasoning = this._reasoningMap.get(assistantIdx);
+                if (reasoning !== undefined) {
+                  msg.reasoning_content = reasoning;
+                }
+                assistantIdx++;
+              }
+            }
+          }
+          return super.completionWithRetry(request, requestOptions);
+        }
+
+        // biome-ignore lint: messages is BaseMessage[]
+        private _buildReasoningMap(messages: any[]) {
+          this._reasoningMap.clear();
+          let assistantIdx = 0;
+          for (const msg of messages) {
+            if (msg._getType?.() === "ai" || msg.constructor?.name === "AIMessage" || msg.constructor?.name === "AIMessageChunk") {
+              const reasoning = msg.additional_kwargs?.reasoning_content;
+              if (typeof reasoning === "string") {
+                this._reasoningMap.set(assistantIdx, reasoning);
+              }
+              assistantIdx++;
+            }
+          }
+        }
+      }
+
+      return new ChatDeepSeekFixed({
+        model,
+        apiKey: endpoint.apiKey,
+        configuration: endpoint.baseUrl ? { baseURL: endpoint.baseUrl } : undefined,
+        temperature,
+        maxTokens,
+        streaming,
+      } as ConstructorParameters<typeof ChatDeepSeek>[0]);
+    }
+
     default: {
       const { ChatOpenAI } = await import("@langchain/openai");
 

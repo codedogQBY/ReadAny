@@ -20,9 +20,16 @@ interface PipelineContext {
   userLanguage: string;
 }
 
+export interface ProcessedMessage {
+  role: "user" | "assistant";
+  content: string;
+  /** DeepSeek reasoning_content — needed for multi-turn tool-calling with reasoner models */
+  reasoning?: string;
+}
+
 interface ProcessedMessages {
   systemPrompt: string;
-  messages: Array<{ role: "user" | "assistant"; content: string }>;
+  messages: ProcessedMessage[];
 }
 
 const DEFAULT_CONFIG: PipelineConfig = {
@@ -40,13 +47,20 @@ export function processMessages(
   // Apply sliding window — keep last N messages
   const windowedMessages = applySlidingWindow(thread.messages, config.slidingWindowSize);
 
-  // Process citations in messages
-  const processed = windowedMessages
+  // Process citations in messages, preserving reasoning for DeepSeek multi-turn
+  const processed: ProcessedMessage[] = windowedMessages
     .filter((m) => m.role !== "system")
-    .map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: injectCitations(m),
-    }));
+    .map((m) => {
+      const msg: ProcessedMessage = {
+        role: m.role as "user" | "assistant",
+        content: injectCitations(m),
+      };
+      // Preserve reasoning content for assistant messages (needed by DeepSeek reasoner)
+      if (m.role === "assistant" && m.reasoning && m.reasoning.length > 0) {
+        msg.reasoning = m.reasoning.map((r) => r.content).join("\n");
+      }
+      return msg;
+    });
 
   return { systemPrompt, messages: processed };
 }

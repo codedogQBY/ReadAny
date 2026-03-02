@@ -230,6 +230,7 @@
     "ai_provider_openai": "OpenAI 兼容",
     "ai_provider_anthropic": "Anthropic Claude",
     "ai_provider_google": "Google Gemini",
+    "ai_provider_deepseek": "DeepSeek",
     "ai_endpointName": "名称",
     "ai_endpointNamePlaceholder": "如 OpenAI、Ollama、Claude...",
     "ai_apiKey": "API 密钥",

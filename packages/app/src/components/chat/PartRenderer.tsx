@@ -107,16 +107,14 @@ function TextPartView({ part }: { part: TextPart }) {
 }
 
 function ReasoningPartView({ part }: { part: ReasoningPart }) {
-  // Auto-expand when streaming (running), auto-collapse when completed
-  const [isOpen, setIsOpen] = useState(part.status === "running");
+  // Start expanded when streaming; keep expanded after completion
+  const [isOpen, setIsOpen] = useState(part.status === "running" || part.status === "completed");
   const throttledText = useThrottledText(part.text);
 
-  // Sync isOpen with part status: expand on running, collapse on completed
+  // Expand when streaming starts
   useEffect(() => {
     if (part.status === "running") {
       setIsOpen(true);
-    } else if (part.status === "completed") {
-      setIsOpen(false);
     }
   }, [part.status]);
 
@@ -158,9 +156,6 @@ function ReasoningPartView({ part }: { part: ReasoningPart }) {
               <p className="whitespace-pre-wrap text-sm leading-relaxed text-violet-900">
                 {throttledText}
               </p>
-              {part.status === "running" && (
-                <span className="inline-block h-4 w-1 animate-pulse bg-violet-500" />
-              )}
             </div>
           </CollapsibleContent>
         </div>
