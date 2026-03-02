@@ -477,8 +477,9 @@ export { EDGE_TTS_VOICES } from "./edge-tts";
 export type { EdgeTTSVoice } from "./edge-tts";
 
 /**
- * Edge TTS player: fetches MP3 audio for each text chunk via WebSocket,
- * then plays sequentially using HTMLAudioElement for reliable MP3 decoding.
+ * Edge TTS player with prefetch: while the current chunk plays,
+ * the next chunk's audio is already being fetched over WebSocket.
+ * This eliminates the gap between chunks caused by network latency.
  */
 export class EdgeTTSPlayer {
   private audio: HTMLAudioElement | null = null;
@@ -486,6 +487,8 @@ export class EdgeTTSPlayer {
   private _playing = false;
   private _paused = false;
   private aborted = false;
+  /** Prefetched audio data keyed by chunk index */
+  private prefetchCache = new Map<number, Promise<ArrayBuffer>>();
 
   onStateChange?: (state: "playing" | "paused" | "stopped") => void;
   onChunkChange?: (index: number, total: number) => void;
@@ -500,17 +503,39 @@ export class EdgeTTSPlayer {
     this._playing = true;
     this._paused = false;
     this.aborted = false;
+    this.prefetchCache.clear();
+
+    const voice = config.edgeVoice || "zh-CN-XiaoxiaoNeural";
+    const lang = voice.split("-").slice(0, 2).join("-");
+    const fetchPayloadBase = { voice, lang, rate: config.rate, pitch: config.pitch };
+
+    // Kick off prefetch for chunk 0 (and chunk 1 if exists)
+    this.startPrefetch(0, fetchPayloadBase);
+    if (this.chunks.length > 1) {
+      this.startPrefetch(1, fetchPayloadBase);
+    }
 
     for (let i = 0; i < this.chunks.length; i++) {
       if (!this._playing || this.aborted) return;
       this.onChunkChange?.(i, this.chunks.length);
 
+      // Prefetch the chunk after next (i+2) while we play chunk i
+      if (i + 2 < this.chunks.length) {
+        this.startPrefetch(i + 2, fetchPayloadBase);
+      }
+
       try {
-        await this.playChunk(this.chunks[i], config, i === 0);
+        // Wait for prefetched audio data (should already be in-flight or resolved)
+        const audioData = await this.getPrefetchedAudio(i, fetchPayloadBase);
+        if (!this._playing || this.aborted) return;
+
+        await this.playAudioData(audioData, config, i === 0);
       } catch (err) {
         console.error("[Edge TTS] chunk error:", err);
-        // Continue to next chunk on error
       }
+
+      // Clean up used cache entry
+      this.prefetchCache.delete(i);
     }
 
     if (this._playing && !this.aborted) {
@@ -523,20 +548,30 @@ export class EdgeTTSPlayer {
     }
   }
 
-  private async playChunk(text: string, config: TTSConfig, isFirst: boolean): Promise<void> {
-    const voice = config.edgeVoice || "zh-CN-XiaoxiaoNeural";
-    const lang = voice.split("-").slice(0, 2).join("-");
-
-    const audioData = await fetchEdgeTTSAudio({
-      text,
-      voice,
-      lang,
-      rate: config.rate,
-      pitch: config.pitch,
+  /** Start prefetching audio for chunk at given index (no-op if already started) */
+  private startPrefetch(index: number, base: { voice: string; lang: string; rate: number; pitch: number }) {
+    if (this.prefetchCache.has(index) || index >= this.chunks.length) return;
+    const promise = fetchEdgeTTSAudio({
+      text: this.chunks[index],
+      ...base,
+    }).catch((err) => {
+      // Remove failed cache so it can be retried
+      this.prefetchCache.delete(index);
+      throw err;
     });
+    this.prefetchCache.set(index, promise);
+  }
 
-    if (!this._playing || this.aborted) return;
+  /** Get prefetched audio, or fetch on-demand as fallback */
+  private async getPrefetchedAudio(index: number, base: { voice: string; lang: string; rate: number; pitch: number }): Promise<ArrayBuffer> {
+    const cached = this.prefetchCache.get(index);
+    if (cached) return cached;
+    // Fallback: fetch now (shouldn't normally happen)
+    return fetchEdgeTTSAudio({ text: this.chunks[index], ...base });
+  }
 
+  /** Play an ArrayBuffer of MP3 data via HTMLAudioElement */
+  private playAudioData(audioData: ArrayBuffer, config: TTSConfig, isFirst: boolean): Promise<void> {
     const blob = new Blob([audioData], { type: "audio/mpeg" });
     const url = URL.createObjectURL(blob);
 
@@ -564,7 +599,6 @@ export class EdgeTTSPlayer {
       };
 
       if (this._paused) {
-        // If paused between chunks, don't auto-play
         audio.load();
       } else {
         audio.play().catch(reject);
@@ -590,6 +624,7 @@ export class EdgeTTSPlayer {
     this.aborted = true;
     this.cleanup();
     this.chunks = [];
+    this.prefetchCache.clear();
     this._playing = false;
     this._paused = false;
     this.onStateChange?.("stopped");
