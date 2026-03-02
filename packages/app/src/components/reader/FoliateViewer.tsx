@@ -210,20 +210,26 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
             const contents = renderer?.getContents?.();
             if (!contents?.[0]?.doc) return "";
             const doc = contents[0].doc as Document;
-            const win = doc.defaultView;
 
-            // Get the iframe's viewport dimensions.
-            // In paginated mode (CSS columns), text outside the visible column
-            // has getBoundingClientRect coordinates outside [0, clientWidth].
-            // In scrolled mode, text outside has coords outside [0, clientHeight].
-            if (win) {
-              const vw = win.innerWidth;
-              const vh = win.innerHeight;
+            // In paginated mode (CSS columns), the iframe is expanded to the
+            // full content width. The outer container scrolls to show the
+            // current "page". We must use the paginator's scroll position to
+            // determine which text nodes are actually visible.
+            const isPaginated = !renderer.scrolled;
+            const pSize = renderer.size;   // container visible width (one page)
+            const pStart = renderer.start; // abs(scrollLeft)
+
+            if (isPaginated && pSize > 0) {
+              // In paginated mode, first page starts at scroll offset = pSize
+              // (page 0 is padding). So visible range in iframe coords is
+              // [start - size, end - size].
+              const visibleLeft = pStart - pSize;
+              const visibleRight = pStart;  // end - size = (start + size) - size = start
 
               const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
-                acceptNode: (node) => {
+                acceptNode: (node: Node) => {
                   if (!node.nodeValue?.trim()) return NodeFilter.FILTER_SKIP;
-                  const parent = node.parentElement;
+                  const parent = (node as Text).parentElement;
                   const tag = parent?.tagName?.toLowerCase();
                   if (tag === "script" || tag === "style") return NodeFilter.FILTER_REJECT;
                   return NodeFilter.FILTER_ACCEPT;
@@ -231,26 +237,61 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
               });
 
               const visibleTexts: string[] = [];
-              let node = walker.nextNode();
-              while (node) {
+              let textNode = walker.nextNode();
+              while (textNode) {
                 const range = doc.createRange();
-                range.selectNodeContents(node);
+                range.selectNodeContents(textNode);
                 const rect = range.getBoundingClientRect();
-                // Check if any part of this text node is within the iframe viewport
                 if (
-                  rect.right > 0 &&
-                  rect.left < vw &&
-                  rect.bottom > 0 &&
-                  rect.top < vh &&
+                  rect.right > visibleLeft &&
+                  rect.left < visibleRight &&
                   rect.width > 0
                 ) {
-                  const text = node.nodeValue?.trim();
+                  const text = textNode.nodeValue?.trim();
                   if (text) visibleTexts.push(text);
                 }
-                node = walker.nextNode();
+                textNode = walker.nextNode();
               }
               const result = visibleTexts.join(" ").trim();
               if (result) return result;
+            } else {
+              // Scrolled mode: use iframe viewport dimensions
+              const win = doc.defaultView;
+              if (win) {
+                const vw = win.innerWidth;
+                const vh = win.innerHeight;
+
+                const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
+                  acceptNode: (node: Node) => {
+                    if (!node.nodeValue?.trim()) return NodeFilter.FILTER_SKIP;
+                    const parent = (node as Text).parentElement;
+                    const tag = parent?.tagName?.toLowerCase();
+                    if (tag === "script" || tag === "style") return NodeFilter.FILTER_REJECT;
+                    return NodeFilter.FILTER_ACCEPT;
+                  },
+                });
+
+                const visibleTexts: string[] = [];
+                let textNode = walker.nextNode();
+                while (textNode) {
+                  const range = doc.createRange();
+                  range.selectNodeContents(textNode);
+                  const rect = range.getBoundingClientRect();
+                  if (
+                    rect.right > 0 &&
+                    rect.left < vw &&
+                    rect.bottom > 0 &&
+                    rect.top < vh &&
+                    rect.width > 0
+                  ) {
+                    const text = textNode.nodeValue?.trim();
+                    if (text) visibleTexts.push(text);
+                  }
+                  textNode = walker.nextNode();
+                }
+                const result = visibleTexts.join(" ").trim();
+                if (result) return result;
+              }
             }
 
             // Fallback: return full section text

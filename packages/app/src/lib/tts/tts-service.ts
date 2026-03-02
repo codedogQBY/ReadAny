@@ -207,6 +207,7 @@ export class DashScopeTTSPlayer {
   private _playing = false;
   private _paused = false;
   private allChunksDone = false;
+  private hasAudioData = false;
   private abortController: AbortController | null = null;
   private checkEndTimer: ReturnType<typeof setInterval> | null = null;
   /** Accumulated raw PCM/mp3 bytes from SSE, batched for decoding */
@@ -221,11 +222,19 @@ export class DashScopeTTSPlayer {
   get paused() { return this._paused; }
 
   async speak(text: string, config: TTSConfig) {
-    this.stop();
+    // Clean up previous playback without firing onStateChange
+    this.abortController?.abort();
+    this.abortController = null;
+    if (this.checkEndTimer) { clearInterval(this.checkEndTimer); this.checkEndTimer = null; }
+    if (this.decodeTimeout) { clearTimeout(this.decodeTimeout); this.decodeTimeout = null; }
+    this.cleanupAudio();
+    this.pendingBytes = [];
+
     const chunks = splitIntoChunks(text);
     this._playing = true;
     this._paused = false;
     this.allChunksDone = false;
+    this.hasAudioData = false;
 
     // Create AudioContext
     this.audioCtx = new AudioContext();
@@ -236,7 +245,13 @@ export class DashScopeTTSPlayer {
     // Monitor for playback completion
     this.checkEndTimer = setInterval(() => {
       if (!this._playing) return;
-      if (this.allChunksDone && this.audioCtx) {
+      if (this.allChunksDone && this.audioCtx && this.pendingBytes.length === 0 && !this.decodeTimeout) {
+        // All SSE data received and no pending flush — check audio playback
+        if (!this.hasAudioData) {
+          // No audio data was ever scheduled — finish immediately
+          this.finishPlayback();
+          return;
+        }
         const currentTime = this.audioCtx.currentTime;
         if (currentTime >= this.scheduledEnd - 0.05) {
           this.finishPlayback();
@@ -253,6 +268,9 @@ export class DashScopeTTSPlayer {
         console.error("[DashScope TTS] chunk error:", err);
       }
     }
+
+    // Final flush of any remaining pending bytes before marking done
+    this.flushPendingBytes();
     this.allChunksDone = true;
   }
 
@@ -394,6 +412,7 @@ export class DashScopeTTSPlayer {
     const startAt = Math.max(ctx.currentTime, this.scheduledEnd);
     source.start(startAt);
     this.scheduledEnd = startAt + audioBuffer.duration;
+    this.hasAudioData = true;
   }
 
   private finishPlayback() {
@@ -437,6 +456,7 @@ export class DashScopeTTSPlayer {
     this.cleanupAudio();
     this.pendingBytes = [];
     this.allChunksDone = false;
+    this.hasAudioData = false;
     this._playing = false;
     this._paused = false;
     this.onStateChange?.("stopped");
