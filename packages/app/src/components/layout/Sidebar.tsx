@@ -52,9 +52,9 @@ export function HomeSidebar() {
 
   return (
     <aside className="z-40 flex h-full w-48 shrink-0 select-none flex-col overflow-hidden">
-      <div className="p-1 pt-2 pl-2">
+      <div className="px-2 pt-2">
         {isSearchVisible ? (
-          <div className="flex items-center gap-1.5 rounded-lg bg-muted px-2.5 py-1.5 transition-colors">
+          <div className="flex w-full items-center gap-1.5 rounded-lg bg-muted px-2.5 py-1.5 transition-colors">
             <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <input type="text" placeholder={`${t("common.search")}...`} autoFocus
               className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
@@ -65,7 +65,7 @@ export function HomeSidebar() {
             />
           </div>
         ) : (
-          <button type="button" className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" onClick={() => setIsSearchVisible(true)}>
+          <button type="button" className="flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" onClick={() => setIsSearchVisible(true)}>
             <Search className="h-3.5 w-3.5 shrink-0" />
             <span className="text-sm">{t("common.search")}</span>
           </button>

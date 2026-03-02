@@ -477,16 +477,31 @@ export { EDGE_TTS_VOICES } from "./edge-tts";
 export type { EdgeTTSVoice } from "./edge-tts";
 
 /**
- * Edge TTS player with prefetch: while the current chunk plays,
- * the next chunk's audio is already being fetched over WebSocket.
- * This eliminates the gap between chunks caused by network latency.
+ * Edge TTS player with prefetch and AudioContext-based gapless playback.
+ *
+ * Uses AudioContext.decodeAudioData to decode MP3 chunks into AudioBuffers,
+ * then schedules them back-to-back on the audio timeline. This eliminates
+ * the MP3 encoder delay/padding overlap that causes "repeated" audio at
+ * chunk boundaries when using HTMLAudioElement.
+ *
+ * While the current chunk plays, the next chunk's audio is already being
+ * fetched and decoded, ensuring seamless transitions.
  */
 export class EdgeTTSPlayer {
-  private audio: HTMLAudioElement | null = null;
+  private audioCtx: AudioContext | null = null;
+  private gainNode: GainNode | null = null;
+  private scheduledEnd = 0;
   private chunks: string[] = [];
   private _playing = false;
   private _paused = false;
   private aborted = false;
+  /** Track whether we have any scheduled audio */
+  private hasAudioData = false;
+  /** Whether we already notified "playing" state */
+  private playingNotified = false;
+  /** Timer to detect when all audio has finished playing */
+  private checkEndTimer: ReturnType<typeof setInterval> | null = null;
+  private allChunksDone = false;
   /** Prefetched audio data keyed by chunk index */
   private prefetchCache = new Map<number, Promise<ArrayBuffer>>();
 
@@ -498,12 +513,46 @@ export class EdgeTTSPlayer {
   get paused() { return this._paused; }
 
   async speak(text: string, config: TTSConfig) {
-    this.stop();
+    // Clean up previous playback without firing onStateChange (same pattern as DashScope)
+    this.aborted = true;
+    this.cleanupAudio();
+    this.prefetchCache.clear();
+    if (this.checkEndTimer) { clearInterval(this.checkEndTimer); this.checkEndTimer = null; }
+
     this.chunks = splitIntoChunks(text);
     this._playing = true;
     this._paused = false;
     this.aborted = false;
+    this.allChunksDone = false;
+    this.hasAudioData = false;
+    this.playingNotified = false;
     this.prefetchCache.clear();
+
+    // Create AudioContext for gapless playback
+    this.audioCtx = new AudioContext();
+    this.gainNode = this.audioCtx.createGain();
+    this.gainNode.connect(this.audioCtx.destination);
+    this.scheduledEnd = 0;
+
+    // Ensure AudioContext is running (may be suspended due to autoplay policy)
+    if (this.audioCtx.state === "suspended") {
+      await this.audioCtx.resume();
+    }
+
+    // Monitor for playback completion (skip checks while paused)
+    this.checkEndTimer = setInterval(() => {
+      if (!this._playing || this._paused) return;
+      if (this.allChunksDone && this.audioCtx) {
+        if (!this.hasAudioData) {
+          this.finishPlayback();
+          return;
+        }
+        const currentTime = this.audioCtx.currentTime;
+        if (currentTime >= this.scheduledEnd - 0.05) {
+          this.finishPlayback();
+        }
+      }
+    }, 200);
 
     const voice = config.edgeVoice || "zh-CN-XiaoxiaoNeural";
     const lang = voice.split("-").slice(0, 2).join("-");
@@ -525,11 +574,10 @@ export class EdgeTTSPlayer {
       }
 
       try {
-        // Wait for prefetched audio data (should already be in-flight or resolved)
         const audioData = await this.getPrefetchedAudio(i, fetchPayloadBase);
         if (!this._playing || this.aborted) return;
 
-        await this.playAudioData(audioData, config, i === 0);
+        await this.decodeAndSchedule(audioData);
       } catch (err) {
         console.error("[Edge TTS] chunk error:", err);
       }
@@ -538,14 +586,7 @@ export class EdgeTTSPlayer {
       this.prefetchCache.delete(i);
     }
 
-    if (this._playing && !this.aborted) {
-      const onEnd = this.onEnd;
-      this._playing = false;
-      this._paused = false;
-      this.cleanup();
-      this.onStateChange?.("stopped");
-      onEnd?.();
-    }
+    this.allChunksDone = true;
   }
 
   /** Start prefetching audio for chunk at given index (no-op if already started) */
@@ -555,7 +596,6 @@ export class EdgeTTSPlayer {
       text: this.chunks[index],
       ...base,
     }).catch((err) => {
-      // Remove failed cache so it can be retried
       this.prefetchCache.delete(index);
       throw err;
     });
@@ -566,63 +606,72 @@ export class EdgeTTSPlayer {
   private async getPrefetchedAudio(index: number, base: { voice: string; lang: string; rate: number; pitch: number }): Promise<ArrayBuffer> {
     const cached = this.prefetchCache.get(index);
     if (cached) return cached;
-    // Fallback: fetch now (shouldn't normally happen)
     return fetchEdgeTTSAudio({ text: this.chunks[index], ...base });
   }
 
-  /** Play an ArrayBuffer of MP3 data via HTMLAudioElement */
-  private playAudioData(audioData: ArrayBuffer, config: TTSConfig, isFirst: boolean): Promise<void> {
-    const blob = new Blob([audioData], { type: "audio/mpeg" });
-    const url = URL.createObjectURL(blob);
+  /**
+   * Decode MP3 ArrayBuffer into AudioBuffer via AudioContext.decodeAudioData,
+   * then schedule it immediately after the previous chunk's audio ends.
+   * This gives gapless, overlap-free playback — no MP3 encoder padding artifacts.
+   */
+  private async decodeAndSchedule(mp3Data: ArrayBuffer): Promise<void> {
+    if (!this.audioCtx || !this.gainNode || !this._playing || this.aborted) return;
 
-    return new Promise<void>((resolve, reject) => {
-      const audio = new Audio(url);
-      this.audio = audio;
-      audio.playbackRate = config.rate;
+    const audioBuffer = await this.audioCtx.decodeAudioData(mp3Data.slice(0));
+    if (!this._playing || this.aborted || !this.audioCtx || !this.gainNode) return;
 
-      audio.oncanplay = () => {
-        if (isFirst && this._playing) {
-          this.onStateChange?.("playing");
-        }
-      };
+    const source = this.audioCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(this.gainNode);
 
-      audio.onended = () => {
-        URL.revokeObjectURL(url);
-        this.audio = null;
-        resolve();
-      };
+    const startAt = Math.max(this.audioCtx.currentTime, this.scheduledEnd);
+    source.start(startAt);
+    this.scheduledEnd = startAt + audioBuffer.duration;
+    this.hasAudioData = true;
 
-      audio.onerror = () => {
-        URL.revokeObjectURL(url);
-        this.audio = null;
-        reject(new Error("Audio playback error"));
-      };
+    // Notify "playing" state once on first successful decode
+    if (!this.playingNotified) {
+      this.playingNotified = true;
+      this.onStateChange?.("playing");
+    }
+  }
 
-      if (this._paused) {
-        audio.load();
-      } else {
-        audio.play().catch(reject);
-      }
-    });
+  private finishPlayback() {
+    if (this.checkEndTimer) {
+      clearInterval(this.checkEndTimer);
+      this.checkEndTimer = null;
+    }
+    const onEnd = this.onEnd;
+    this.cleanupAudio();
+    this.prefetchCache.clear();
+    this.chunks = [];
+    this._playing = false;
+    this._paused = false;
+    this.onStateChange?.("stopped");
+    onEnd?.();
   }
 
   pause() {
     if (!this._playing || this._paused) return;
-    this.audio?.pause();
+    this.audioCtx?.suspend();
     this._paused = true;
     this.onStateChange?.("paused");
   }
 
   resume() {
     if (!this._playing || !this._paused) return;
-    this.audio?.play();
+    this.audioCtx?.resume();
     this._paused = false;
     this.onStateChange?.("playing");
   }
 
   stop() {
     this.aborted = true;
-    this.cleanup();
+    if (this.checkEndTimer) {
+      clearInterval(this.checkEndTimer);
+      this.checkEndTimer = null;
+    }
+    this.cleanupAudio();
     this.chunks = [];
     this.prefetchCache.clear();
     this._playing = false;
@@ -630,14 +679,13 @@ export class EdgeTTSPlayer {
     this.onStateChange?.("stopped");
   }
 
-  private cleanup() {
-    if (this.audio) {
-      this.audio.pause();
-      if (this.audio.src) {
-        URL.revokeObjectURL(this.audio.src);
-      }
-      this.audio = null;
+  private cleanupAudio() {
+    if (this.audioCtx) {
+      this.audioCtx.close().catch(() => {});
+      this.audioCtx = null;
     }
+    this.gainNode = null;
+    this.scheduledEnd = 0;
   }
 }
 
