@@ -1,16 +1,11 @@
 /**
- * TTS Service — Text-to-Speech using browser SpeechSynthesis API.
- *
- * Two playback modes:
- * 1. Foliate-integrated: uses foliate-js TTS module for paragraph-by-paragraph
- *    reading with word-level highlighting in the book view.
- * 2. Plain text: for reading selected text or chat messages.
- *
- * Also supports DashScope (Alibaba Cloud qwen3-tts-flash) as an optional
- * high-quality TTS backend when API key is configured.
+ * TTS Service — Text-to-Speech supporting multiple engines:
+ * 1. Browser built-in (SpeechSynthesis API) — free, offline
+ * 2. Edge TTS (Microsoft Neural voices via WebSocket) — free, high quality
+ * 3. DashScope (Alibaba Cloud qwen3-tts-flash) — requires API key
  */
 
-export type TTSEngine = "browser" | "dashscope";
+export type TTSEngine = "browser" | "edge" | "dashscope";
 
 export interface TTSConfig {
   engine: TTSEngine;
@@ -20,6 +15,8 @@ export interface TTSConfig {
   rate: number;
   /** Speech pitch (0.5 - 2.0) */
   pitch: number;
+  /** Edge TTS voice ID (e.g. "zh-CN-XiaoxiaoNeural") */
+  edgeVoice: string;
   /** DashScope API Key (optional, for high-quality TTS) */
   dashscopeApiKey: string;
   /** DashScope voice (e.g. "Cherry", "Ethan") */
@@ -27,10 +24,11 @@ export interface TTSConfig {
 }
 
 export const DEFAULT_TTS_CONFIG: TTSConfig = {
-  engine: "browser",
+  engine: "edge",
   voiceName: "",
   rate: 1.0,
   pitch: 1.0,
+  edgeVoice: "zh-CN-XiaoxiaoNeural",
   dashscopeApiKey: "",
   dashscopeVoice: "Cherry",
 };
@@ -472,6 +470,143 @@ export class DashScopeTTSPlayer {
   }
 }
 
+// ── Edge TTS (Microsoft Neural voices — free, high quality) ──
+
+import { fetchEdgeTTSAudio } from "./edge-tts";
+export { EDGE_TTS_VOICES } from "./edge-tts";
+export type { EdgeTTSVoice } from "./edge-tts";
+
+/**
+ * Edge TTS player: fetches MP3 audio for each text chunk via WebSocket,
+ * then plays sequentially using HTMLAudioElement for reliable MP3 decoding.
+ */
+export class EdgeTTSPlayer {
+  private audio: HTMLAudioElement | null = null;
+  private chunks: string[] = [];
+  private _playing = false;
+  private _paused = false;
+  private aborted = false;
+
+  onStateChange?: (state: "playing" | "paused" | "stopped") => void;
+  onChunkChange?: (index: number, total: number) => void;
+  onEnd?: () => void;
+
+  get playing() { return this._playing; }
+  get paused() { return this._paused; }
+
+  async speak(text: string, config: TTSConfig) {
+    this.stop();
+    this.chunks = splitIntoChunks(text);
+    this._playing = true;
+    this._paused = false;
+    this.aborted = false;
+
+    for (let i = 0; i < this.chunks.length; i++) {
+      if (!this._playing || this.aborted) return;
+      this.onChunkChange?.(i, this.chunks.length);
+
+      try {
+        await this.playChunk(this.chunks[i], config, i === 0);
+      } catch (err) {
+        console.error("[Edge TTS] chunk error:", err);
+        // Continue to next chunk on error
+      }
+    }
+
+    if (this._playing && !this.aborted) {
+      const onEnd = this.onEnd;
+      this._playing = false;
+      this._paused = false;
+      this.cleanup();
+      this.onStateChange?.("stopped");
+      onEnd?.();
+    }
+  }
+
+  private async playChunk(text: string, config: TTSConfig, isFirst: boolean): Promise<void> {
+    const voice = config.edgeVoice || "zh-CN-XiaoxiaoNeural";
+    const lang = voice.split("-").slice(0, 2).join("-");
+
+    const audioData = await fetchEdgeTTSAudio({
+      text,
+      voice,
+      lang,
+      rate: config.rate,
+      pitch: config.pitch,
+    });
+
+    if (!this._playing || this.aborted) return;
+
+    const blob = new Blob([audioData], { type: "audio/mpeg" });
+    const url = URL.createObjectURL(blob);
+
+    return new Promise<void>((resolve, reject) => {
+      const audio = new Audio(url);
+      this.audio = audio;
+      audio.playbackRate = config.rate;
+
+      audio.oncanplay = () => {
+        if (isFirst && this._playing) {
+          this.onStateChange?.("playing");
+        }
+      };
+
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        this.audio = null;
+        resolve();
+      };
+
+      audio.onerror = () => {
+        URL.revokeObjectURL(url);
+        this.audio = null;
+        reject(new Error("Audio playback error"));
+      };
+
+      if (this._paused) {
+        // If paused between chunks, don't auto-play
+        audio.load();
+      } else {
+        audio.play().catch(reject);
+      }
+    });
+  }
+
+  pause() {
+    if (!this._playing || this._paused) return;
+    this.audio?.pause();
+    this._paused = true;
+    this.onStateChange?.("paused");
+  }
+
+  resume() {
+    if (!this._playing || !this._paused) return;
+    this.audio?.play();
+    this._paused = false;
+    this.onStateChange?.("playing");
+  }
+
+  stop() {
+    this.aborted = true;
+    this.cleanup();
+    this.chunks = [];
+    this._playing = false;
+    this._paused = false;
+    this.onStateChange?.("stopped");
+  }
+
+  private cleanup() {
+    if (this.audio) {
+      this.audio.pause();
+      if (this.audio.src) {
+        URL.revokeObjectURL(this.audio.src);
+      }
+      this.audio = null;
+    }
+  }
+}
+
 // ── Singleton instances ──
 export const browserTTS = new BrowserTTSPlayer();
+export const edgeTTS = new EdgeTTSPlayer();
 export const dashscopeTTS = new DashScopeTTSPlayer();

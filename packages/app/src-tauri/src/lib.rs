@@ -9,6 +9,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_websocket::init())
         .setup(|app| {
             let app_handle = app.handle().clone();
             if let Err(e) = db::init_database_sync(&app_handle) {

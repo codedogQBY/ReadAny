@@ -381,6 +381,8 @@
     "settingsTitle": "Text-to-Speech Settings",
     "settingsDesc": "Configure TTS engine, voice, and playback options",
     "engine": "Engine",
+    "edgeEngine": "Edge TTS",
+    "edgeEngineDesc": "Free, high-quality Microsoft Neural voices",
     "browserEngine": "Browser Built-in",
     "browserEngineDesc": "Free offline, uses system speech synthesis",
     "dashscopeEngine": "DashScope",
@@ -404,5 +406,14 @@
   "mindmap": {
     "title": "Mindmap View",
     "description": "Visual book structure for {{bookId}} will render here."
+  },
+  "commandPalette": {
+    "placeholder": "Type to search commands...",
+    "noResults": "No results found for \"{{query}}\"",
+    "hint": "Type to search settings and actions",
+    "recent": "Recent",
+    "settings": "Settings",
+    "actions": "Actions",
+    "navigation": "Navigation"
   }
 }

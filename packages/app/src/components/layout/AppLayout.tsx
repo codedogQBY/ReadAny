@@ -11,6 +11,7 @@
  * Reader pages are full-width (no sidebar).
  */
 import { ChatPage as ChatPageComponent } from "@/components/chat/ChatPage";
+import { CommandPalette } from "@/components/command-palette/CommandPalette";
 import { HomePage } from "@/components/home/HomePage";
 import { NotesPage } from "@/components/notes/NotesPage";
 import { ReaderView } from "@/components/reader/ReaderView";
@@ -19,7 +20,7 @@ import { ReadingStatsPanel } from "@/components/stats/ReadingStatsPanel";
 import SkillsPage from "@/pages/Skills";
 import { useAppStore } from "@/stores/app-store";
 import { useReaderStore } from "@/stores/reader-store";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { HomeSidebar } from "./Sidebar";
 import { TabBar } from "./TabBar";
 
@@ -39,6 +40,27 @@ export function AppLayout() {
   const setShowSettings = useAppStore((s) => s.setShowSettings);
   const initTab = useReaderStore((s) => s.initTab);
   const readerStoreTabs = useReaderStore((s) => s.tabs);
+
+  // Command palette state
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  const toggleCommandPalette = useCallback(() => {
+    setCommandPaletteOpen((prev) => !prev);
+  }, []);
+
+  // Global keyboard shortcut: Cmd+Shift+P / Ctrl+Shift+P
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isCmdOrCtrl = e.metaKey || e.ctrlKey;
+      if (isCmdOrCtrl && e.shiftKey && e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleCommandPalette();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
+  }, [toggleCommandPalette]);
 
   const readerTabs = tabs.filter((t) => t.type === "reader" && t.bookId);
   const isReaderActive = readerTabs.some((t) => t.id === activeTabId);
@@ -103,6 +125,7 @@ export function AppLayout() {
         ))}
       </main>
       <SettingsDialog open={showSettings} onClose={() => setShowSettings(false)} />
+      <CommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />
     </div>
   );
 }

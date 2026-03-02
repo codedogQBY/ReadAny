@@ -3,12 +3,13 @@
  *
  * Uses shadcn/ui components: Select, Slider, Input, Button.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useTTSStore } from "@/stores/tts-store";
 import {
   getBrowserVoices,
   DASHSCOPE_VOICES,
+  EDGE_TTS_VOICES,
 } from "@/lib/tts/tts-service";
 import type { TTSEngine } from "@/lib/tts/tts-service";
 import { Input } from "@/components/ui/input";
@@ -21,7 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
-import { Volume2 } from "lucide-react";
+import { Volume2, Zap, Globe, Mic } from "lucide-react";
 
 export function TTSSettings() {
   const { t } = useTranslation();
@@ -37,6 +38,23 @@ export function TTSSettings() {
     return () => window.speechSynthesis?.removeEventListener?.("voiceschanged", loadVoices);
   }, []);
 
+  // Group Edge TTS voices by language
+  const edgeVoicesByLang = useMemo(() => {
+    const map = new Map<string, typeof EDGE_TTS_VOICES>();
+    for (const v of EDGE_TTS_VOICES) {
+      const group = map.get(v.lang) || [];
+      group.push(v);
+      map.set(v.lang, group);
+    }
+    return map;
+  }, []);
+
+  const engines: { id: TTSEngine; icon: typeof Volume2; label: string; desc: string }[] = [
+    { id: "edge", icon: Zap, label: t("tts.edgeEngine"), desc: t("tts.edgeEngineDesc") },
+    { id: "browser", icon: Globe, label: t("tts.browserEngine"), desc: t("tts.browserEngineDesc") },
+    { id: "dashscope", icon: Mic, label: t("tts.dashscopeEngine"), desc: t("tts.dashscopeEngineDesc") },
+  ];
+
   return (
     <div className="space-y-4 p-4 pt-3">
       <section className="rounded-lg bg-muted/60 p-4">
@@ -44,31 +62,27 @@ export function TTSSettings() {
         <p className="mb-4 text-xs text-neutral-500">{t("tts.settingsDesc")}</p>
 
         <div className="space-y-5">
-          {/* Engine selection */}
+          {/* Engine selection — 3 engines */}
           <div className="space-y-2">
             <span className="text-sm text-neutral-800">{t("tts.engine")}</span>
-            <div className="flex gap-2">
-              {(["browser", "dashscope"] as TTSEngine[]).map((eng) => (
+            <div className="grid grid-cols-3 gap-2">
+              {engines.map(({ id, icon: Icon, label, desc }) => (
                 <button
-                  key={eng}
+                  key={id}
                   type="button"
                   className={cn(
-                    "flex-1 rounded-lg border px-3 py-2.5 text-left transition-colors",
-                    config.engine === eng
+                    "rounded-lg border px-3 py-2.5 text-left transition-colors",
+                    config.engine === id
                       ? "border-primary bg-primary/5"
                       : "border-border hover:border-primary/40",
                   )}
-                  onClick={() => updateConfig({ engine: eng })}
+                  onClick={() => updateConfig({ engine: id })}
                 >
                   <div className="flex items-center gap-2">
-                    <Volume2 className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-xs font-medium">
-                      {eng === "browser" ? t("tts.browserEngine") : t("tts.dashscopeEngine")}
-                    </span>
+                    <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-xs font-medium">{label}</span>
                   </div>
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    {eng === "browser" ? t("tts.browserEngineDesc") : t("tts.dashscopeEngineDesc")}
-                  </p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">{desc}</p>
                 </button>
               ))}
             </div>
@@ -110,8 +124,36 @@ export function TTSSettings() {
             </div>
           )}
 
-          {/* Voice selection */}
-          {config.engine === "browser" ? (
+          {/* Voice selection — engine-specific */}
+          {config.engine === "edge" && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-neutral-800">{t("tts.voice")}</span>
+              <Select
+                value={config.edgeVoice}
+                onValueChange={(v) => updateConfig({ edgeVoice: v })}
+              >
+                <SelectTrigger className="w-[240px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-[300px]">
+                  {Array.from(edgeVoicesByLang.entries()).map(([lang, langVoices]) => (
+                    <div key={lang}>
+                      <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                        {lang}
+                      </div>
+                      {langVoices.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>
+                          {v.name}
+                        </SelectItem>
+                      ))}
+                    </div>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {config.engine === "browser" && (
             <div className="flex items-center justify-between">
               <span className="text-sm text-neutral-800">{t("tts.voice")}</span>
               <Select
@@ -131,7 +173,9 @@ export function TTSSettings() {
                 </SelectContent>
               </Select>
             </div>
-          ) : (
+          )}
+
+          {config.engine === "dashscope" && (
             <>
               {/* DashScope voice */}
               <div className="flex items-center justify-between">

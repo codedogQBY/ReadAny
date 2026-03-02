@@ -11,6 +11,7 @@ import {
   type TTSConfig,
   DEFAULT_TTS_CONFIG,
   browserTTS,
+  edgeTTS,
   dashscopeTTS,
 } from "@/lib/tts/tts-service";
 import { withPersist } from "./persist";
@@ -63,6 +64,10 @@ export const useTTSStore = create<TTSState>()(
         dashscopeTTS.onStateChange = onState;
         dashscopeTTS.onEnd = handleEnd;
         dashscopeTTS.speak(text, config);
+      } else if (config.engine === "edge") {
+        edgeTTS.onStateChange = onState;
+        edgeTTS.onEnd = handleEnd;
+        edgeTTS.speak(text, config);
       } else {
         browserTTS.onStateChange = onState;
         browserTTS.onEnd = handleEnd;
@@ -74,6 +79,8 @@ export const useTTSStore = create<TTSState>()(
       const { config } = get();
       if (config.engine === "dashscope" && config.dashscopeApiKey) {
         dashscopeTTS.pause();
+      } else if (config.engine === "edge") {
+        edgeTTS.pause();
       } else {
         browserTTS.pause();
       }
@@ -83,6 +90,8 @@ export const useTTSStore = create<TTSState>()(
       const { config } = get();
       if (config.engine === "dashscope" && config.dashscopeApiKey) {
         dashscopeTTS.resume();
+      } else if (config.engine === "edge") {
+        edgeTTS.resume();
       } else {
         browserTTS.resume();
       }
@@ -90,8 +99,10 @@ export const useTTSStore = create<TTSState>()(
 
     stop: () => {
       browserTTS.onEnd = undefined;
+      edgeTTS.onEnd = undefined;
       dashscopeTTS.onEnd = undefined;
       browserTTS.stop();
+      edgeTTS.stop();
       dashscopeTTS.stop();
       set({ playState: "stopped", currentText: "" });
     },

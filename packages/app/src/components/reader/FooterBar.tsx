@@ -4,6 +4,7 @@ import { useTTSStore } from "@/stores/tts-store";
 import {
   getBrowserVoices,
   DASHSCOPE_VOICES,
+  EDGE_TTS_VOICES,
 } from "@/lib/tts/tts-service";
 import type { TTSEngine } from "@/lib/tts/tts-service";
 import { Button } from "@/components/ui/button";
@@ -119,7 +120,7 @@ export function FooterBar({
                 {t("tts.engine")}
               </span>
               <div className="flex gap-1">
-                {(["browser", "dashscope"] as TTSEngine[]).map((eng) => (
+                {(["edge", "browser", "dashscope"] as TTSEngine[]).map((eng) => (
                   <Button
                     key={eng}
                     variant={config.engine === eng ? "default" : "secondary"}
@@ -127,14 +128,38 @@ export function FooterBar({
                     className="h-7 text-xs"
                     onClick={() => updateConfig({ engine: eng })}
                   >
-                    {eng === "browser" ? t("tts.browserEngine") : t("tts.dashscopeEngine")}
+                    {eng === "browser" ? t("tts.browserEngine") : eng === "edge" ? t("tts.edgeEngine") : t("tts.dashscopeEngine")}
                   </Button>
                 ))}
               </div>
             </div>
 
             {/* Voice selection */}
-            {config.engine === "browser" ? (
+            {config.engine === "edge" ? (
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted-foreground w-16 shrink-0">
+                  {t("tts.voice")}
+                </span>
+                <Select
+                  value={config.edgeVoice}
+                  onValueChange={(v) => updateConfig({ edgeVoice: v })}
+                >
+                  <SelectTrigger className="h-7 flex-1 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[200px]">
+                    {EDGE_TTS_VOICES.filter((v) => {
+                      const selectedLang = config.edgeVoice?.split("-").slice(0, 2).join("-") || "zh-CN";
+                      return v.lang === selectedLang;
+                    }).map((v) => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.name} ({v.lang})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : config.engine === "browser" ? (
               <div className="flex items-center gap-3">
                 <span className="text-xs text-muted-foreground w-16 shrink-0">
                   {t("tts.voice")}

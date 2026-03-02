@@ -381,6 +381,8 @@
     "settingsTitle": "语音朗读设置",
     "settingsDesc": "配置 TTS 引擎、语音和播放参数",
     "engine": "引擎",
+    "edgeEngine": "Edge TTS",
+    "edgeEngineDesc": "免费高质量微软 Neural 语音",
     "browserEngine": "浏览器内置",
     "browserEngineDesc": "免费离线，使用系统语音合成",
     "dashscopeEngine": "DashScope",
@@ -404,5 +406,14 @@
   "mindmap": {
     "title": "思维导图",
     "description": "书籍 {{bookId}} 的可视化结构将在此显示。"
+  },
+  "commandPalette": {
+    "placeholder": "搜索命令...",
+    "noResults": "没有找到 \"{{query}}\" 的结果",
+    "hint": "输入关键词搜索设置和操作",
+    "recent": "最近使用",
+    "settings": "设置",
+    "actions": "操作",
+    "navigation": "导航"
   }
 }

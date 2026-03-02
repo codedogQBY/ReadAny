@@ -42,6 +42,7 @@
       "allow": [
         { "url": "https://dashscope.aliyuncs.com/**" }
       ]
-    }
+    },
+    "websocket:default"
   ]
 }
