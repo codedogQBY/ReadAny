@@ -10,21 +10,23 @@ import { AISettings } from "./AISettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { ReadSettingsPanel } from "./ReadSettings";
 import { TranslationSettings } from "./TranslationSettings";
+import { TTSSettings } from "./TTSSettings";
 import { VectorModelSettings } from "./VectorModelSettings";
 
-type SettingsTab = "general" | "reading" | "ai" | "vectorModel" | "translation" | "about";
+type SettingsTab = "general" | "reading" | "ai" | "vectorModel" | "tts" | "translation" | "about";
 
 interface SettingsDialogProps {
   open: boolean;
   onClose: () => void;
 }
 
-const TAB_IDS: SettingsTab[] = ["general", "reading", "ai", "vectorModel", "translation", "about"];
+const TAB_IDS: SettingsTab[] = ["general", "reading", "ai", "vectorModel", "tts", "translation", "about"];
 const TAB_KEYS: Record<SettingsTab, string> = {
   general: "settings.general",
   reading: "settings.reading",
   ai: "settings.ai",
   vectorModel: "settings.vectorModel",
+  tts: "settings.tts",
   translation: "settings.translationTab",
   about: "settings.about",
 };
@@ -68,6 +70,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
             {activeTab === "reading" && <ReadSettingsPanel />}
             {activeTab === "ai" && <AISettings />}
             {activeTab === "vectorModel" && <VectorModelSettings />}
+            {activeTab === "tts" && <TTSSettings />}
             {activeTab === "translation" && <TranslationSettings />}
             {activeTab === "about" && <AboutSettings />}
           </div>

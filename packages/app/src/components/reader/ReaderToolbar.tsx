@@ -3,7 +3,7 @@ import type { TOCItem } from "./FoliateViewer";
 import { useAppStore } from "@/stores/app-store";
 import { useReaderStore } from "@/stores/reader-store";
 import { useNotebookStore } from "@/stores/notebook-store";
-import { ArrowLeft, List, MessageSquare, Search, Settings, StickyNote } from "lucide-react";
+import { ArrowLeft, List, MessageSquare, Search, Settings, StickyNote, Volume2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   Tooltip,
@@ -23,7 +23,9 @@ interface ReaderToolbarProps {
   onToggleToc?: () => void;
   onToggleSettings?: () => void;
   onToggleChat?: () => void;
+  onToggleTTS?: () => void;
   isChatOpen?: boolean;
+  isTTSActive?: boolean;
   isFixedLayout?: boolean;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
@@ -40,7 +42,9 @@ export function ReaderToolbar({
   onToggleToc,
   onToggleSettings,
   onToggleChat,
+  onToggleTTS,
   isChatOpen,
+  isTTSActive,
   isFixedLayout = false,
   onMouseEnter,
   onMouseLeave,
@@ -104,8 +108,17 @@ export function ReaderToolbar({
         </span>
       </div>
 
-      {/* Right: search + AI chat + settings */}
+      {/* Right: TTS + search + AI chat + settings */}
       <div className="flex items-center gap-0.5">
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`h-7 w-7 ${isTTSActive ? "bg-primary/10 text-primary" : ""}`}
+          onClick={onToggleTTS}
+          title={t("tts.title")}
+        >
+          <Volume2 className="h-3.5 w-3.5" />
+        </Button>
         <Button
           variant="ghost"
           size="icon"

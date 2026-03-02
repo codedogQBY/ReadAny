@@ -117,6 +117,8 @@ export interface FoliateViewerHandle {
   }) => AsyncGenerator | null;
   clearSearch: () => void;
   getView: () => FoliateView | null;
+  /** Get visible text on the current page for TTS */
+  getVisibleText: () => string;
 }
 
 interface FoliateViewerProps {
@@ -202,6 +204,61 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           viewRef.current?.clearSearch();
         },
         getView: () => viewRef.current,
+        getVisibleText: () => {
+          try {
+            const renderer = viewRef.current?.renderer;
+            const contents = renderer?.getContents?.();
+            if (!contents?.[0]?.doc) return "";
+            const doc = contents[0].doc as Document;
+            const win = doc.defaultView;
+
+            // Get the iframe's viewport dimensions.
+            // In paginated mode (CSS columns), text outside the visible column
+            // has getBoundingClientRect coordinates outside [0, clientWidth].
+            // In scrolled mode, text outside has coords outside [0, clientHeight].
+            if (win) {
+              const vw = win.innerWidth;
+              const vh = win.innerHeight;
+
+              const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
+                acceptNode: (node) => {
+                  if (!node.nodeValue?.trim()) return NodeFilter.FILTER_SKIP;
+                  const parent = node.parentElement;
+                  const tag = parent?.tagName?.toLowerCase();
+                  if (tag === "script" || tag === "style") return NodeFilter.FILTER_REJECT;
+                  return NodeFilter.FILTER_ACCEPT;
+                },
+              });
+
+              const visibleTexts: string[] = [];
+              let node = walker.nextNode();
+              while (node) {
+                const range = doc.createRange();
+                range.selectNodeContents(node);
+                const rect = range.getBoundingClientRect();
+                // Check if any part of this text node is within the iframe viewport
+                if (
+                  rect.right > 0 &&
+                  rect.left < vw &&
+                  rect.bottom > 0 &&
+                  rect.top < vh &&
+                  rect.width > 0
+                ) {
+                  const text = node.nodeValue?.trim();
+                  if (text) visibleTexts.push(text);
+                }
+                node = walker.nextNode();
+              }
+              const result = visibleTexts.join(" ").trim();
+              if (result) return result;
+            }
+
+            // Fallback: return full section text
+            return doc.body?.innerText?.trim() || "";
+          } catch {
+            return "";
+          }
+        },
       }),
       [viewReady],
     );

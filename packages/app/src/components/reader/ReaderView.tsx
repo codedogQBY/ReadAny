@@ -38,6 +38,7 @@ import { SearchBar } from "./SearchBar";
 import { SelectionPopover } from "./SelectionPopover";
 import { TOCPanel } from "./TOCPanel";
 import { TranslationPopover } from "./TranslationPopover";
+import { useTTSStore } from "@/stores/tts-store";
 
 // --- Tauri file loading ---
 async function loadFileAsBlob(filePath: string): Promise<Blob> {
@@ -310,6 +311,15 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const [showChat, setShowChat] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showTTS, setShowTTS] = useState(false);
+
+  const ttsPlayState = useTTSStore((s) => s.playState);
+  const ttsPlay = useTTSStore((s) => s.play);
+  const ttsStop = useTTSStore((s) => s.stop);
+  const ttsSetOnEnd = useTTSStore((s) => s.setOnEnd);
+
+  /** Whether TTS is in continuous reading mode (auto page-turn) */
+  const ttsContinuousRef = useRef(false);
 
   const { t } = useTranslation();
   const isInitializedRef = useRef(false);
@@ -784,6 +794,66 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const handleToggleChat = useCallback(() => setShowChat((p) => !p), []);
   const handleToggleSettings = useCallback(() => setShowSettings((p) => !p), []);
 
+  // TTS: auto-advance to next page when current page finishes reading
+  const handleTTSPageEnd = useCallback(() => {
+    if (!ttsContinuousRef.current) return;
+
+    // Turn to next page
+    foliateRef.current?.goNext();
+
+    // Wait for the new page content to load, then read it
+    setTimeout(() => {
+      if (!ttsContinuousRef.current) return;
+      const text = foliateRef.current?.getVisibleText();
+      if (text?.trim()) {
+        ttsPlay(text);
+      } else {
+        // No more text (end of book) — stop TTS
+        ttsContinuousRef.current = false;
+        ttsStop();
+        setShowTTS(false);
+      }
+    }, 600);
+  }, [ttsPlay, ttsStop]);
+
+  // TTS: toggle reading from current page with auto page-turn
+  const handleToggleTTS = useCallback(() => {
+    if (showTTS) {
+      ttsContinuousRef.current = false;
+      ttsSetOnEnd(null);
+      ttsStop();
+      setShowTTS(false);
+    } else {
+      const text = foliateRef.current?.getVisibleText();
+      if (text) {
+        ttsContinuousRef.current = true;
+        ttsSetOnEnd(handleTTSPageEnd);
+        setShowTTS(true);
+        ttsPlay(text);
+      }
+    }
+  }, [showTTS, ttsPlay, ttsStop, ttsSetOnEnd, handleTTSPageEnd]);
+
+  // TTS: speak selected text (no auto page-turn)
+  const handleSpeakSelection = useCallback(() => {
+    if (selection?.text) {
+      ttsContinuousRef.current = false;
+      ttsSetOnEnd(null);
+      setShowTTS(true);
+      ttsPlay(selection.text);
+    }
+    setSelection(null);
+  }, [selection, ttsPlay, ttsSetOnEnd]);
+
+  // Stop TTS when leaving the reader
+  useEffect(() => {
+    return () => {
+      ttsContinuousRef.current = false;
+      ttsSetOnEnd(null);
+      ttsStop();
+    };
+  }, [ttsStop, ttsSetOnEnd]);
+
   // --- Search logic ---
   const searchGeneratorRef = useRef<AsyncGenerator | null>(null);
   const searchResultsListRef = useRef<Array<{ cfi: string; excerpt: string }>>([]);
@@ -996,6 +1066,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
                 onCopy={handleCopy}
                 onTranslate={handleTranslate}
                 onAskAI={handleAskAI}
+                onSpeak={handleSpeakSelection}
                 onClose={handleCloseSelection}
               />
             )}
@@ -1025,7 +1096,9 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
             onToggleToc={handleToggleToc}
             onToggleSettings={handleToggleSettings}
             onToggleChat={handleToggleChat}
+            onToggleTTS={handleToggleTTS}
             isChatOpen={showChat}
+            isTTSActive={showTTS || ttsPlayState !== "stopped"}
             isFixedLayout={isFixedLayoutFormat(bookFormat)}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
@@ -1041,6 +1114,13 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
             onNext={handleNavNext}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
+            showTTS={showTTS}
+            onTTSClose={() => {
+              ttsContinuousRef.current = false;
+              ttsSetOnEnd(null);
+              ttsStop();
+              setShowTTS(false);
+            }}
           />
         </div>
 

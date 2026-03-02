@@ -2,7 +2,7 @@
  * SelectionPopover — popover on text selection with highlight colors
  */
 import { useState } from "react";
-import { Check, Copy, Highlighter, Languages, Sparkles, StickyNote, Trash2 } from "lucide-react";
+import { Check, Copy, Highlighter, Languages, Sparkles, StickyNote, Trash2, Volume2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import type { HighlightColor } from "@/types";
@@ -20,6 +20,7 @@ interface SelectionPopoverProps {
   onCopy: () => void;
   onTranslate: () => void;
   onAskAI: () => void;
+  onSpeak: () => void;
   onClose: () => void;
 }
 
@@ -35,6 +36,7 @@ export function SelectionPopover({
   onCopy,
   onTranslate,
   onAskAI,
+  onSpeak,
   onClose: _onClose,
 }: SelectionPopoverProps) {
   const { t } = useTranslation();
@@ -74,6 +76,7 @@ export function SelectionPopover({
     { icon: Copy, label: t("common.copy"), onClick: onCopy },
     { icon: Languages, label: t("reader.translate"), onClick: onTranslate },
     { icon: Sparkles, label: t("reader.askAI"), onClick: onAskAI },
+    { icon: Volume2, label: t("tts.speakSelection"), onClick: onSpeak },
   ];
 
   // For existing annotations, add delete button

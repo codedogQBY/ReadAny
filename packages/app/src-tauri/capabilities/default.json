@@ -35,6 +35,13 @@
     },
     "dialog:default",
     "dialog:allow-open",
-    "updater:default"
+    "updater:default",
+    "http:default",
+    {
+      "identifier": "http:allow-fetch",
+      "allow": [
+        { "url": "https://dashscope.aliyuncs.com/**" }
+      ]
+    }
   ]
 }

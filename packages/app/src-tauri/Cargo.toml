@@ -19,6 +19,7 @@ tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-http = "2"
 rusqlite = { version = "0.31", features = ["bundled"] }
 anyhow = "1"
 serde_json = "1"
