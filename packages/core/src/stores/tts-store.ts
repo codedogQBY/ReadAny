@@ -3,7 +3,7 @@
  *
  * Manages:
  * - Playback state (playing/paused/stopped)
- * - TTS configuration (engine, voice, rate, pitch, DashScope key)
+ * - TTS configuration (engine, voice, rate, pitch, cloud API keys)
  * - Persists config to FS
  *
  * Cross-platform: player factories are injectable. By default uses a Web-based
@@ -11,7 +11,7 @@
  * (e.g. React Native) can override via `setTTSPlayerFactories()`.
  */
 import { create } from "zustand";
-import { BrowserTTSPlayer, DashScopeTTSPlayer, EdgeTTSPlayer } from "../tts/tts-players";
+import { BrowserTTSPlayer, DashScopeTTSPlayer, EdgeTTSPlayer, MiMoTTSPlayer } from "../tts/tts-players";
 import type { ITTSPlayer, TTSConfig } from "../tts/types";
 import { DEFAULT_TTS_CONFIG, normalizeTTSConfig } from "../tts/types";
 import { withPersist } from "./persist";
@@ -25,6 +25,7 @@ export interface TTSPlayerFactories {
   createSystemTTS: () => ITTSPlayer;
   createEdgeTTS: () => ITTSPlayer;
   createDashScopeTTS: () => ITTSPlayer;
+  createMiMoTTS: () => ITTSPlayer;
 }
 
 /** Default Web-based factories */
@@ -32,6 +33,7 @@ const defaultFactories: TTSPlayerFactories = {
   createSystemTTS: () => new BrowserTTSPlayer(),
   createEdgeTTS: () => new EdgeTTSPlayer(),
   createDashScopeTTS: () => new DashScopeTTSPlayer(),
+  createMiMoTTS: () => new MiMoTTSPlayer(),
 };
 
 let _factories: TTSPlayerFactories = defaultFactories;
@@ -45,6 +47,7 @@ let _factories: TTSPlayerFactories = defaultFactories;
  *     createSystemTTS: () => new ExpoSpeechTTSPlayer(),
  *     createEdgeTTS: () => new ExpoAVEdgeTTSPlayer(),
  *     createDashScopeTTS: () => new ExpoAVDashScopeTTSPlayer(),
+ *     createMiMoTTS: () => new CustomMiMoTTSPlayer(),
  *   });
  */
 export function setTTSPlayerFactories(factories: Partial<TTSPlayerFactories>): void {
@@ -53,12 +56,14 @@ export function setTTSPlayerFactories(factories: Partial<TTSPlayerFactories>): v
   _systemTTS = null;
   _edgeTTS = null;
   _dashscopeTTS = null;
+  _mimoTTS = null;
 }
 
 /** Lazily-created singleton TTS player instances */
 let _systemTTS: ITTSPlayer | null = null;
 let _edgeTTS: ITTSPlayer | null = null;
 let _dashscopeTTS: ITTSPlayer | null = null;
+let _mimoTTS: ITTSPlayer | null = null;
 let _sessionSegments: string[] = [];
 let _sessionCurrentIndex = 0;
 /** Generation counter — incremented on every play/jumpToChunk to invalidate stale callbacks */
@@ -78,6 +83,11 @@ function getEdgeTTS(): ITTSPlayer {
 function getDashScopeTTS(): ITTSPlayer {
   if (!_dashscopeTTS) _dashscopeTTS = _factories.createDashScopeTTS();
   return _dashscopeTTS;
+}
+
+function getMiMoTTS(): ITTSPlayer {
+  if (!_mimoTTS) _mimoTTS = _factories.createMiMoTTS();
+  return _mimoTTS;
 }
 
 function clearSleepTimerHandle(): void {
@@ -184,6 +194,12 @@ export const useTTSStore = create<TTSState>()(
         player.onChunkChange = onChunk;
         player.onEnd = handleEnd;
         player.speak(sessionSegments, config);
+      } else if (config.engine === "mimo" && config.mimoApiKey) {
+        const player = getMiMoTTS();
+        player.onStateChange = onState;
+        player.onChunkChange = onChunk;
+        player.onEnd = handleEnd;
+        player.speak(sessionSegments, config);
       } else if (config.engine === "edge") {
         const player = getEdgeTTS();
         player.onStateChange = onState;
@@ -205,6 +221,8 @@ export const useTTSStore = create<TTSState>()(
       if (playState !== "playing") return;
       if (config.engine === "dashscope" && config.dashscopeApiKey) {
         getDashScopeTTS().pause();
+      } else if (config.engine === "mimo" && config.mimoApiKey) {
+        getMiMoTTS().pause();
       } else if (config.engine === "edge") {
         getEdgeTTS().pause();
       } else {
@@ -249,6 +267,15 @@ export const useTTSStore = create<TTSState>()(
             return;
           }
 
+          if (config.engine === "mimo" && config.mimoApiKey) {
+            const player = getMiMoTTS();
+            player.onStateChange = onState;
+            player.onChunkChange = onChunk;
+            player.onEnd = handleEnd;
+            player.speak(remainingSegments, config);
+            return;
+          }
+
           if (config.engine === "edge") {
             const player = getEdgeTTS();
             player.onStateChange = onState;
@@ -274,12 +301,15 @@ export const useTTSStore = create<TTSState>()(
       const system = getSystemTTS();
       const edge = getEdgeTTS();
       const dashscope = getDashScopeTTS();
+      const mimo = getMiMoTTS();
       system.onEnd = undefined;
       edge.onEnd = undefined;
       dashscope.onEnd = undefined;
+      mimo.onEnd = undefined;
       system.stop();
       edge.stop();
       dashscope.stop();
+      mimo.stop();
       _sessionSegments = [];
       _sessionCurrentIndex = 0;
       set({
@@ -332,6 +362,7 @@ export const useTTSStore = create<TTSState>()(
       getSystemTTS().stop();
       getEdgeTTS().stop();
       getDashScopeTTS().stop();
+      getMiMoTTS().stop();
 
       _sessionCurrentIndex = index;
       _sessionGeneration += 1;
@@ -361,6 +392,12 @@ export const useTTSStore = create<TTSState>()(
 
       if (config.engine === "dashscope" && config.dashscopeApiKey) {
         const player = getDashScopeTTS();
+        player.onStateChange = onState;
+        player.onChunkChange = onChunk;
+        player.onEnd = handleEnd;
+        player.speak(remainingSegments, config);
+      } else if (config.engine === "mimo" && config.mimoApiKey) {
+        const player = getMiMoTTS();
         player.onStateChange = onState;
         player.onChunkChange = onChunk;
         player.onEnd = handleEnd;

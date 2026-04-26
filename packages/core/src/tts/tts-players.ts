@@ -1,15 +1,25 @@
 /**
- * TTS Players — three engine implementations, all platform-agnostic.
+ * TTS Players — engine implementations, all platform-agnostic.
  *
  * 1. BrowserTTSPlayer — SpeechSynthesis API (available in all WebViews)
  * 2. DashScopeTTSPlayer — Alibaba Cloud qwen3-tts-flash via SSE streaming
  * 3. EdgeTTSPlayer — Microsoft Neural voices via WebSocket, gapless AudioContext playback
+ * 4. MiMoTTSPlayer — Xiaomi MiMo-V2.5-TTS via OpenAI-style chat completions
  */
 
 import { getPlatformService } from "../services/platform";
 import { fetchEdgeTTSAudio } from "./edge-tts";
 import { splitIntoChunks } from "./text-utils";
 import type { ITTSPlayer, TTSConfig } from "./types";
+
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
 
 // ── Browser SpeechSynthesis ──
 
@@ -115,6 +125,227 @@ export class BrowserTTSPlayer implements ITTSPlayer {
     this._speaking = false;
     this._paused = false;
     this.onStateChange?.("stopped");
+  }
+}
+
+// ── Xiaomi MiMo TTS (MiMo-V2.5-TTS — non-streaming base64 audio) ──
+
+export class MiMoTTSPlayer implements ITTSPlayer {
+  private audioCtx: AudioContext | null = null;
+  private gainNode: GainNode | null = null;
+  private scheduledEnd = 0;
+  private chunks: string[] = [];
+  private _playing = false;
+  private _paused = false;
+  private aborted = false;
+  private hasAudioData = false;
+  private allChunksDone = false;
+  private playingNotified = false;
+  private checkEndTimer: ReturnType<typeof setInterval> | null = null;
+  private chunkStartTimers = new Set<ReturnType<typeof setTimeout>>();
+  private abortController: AbortController | null = null;
+  private pausedAt = 0;
+
+  onStateChange?: (state: "playing" | "paused" | "stopped") => void;
+  onChunkChange?: (index: number, total: number) => void;
+  onEnd?: () => void;
+
+  get playing() {
+    return this._playing;
+  }
+  get paused() {
+    return this._paused;
+  }
+
+  async speak(text: string | string[], config: TTSConfig) {
+    this.aborted = true;
+    this.abortController?.abort();
+    this.abortController = null;
+    this.cleanupAudio();
+    if (this.checkEndTimer) {
+      clearInterval(this.checkEndTimer);
+      this.checkEndTimer = null;
+    }
+
+    this.chunks = Array.isArray(text) ? text.filter(Boolean) : splitIntoChunks(text, 800);
+    this._playing = true;
+    this._paused = false;
+    this.aborted = false;
+    this.hasAudioData = false;
+    this.allChunksDone = false;
+    this.playingNotified = false;
+    this.pausedAt = 0;
+
+    this.audioCtx = new AudioContext();
+    this.gainNode = this.audioCtx.createGain();
+    this.gainNode.connect(this.audioCtx.destination);
+    this.scheduledEnd = 0;
+
+    if (this.audioCtx.state === "suspended") {
+      await this.audioCtx.resume();
+    }
+
+    this.checkEndTimer = setInterval(() => {
+      if (!this._playing || this._paused) return;
+      if (this.audioCtx?.state === "suspended") return;
+      if (!this.audioCtx) return;
+      if (!this.allChunksDone || !this.hasAudioData) return;
+      if (this.audioCtx.currentTime >= this.scheduledEnd - 0.05) {
+        this.finishPlayback();
+      }
+    }, 200);
+
+    for (let i = 0; i < this.chunks.length; i++) {
+      if (!this._playing || this.aborted) return;
+      try {
+        const audioData = await this.fetchChunkAudio(this.chunks[i], config);
+        if (!this._playing || this.aborted) return;
+        await this.decodeAndSchedule(audioData, i);
+      } catch (err) {
+        if ((err as Error)?.name === "AbortError") return;
+        console.error("[MiMo TTS] chunk error:", err);
+      }
+    }
+
+    this.allChunksDone = true;
+  }
+
+  private async fetchChunkAudio(text: string, config: TTSConfig): Promise<ArrayBuffer> {
+    const platform = getPlatformService();
+    this.abortController = new AbortController();
+
+    const response = await platform.fetch("https://api.xiaomimimo.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "api-key": config.mimoApiKey,
+      },
+      body: JSON.stringify({
+        model: config.mimoModel || "mimo-v2.5-tts",
+        messages: [
+          {
+            role: "assistant",
+            content: text,
+          },
+        ],
+        audio: {
+          format: config.mimoFormat || "wav",
+          voice: config.mimoVoice || "mimo_default",
+        },
+      }),
+      signal: this.abortController.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      throw new Error(`MiMo TTS failed: ${response.status}${errorText ? ` ${errorText}` : ""}`);
+    }
+
+    const result = await response.json();
+    const audioData = result?.choices?.[0]?.message?.audio?.data;
+    if (typeof audioData !== "string" || !audioData) {
+      throw new Error("No audio data received from MiMo TTS.");
+    }
+
+    return base64ToArrayBuffer(audioData);
+  }
+
+  private async decodeAndSchedule(audioData: ArrayBuffer, index: number): Promise<void> {
+    if (!this.audioCtx || !this.gainNode || !this._playing || this.aborted) return;
+
+    const audioBuffer = await this.audioCtx.decodeAudioData(audioData.slice(0));
+    if (!this.audioCtx || !this.gainNode || !this._playing || this.aborted) return;
+
+    const source = this.audioCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(this.gainNode);
+
+    const startAt = Math.max(this.audioCtx.currentTime, this.scheduledEnd);
+    const notifyChunkStart = () => {
+      if (!this._playing || this.aborted) return;
+      this.onChunkChange?.(index, this.chunks.length);
+    };
+    const startDelayMs = Math.max(0, (startAt - this.audioCtx.currentTime) * 1000);
+    if (startDelayMs <= 16) {
+      notifyChunkStart();
+    } else {
+      const timer = setTimeout(() => {
+        this.chunkStartTimers.delete(timer);
+        notifyChunkStart();
+      }, startDelayMs);
+      this.chunkStartTimers.add(timer);
+    }
+
+    source.start(startAt);
+    this.scheduledEnd = startAt + audioBuffer.duration;
+    this.hasAudioData = true;
+    if (!this.playingNotified) {
+      this.playingNotified = true;
+      this.onStateChange?.("playing");
+    }
+  }
+
+  private finishPlayback() {
+    if (this.checkEndTimer) {
+      clearInterval(this.checkEndTimer);
+      this.checkEndTimer = null;
+    }
+    const onEnd = this.onEnd;
+    this.cleanupAudio();
+    this.chunks = [];
+    this.allChunksDone = false;
+    this._playing = false;
+    this._paused = false;
+    this.onStateChange?.("stopped");
+    onEnd?.();
+  }
+
+  pause() {
+    if (!this._playing || this._paused) return;
+    this.pausedAt = Date.now();
+    this.audioCtx?.suspend();
+    for (const timer of this.chunkStartTimers) clearTimeout(timer);
+    this.chunkStartTimers.clear();
+    this._paused = true;
+    this.onStateChange?.("paused");
+  }
+
+  resume() {
+    if (!this._playing || !this._paused) return;
+    if (this.pausedAt > 0) {
+      this.scheduledEnd += (Date.now() - this.pausedAt) / 1000;
+    }
+    this.pausedAt = 0;
+    this.audioCtx?.resume();
+    this._paused = false;
+    this.onStateChange?.("playing");
+  }
+
+  stop() {
+    this.aborted = true;
+    this.abortController?.abort();
+    this.abortController = null;
+    if (this.checkEndTimer) {
+      clearInterval(this.checkEndTimer);
+      this.checkEndTimer = null;
+    }
+    this.cleanupAudio();
+    this.chunks = [];
+    this.allChunksDone = false;
+    this._playing = false;
+    this._paused = false;
+    this.onStateChange?.("stopped");
+  }
+
+  private cleanupAudio() {
+    for (const timer of this.chunkStartTimers) clearTimeout(timer);
+    this.chunkStartTimers.clear();
+    if (this.audioCtx) {
+      this.audioCtx.close().catch(() => {});
+      this.audioCtx = null;
+    }
+    this.gainNode = null;
+    this.scheduledEnd = 0;
   }
 }
 

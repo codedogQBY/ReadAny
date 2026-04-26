@@ -2,6 +2,7 @@ import {
   buildNarrationPreview,
   DASHSCOPE_VOICES,
   EDGE_TTS_VOICES,
+  MIMO_VOICES,
   getLocaleDisplayLabel,
   getTTSVoiceLabel,
   groupEdgeTTSVoices,
@@ -359,7 +360,9 @@ export function TTSPage({
                   ? "Edge TTS"
                   : config.engine === "dashscope"
                     ? "DashScope"
-                    : t("tts.system")}
+                    : config.engine === "mimo"
+                      ? "MiMo TTS"
+                      : t("tts.system")}
                 {onUpdateConfig && <ChevronRight className="h-2.5 w-2.5" />}
               </button>
             </div>
@@ -388,16 +391,24 @@ export function TTSPage({
                     <div className="sticky top-0 z-10 border-b border-border/30 bg-background/95 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                       {t("tts.selectEngine")}
                     </div>
-                    {(["edge", "dashscope", "system"] as const).map((eng) => {
+                    {(["edge", "dashscope", "mimo", "system"] as const).map((eng) => {
                       const isActive = config.engine === eng;
                       const label =
-                        eng === "edge" ? "Edge TTS" : eng === "dashscope" ? "DashScope" : t("tts.system");
+                        eng === "edge"
+                          ? "Edge TTS"
+                          : eng === "dashscope"
+                            ? "DashScope"
+                            : eng === "mimo"
+                              ? "MiMo TTS"
+                              : t("tts.system");
                       const desc =
                         eng === "edge"
                           ? "Microsoft · 多语言"
                           : eng === "dashscope"
                             ? "阿里云通义 · 中文优化"
-                            : "系统内置 · 免费";
+                            : eng === "mimo"
+                              ? "小米 MiMo · 表现力语音"
+                              : "系统内置 · 免费";
                       return (
                         <button
                           key={eng}
@@ -435,6 +446,23 @@ export function TTSPage({
                         >
                           {v.label}
                           {config.dashscopeVoice === v.id && (
+                            <span className="text-[11px] font-bold text-primary">✓</span>
+                          )}
+                        </button>
+                      ))}
+                    {config.engine === "mimo" &&
+                      MIMO_VOICES.map((v) => (
+                        <button
+                          key={v.id}
+                          type="button"
+                          onClick={() => {
+                            onUpdateConfig({ mimoVoice: v.id });
+                            setVoicePickerOpen(false);
+                          }}
+                          className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition-colors hover:bg-muted ${config.mimoVoice === v.id ? "font-semibold text-primary" : "text-foreground"}`}
+                        >
+                          {v.label}
+                          {config.mimoVoice === v.id && (
                             <span className="text-[11px] font-bold text-primary">✓</span>
                           )}
                         </button>

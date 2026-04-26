@@ -8,7 +8,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { DASHSCOPE_VOICES, EDGE_TTS_VOICES, getSystemVoices } from "@/lib/tts/tts-service";
+import { DASHSCOPE_VOICES, EDGE_TTS_VOICES, MIMO_VOICES, getSystemVoices } from "@/lib/tts/tts-service";
 import {
   DEFAULT_SYSTEM_VOICE_VALUE,
   findSystemVoiceLabel,
@@ -21,7 +21,7 @@ import type { TTSEngine } from "@/lib/tts/tts-service";
 import { useTTSStore } from "@/stores/tts-store";
 import { getLocaleDisplayLabel, groupEdgeTTSVoices } from "@readany/core/tts";
 import { cn } from "@readany/core/utils";
-import { Headphones, Mic, Play, type Volume2, Zap } from "lucide-react";
+import { Headphones, Mic, Play, Sparkles, type Volume2, Zap } from "lucide-react";
 /**
  * TTSSettings — TTS configuration panel in the settings dialog.
  *
@@ -80,6 +80,12 @@ export function TTSSettings() {
       label: t("tts.dashscopeEngine"),
       desc: t("tts.dashscopeEngineDesc"),
     },
+    {
+      id: "mimo",
+      icon: Sparkles,
+      label: t("tts.mimoEngine", "MiMo TTS"),
+      desc: t("tts.mimoEngineDesc", "Xiaomi MiMo-V2.5 cloud voice"),
+    },
   ];
 
   return (
@@ -97,10 +103,10 @@ export function TTSSettings() {
         </div>
 
         <div className="space-y-5">
-          {/* Engine selection — 3 engines */}
+          {/* Engine selection */}
           <div className="space-y-2">
             <span className="text-sm text-foreground">{t("tts.engine")}</span>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               {engines.map(({ id, icon: Icon, label, desc }) => (
                 <button
                   key={id}
@@ -262,6 +268,65 @@ export function TTSSettings() {
                   {t("tts.apiKeyHint")}{" "}
                   <a
                     href="https://bailian.console.aliyun.com/cn-beijing/?tab=model#/api-key"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary underline hover:text-primary/80"
+                  >
+                    {t("tts.getApiKey")}
+                  </a>
+                </p>
+              </div>
+            </>
+          )}
+
+          {config.engine === "mimo" && (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-foreground">{t("tts.voice")}</span>
+                <Select
+                  value={config.mimoVoice}
+                  onValueChange={(v) => updateConfig({ mimoVoice: v })}
+                >
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MIMO_VOICES.map((v) => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-foreground">{t("tts.audioFormat", "音频格式")}</span>
+                <Select
+                  value={config.mimoFormat}
+                  onValueChange={(v) => updateConfig({ mimoFormat: v as "wav" | "mp3" })}
+                >
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="wav">WAV</SelectItem>
+                    <SelectItem value="mp3">MP3</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <span className="text-sm text-foreground">{t("tts.mimoApiKey", "MiMo API Key")}</span>
+                <PasswordInput
+                  placeholder={t("tts.mimoApiKeyPlaceholder", "Enter MiMo API Key")}
+                  value={config.mimoApiKey}
+                  onChange={(e) => updateConfig({ mimoApiKey: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t("tts.mimoApiKeyHint", "Uses the mimo-v2.5-tts model from Xiaomi MiMo Open Platform")}{" "}
+                  <a
+                    href="https://platform.xiaomimimo.com/"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-primary underline hover:text-primary/80"

@@ -329,7 +329,9 @@ export function TTSPage({
       ? "Edge TTS"
       : config.engine === "dashscope"
         ? "DashScope"
-        : t("tts.system");
+        : config.engine === "mimo"
+          ? "MiMo TTS"
+          : t("tts.system");
 
   useEffect(() => {
     if (!sleepTimerEndsAt) return;

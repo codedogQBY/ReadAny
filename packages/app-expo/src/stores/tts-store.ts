@@ -16,6 +16,7 @@ export interface TTSPlayerFactories {
   createSystemTTS: () => ITTSPlayer;
   createEdgeTTS: () => ITTSPlayer;
   createDashScopeTTS: () => ITTSPlayer;
+  createMiMoTTS: () => ITTSPlayer;
 }
 
 const defaultFactories: TTSPlayerFactories = {
@@ -23,12 +24,15 @@ const defaultFactories: TTSPlayerFactories = {
   createEdgeTTS: () => new ExpoAVEdgeTTSPlayer(),
   // DashScope streaming is not wired on RN yet; keep a predictable system fallback.
   createDashScopeTTS: () => new ExpoSpeechTTSPlayer(),
+  // MiMo cloud audio playback is not wired on RN yet; keep a predictable system fallback.
+  createMiMoTTS: () => new ExpoSpeechTTSPlayer(),
 };
 
 let _factories: TTSPlayerFactories = defaultFactories;
 let _systemTTS: ITTSPlayer | null = null;
 let _edgeTTS: ITTSPlayer | null = null;
 let _dashscopeTTS: ITTSPlayer | null = null;
+let _mimoTTS: ITTSPlayer | null = null;
 
 let _sessionSegments: string[] = [];
 let _sessionCurrentIndex = 0;
@@ -48,6 +52,11 @@ function getEdgeTTS(): ITTSPlayer {
 function getDashScopeTTS(): ITTSPlayer {
   if (!_dashscopeTTS) _dashscopeTTS = _factories.createDashScopeTTS();
   return _dashscopeTTS;
+}
+
+function getMiMoTTS(): ITTSPlayer {
+  if (!_mimoTTS) _mimoTTS = _factories.createMiMoTTS();
+  return _mimoTTS;
 }
 
 function clearSleepTimerHandle(): void {
@@ -71,6 +80,7 @@ function detachAndStopAllPlayers(): void {
   detachAndStopPlayer(_systemTTS);
   detachAndStopPlayer(_edgeTTS);
   detachAndStopPlayer(_dashscopeTTS);
+  detachAndStopPlayer(_mimoTTS);
 }
 
 function normalizeSegments(text: string | string[]): string[] {
@@ -86,6 +96,9 @@ function getPlayerForConfig(config: TTSConfig): ITTSPlayer {
   }
   if (config.engine === "edge") {
     return getEdgeTTS();
+  }
+  if (config.engine === "mimo" && config.mimoApiKey) {
+    return getMiMoTTS();
   }
   return getSystemTTS();
 }
@@ -397,4 +410,5 @@ export function setTTSPlayerFactories(factories: Partial<TTSPlayerFactories>): v
   _systemTTS = null;
   _edgeTTS = null;
   _dashscopeTTS = null;
+  _mimoTTS = null;
 }

@@ -8,7 +8,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { DASHSCOPE_VOICES, getSystemVoices } from "@/lib/tts/tts-service";
+import { DASHSCOPE_VOICES, MIMO_VOICES, getSystemVoices } from "@/lib/tts/tts-service";
 import {
   DEFAULT_SYSTEM_VOICE_VALUE,
   findSystemVoiceLabel,
@@ -91,7 +91,7 @@ export function TTSControls({ onClose, className }: TTSControlsProps) {
             <div className="flex items-center gap-3">
               <span className="text-xs text-muted-foreground w-16 shrink-0">{t("tts.engine")}</span>
               <div className="flex gap-1">
-                {(["system", "dashscope"] as TTSEngine[]).map((eng) => (
+                {(["system", "dashscope", "mimo"] as TTSEngine[]).map((eng) => (
                   <Button
                     key={eng}
                     variant={config.engine === eng ? "default" : "secondary"}
@@ -99,7 +99,11 @@ export function TTSControls({ onClose, className }: TTSControlsProps) {
                     className="h-7 text-xs"
                     onClick={() => updateConfig({ engine: eng })}
                   >
-                    {eng === "system" ? t("tts.systemEngine") : t("tts.dashscopeEngine")}
+                    {eng === "system"
+                      ? t("tts.systemEngine")
+                      : eng === "dashscope"
+                        ? t("tts.dashscopeEngine")
+                        : t("tts.mimoEngine", "MiMo TTS")}
                   </Button>
                 ))}
               </div>
@@ -146,7 +150,7 @@ export function TTSControls({ onClose, className }: TTSControlsProps) {
                   </SelectContent>
                 </Select>
               </div>
-            ) : (
+            ) : config.engine === "dashscope" ? (
               <>
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-muted-foreground w-16 shrink-0">
@@ -175,6 +179,38 @@ export function TTSControls({ onClose, className }: TTSControlsProps) {
                     placeholder={t("tts.apiKeyPlaceholder")}
                     value={config.dashscopeApiKey}
                     onChange={(e) => updateConfig({ dashscopeApiKey: e.target.value })}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground w-16 shrink-0">
+                    {t("tts.voice")}
+                  </span>
+                  <Select
+                    value={config.mimoVoice}
+                    onValueChange={(v) => updateConfig({ mimoVoice: v })}
+                  >
+                    <SelectTrigger className="h-7 flex-1 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MIMO_VOICES.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>
+                          {v.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground w-16 shrink-0">API Key</span>
+                  <PasswordInput
+                    className="h-7 flex-1 text-xs"
+                    placeholder={t("tts.mimoApiKeyPlaceholder", "Enter MiMo API Key")}
+                    value={config.mimoApiKey}
+                    onChange={(e) => updateConfig({ mimoApiKey: e.target.value })}
                   />
                 </div>
               </>

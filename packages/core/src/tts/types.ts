@@ -2,7 +2,7 @@
  * TTS types and constants — shared across all platforms.
  */
 
-export type TTSEngine = "system" | "edge" | "dashscope";
+export type TTSEngine = "system" | "edge" | "dashscope" | "mimo";
 export type LegacyTTSEngine = TTSEngine | "browser";
 
 export type TTSPlayState = "stopped" | "playing" | "paused" | "loading";
@@ -23,6 +23,14 @@ export interface TTSConfig {
   dashscopeApiKey: string;
   /** DashScope voice (e.g. "Cherry", "Ethan") */
   dashscopeVoice: string;
+  /** Xiaomi MiMo API Key (optional, for MiMo-V2.5-TTS) */
+  mimoApiKey: string;
+  /** Xiaomi MiMo TTS model ID */
+  mimoModel: string;
+  /** Xiaomi MiMo built-in voice ID (e.g. "mimo_default", "Chloe") */
+  mimoVoice: string;
+  /** Xiaomi MiMo output audio format */
+  mimoFormat: "wav" | "mp3";
 }
 
 export const DEFAULT_TTS_CONFIG: TTSConfig = {
@@ -34,6 +42,10 @@ export const DEFAULT_TTS_CONFIG: TTSConfig = {
   edgeVoice: "zh-CN-XiaoxiaoNeural",
   dashscopeApiKey: "",
   dashscopeVoice: "Cherry",
+  mimoApiKey: "",
+  mimoModel: "mimo-v2.5-tts",
+  mimoVoice: "mimo_default",
+  mimoFormat: "wav",
 };
 
 export interface PersistedTTSConfig extends Partial<Omit<TTSConfig, "engine">> {
@@ -41,7 +53,7 @@ export interface PersistedTTSConfig extends Partial<Omit<TTSConfig, "engine">> {
 }
 
 export function normalizeTTSEngine(engine: LegacyTTSEngine | string | null | undefined): TTSEngine {
-  if (engine === "system" || engine === "edge" || engine === "dashscope") {
+  if (engine === "system" || engine === "edge" || engine === "dashscope" || engine === "mimo") {
     return engine;
   }
   if (engine === "browser") {
@@ -62,6 +74,10 @@ export function normalizeTTSConfig(config: PersistedTTSConfig | null | undefined
     edgeVoice: config?.edgeVoice ?? DEFAULT_TTS_CONFIG.edgeVoice,
     dashscopeApiKey: config?.dashscopeApiKey ?? DEFAULT_TTS_CONFIG.dashscopeApiKey,
     dashscopeVoice: config?.dashscopeVoice ?? DEFAULT_TTS_CONFIG.dashscopeVoice,
+    mimoApiKey: config?.mimoApiKey ?? DEFAULT_TTS_CONFIG.mimoApiKey,
+    mimoModel: config?.mimoModel ?? DEFAULT_TTS_CONFIG.mimoModel,
+    mimoVoice: config?.mimoVoice ?? DEFAULT_TTS_CONFIG.mimoVoice,
+    mimoFormat: config?.mimoFormat ?? DEFAULT_TTS_CONFIG.mimoFormat,
   };
 }
 
@@ -76,6 +92,18 @@ export const DASHSCOPE_VOICES = [
   { id: "Peter", label: "天津-李彼得 (Peter)" },
   { id: "Rocky", label: "粤语-阿强 (Rocky)" },
   { id: "Kiki", label: "粤语-阿清 (Kiki)" },
+] as const;
+
+export const MIMO_VOICES = [
+  { id: "mimo_default", label: "MiMo 默认 (mimo_default)", lang: "auto", gender: "" },
+  { id: "冰糖", label: "冰糖", lang: "zh", gender: "female" },
+  { id: "茉莉", label: "茉莉", lang: "zh", gender: "female" },
+  { id: "苏打", label: "苏打", lang: "zh", gender: "male" },
+  { id: "白桦", label: "白桦", lang: "zh", gender: "male" },
+  { id: "Mia", label: "Mia", lang: "en", gender: "female" },
+  { id: "Chloe", label: "Chloe", lang: "en", gender: "female" },
+  { id: "Milo", label: "Milo", lang: "en", gender: "male" },
+  { id: "Dean", label: "Dean", lang: "en", gender: "male" },
 ] as const;
 
 /**
