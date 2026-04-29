@@ -93,6 +93,9 @@ export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
   const pendingHrefTTSSegmentsResolveRef = useRef(
     new Map<string, (segments: VisibleTTSSegment[]) => void>(),
   );
+  const pendingSectionTTSSegmentsResolveRef = useRef(
+    new Map<string, (segments: VisibleTTSSegment[]) => void>(),
+  );
   const pendingChapterParagraphsResolveRef = useRef<
     ((paragraphs: Array<{ id: string; text: string; tagName: string }>) => void) | null
   >(null);
@@ -116,6 +119,7 @@ export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
       mimeType?: string;
       lastLocation?: string;
       pageMargin?: number;
+      paginatedLayout?: "single" | "double";
     }) => {
       const msg = JSON.stringify({ type: "openBook", ...params });
       inject(`handleCommand(${msg})`);
@@ -149,6 +153,13 @@ export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
   const goToHref = useCallback(
     (href: string) => {
       inject(`window.goToHref(${JSON.stringify(href)})`);
+    },
+    [inject],
+  );
+
+  const goToSection = useCallback(
+    (sectionIndex: number) => {
+      inject(`window.goToSection(${sectionIndex})`);
     },
     [inject],
   );
@@ -238,6 +249,7 @@ export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
       pageMargin?: number;
       fontTheme?: string;
       viewMode?: string;
+      paginatedLayout?: "single" | "double";
       customFontFaceCSS?: string;
       customFontFamily?: string;
     }) => {
@@ -409,6 +421,39 @@ export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
             resolve([]);
           }
         }, 5000);
+      });
+    },
+    [createRequestId],
+  );
+
+  const getSectionTTSSegments = useCallback(
+    (sectionIndex: number, count = 24) => {
+      return new Promise<VisibleTTSSegment[]>((resolve) => {
+        const requestId = createRequestId("section-tts");
+        pendingSectionTTSSegmentsResolveRef.current.set(requestId, resolve);
+
+        webViewRef.current?.injectJavaScript(`
+        (function() {
+          try {
+            if (window.doGetSectionTTSSegments) {
+              window.doGetSectionTTSSegments(${sectionIndex}, ${Math.max(1, count)}, ${JSON.stringify(requestId)});
+            } else {
+              window.ReactNativeWebView.postMessage(JSON.stringify({type:'sectionTTSSegments',requestId:${JSON.stringify(requestId)},segments:[],error:'doGetSectionTTSSegments not defined'}));
+            }
+          } catch(e) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({type:'sectionTTSSegments',requestId:${JSON.stringify(requestId)},segments:[],error:String(e)}));
+          }
+        })();
+        true;
+      `);
+
+        setTimeout(() => {
+          const pendingResolve = pendingSectionTTSSegmentsResolveRef.current.get(requestId);
+          if (pendingResolve === resolve) {
+            pendingSectionTTSSegmentsResolveRef.current.delete(requestId);
+            resolve([]);
+          }
+        }, 6000);
       });
     },
     [createRequestId],
@@ -770,6 +815,25 @@ export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
               }
             }
             break;
+          case "sectionTTSSegments":
+            {
+              const requestId = typeof msg.requestId === "string" ? msg.requestId : null;
+              const pendingResolve = requestId
+                ? pendingSectionTTSSegmentsResolveRef.current.get(requestId)
+                : pendingSectionTTSSegmentsResolveRef.current.values().next().value;
+              if (pendingResolve) {
+                if (msg.error) {
+                  console.warn("[ReaderBridge] sectionTTSSegments error:", msg.error);
+                }
+                pendingResolve(msg.segments || []);
+                if (requestId) {
+                  pendingSectionTTSSegmentsResolveRef.current.delete(requestId);
+                } else {
+                  pendingSectionTTSSegmentsResolveRef.current.clear();
+                }
+              }
+            }
+            break;
           case "chapterParagraphs":
             console.log(
               "[ChapterTranslation] Received chapterParagraphs:",
@@ -818,6 +882,7 @@ export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
       goRight,
       goToFraction,
       goToHref,
+      goToSection,
       goToCFI,
       search,
       clearSearch,
@@ -834,6 +899,7 @@ export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
       getVisibleTTSSegments,
       getTTSSegmentContext,
       getHrefTTSSegments,
+      getSectionTTSSegments,
       setTTSHighlight,
       flashHighlight,
       getChapterParagraphs,
@@ -849,6 +915,7 @@ export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
       goRight,
       goToFraction,
       goToHref,
+      goToSection,
       goToCFI,
       search,
       clearSearch,
@@ -865,6 +932,7 @@ export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
       getVisibleTTSSegments,
       getTTSSegmentContext,
       getHrefTTSSegments,
+      getSectionTTSSegments,
       setTTSHighlight,
       flashHighlight,
       getChapterParagraphs,

@@ -54,6 +54,7 @@ const sampleBook: Book = {
   isVectorized: false,
   vectorizeProgress: 0,
   tags: ["fiction"],
+  syncStatus: "local",
 };
 
 describe("book-queries", () => {

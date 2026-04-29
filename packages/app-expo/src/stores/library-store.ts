@@ -1,4 +1,8 @@
-import { extractBookMetadata } from "@/lib/book/metadata-extractor";
+import {
+  createRangeReadableFile,
+  extractBookMetadata,
+  extractBookMetadataFromFile,
+} from "@/lib/book/metadata-extractor";
 import { queueBook as queueAutoVectorize } from "@/lib/rag/auto-vectorize-service";
 import {
   type ImportBooksResult,
@@ -11,7 +15,6 @@ import { runWithDbRetry } from "@readany/core/db/write-retry";
 import { getPlatformService } from "@readany/core/services";
 import type { Book, LibraryFilter, SortField, SortOrder } from "@readany/core/types";
 import { generateId } from "@readany/core/utils";
-import * as Crypto from "expo-crypto";
 import { create } from "zustand";
 import { debouncedSave, loadFromFS } from "./persist";
 import { useVectorModelStore } from "./vector-model-store";
@@ -135,10 +138,59 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-async function hashBytes(bytes: Uint8Array): Promise<string> {
-  return Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, bytesToBase64(bytes), {
-    encoding: Crypto.CryptoEncoding.HEX,
-  });
+const MOBILE_IMPORT_METADATA_MAX_BYTES = 32 * 1024 * 1024;
+const MOBILE_AUTO_VECTORIZER_MAX_BYTES = 12 * 1024 * 1024;
+
+async function getMobileFileStat(path: string): Promise<{ size: number; md5?: string }> {
+  const LegacyFileSystem = await import("expo-file-system/legacy");
+  const info = await LegacyFileSystem.getInfoAsync(path);
+  return {
+    size: info.exists && !info.isDirectory ? info.size ?? 0 : 0,
+    md5: undefined,
+  };
+}
+
+async function extractMobileImportMetadata(params: {
+  filePath: string;
+  format: Book["format"];
+  fileName: string;
+  fileSize: number;
+  sourceBytes?: Uint8Array;
+}) {
+  const { filePath, format, fileName, fileSize, sourceBytes } = params;
+
+  if (format === "epub") {
+    const bytes =
+      sourceBytes ??
+      (fileSize > 0 && fileSize <= MOBILE_IMPORT_METADATA_MAX_BYTES
+        ? await getPlatformService().readFile(filePath)
+        : null);
+    if (bytes) {
+      return extractBookMetadata(bytes, format, fileName);
+    }
+    console.warn(
+      `[extractMobileImportMetadata] Skip EPUB metadata for large file: ${fileName} (${fileSize} bytes)`,
+    );
+  }
+
+  if (format === "mobi" || format === "azw" || format === "azw3") {
+    const rangeReadable = await createRangeReadableFile(filePath, fileSize);
+    return extractBookMetadataFromFile(rangeReadable, format, fileName);
+  }
+
+  return {
+    title: fileName.replace(/\.\w+$/i, "") || "Untitled",
+    author: "",
+    coverBytes: null,
+    coverMimeType: null,
+  };
+}
+
+function shouldAutoVectorizeMobile(format: Book["format"], size: number): boolean {
+  if (size <= 0 || size > MOBILE_AUTO_VECTORIZER_MAX_BYTES) {
+    return false;
+  }
+  return format === "epub" || format === "txt";
 }
 
 /**
@@ -229,20 +281,36 @@ function ensureUtf8Bytes(bytes: Uint8Array): Uint8Array {
   }
 }
 
+/**
+ * Copy book to app data directory. Uses OS-level file copy when possible
+ * to avoid loading the full file into JS memory.
+ * Falls back to readFile+writeFile only when sourceBytes are already available.
+ */
 async function copyBookToAppData(
   bookId: string,
   ext: string,
   srcPath: string,
   sourceBytes?: Uint8Array,
-): Promise<{ relativePath: string; fileBytes: Uint8Array }> {
+): Promise<{ relativePath: string; absPath: string }> {
   const platform = getPlatformService();
   await ensureAppSubDir("books");
   const relativePath = `books/${bookId}.${ext}`;
   const absPath = await resolveAppPath(relativePath);
 
-  const fileBytes = sourceBytes ?? (await platform.readFile(srcPath));
-  await platform.writeFile(absPath, fileBytes);
-  return { relativePath, fileBytes };
+  if (sourceBytes) {
+    // If bytes are already in memory (e.g. from hash calculation), just write them
+    await platform.writeFile(absPath, sourceBytes);
+  } else {
+    // Use expo-file-system File.copy() for OS-level copy (no JS memory)
+    const ExpoFS = await import("expo-file-system");
+    const srcFile = new ExpoFS.File(srcPath);
+    const destFile = new ExpoFS.File(absPath);
+    if (destFile.exists) {
+      destFile.delete();
+    }
+    srcFile.copy(destFile);
+  }
+  return { relativePath, absPath };
 }
 
 async function persistBookUpdate(bookId: string, updates: Partial<Book>): Promise<void> {
@@ -277,16 +345,10 @@ async function restoreDeletedMobileBook(
   const format: Book["format"] = formatMap[ext || ""] || "epub";
   const fileName = originalName;
   const platform = getPlatformService();
-  const sourceBytes = await platform.readFile(filePath);
-
-  let fileHash: string | undefined;
-  try {
-    fileHash = await hashBytes(sourceBytes);
-  } catch {
-    // Hash calculation is best effort.
-  }
+  const { size: fileSize, md5: fileHash } = await getMobileFileStat(filePath);
 
   if (ext === "txt") {
+    const sourceBytes = await platform.readFile(filePath);
     const { TxtToEpubConverter } = await import("@readany/core/utils/txt-to-epub");
     const bytes = ensureUtf8Bytes(sourceBytes);
     const txtFile = {
@@ -339,19 +401,19 @@ async function restoreDeletedMobileBook(
     };
   }
 
-  const { relativePath, fileBytes } = await copyBookToAppData(
-    bookId,
-    ext || "epub",
-    filePath,
-    sourceBytes,
-  );
+  const { relativePath } = await copyBookToAppData(bookId, ext || "epub", filePath);
 
   let title = originalBook.meta.title || fileName.replace(/\.\w+$/i, "") || "Untitled";
   let author = originalBook.meta.author || "";
   let coverUrl = originalBook.meta.coverUrl;
 
   try {
-    const meta = await extractBookMetadata(fileBytes, format, fileName);
+    const meta = await extractMobileImportMetadata({
+      filePath,
+      format,
+      fileName,
+      fileSize,
+    });
     if (meta.title) title = meta.title;
     if (meta.author) author = meta.author;
 
@@ -419,19 +481,13 @@ async function inspectDeletedMobileBookCandidate(
   };
   const format: Book["format"] = formatMap[ext || ""] || "epub";
   const fileName = originalName;
-  const platform = getPlatformService();
-  const sourceBytes = await platform.readFile(filePath);
-
-  let fileHash: string | undefined;
-  try {
-    fileHash = await hashBytes(sourceBytes);
-  } catch {
-    // Best effort.
-  }
+  const { size: fileSize, md5: fileHash } = await getMobileFileStat(filePath);
 
   if (ext === "txt") {
     try {
       const { TxtToEpubConverter } = await import("@readany/core/utils/txt-to-epub");
+      const platform = getPlatformService();
+      const sourceBytes = await platform.readFile(filePath);
       const bytes = ensureUtf8Bytes(sourceBytes);
       const txtFile = {
         name: fileName,
@@ -479,7 +535,12 @@ async function inspectDeletedMobileBookCandidate(
   let title = fileName.replace(/\.\w+$/i, "") || originalBook.meta.title || "Untitled";
   let author = "";
   try {
-    const meta = await extractBookMetadata(sourceBytes, format, fileName);
+    const meta = await extractMobileImportMetadata({
+      filePath,
+      format,
+      fileName,
+      fileSize,
+    });
     if (meta.title) title = meta.title;
     if (meta.author) author = meta.author;
   } catch {
@@ -639,14 +700,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           const format: Book["format"] = formatMap[ext || ""] || "epub";
           const fileName = originalName;
           const platform = getPlatformService();
-          const sourceBytes = await platform.readFile(filePath);
-
-          let fileHash: string | undefined;
-          try {
-            fileHash = await hashBytes(sourceBytes);
-          } catch {
-            // Hash calculation is best effort.
-          }
+          const { size: fileSize, md5: fileHash } = await getMobileFileStat(filePath);
 
           const existingDuplicate = findDuplicateBookByHash(duplicateIndex, fileHash);
           if (existingDuplicate) {
@@ -670,6 +724,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           if (ext === "txt") {
             try {
               const { TxtToEpubConverter } = await import("@readany/core/utils/txt-to-epub");
+              const sourceBytes = await platform.readFile(filePath);
 
               // Hermes only supports UTF-8 in TextDecoder. Convert GBK/GB18030
               // etc. to UTF-8 using text-encoding polyfill before passing to converter.
@@ -772,9 +827,17 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
               // successful import doesn't get reported as a failed import.
               try {
                 const vmState = useVectorModelStore.getState();
-                if (vmState.vectorModelEnabled && vmState.hasVectorCapability()) {
+                if (
+                  vmState.vectorModelEnabled &&
+                  vmState.hasVectorCapability() &&
+                  shouldAutoVectorizeMobile("txt", conversion.epubBytes.byteLength)
+                ) {
                   const base64 = bytesToBase64(conversion.epubBytes);
                   queueAutoVectorize(book, base64, "application/epub+zip");
+                } else if (vmState.vectorModelEnabled && vmState.hasVectorCapability()) {
+                  console.warn(
+                    `[importBooks] Skip auto-vectorize for large TXT conversion: ${fileName} (${conversion.epubBytes.byteLength} bytes)`,
+                  );
                 }
               } catch (autoVectorizeErr) {
                 console.warn(
@@ -789,14 +852,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             }
           }
 
-          const { relativePath, fileBytes } = await copyBookToAppData(
-            bookId,
-            ext || "epub",
-            filePath,
-            sourceBytes,
-          );
+          const { relativePath } = await copyBookToAppData(bookId, ext || "epub", filePath);
           console.log(
-            `[importBooks] File copied. Bytes length: ${fileBytes.length}, relativePath: ${relativePath}`,
+            `[importBooks] File copied. relativePath: ${relativePath}`,
           );
 
           // Extract metadata (title, author, cover) from book content
@@ -806,7 +864,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
           try {
             console.log(`[importBooks] Extracting metadata for format=${format}...`);
-            const meta = await extractBookMetadata(fileBytes, format, fileName);
+            const meta = await extractMobileImportMetadata({
+              filePath,
+              format,
+              fileName,
+              fileSize,
+            });
             console.log(
               `[importBooks] Metadata result: title="${meta.title}", author="${meta.author}", hasCover=${!!meta.coverBytes}, coverSize=${meta.coverBytes?.length ?? 0}`,
             );
@@ -887,8 +950,13 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           // successful import doesn't get reported as a failed import.
           try {
             const vmState = useVectorModelStore.getState();
-            if (vmState.vectorModelEnabled && vmState.hasVectorCapability()) {
-              const base64 = bytesToBase64(fileBytes);
+            if (
+              vmState.vectorModelEnabled &&
+              vmState.hasVectorCapability() &&
+              shouldAutoVectorizeMobile(format, fileSize)
+            ) {
+              const sourceBytes = await platform.readFile(filePath);
+              const base64 = bytesToBase64(sourceBytes);
               const mimeTypes: Record<string, string> = {
                 epub: "application/epub+zip",
                 pdf: "application/pdf",
@@ -903,6 +971,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
               };
               const mimeType = mimeTypes[format] || "application/epub+zip";
               queueAutoVectorize(book, base64, mimeType);
+            } else if (vmState.vectorModelEnabled && vmState.hasVectorCapability()) {
+              console.warn(
+                `[importBooks] Skip auto-vectorize for large/unsupported mobile import: ${fileName} (${fileSize} bytes, format=${format})`,
+              );
             }
           } catch (autoVectorizeErr) {
             console.warn(

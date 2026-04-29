@@ -3,14 +3,14 @@
  */
 import { DesktopImportActions } from "@/components/home/DesktopImportActions";
 import { useLibraryStore } from "@/stores/library-store";
-import { Plus } from "lucide-react";
+import { Loader2, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { BookGrid } from "./BookGrid";
 import { ImportDropZone } from "./ImportDropZone";
 
 export function HomePage() {
   const { t } = useTranslation();
-  const { books, filter, activeTag } = useLibraryStore();
+  const { books, filter, activeTag, isImporting } = useLibraryStore();
 
   const filtered = books.filter((b) => {
     // Tag filter
@@ -44,10 +44,11 @@ export function HomePage() {
           <button
             id="tour-add-book"
             type="button"
+            disabled={isImporting}
             className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            <Plus className="size-4" />
-            {t("home.addBook")}
+            {isImporting ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+            {isImporting ? t("library.importing", "导入中...") : t("home.addBook")}
           </button>
         </DesktopImportActions>
       </div>

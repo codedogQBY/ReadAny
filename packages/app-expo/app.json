@@ -2,7 +2,7 @@
   "expo": {
     "name": "ReadAny",
     "slug": "readany",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -17,7 +17,9 @@
       "bundleIdentifier": "com.readany.app",
       "buildNumber": "2",
       "infoPlist": {
-        "UIBackgroundModes": ["audio"],
+        "UIBackgroundModes": [
+          "audio"
+        ],
         "ITSAppUsesNonExemptEncryption": false
       }
     },

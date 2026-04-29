@@ -85,6 +85,13 @@ function normalizeSegments(text: string | string[]): string[] {
     .filter(Boolean);
 }
 
+function previewSessionSegments(segments: string[], limit = 8) {
+  return segments.slice(0, limit).map((text, index) => ({
+    index,
+    text: text.replace(/\s+/g, " ").trim(),
+  }));
+}
+
 function getPlayerForConfig(config: TTSConfig): ITTSPlayer {
   if (config.engine === "dashscope" && config.dashscopeApiKey) {
     return getDashScopeTTS();
@@ -118,6 +125,13 @@ function startPlayback(
 
   player.onStateChange = (playState) => {
     if (gen !== _sessionGeneration) return;
+    console.log("[TTSStore][player] state-change", {
+      playState,
+      gen,
+      currentIndex: _sessionCurrentIndex,
+      total: _sessionSegments.length,
+      currentText: _sessionSegments[_sessionCurrentIndex] || "",
+    });
     if (playState === "stopped") {
       _activeTTS = null;
     }
@@ -128,6 +142,14 @@ function startPlayback(
     if (gen !== _sessionGeneration) return;
     const absoluteIndex = startIndex + chunkIndex;
     _sessionCurrentIndex = absoluteIndex;
+    console.log("[TTSStore][player] chunk-change", {
+      chunkIndex,
+      absoluteIndex,
+      startIndex,
+      total: _sessionSegments.length,
+      currentText: _sessionSegments[absoluteIndex] || "",
+      nextText: _sessionSegments[absoluteIndex + 1] || "",
+    });
     set({
       currentChunkIndex: absoluteIndex,
       totalChunks: _sessionSegments.length,
@@ -140,6 +162,14 @@ function startPlayback(
     _activeTTS = null;
     const lastIndex = Math.max(0, _sessionSegments.length - 1);
     _sessionCurrentIndex = lastIndex;
+    console.log("[TTSStore][player] end", {
+      gen,
+      lastIndex,
+      total: _sessionSegments.length,
+      lastText: _sessionSegments[lastIndex] || "",
+      queuePreview: previewSessionSegments(_sessionSegments),
+      hasOnEnd: !!get().onEnd,
+    });
     set({
       playState: "stopped",
       currentChunkIndex: lastIndex,
@@ -229,6 +259,9 @@ export const useTTSStore = create<TTSState>()(
           segments: segments.length,
           edgeVoice: config.edgeVoice,
           voiceName: config.voiceName,
+          firstText: segments[0] || "",
+          secondText: segments[1] || "",
+          queuePreview: previewSessionSegments(segments),
         });
 
         set({
@@ -253,6 +286,15 @@ export const useTTSStore = create<TTSState>()(
         try {
           _activeTTS.append(segments);
           _sessionSegments = [..._sessionSegments, ...segments];
+          console.log("[TTSStore] append called", {
+            appended: segments.length,
+            previousTotal: previousSegments.length,
+            nextTotal: _sessionSegments.length,
+            appendFirstText: segments[0] || "",
+            appendSecondText: segments[1] || "",
+            appendedPreview: previewSessionSegments(segments),
+            fullQueueTailPreview: previewSessionSegments(_sessionSegments.slice(-8)),
+          });
           set((state) => ({
             currentText: [state.currentText, joinedText].filter(Boolean).join(" ").trim(),
             totalChunks: _sessionSegments.length,

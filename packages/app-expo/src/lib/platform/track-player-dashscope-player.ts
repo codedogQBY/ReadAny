@@ -2,14 +2,16 @@ import { getPlatformService } from "@readany/core/services";
 import type { ITTSPlayer, TTSConfig } from "@readany/core/tts";
 import { splitIntoChunks } from "@readany/core/tts";
 import { File, Paths } from "expo-file-system";
-import { Image } from "react-native";
+import { AppState, type AppStateStatus, Image, Platform } from "react-native";
 import TrackPlayer, { Event, State } from "react-native-track-player";
+
+import { ensureSilenceFile } from "./tts-silence-keeper";
 
 const CHUNK_MAX_CHARS = 500;
 const DEFAULT_ARTWORK = Image.resolveAssetSource(require("../../../assets/icon.png")).uri;
 
 export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
-  private static readonly INITIAL_BUFFER_CHUNKS = 4;
+  private static readonly INITIAL_BUFFER_CHUNKS = 8;
   private static readonly FETCH_CONCURRENCY = 8;
   private static readonly STARVE_RESUME_BUFFER_CHUNKS = 2;
   private static readonly MAX_RETRIES = 3;
@@ -39,6 +41,7 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
   private _currentArtwork = DEFAULT_ARTWORK;
   private _producerRunning = false;
   private _retryCount = 0;
+  private _silenceTrackIds = new Set<string>();
 
   setArtworkGetter(getter: () => string | undefined): void {
     this._getArtwork = getter;
@@ -74,6 +77,7 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
     this._lastNotifiedIndex = -1;
     this._currentArtwork = this._getArtwork?.() || DEFAULT_ARTWORK;
     this._producerRunning = false;
+    this._silenceTrackIds.clear();
 
     if (this._chunks.length === 0) {
       this.onStateChange?.("stopped");
@@ -108,6 +112,8 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
       Event.PlaybackActiveTrackChanged,
       (event) => {
         if (gen !== this._speakGen || this._stopped) return;
+        // Skip notifications for silence keep-alive tracks
+        if (event.track && this._silenceTrackIds.has(event.track.id as string)) return;
         if (event.index != null && event.index >= 0) {
           this._notifyChunkChange(event.index);
         }
@@ -161,6 +167,17 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
       unsubQueueEnded.remove,
       unsubSeek.remove,
     );
+
+    // Resume chunk fetching when app returns to foreground.
+    const appStateSub = AppState.addEventListener("change", (state: AppStateStatus) => {
+      if (state !== "active") return;
+      if (gen !== this._speakGen || this._stopped) return;
+      this._ensureProducerRunning(gen);
+      if (this._queueStarved) {
+        this._recoverFromStarvation(gen);
+      }
+    });
+    this._unsubscribers.push(() => appStateSub.remove());
   }
 
   private _ensureProducerRunning(gen: number): void {
@@ -289,6 +306,9 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
     if (gen !== this._speakGen || this._stopped || this._paused) return;
 
     try {
+      // Remove silence keep-alive tracks before resuming real audio
+      await this._removeSilenceTracks();
+
       const queue = await TrackPlayer.getQueue();
       if (queue.length === 0) return;
 
@@ -306,6 +326,15 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
     } catch (error) {
       console.warn("[TrackPlayerDashScopeTTSPlayer] failed to resume starved queue", error);
     }
+  }
+
+  private async _removeSilenceTracks(): Promise<void> {
+    if (this._silenceTrackIds.size === 0) return;
+    try {
+      const ids = Array.from(this._silenceTrackIds);
+      this._silenceTrackIds.clear();
+      await TrackPlayer.remove(ids).catch(() => {});
+    } catch {}
   }
 
   private async _fetchChunkFileWithRetry(index: number, gen: number): Promise<string> {
@@ -417,6 +446,42 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
         total: this._chunks.length,
       },
     );
+
+    // On iOS, keep the audio session alive by inserting a silent track.
+    if (Platform.OS === "ios") {
+      void this._insertSilenceKeepAlive();
+    }
+  }
+
+  private async _insertSilenceKeepAlive(): Promise<void> {
+    try {
+      const silenceUri = ensureSilenceFile();
+      const silenceId = `tts-silence-${Date.now()}`;
+      this._silenceTrackIds.add(silenceId);
+      await TrackPlayer.add({
+        id: silenceId,
+        url: silenceUri,
+        title: "Buffering…",
+        artwork: this._currentArtwork,
+        duration: 1,
+      });
+      const state = await TrackPlayer.getPlaybackState().catch(() => null);
+      if (state?.state !== State.Playing && !this._paused && !this._stopped) {
+        await TrackPlayer.play();
+      }
+    } catch (error) {
+      console.warn("[TrackPlayerDashScopeTTSPlayer] failed to insert silence keep-alive", error);
+    }
+  }
+
+  /**
+   * Called when app returns to foreground after being suspended.
+   * Restarts the producer and attempts to resume playback if queue was starved.
+   */
+  private _recoverFromStarvation(gen: number): void {
+    if (gen !== this._speakGen || this._stopped) return;
+    console.log("[TrackPlayerDashScopeTTSPlayer] recovering from background starvation");
+    this._ensureProducerRunning(gen);
   }
 
   private _isAtFinalTrack(index = this._currentIndex): boolean {
@@ -514,6 +579,7 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
     this._nextChunkToFetch = 0;
     this._producerRunning = false;
     this._fetchPromises.clear();
+    this._silenceTrackIds.clear();
     this._stopProgressPolling();
     TrackPlayer.stop();
     TrackPlayer.reset();
@@ -530,6 +596,7 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
     this._nextChunkToFetch = 0;
     this._producerRunning = false;
     this._fetchPromises.clear();
+    this._silenceTrackIds.clear();
     this._stopProgressPolling();
     this._cleanupEvents();
     try {

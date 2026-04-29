@@ -15,6 +15,7 @@ import { getPlatformService } from "@readany/core/services";
 import { type TTSConfig, normalizeTTSConfig, splitNarrationText } from "@readany/core/tts";
 import { eventBus } from "@readany/core/utils/event-bus";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 import {
   collectMissingTTSDebugSentences,
   findTTSDebugSentenceIndex,
@@ -38,6 +39,8 @@ export type TTSBridgeRef = {
     after?: number,
   ) => Promise<{ before: TTSSegment[]; after: TTSSegment[] }>;
   getHrefTTSSegments?: (href: string, count?: number) => Promise<TTSSegment[]>;
+  getSectionTTSSegments?: (sectionIndex: number, count?: number) => Promise<TTSSegment[]>;
+  goToSection?: (sectionIndex: number) => void;
   goToCFI: (cfi: string) => void;
   setTTSHighlight: (cfi: string | null, color?: string, force?: boolean) => void;
   flashHighlight: (cfi: string, color?: string, duration?: number) => void;
@@ -111,7 +114,42 @@ const TTS_CONTEXT_CACHE_LIMIT = 24;
 const TTS_CONTEXT_WINDOW = 12;
 const TTS_DYNAMIC_APPEND_THRESHOLD = 18;
 const TTS_DYNAMIC_APPEND_SEGMENTS = 72;
-const TTS_NEXT_CHAPTER_PREFETCH_SEGMENTS = 72;
+const TTS_NEXT_CHAPTER_PREFETCH_SEGMENTS = 500;
+
+function normalizeTTSSegmentIdentityText(text?: string | null) {
+  return (text || "").replace(/\s+/g, " ").trim();
+}
+
+function stripCfiAssertions(value: string) {
+  return value.replace(/\[[^\]]*\]/g, "");
+}
+
+function getTTSCfiStartIdentity(cfi?: string | null) {
+  const raw = (cfi || "").trim();
+  if (!raw) return "";
+  const inner = raw.startsWith("epubcfi(") && raw.endsWith(")") ? raw.slice(8, -1) : raw;
+  const bangIndex = inner.indexOf("!");
+  if (bangIndex < 0) return stripCfiAssertions(inner);
+
+  const sectionPath = stripCfiAssertions(inner.slice(0, bangIndex));
+  const localPath = stripCfiAssertions(inner.slice(bangIndex + 1));
+  const commaIndex = localPath.indexOf(",");
+  if (commaIndex < 0) return `${sectionPath}!${localPath}`;
+
+  const commonPath = localPath.slice(0, commaIndex);
+  const rangePath = localPath.slice(commaIndex + 1);
+  const rangeEndIndex = rangePath.indexOf(",");
+  const startPath = rangeEndIndex >= 0 ? rangePath.slice(0, rangeEndIndex) : rangePath;
+  return `${sectionPath}!${commonPath}${startPath}`;
+}
+
+function previewTTSQueue(segments: TTSSegment[], limit = 8) {
+  return segments.slice(0, limit).map((segment, index) => ({
+    index,
+    cfi: segment.cfi || null,
+    text: normalizeTTSDebugText(segment.text),
+  }));
+}
 
 export function useReaderTTS({
   bookId,
@@ -305,7 +343,7 @@ export function useReaderTTS({
   // ─── Derived values ─────────────────────────────────────────────────────────
   const getTTSSegmentIdentity = useCallback(
     (segment: TTSSegment | null | undefined) =>
-      `${segment?.cfi || ""}::${(segment?.text || "").replace(/\s+/g, " ").trim()}`,
+      `${getTTSCfiStartIdentity(segment?.cfi)}::${normalizeTTSSegmentIdentityText(segment?.text)}`,
     [],
   );
 
@@ -433,6 +471,42 @@ export function useReaderTTS({
       return dedupeTTSSegments(ordered);
     },
     [dedupeTTSSegments],
+  );
+
+  const normalizeExtractedTTSSegments = useCallback(
+    (segments: TTSSegment[]) =>
+      dedupeTTSSegments(
+        (segments || [])
+          .map((segment) => ({
+            text: segment.text.trim(),
+            cfi: segment.cfi,
+          }))
+          .filter((segment) => segment.text.length > 0),
+      ),
+    [dedupeTTSSegments],
+  );
+
+  const findReadableSectionTTSSegments = useCallback(
+    async (
+      startSectionIndex: number,
+      direction: 1 | -1,
+      count = TTS_NEXT_CHAPTER_PREFETCH_SEGMENTS,
+    ) => {
+      if (!bridgeRef.current?.getSectionTTSSegments) return null;
+      const step = direction < 0 ? -1 : 1;
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        const sectionIndex = startSectionIndex + attempt * step;
+        if (sectionIndex < 0) break;
+        const segments = normalizeExtractedTTSSegments(
+          await bridgeRef.current.getSectionTTSSegments(sectionIndex, count),
+        );
+        if (segments.length > 0) {
+          return { sectionIndex, segments };
+        }
+      }
+      return null;
+    },
+    [bridgeRef, normalizeExtractedTTSSegments],
   );
 
   // ─── Context cache ──────────────────────────────────────────────────────────
@@ -694,12 +768,12 @@ export function useReaderTTS({
 
   const queueTTSChapterTransition = useCallback(
     (targetIndex: number, options?: { autoResume?: boolean }) => {
-      const target = toc[targetIndex];
-      if (!target?.href || !bridgeRef.current) return false;
+      if (!bridgeRef.current?.getSectionTTSSegments) return false;
+      const targetSectionIndex = Math.max(0, targetIndex);
       ttsPrefetchedChapterTransitionRef.current = null;
 
       const autoResume = options?.autoResume !== false;
-      const nextChapterTitle = target.title || currentChapter;
+      const nextChapterTitle = currentChapter;
 
       if (pendingTTSContinueSafetyTimerRef.current) {
         clearTimeout(pendingTTSContinueSafetyTimerRef.current);
@@ -714,7 +788,26 @@ export function useReaderTTS({
         }
 
         void (async () => {
-          const normalizedSegments = await getNormalizedVisibleTTSSegments();
+          const direction = targetSectionIndex < currentSectionIndex ? -1 : 1;
+          const readableSection = await findReadableSectionTTSSegments(
+            targetSectionIndex,
+            direction,
+            TTS_NEXT_CHAPTER_PREFETCH_SEGMENTS,
+          );
+          const resolvedSectionIndex = readableSection?.sectionIndex ?? targetSectionIndex;
+          const normalizedSegments = readableSection?.segments || [];
+          if (__DEV__) {
+            console.log("[ReaderScreen][TTS][queue-transition] extracted-next-chapter", {
+              targetIndex: resolvedSectionIndex,
+              requestedSectionIndex: targetSectionIndex,
+              targetHref: `section:${resolvedSectionIndex}`,
+              nextChapterTitle,
+              normalizedSegmentsLength: normalizedSegments.length,
+              firstSentence: normalizeTTSDebugText(normalizedSegments[0]?.text),
+              secondSentence: normalizeTTSDebugText(normalizedSegments[1]?.text),
+              queuePreview: previewTTSQueue(normalizedSegments),
+            });
+          }
           if (normalizedSegments.length === 0) {
             ttsContinuousRef.current = false;
             ttsSetOnEnd(null);
@@ -746,11 +839,25 @@ export function useReaderTTS({
           const lastVisibleCfi =
             normalizedSegments[normalizedSegments.length - 1]?.cfi || firstVisibleCfi;
           ttsSetCurrentLocation(firstVisibleCfi);
+          if (firstVisibleCfi) {
+            bridgeRef.current?.goToCFI(firstVisibleCfi);
+          }
 
           void primeTTSLyricContext(firstVisibleCfi, firstVisibleCfi, lastVisibleCfi);
 
           if (autoResume) {
             ttsContinuousRef.current = true;
+            if (__DEV__) {
+              console.log("[ReaderScreen][TTS][queue-transition] play-next-chapter", {
+                targetHref: `section:${resolvedSectionIndex}`,
+                targetSectionIndex: resolvedSectionIndex,
+                requestedSectionIndex: targetSectionIndex,
+                firstCfi: firstVisibleCfi || null,
+                firstSentence: normalizeTTSDebugText(normalizedSegments[0]?.text),
+                secondSentence: normalizeTTSDebugText(normalizedSegments[1]?.text),
+                queuePreview: previewTTSQueue(normalizedSegments),
+              });
+            }
             ttsPlay(normalizedSegments.map((segment) => segment.text));
           }
         })();
@@ -763,7 +870,7 @@ export function useReaderTTS({
       }, 1200);
 
       bridgeRef.current.setTTSHighlight(null);
-      goToHref(target.href);
+      bridgeRef.current.goToSection?.(targetSectionIndex);
       return true;
     },
     [
@@ -771,11 +878,10 @@ export function useReaderTTS({
       bookTitle,
       bridgeRef,
       currentChapter,
-      getNormalizedVisibleTTSSegments,
-      goToHref,
+      currentSectionIndex,
+      findReadableSectionTTSSegments,
       primeTTSLyricContext,
       syncTTSChunkOffset,
-      toc,
       ttsCoverUri,
       ttsPlay,
       ttsSetCurrentBook,
@@ -786,30 +892,28 @@ export function useReaderTTS({
   );
 
   const prefetchNextChapterTTSSegments = useCallback(async () => {
-    if (!bridgeRef.current?.getHrefTTSSegments) return [];
-    const nextChapterIndex =
-      currentSectionIndex >= 0 && currentSectionIndex < toc.length - 1
-        ? currentSectionIndex + 1
-        : -1;
-    if (nextChapterIndex < 0) return [];
-
-    const target = toc[nextChapterIndex];
-    if (!target?.href) return [];
+    if (!bridgeRef.current?.getSectionTTSSegments) return [];
+    const requestedNextSectionIndex = currentSectionIndex >= 0 ? currentSectionIndex + 1 : -1;
+    if (requestedNextSectionIndex < 0) return [];
+    const readableSection = await findReadableSectionTTSSegments(
+      requestedNextSectionIndex,
+      1,
+      TTS_NEXT_CHAPTER_PREFETCH_SEGMENTS,
+    );
+    if (!readableSection) return [];
+    const nextChapterIndex = readableSection.sectionIndex;
+    const targetHref = `section:${nextChapterIndex}`;
 
     const existingTransition = ttsPrefetchedChapterTransitionRef.current;
     if (
       existingTransition?.targetIndex === nextChapterIndex &&
-      existingTransition.href === target.href
+      existingTransition.href === targetHref
     ) {
       return [];
     }
 
-    const nextChapterSegments = await bridgeRef.current.getHrefTTSSegments(
-      target.href,
-      TTS_NEXT_CHAPTER_PREFETCH_SEGMENTS,
-    );
     const appendSegments = filterDistinctTTSSegments(
-      nextChapterSegments,
+      readableSection.segments,
       ttsPrevPageSegmentsRef.current,
       ttsSegmentsRef.current,
       ttsFutureSegmentsRef.current,
@@ -820,8 +924,8 @@ export function useReaderTTS({
     ttsPrefetchedChapterTransitionRef.current = {
       startChunkIndex: ttsChunkOffsetRef.current + ttsSegmentsRef.current.length,
       targetIndex: nextChapterIndex,
-      title: target.title || currentChapter,
-      href: target.href,
+      title: currentChapter,
+      href: targetHref,
       firstCfi: appendSegments[0]?.cfi || "",
       navigated: false,
     };
@@ -829,15 +933,23 @@ export function useReaderTTS({
     if (__DEV__) {
       console.log("[ReaderScreen][TTS] prefetched-next-chapter", {
         targetIndex: nextChapterIndex,
-        title: target.title,
+        requestedSectionIndex: requestedNextSectionIndex,
+        title: currentChapter,
         segmentCount: appendSegments.length,
         startChunkIndex: ttsPrefetchedChapterTransitionRef.current.startChunkIndex,
         firstCfi: appendSegments[0]?.cfi || null,
+        firstSentence: normalizeTTSDebugText(appendSegments[0]?.text),
       });
     }
 
     return appendSegments;
-  }, [bridgeRef, currentChapter, currentSectionIndex, filterDistinctTTSSegments, toc]);
+  }, [
+    bridgeRef,
+    currentChapter,
+    currentSectionIndex,
+    findReadableSectionTTSSegments,
+    filterDistinctTTSSegments,
+  ]);
 
   // ─── recoverTTSLyricsState ────────────────────────────────────────────────
   const recoverTTSLyricsState = useCallback(async () => {
@@ -1013,6 +1125,7 @@ export function useReaderTTS({
       currentSegmentCfi: (currentTTSSegment as TTSSegment | null)?.cfi || null,
       activeSegmentsLength: ttsSegmentsRef.current.length,
       hasRestartFromCfi: !!startPageTTSFromCfiRef.current,
+      activeQueuePreview: previewTTSQueue(ttsSegmentsRef.current),
     });
     if (!shouldContinue) return;
     if (ttsHandlingPageEndRef.current) {
@@ -1071,7 +1184,9 @@ export function useReaderTTS({
           previousLastCfi,
           nextCfi: nextSegment?.cfi || null,
           nextTextLength: nextSegment?.text?.length || 0,
+          nextText: normalizeTTSDebugText(nextSegment?.text),
           afterCount: context.after?.length || 0,
+          afterPreview: previewTTSQueue(context.after || []),
         });
 
         if (nextSegment?.cfi && restartFromCfi) {
@@ -1079,10 +1194,7 @@ export function useReaderTTS({
           return;
         }
 
-        const nextChapterIndex =
-          currentSectionIndex >= 0 && currentSectionIndex < toc.length - 1
-            ? currentSectionIndex + 1
-            : -1;
+        const nextChapterIndex = currentSectionIndex >= 0 ? currentSectionIndex + 1 : -1;
         if (
           nextChapterIndex >= 0 &&
           queueTTSChapterTransition(nextChapterIndex, { autoResume: true })
@@ -1105,7 +1217,6 @@ export function useReaderTTS({
     mergeUniqueTTSSegments,
     currentSectionIndex,
     queueTTSChapterTransition,
-    toc.length,
     ttsContinuousEnabled,
     ttsSetOnEnd,
     ttsSourceKind,
@@ -1233,8 +1344,23 @@ export function useReaderTTS({
   // ─── startPageTTS ─────────────────────────────────────────────────────────
   const startPageTTS = useCallback(
     async (continuous = ttsContinuousEnabled) => {
-      const pageAnchorCfi = currentCfi || null;
-      const normalizedSegments = await getNormalizedVisibleTTSSegments(pageAnchorCfi);
+      // Start from the currently visible page, not from currentCfi. During fast
+      // page/chapter transitions currentCfi can still point at the previous
+      // relocation or a mid-page sentence, which makes TTS skip the real first
+      // visible sentence.
+      const normalizedSegments = await getNormalizedVisibleTTSSegments(null);
+      const pageAnchorCfi = normalizedSegments[0]?.cfi || currentCfi || null;
+      if (__DEV__) {
+        console.log("[ReaderScreen][TTS][queue-start] visible-page", {
+          currentChapter,
+          currentCfi,
+          pageAnchorCfi,
+          visibleSegmentsLength: normalizedSegments.length,
+          visibleFirstSentence: normalizeTTSDebugText(normalizedSegments[0]?.text),
+          visibleSecondSentence: normalizeTTSDebugText(normalizedSegments[1]?.text),
+          visibleQueuePreview: previewTTSQueue(normalizedSegments),
+        });
+      }
       const normalized = normalizedSegments
         .map((segment) => segment.text)
         .join(" ")
@@ -1282,13 +1408,17 @@ export function useReaderTTS({
         .join(" ")
         .trim();
       if (__DEV__) {
-        console.log("[ReaderScreen][TTS] start-page", {
+        console.log("[ReaderScreen][TTS][queue-start] playback-page", {
           pageAnchorCfi,
           segmentCount: normalizedSegments.length,
           playbackSegmentCount: playbackSegments.length,
           firstCfi: normalizedSegments[0]?.cfi || null,
           lastCfi: playbackSegments[playbackSegments.length - 1]?.cfi || null,
-          firstText: normalizeTTSDebugText(normalizedSegments[0]?.text),
+          visibleFirstSentence: normalizeTTSDebugText(normalizedSegments[0]?.text),
+          playbackFirstSentence: normalizeTTSDebugText(playbackSegments[0]?.text),
+          playbackSecondSentence: normalizeTTSDebugText(playbackSegments[1]?.text),
+          playbackQueuePreview: previewTTSQueue(playbackSegments),
+          futureQueuePreview: previewTTSQueue(futureSegments),
         });
       }
       void logTTSExtractionDiagnostics({
@@ -1418,7 +1548,7 @@ export function useReaderTTS({
     const chapterChanged =
       ttsStartChapterRef.current !== "" && ttsStartChapterRef.current !== currentChapter;
 
-    if (hasActiveSession && (isPlaying || !chapterChanged)) {
+    if (hasActiveSession && isPlaying && !chapterChanged) {
       setShowControls(false);
       setShowTTS(true);
       return;
@@ -1828,22 +1958,43 @@ export function useReaderTTS({
       queueTTSChapterTransition(prevIdx, { autoResume: true });
       return;
     }
+    if (bridgeRef.current?.goToSection) {
+      bridgeRef.current.goToSection(prevIdx);
+      return;
+    }
     const prevHref = toc[prevIdx]?.href;
     if (prevHref) goToHref(prevHref);
-  }, [currentSectionIndex, goToHref, queueTTSChapterTransition, toc, ttsPlayState, ttsSourceKind]);
+  }, [
+    bridgeRef,
+    currentSectionIndex,
+    goToHref,
+    queueTTSChapterTransition,
+    toc,
+    ttsPlayState,
+    ttsSourceKind,
+  ]);
 
   const handleTTSNextChapter = useCallback(() => {
-    const nextIdx =
-      currentSectionIndex >= 0 && currentSectionIndex < toc.length - 1
-        ? currentSectionIndex + 1
-        : toc.length - 1;
+    const nextIdx = currentSectionIndex >= 0 ? currentSectionIndex + 1 : 0;
     if (ttsSourceKind === "page" && ttsPlayState !== "stopped") {
       queueTTSChapterTransition(nextIdx, { autoResume: true });
       return;
     }
+    if (bridgeRef.current?.goToSection) {
+      bridgeRef.current.goToSection(nextIdx);
+      return;
+    }
     const nextHref = toc[nextIdx]?.href;
     if (nextHref) goToHref(nextHref);
-  }, [currentSectionIndex, goToHref, queueTTSChapterTransition, toc, ttsPlayState, ttsSourceKind]);
+  }, [
+    bridgeRef,
+    currentSectionIndex,
+    goToHref,
+    queueTTSChapterTransition,
+    toc,
+    ttsPlayState,
+    ttsSourceKind,
+  ]);
 
   const handleTTSStop = useCallback(() => {
     ttsContinuousRef.current = false;
@@ -1999,6 +2150,42 @@ export function useReaderTTS({
     bookId,
   ]);
 
+  // ─── Foreground resync: force highlight update after returning from background ──
+  // When iOS suspends the app, React effects don't run but native audio continues.
+  // On return to foreground, force-resync the WebView highlight to current TTS position.
+  useEffect(() => {
+    const handleAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState !== "active") return;
+      if (!webViewReady || !bridgeRef.current) return;
+      if (ttsCurrentBookId !== bookId) return;
+      if (ttsPlayState !== "playing" && ttsPlayState !== "paused") return;
+      if (ttsSourceKind !== "page") return;
+
+      const targetCfi = resolvedTTSSegmentCfi;
+      if (!targetCfi) return;
+
+      // Small delay to let WebView fully resume before injecting JS
+      setTimeout(() => {
+        bridgeRef.current?.setTTSHighlight(targetCfi, ttsHighlightColor, true);
+        // Also navigate to the current TTS position if user scrolled away
+        bridgeRef.current?.goToCFI(targetCfi);
+      }, 300);
+    };
+
+    const subscription = AppState.addEventListener("change", handleAppStateChange);
+    return () => subscription.remove();
+  }, [
+    bookId,
+    bridgeRef,
+    resolvedTTSSegmentCfi,
+    showTTS,
+    ttsCurrentBookId,
+    ttsHighlightColor,
+    ttsPlayState,
+    ttsSourceKind,
+    webViewReady,
+  ]);
+
   useEffect(() => {
     if (!webViewReady) {
       lastFollowedTTSCfiRef.current = null;
@@ -2078,6 +2265,8 @@ export function useReaderTTS({
       ttsChunkOffset,
       localTTSChunkIndex,
       resolvedTTSSegmentCfi,
+      queueSentenceAtLocalIndex: normalizeTTSDebugText(ttsSegments[localTTSChunkIndex]?.text),
+      queueNextSentence: normalizeTTSDebugText(ttsSegments[localTTSChunkIndex + 1]?.text),
       currentSegmentText: normalizeTTSDebugText(currentTTSSegment?.text),
       storeSegmentText: normalizeTTSDebugText(ttsCurrentSegmentText),
       currentLocationCfi: ttsCurrentLocationCfi,
@@ -2096,6 +2285,7 @@ export function useReaderTTS({
     ttsFutureSegments.length,
     ttsPlayState,
     ttsPrevPageSegments.length,
+    ttsSegments,
     ttsSegments.length,
     ttsSourceKind,
   ]);
@@ -2129,13 +2319,13 @@ export function useReaderTTS({
 
   // ─── Continuous reading effects ───────────────────────────────────────────
   useEffect(() => {
-    const shouldContinue =
-      ttsCurrentBookId === bookId &&
-      ttsSourceKind === "page" &&
-      ttsContinuousEnabled &&
+    const shouldKeepContinuousIntent =
+      ttsCurrentBookId === bookId && ttsSourceKind === "page" && ttsContinuousEnabled;
+    const shouldInstallEndHandler =
+      shouldKeepContinuousIntent &&
       (ttsPlayState === "playing" || ttsPlayState === "paused" || ttsPlayState === "loading");
-    ttsContinuousRef.current = shouldContinue;
-    ttsSetOnEnd(shouldContinue ? handleTTSPageEnd : null);
+    ttsContinuousRef.current = shouldKeepContinuousIntent;
+    ttsSetOnEnd(shouldInstallEndHandler ? handleTTSPageEnd : null);
   }, [
     bookId,
     handleTTSPageEnd,
@@ -2190,10 +2380,34 @@ export function useReaderTTS({
         }
 
         if (appendSegments.length === 0) {
+          if (__DEV__) {
+            console.log("[ReaderScreen][TTS][queue-append] no-append-segments", {
+              lastCfi,
+              contextAfterLength: context.after?.length || 0,
+            });
+          }
           return;
         }
 
+        if (__DEV__) {
+          console.log("[ReaderScreen][TTS][queue-append] appending", {
+            lastCfi,
+            currentChunkIndex: ttsCurrentChunkIndexRef.current,
+            activeQueueLength: ttsSegmentsRef.current.length,
+            appendSegmentsLength: appendSegments.length,
+            appendFirstSentence: normalizeTTSDebugText(appendSegments[0]?.text),
+            appendSecondSentence: normalizeTTSDebugText(appendSegments[1]?.text),
+            appendPreview: previewTTSQueue(appendSegments),
+          });
+        }
+
         const didAppend = ttsAppend(appendSegments.map((segment) => segment.text));
+        if (__DEV__) {
+          console.log("[ReaderScreen][TTS][queue-append] append-result", {
+            didAppend,
+            appendSegmentsLength: appendSegments.length,
+          });
+        }
         if (!didAppend) {
           setTtsFutureSegments((prev) => {
             const next = mergeUniqueTTSSegments(prev, appendSegments, "append");
@@ -2265,6 +2479,11 @@ export function useReaderTTS({
     if (targetCfi) {
       ttsSetCurrentLocation(targetCfi);
       bridgeRef.current?.goToCFI(targetCfi);
+    } else if (transition.href.startsWith("section:")) {
+      const targetSectionIndex = Number(transition.href.slice("section:".length));
+      if (Number.isInteger(targetSectionIndex)) {
+        bridgeRef.current?.goToSection?.(targetSectionIndex);
+      }
     } else {
       goToHref(transition.href);
     }

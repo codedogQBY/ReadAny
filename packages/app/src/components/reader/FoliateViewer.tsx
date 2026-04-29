@@ -2128,10 +2128,10 @@ function applyRendererSettings(
   if (isFixedLayout) {
     const isSinglePage = (settings.paginatedLayout ?? "double") === "single";
     const spreadMode = isSinglePage ? "none" : "auto";
-    // Fixed layout: respect single/double spread while keeping page-fit zoom.
-    // Image-heavy EPUBs still need fit-page here, otherwise single-page mode can
-    // stretch the canvas to full width and break viewport self-adaptation.
-    renderer.setAttribute("zoom", "fit-page");
+    // Fixed layout: single-page mode should scale to the page width so image-only
+    // EPUBs do not look "shrunk inside a spread". Double-page mode still uses
+    // fit-page to keep both pages fully visible inside the viewport.
+    renderer.setAttribute("zoom", isSinglePage ? "fit-width" : "fit-page");
     if (view.book?.rendition) {
       view.book.rendition.spread = spreadMode;
     }

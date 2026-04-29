@@ -43,7 +43,6 @@ import { eventBus } from "@readany/core/utils/event-bus";
 import { throttle } from "@readany/core/utils/throttle";
 import { Asset } from "expo-asset";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system/legacy";
 /**
  * ReaderScreen — WebView-based reader with foliate-js engine.
  */
@@ -87,6 +86,30 @@ const BOOK_MIME_TYPES = [
   "text/plain",
   "application/octet-stream",
 ];
+
+const BOOK_FORMAT_MIME_TYPES: Partial<Record<string, string>> = {
+  epub: "application/epub+zip",
+  pdf: "application/pdf",
+  mobi: "application/x-mobipocket-ebook",
+  azw: "application/vnd.amazon.ebook",
+  azw3: "application/vnd.amazon.ebook",
+  cbz: "application/vnd.comicbook+zip",
+  cbr: "application/vnd.comicbook+zip",
+  fb2: "application/x-fictionbook+xml",
+  fbz: "application/x-zip-compressed-fb2",
+  txt: "text/plain",
+};
+
+/** Convert Uint8Array to base64 string for WebView transport */
+function _bytesToBase64(bytes: Uint8Array): string {
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
 
 function normalizeBookIdentityText(value?: string): string {
   return (value || "").toLowerCase().replace(/[\s\p{P}\p{S}_-]+/gu, "");
@@ -258,7 +281,9 @@ export function ReaderScreen({ route, navigation }: Props) {
       after?: number,
     ) => Promise<{ before: TTSSegment[]; after: TTSSegment[] }>;
     getHrefTTSSegments?: (href: string, count?: number) => Promise<TTSSegment[]>;
+    getSectionTTSSegments?: (sectionIndex: number, count?: number) => Promise<TTSSegment[]>;
     goToFraction: (fraction: number) => void;
+    goToSection: (sectionIndex: number) => void;
     goToCFI: (cfi: string) => void;
     goToHref: (href: string) => void;
     flashHighlight: (cfi: string, color?: string, duration?: number) => void;
@@ -541,8 +566,10 @@ export function ReaderScreen({ route, navigation }: Props) {
         fontSize: settings.fontSize,
         lineHeight: settings.lineHeight,
         paragraphSpacing: settings.paragraphSpacing,
+        pageMargin: settings.pageMargin,
         fontTheme: settings.fontTheme,
         viewMode: settings.viewMode,
+        paginatedLayout: settings.paginatedLayout,
         customFontFaceCSS: fontCSS,
         customFontFamily: fontFamily,
       });
@@ -996,14 +1023,18 @@ export function ReaderScreen({ route, navigation }: Props) {
         const absPath = await platform.joinPath(appData, book.filePath);
         const lastLocation = book.currentCfi || undefined;
 
-        const base64 = await FileSystem.readAsStringAsync(absPath, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
+        // iOS WKWebView blocks fetch("file://...") across different directories.
+        // Use base64 transport to bypass this security restriction.
+        const fileBytes = await platform.readFile(absPath);
+        const base64 = _bytesToBase64(fileBytes);
+
         bridge.openBook({
           base64,
           fileName: book.filePath.split("/").pop() || "book.epub",
+          mimeType: BOOK_FORMAT_MIME_TYPES[book.format] || "application/octet-stream",
           lastLocation,
           pageMargin: readSettings.pageMargin,
+          paginatedLayout: readSettings.paginatedLayout,
         });
 
         bridge.setThemeColors({

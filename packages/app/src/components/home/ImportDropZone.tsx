@@ -3,6 +3,7 @@
  */
 import { DesktopImportActions } from "@/components/home/DesktopImportActions";
 import { useLibraryStore } from "@/stores/library-store";
+import { Loader2, Plus } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -11,6 +12,7 @@ export function ImportDropZone() {
   const { t } = useTranslation();
   const [isDragging, setIsDragging] = useState(false);
   const importBooks = useLibraryStore((s) => s.importBooks);
+  const isImporting = useLibraryStore((s) => s.isImporting);
 
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
@@ -75,9 +77,13 @@ export function ImportDropZone() {
           <DesktopImportActions align="center">
             <button
               type="button"
+              disabled={isImporting}
               className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             >
-              {t("home.importBooks")}
+              <span className="flex items-center gap-1.5">
+                {isImporting ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                {isImporting ? t("library.importing", "导入中...") : t("home.importBooks")}
+              </span>
             </button>
           </DesktopImportActions>
         </div>
