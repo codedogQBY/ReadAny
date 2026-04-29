@@ -75,10 +75,12 @@ export function MetricTile({ metric }: { metric: MetricTileData }) {
           {metric.value}
         </span>
         {metric.deltaLabel && metric.delta !== undefined && metric.delta !== 0 && (
-          <span className={cn(
-            "shrink-0 text-[11px] font-semibold tabular-nums",
-            metric.delta > 0 ? "text-emerald-500/70" : "text-red-400/70",
-          )}>
+          <span
+            className={cn(
+              "shrink-0 text-[11px] font-semibold tabular-nums",
+              metric.delta > 0 ? "text-emerald-500/70" : "text-red-400/70",
+            )}
+          >
             {metric.delta > 0 ? "↑" : "↓"} {metric.deltaLabel}
           </span>
         )}

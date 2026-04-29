@@ -1,5 +1,5 @@
-import { closeDB, initDatabase, resetDBCache, resetLocalDBCache } from "@readany/core/db";
 import { getDesktopDatabasePath, getDesktopLibraryRoot } from "@/lib/storage/desktop-library-root";
+import { closeDB, initDatabase, resetDBCache, resetLocalDBCache } from "@readany/core/db";
 /**
  * Desktop (Tauri) sync adapter — implements ISyncAdapter
  * using Tauri invoke commands and @tauri-apps/plugin-fs.

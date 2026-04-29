@@ -1,5 +1,5 @@
-import type { Highlight } from "../../types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Highlight } from "../../types";
 
 const mockExecute = vi.fn();
 const mockSelect = vi.fn();
@@ -144,14 +144,15 @@ describe("highlight-queries", () => {
   describe("getHighlightStats", () => {
     it("returns aggregated statistics", async () => {
       mockSelect
-        .mockResolvedValueOnce([{ count: 10 }])  // total
-        .mockResolvedValueOnce([{ count: 3 }])   // with notes
-        .mockResolvedValueOnce([{ count: 5 }])   // distinct books
-        .mockResolvedValueOnce([               // color distribution
+        .mockResolvedValueOnce([{ count: 10 }]) // total
+        .mockResolvedValueOnce([{ count: 3 }]) // with notes
+        .mockResolvedValueOnce([{ count: 5 }]) // distinct books
+        .mockResolvedValueOnce([
+          // color distribution
           { color: "yellow", count: 6 },
           { color: "blue", count: 4 },
         ])
-        .mockResolvedValueOnce([{ count: 2 }]);  // recent
+        .mockResolvedValueOnce([{ count: 2 }]); // recent
 
       const stats = await getHighlightStats();
       expect(stats.totalHighlights).toBe(10);

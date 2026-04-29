@@ -1,5 +1,5 @@
-import type { Skill } from "../../types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Skill } from "../../types";
 
 const mockExecute = vi.fn();
 const mockSelect = vi.fn();
@@ -13,18 +13,17 @@ const coreMocks = vi.hoisted(() => ({
   insertTombstone: vi.fn(),
   parseJSON: vi.fn((str: string | null | undefined, fallback: unknown) => {
     if (!str) return fallback;
-    try { return JSON.parse(str); } catch { return fallback; }
+    try {
+      return JSON.parse(str);
+    } catch {
+      return fallback;
+    }
   }),
 }));
 
 vi.mock("../db-core", () => coreMocks);
 
-const {
-  getSkills,
-  insertSkill,
-  updateSkill,
-  deleteSkill,
-} = await import("../skill-queries");
+const { getSkills, insertSkill, updateSkill, deleteSkill } = await import("../skill-queries");
 
 const sampleSkill: Skill = {
   id: "skill-1",

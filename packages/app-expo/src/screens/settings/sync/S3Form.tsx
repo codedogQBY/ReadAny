@@ -111,10 +111,7 @@ export function S3Form({
 
         <View style={styles.btnRow}>
           <TouchableOpacity
-            style={[
-              styles.outlineBtn,
-              (!s3Endpoint || !s3Bucket || testing) && styles.btnDisabled,
-            ]}
+            style={[styles.outlineBtn, (!s3Endpoint || !s3Bucket || testing) && styles.btnDisabled]}
             onPress={onTest}
             disabled={testing || !s3Endpoint || !s3Bucket}
             activeOpacity={0.7}
@@ -140,9 +137,7 @@ export function S3Form({
           <Text style={styles.successText}>{t("settings.syncTestSuccess")}</Text>
         )}
         {testResult === "error" && (
-          <Text style={styles.errorText}>
-            {t("settings.syncTestFailed", { error: testError })}
-          </Text>
+          <Text style={styles.errorText}>{t("settings.syncTestFailed", { error: testError })}</Text>
         )}
       </View>
     </View>

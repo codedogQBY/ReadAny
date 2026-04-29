@@ -3,8 +3,8 @@
  * Horizontal scroll of earned badges.
  */
 import type { EarnedBadge } from "@readany/core/stats";
-import type { StatsCopy } from "./stats-copy";
 import { BadgeIcon } from "./BadgeIcon";
+import type { StatsCopy } from "./stats-copy";
 
 export function BadgesPreview({
   earned,
@@ -18,9 +18,7 @@ export function BadgesPreview({
   onViewAll: () => void;
 }) {
   if (earned.length === 0) {
-    return (
-      <p className="py-3 text-center text-[13px] text-muted-foreground/40">{copy.noBadges}</p>
-    );
+    return <p className="py-3 text-center text-[13px] text-muted-foreground/40">{copy.noBadges}</p>;
   }
 
   return (

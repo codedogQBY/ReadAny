@@ -1,3 +1,6 @@
+import type { ITTSPlayer, TTSConfig } from "@readany/core/tts";
+import { fetchEdgeTTSAudio } from "@readany/core/tts";
+import { splitIntoChunks } from "@readany/core/tts";
 /**
  * ExpoAVEdgeTTSPlayer — ITTSPlayer backed by expo-av + Edge TTS WebSocket API.
  *
@@ -12,9 +15,6 @@
  */
 import { Audio } from "expo-av";
 import { File, Paths } from "expo-file-system";
-import type { ITTSPlayer, TTSConfig } from "@readany/core/tts";
-import { fetchEdgeTTSAudio } from "@readany/core/tts";
-import { splitIntoChunks } from "@readany/core/tts";
 
 const CHUNK_MAX_CHARS = 500;
 
@@ -55,7 +55,9 @@ export class ExpoAVEdgeTTSPlayer implements ITTSPlayer {
     this._stopped = false;
     this._paused = false;
     this._config = config;
-    this._chunks = Array.isArray(text) ? text.filter(Boolean) : splitIntoChunks(text, CHUNK_MAX_CHARS);
+    this._chunks = Array.isArray(text)
+      ? text.filter(Boolean)
+      : splitIntoChunks(text, CHUNK_MAX_CHARS);
     this._currentIndex = 0;
     this._tempFiles = [];
     this._prefetchBuffer.clear();
@@ -181,7 +183,10 @@ export class ExpoAVEdgeTTSPlayer implements ITTSPlayer {
           if (!status.isLoaded) {
             clearTimeout(timeoutId);
             if ((status as any).error) {
-              console.error(`[ExpoAVEdgeTTSPlayer] idx=${idx} playback error:`, (status as any).error);
+              console.error(
+                `[ExpoAVEdgeTTSPlayer] idx=${idx} playback error:`,
+                (status as any).error,
+              );
               settle(() => reject(new Error((status as any).error)));
             } else {
               console.log(`[ExpoAVEdgeTTSPlayer] idx=${idx} isLoaded=false (natural end)`);

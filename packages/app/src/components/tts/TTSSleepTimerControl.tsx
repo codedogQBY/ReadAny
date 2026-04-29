@@ -86,11 +86,11 @@ export function TTSSleepTimerControl({ compact = false }: TTSSleepTimerControlPr
 
   return (
     <div className="relative" ref={rootRef}>
-        <Button
-          variant="ghost"
-          size="icon"
-          className={
-            compact
+      <Button
+        variant="ghost"
+        size="icon"
+        className={
+          compact
             ? `h-9 w-9 rounded-lg border border-border/60 transition-colors ${
                 remainingLabel
                   ? "border-primary/30 bg-primary/12 text-primary hover:bg-primary/18"

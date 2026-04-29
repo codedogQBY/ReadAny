@@ -191,10 +191,7 @@ function BookmarkItem({
   );
 }
 
-function flattenTOCWithPath(
-  items: TOCItem[],
-  parentPath: string[] = [],
-): TOCItemWithPath[] {
+function flattenTOCWithPath(items: TOCItem[], parentPath: string[] = []): TOCItemWithPath[] {
   const result: TOCItemWithPath[] = [];
 
   for (const item of items) {
@@ -202,9 +199,7 @@ function flattenTOCWithPath(
     const itemWithPath: TOCItemWithPath = {
       ...item,
       path,
-      subitems: item.subitems
-        ? flattenTOCWithPath(item.subitems, path)
-        : undefined,
+      subitems: item.subitems ? flattenTOCWithPath(item.subitems, path) : undefined,
     };
     result.push(itemWithPath);
   }

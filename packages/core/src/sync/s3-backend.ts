@@ -61,7 +61,10 @@ class PlatformFetchHttpHandler {
     const response = await platform.fetch(url, {
       method: request.method,
       headers: request.headers,
-      body: request.method === "GET" || request.method === "HEAD" ? undefined : (request.body ?? undefined),
+      body:
+        request.method === "GET" || request.method === "HEAD"
+          ? undefined
+          : (request.body ?? undefined),
     });
 
     const transformedHeaders: Record<string, string> = {};

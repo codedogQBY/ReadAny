@@ -1,5 +1,5 @@
-import { getSystemVoices } from "./tts-service";
 import { compareVoiceLanguage } from "@readany/core/tts";
+import { getSystemVoices } from "./tts-service";
 
 export const DEFAULT_SYSTEM_VOICE_VALUE = "__default__";
 
@@ -62,5 +62,7 @@ export function findSystemVoiceLabel(
   voices: SystemVoiceOption[],
 ): string {
   if (!selectedVoice) return "";
-  return voices.find((voice) => voice.id === selectedVoice || voice.label === selectedVoice)?.label || "";
+  return (
+    voices.find((voice) => voice.id === selectedVoice || voice.label === selectedVoice)?.label || ""
+  );
 }

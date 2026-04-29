@@ -1,5 +1,12 @@
 import type { Skill } from "../types";
-import { getDB, getDeviceId, nextSyncVersion, nextUpdatedAt, insertTombstone, parseJSON } from "./db-core";
+import {
+  getDB,
+  getDeviceId,
+  insertTombstone,
+  nextSyncVersion,
+  nextUpdatedAt,
+  parseJSON,
+} from "./db-core";
 
 export async function getSkills(): Promise<Skill[]> {
   const database = await getDB();

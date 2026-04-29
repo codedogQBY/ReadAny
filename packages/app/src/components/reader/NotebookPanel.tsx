@@ -111,11 +111,7 @@ export function NotebookPanel({
       });
       if (mutation.kind === "update") {
         updateHighlight(mutation.id, mutation.updates);
-        onAddAnnotation?.(
-          editingHighlight.cfi,
-          editingHighlight.color,
-          mutation.updates.note,
-        );
+        onAddAnnotation?.(editingHighlight.cfi, editingHighlight.color, mutation.updates.note);
       }
       clearPending();
     }

@@ -66,5 +66,10 @@ export function getWebDavImportExtension(name: string): string | undefined {
 
 export function isImportableWebDavBookName(name: string): boolean {
   const ext = getWebDavImportExtension(name);
-  return !!ext && WEBDAV_IMPORT_SUPPORTED_EXTENSIONS.includes(ext as (typeof WEBDAV_IMPORT_SUPPORTED_EXTENSIONS)[number]);
+  return (
+    !!ext &&
+    WEBDAV_IMPORT_SUPPORTED_EXTENSIONS.includes(
+      ext as (typeof WEBDAV_IMPORT_SUPPORTED_EXTENSIONS)[number],
+    )
+  );
 }

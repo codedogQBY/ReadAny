@@ -1,9 +1,9 @@
+import { logAIEndpointDebug, summarizeDebugText } from "@readany/core/ai/request-debug";
 /**
  * Settings store — global reading settings, AI config, translation config
  */
 import type { AIConfig, AIEndpoint, ReadSettings } from "@readany/core/types";
 import type { TranslationConfig, TranslationTargetLang } from "@readany/core/types/translation";
-import { logAIEndpointDebug, summarizeDebugText } from "@readany/core/ai/request-debug";
 import { buildProviderModelsUrl, providerSupportsExactRequestUrl } from "@readany/core/utils/api";
 import { create } from "zustand";
 import { deleteSecure, loadSecure, saveSecure, withPersist } from "./persist";

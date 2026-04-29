@@ -201,15 +201,12 @@ export const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
   },
 };
 
-const SPECIAL_HOSTS = [
-  "volces.com/api/v3",
-  "anthropic.com",
-  "generativelanguage.googleapis.com",
-];
+const SPECIAL_HOSTS = ["volces.com/api/v3", "anthropic.com", "generativelanguage.googleapis.com"];
 
 const CONSOLE_PATH_SEGMENTS = new Set(["console", "playground", "dashboard", "studio"]);
 
-const VERSION_PATTERN = /\/(v[1-9]\d*|api\/v[1-9]\d*|api\/paas\/v[1-9]\d*|compatible-mode\/v[1-9]\d*|openai\/v[1-9]\d*)$/i;
+const VERSION_PATTERN =
+  /\/(v[1-9]\d*|api\/v[1-9]\d*|api\/paas\/v[1-9]\d*|compatible-mode\/v[1-9]\d*|openai\/v[1-9]\d*)$/i;
 
 export function formatApiHost(host: string): string {
   if (!host) return host;

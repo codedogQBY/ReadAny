@@ -51,12 +51,7 @@ describe("AI API URL helpers", () => {
       ),
     ).toBe("https://example.com/custom-endpoint");
     expect(
-      buildProviderModelsUrl(
-        "openai",
-        "https://example.com/custom-endpoint",
-        "sk-test",
-        true,
-      ),
+      buildProviderModelsUrl("openai", "https://example.com/custom-endpoint", "sk-test", true),
     ).toBe("");
   });
 

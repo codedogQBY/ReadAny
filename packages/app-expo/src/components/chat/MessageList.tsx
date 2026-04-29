@@ -2,6 +2,7 @@ import { CheckIcon, ChevronDownIcon, CopyIcon } from "@/components/ui/Icon";
 import { fontSize as fs, radius, useColors, withOpacity } from "@/styles/theme";
 import type { ThemeColors } from "@/styles/theme";
 import type { CitationPart, MessageV2, QuotePart, TextPart } from "@readany/core/types/message";
+import * as Clipboard from "expo-clipboard";
 /**
  * MessageList — FlatList message renderer matching app-mobile MessageList.
  * Scroll-to-bottom button, streaming gap indicator.
@@ -17,7 +18,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import * as Clipboard from "expo-clipboard";
 import { PartRenderer } from "./PartRenderer";
 import { StreamingIndicator } from "./StreamingIndicator";
 
@@ -308,9 +308,7 @@ function MessageBubble({
         />
       ))}
       {showGapIndicator && <StreamingIndicator step="thinking" />}
-      {!isStreaming && (
-        <CopyButton onPress={copyText} colors={colors} />
-      )}
+      {!isStreaming && <CopyButton onPress={copyText} colors={colors} />}
     </View>
   );
 }

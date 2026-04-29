@@ -1,5 +1,5 @@
 import type { Bookmark } from "../types";
-import { getDB, getDeviceId, nextSyncVersion, insertTombstone } from "./db-core";
+import { getDB, getDeviceId, insertTombstone, nextSyncVersion } from "./db-core";
 
 export async function getBookmarks(bookId: string): Promise<Bookmark[]> {
   const database = await getDB();

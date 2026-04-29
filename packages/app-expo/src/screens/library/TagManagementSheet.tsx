@@ -1,12 +1,8 @@
-import {
-  CheckIcon,
-  EditIcon,
-  PlusIcon,
-  Trash2Icon,
-  XIcon,
-} from "@/components/ui/Icon";
+import { CheckIcon, EditIcon, PlusIcon, Trash2Icon, XIcon } from "@/components/ui/Icon";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
-import { useColors, fontSize, fontWeight, radius, withOpacity } from "@/styles/theme";
+import { fontSize, fontWeight, radius, useColors, withOpacity } from "@/styles/theme";
+import type { Book } from "@readany/core/types";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Alert,
@@ -19,8 +15,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useCallback, useState } from "react";
-import type { Book } from "@readany/core/types";
 
 interface TagManagementSheetProps {
   visible: boolean;
@@ -63,12 +57,7 @@ export function TagManagementSheet({
   }, [newTagInput, book, onAddTag, onAddTagToBook]);
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={s.overlay} onPress={onClose} />
       <View
         style={[

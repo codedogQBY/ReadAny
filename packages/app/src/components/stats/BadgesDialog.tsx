@@ -5,9 +5,9 @@
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
 import type { BadgeDefinition, EarnedBadge } from "@readany/core/stats";
 import { BADGE_CATEGORIES, groupBadgesByCategory } from "@readany/core/stats";
@@ -46,7 +46,8 @@ export function BadgesDialog({
               <div>
                 <DialogTitle className="text-xl">{t("stats.desktop.myBadges")}</DialogTitle>
                 <DialogDescription>
-                  {t("stats.desktop.myBadgesDesc")} · {t("stats.desktop.badgesEarnedCount", { count: earned.length })}
+                  {t("stats.desktop.myBadgesDesc")} ·{" "}
+                  {t("stats.desktop.badgesEarnedCount", { count: earned.length })}
                 </DialogDescription>
               </div>
             </div>
@@ -72,10 +73,12 @@ export function BadgesDialog({
                           className="flex flex-col items-center gap-2 rounded-2xl py-4 px-2 transition-all duration-200 hover:bg-muted/10 active:scale-95"
                         >
                           <BadgeIcon badge={badge} isEarned={isEarned} size={80} />
-                          <span className={cn(
-                            "text-center text-[12px] font-semibold leading-tight",
-                            isEarned ? "text-foreground/70" : "text-muted-foreground/25",
-                          )}>
+                          <span
+                            className={cn(
+                              "text-center text-[12px] font-semibold leading-tight",
+                              isEarned ? "text-foreground/70" : "text-muted-foreground/25",
+                            )}
+                          >
                             {t(`stats.desktop.badge_${badge.id}_title`)}
                           </span>
                         </button>
@@ -221,12 +224,12 @@ function BadgeDetailContent({
         </p>
       </div>
 
-      <span className={cn(
-        "rounded-full px-5 py-1.5 text-[12px] font-semibold",
-        isEarned
-          ? "bg-primary/8 text-primary/70"
-          : "bg-muted/20 text-muted-foreground/40",
-      )}>
+      <span
+        className={cn(
+          "rounded-full px-5 py-1.5 text-[12px] font-semibold",
+          isEarned ? "bg-primary/8 text-primary/70" : "bg-muted/20 text-muted-foreground/40",
+        )}
+      >
         {isEarned ? t("stats.desktop.badgeEarnedOn") : t("stats.desktop.badgeNotEarned")}
       </span>
     </div>

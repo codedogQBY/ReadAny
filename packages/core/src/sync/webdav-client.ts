@@ -139,12 +139,9 @@ function createRequestWebDavError(
 ): WebDavError {
   const err = error as { name?: string; message?: string; cause?: { code?: string } };
   const lowerMessage = err.message?.toLowerCase() ?? "";
-  const connectionMessage = i18n.t(
-    "settings.syncWebdavNetworkError",
-    {
-      defaultValue: "无法连接到 WebDAV 服务器，请检查网络、地址、端口或证书配置。",
-    },
-  );
+  const connectionMessage = i18n.t("settings.syncWebdavNetworkError", {
+    defaultValue: "无法连接到 WebDAV 服务器，请检查网络、地址、端口或证书配置。",
+  });
 
   if (
     err.name === "AbortError" ||

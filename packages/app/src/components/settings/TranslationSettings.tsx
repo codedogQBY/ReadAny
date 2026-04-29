@@ -223,9 +223,7 @@ export function TranslationSettings() {
                   value={translationConfig.provider.baseUrl || ""}
                   onChange={(e) => handleBaseUrlChange(e.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">
-                  {t("translation.deeplBaseUrlHint")}
-                </p>
+                <p className="text-xs text-muted-foreground">{t("translation.deeplBaseUrlHint")}</p>
               </div>
             </div>
           )}

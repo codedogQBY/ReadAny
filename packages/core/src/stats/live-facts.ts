@@ -1,15 +1,12 @@
 import type { Book, ReadingSession } from "../types";
-import type { DailyBookBreakdown, DailyReadingFact } from "./schema";
 import { getMonthKey, getWeekKey, getYearKey, toLocalDateKey } from "./period-utils";
+import type { DailyBookBreakdown, DailyReadingFact } from "./schema";
 
 function toMinutes(milliseconds: number): number {
   return milliseconds / 60000;
 }
 
-function createBookBreakdown(
-  session: ReadingSession,
-  book?: Book,
-): DailyBookBreakdown {
+function createBookBreakdown(session: ReadingSession, book?: Book): DailyBookBreakdown {
   return {
     bookId: session.bookId,
     title: book?.meta.title ?? "Unknown",
@@ -95,9 +92,10 @@ export function mergeCurrentSessionIntoDailyFacts(
       : Math.min(target.firstSessionAt, currentSession.startedAt);
   target.lastSessionAt =
     target.lastSessionAt === undefined
-      ? currentSession.endedAt ?? currentSession.startedAt
+      ? (currentSession.endedAt ?? currentSession.startedAt)
       : Math.max(target.lastSessionAt, currentSession.endedAt ?? currentSession.startedAt);
-  target.hourlyDistribution[sessionHour] = (target.hourlyDistribution[sessionHour] ?? 0) + sessionMinutes;
+  target.hourlyDistribution[sessionHour] =
+    (target.hourlyDistribution[sessionHour] ?? 0) + sessionMinutes;
   target.peakHour = getPeakHour(target.hourlyDistribution);
 
   let targetBook = target.bookBreakdown.find((item) => item.bookId === currentSession.bookId);
@@ -108,7 +106,8 @@ export function mergeCurrentSessionIntoDailyFacts(
 
   targetBook.totalTime += sessionMinutes;
   targetBook.pagesRead += currentSession.pagesRead;
-  targetBook.charactersRead = (targetBook.charactersRead ?? 0) + (currentSession.charactersRead ?? 0);
+  targetBook.charactersRead =
+    (targetBook.charactersRead ?? 0) + (currentSession.charactersRead ?? 0);
   targetBook.sessionsCount += 1;
   targetBook.tags = book?.tags ?? targetBook.tags;
   targetBook.subjects = book?.meta.subjects ?? targetBook.subjects;

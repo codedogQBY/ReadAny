@@ -1,13 +1,14 @@
-import {
-  ChevronLeftIcon,
-  EditIcon,
-  PlusIcon,
-  Trash2Icon,
-  XIcon,
-} from "@/components/ui/Icon";
+import { ChevronLeftIcon, EditIcon, PlusIcon, Trash2Icon, XIcon } from "@/components/ui/Icon";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { useVectorModelStore } from "@/stores/vector-model-store";
-import { type ThemeColors, fontSize, fontWeight, radius, useColors, withOpacity } from "@/styles/theme";
+import {
+  type ThemeColors,
+  fontSize,
+  fontWeight,
+  radius,
+  useColors,
+  withOpacity,
+} from "@/styles/theme";
 import { useNavigation } from "@react-navigation/native";
 import type { VectorModelConfig } from "@readany/core/types";
 /**
@@ -36,10 +37,7 @@ export default function VectorModelSettingsScreen() {
   const nav = useNavigation();
   const { t } = useTranslation();
   const layout = useResponsiveLayout();
-  const {
-    vectorModelEnabled,
-    setVectorModelEnabled,
-  } = useVectorModelStore();
+  const { vectorModelEnabled, setVectorModelEnabled } = useVectorModelStore();
 
   return (
     <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={["top"]}>
@@ -70,7 +68,9 @@ export default function VectorModelSettingsScreen() {
               <View style={s.enableCard}>
                 <View style={s.enableInfo}>
                   <Text style={s.enableTitle}>{t("settings.vm_title", "向量模型")}</Text>
-                  <Text style={s.enableDesc}>{t("settings.vm_desc", "启用向量搜索和知识检索")}</Text>
+                  <Text style={s.enableDesc}>
+                    {t("settings.vm_desc", "启用向量搜索和知识检索")}
+                  </Text>
                 </View>
                 <Switch
                   value={vectorModelEnabled}

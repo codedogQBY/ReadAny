@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { DailyReadingFact, ReadingGoal } from "./schema";
 import { getGoalProgress } from "./goals-service";
+import type { DailyReadingFact, ReadingGoal } from "./schema";
 
 const facts: DailyReadingFact[] = [
   {

@@ -8,7 +8,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { DASHSCOPE_VOICES, EDGE_TTS_VOICES, getSystemVoices } from "@/lib/tts/tts-service";
 import {
   DEFAULT_SYSTEM_VOICE_VALUE,
   findSystemVoiceLabel,
@@ -17,6 +16,7 @@ import {
   resolveSystemVoiceValue,
 } from "@/lib/tts/system-voices";
 import { previewTTSConfig, stopTTSPreview } from "@/lib/tts/tts-preview";
+import { DASHSCOPE_VOICES, EDGE_TTS_VOICES, getSystemVoices } from "@/lib/tts/tts-service";
 import type { TTSEngine } from "@/lib/tts/tts-service";
 import { useTTSStore } from "@/stores/tts-store";
 import { getLocaleDisplayLabel, groupEdgeTTSVoices } from "@readany/core/tts";
@@ -90,7 +90,13 @@ export function TTSSettings() {
             <h2 className="text-sm font-medium text-foreground">{t("tts.settingsTitle")}</h2>
             <p className="mt-1 text-xs text-muted-foreground">{t("tts.settingsDesc")}</p>
           </div>
-          <Button type="button" variant="secondary" size="sm" className="shrink-0" onClick={handlePreview}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="shrink-0"
+            onClick={handlePreview}
+          >
             <Play className="mr-1.5 h-3.5 w-3.5" />
             {t("common.preview", "试听")}
           </Button>

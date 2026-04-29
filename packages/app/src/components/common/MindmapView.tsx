@@ -169,7 +169,7 @@ export function MindmapView({ markdown, title }: MindmapViewProps) {
         contentY = bbox.y - padding;
         contentWidth = bbox.width + padding * 2;
         contentHeight = bbox.height + padding * 2;
-      } catch (e) {}
+      } catch (_e) {}
     }
 
     const clonedSvg = svgElement.cloneNode(true) as SVGSVGElement;
@@ -223,7 +223,7 @@ export function MindmapView({ markdown, title }: MindmapViewProps) {
     toast.success(t("common.downloadSuccess", "图表已下载"));
   }, [expanded, title, t]);
 
-  const displayTitle = title && title.length > 20 ? title.slice(0, 20) + "..." : title;
+  const displayTitle = title && title.length > 20 ? `${title.slice(0, 20)}...` : title;
 
   const fullscreenOverlay = expanded
     ? createPortal(

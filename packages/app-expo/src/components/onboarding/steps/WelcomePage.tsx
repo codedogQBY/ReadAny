@@ -1,8 +1,8 @@
 import { DarkModeSvg } from "@/components/DarkModeSvg";
+import { useSettingsStore } from "@/stores";
 import { useTheme } from "@/styles/theme";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useSettingsStore } from "@/stores";
 import { Bot, Languages, Search } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";

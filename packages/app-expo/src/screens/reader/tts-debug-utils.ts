@@ -76,9 +76,7 @@ export function collectMissingTTSDebugSentences(
   sentences: string[],
   segments: TTSDebuggableSegment[],
 ) {
-  const segmentTexts = new Set(
-    normalizeTTSDebugSegments(segments).map((segment) => segment.text),
-  );
+  const segmentTexts = new Set(normalizeTTSDebugSegments(segments).map((segment) => segment.text));
   return sentences
     .map(normalizeTTSDebugText)
     .filter((sentence) => sentence.length > 0 && !segmentTexts.has(sentence));

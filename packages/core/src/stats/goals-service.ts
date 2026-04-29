@@ -70,12 +70,7 @@ function computeCurrentValue(facts: DailyReadingFact[], goal: ReadingGoal): numb
 /**
  * Determine if the user is on track to hit the target by period end.
  */
-function computeOnTrack(
-  current: number,
-  target: number,
-  goal: ReadingGoal,
-  now: Date,
-): boolean {
+function computeOnTrack(current: number, target: number, goal: ReadingGoal, now: Date): boolean {
   if (current >= target) return true;
 
   const { start, end } = getGoalPeriodRange(goal, now);

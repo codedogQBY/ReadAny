@@ -1,8 +1,8 @@
+import { toLocalDateKey } from "./period-utils";
 /**
  * streak-service.ts — Pure helpers for streak status (at-risk detection, etc.).
  */
 import type { DailyReadingFact } from "./schema";
-import { toLocalDateKey } from "./period-utils";
 
 export interface StreakStatus {
   /** Current streak count (days). */

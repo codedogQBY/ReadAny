@@ -1,5 +1,5 @@
-import * as Speech from "expo-speech";
 import { compareVoiceLanguage } from "@readany/core/tts";
+import * as Speech from "expo-speech";
 
 export const DEFAULT_SYSTEM_VOICE_VALUE = "__default__";
 
@@ -44,10 +44,13 @@ export function groupSystemVoiceOptions(
   }
   return Array.from(grouped.entries())
     .sort(([a], [b]) => compareVoiceLanguage(a, b))
-    .map(([lang, items]) => [
-      lang,
-      [...items].sort((a, b) => a.label.localeCompare(b.label)),
-    ] as [string, NativeSystemVoiceOption[]]);
+    .map(
+      ([lang, items]) =>
+        [lang, [...items].sort((a, b) => a.label.localeCompare(b.label))] as [
+          string,
+          NativeSystemVoiceOption[],
+        ],
+    );
 }
 
 export function resolveSystemVoiceValue(
@@ -64,5 +67,7 @@ export function findSystemVoiceLabel(
   voices: NativeSystemVoiceOption[],
 ): string {
   if (!selectedVoice) return "";
-  return voices.find((voice) => voice.id === selectedVoice || voice.label === selectedVoice)?.label || "";
+  return (
+    voices.find((voice) => voice.id === selectedVoice || voice.label === selectedVoice)?.label || ""
+  );
 }

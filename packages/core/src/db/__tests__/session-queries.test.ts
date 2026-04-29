@@ -1,5 +1,5 @@
-import type { ReadingSession } from "../../types/reading";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReadingSession } from "../../types/reading";
 
 const mockExecute = vi.fn();
 const mockSelect = vi.fn();
@@ -162,8 +162,8 @@ describe("session-queries", () => {
       expect(params[1]).toBe("book-1");
       expect(params[2]).toBe(1000); // startedAt
       expect(params[3]).toBe(2000); // endedAt
-      expect(params[4]).toBe(900);  // totalActiveTime
-      expect(params[5]).toBe(10);   // pagesRead
+      expect(params[4]).toBe(900); // totalActiveTime
+      expect(params[5]).toBe(10); // pagesRead
       expect(params[6]).toBe(15000); // charactersRead
       expect(params[7]).toBe("STOPPED"); // state
     });

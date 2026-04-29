@@ -99,7 +99,12 @@ export function useBookShortcuts({
     const onMessage = (event: MessageEvent) => {
       const data = event.data;
       if (data?.type !== "iframe-keydown" || data.bookKey !== bookKey) return;
-      if (data.defaultPrevented || data.isComposing || data.key === "Process" || data.keyCode === 229) {
+      if (
+        data.defaultPrevented ||
+        data.isComposing ||
+        data.key === "Process" ||
+        data.keyCode === 229
+      ) {
         return;
       }
 

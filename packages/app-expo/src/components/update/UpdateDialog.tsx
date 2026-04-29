@@ -1,14 +1,4 @@
-import { useCallback, useMemo } from "react";
-import { useTranslation } from "react-i18next";
-import {
-  Linking,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { useUpdateStore } from "@/stores/update-store";
 import {
   type ThemeColors,
   fontSize,
@@ -18,7 +8,9 @@ import {
   useColors,
   withOpacity,
 } from "@/styles/theme";
-import { useUpdateStore } from "@/stores/update-store";
+import { useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
+import { Linking, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 /**
  * Themed update dialog — shown when a new version is detected.
@@ -81,9 +73,7 @@ export function UpdateDialog() {
           {/* Version badge */}
           <View style={s.badgeRow}>
             <View style={[s.badge, { backgroundColor: withOpacity(colors.primary, 0.12) }]}>
-              <Text style={[s.badgeText, { color: colors.primary }]}>
-                v{version}
-              </Text>
+              <Text style={[s.badgeText, { color: colors.primary }]}>v{version}</Text>
             </View>
           </View>
 
@@ -91,9 +81,7 @@ export function UpdateDialog() {
           <Text style={s.title}>{t("settings.updateAvailable")}</Text>
 
           {/* Description */}
-          <Text style={s.description}>
-            {t("settings.newVersionAvailable", { version })}
-          </Text>
+          <Text style={s.description}>{t("settings.newVersionAvailable", { version })}</Text>
 
           {/* Release notes */}
           {notes.length > 0 && (
@@ -106,18 +94,10 @@ export function UpdateDialog() {
 
           {/* Actions */}
           <View style={s.actions}>
-            <TouchableOpacity
-              style={s.primaryBtn}
-              onPress={handleDownload}
-              activeOpacity={0.8}
-            >
+            <TouchableOpacity style={s.primaryBtn} onPress={handleDownload} activeOpacity={0.8}>
               <Text style={s.primaryBtnText}>{t("settings.downloadUpdate")}</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={s.secondaryBtn}
-              onPress={handleLater}
-              activeOpacity={0.7}
-            >
+            <TouchableOpacity style={s.secondaryBtn} onPress={handleLater} activeOpacity={0.7}>
               <Text style={s.secondaryBtnText}>{t("settings.later")}</Text>
             </TouchableOpacity>
           </View>

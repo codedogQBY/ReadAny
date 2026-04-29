@@ -7,9 +7,9 @@ import type { ISyncBackend } from "./sync-backend";
 import { getSyncMeta } from "./sync-meta";
 import {
   REMOTE_MANIFEST,
+  type RemoteSyncManifest,
   SYNC_META_KEYS,
   SYNC_SCHEMA_VERSION,
-  type RemoteSyncManifest,
   type SyncDirection,
 } from "./sync-types";
 

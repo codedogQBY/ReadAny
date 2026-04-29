@@ -2,18 +2,14 @@
  * LifetimeSections.tsx — Rhythm profile, category distribution, yearly snapshots, journey summary.
  * Extracted from StatsSections.tsx.
  */
-import { useColors, withOpacity } from "@/styles/theme";
+import { useColors } from "@/styles/theme";
 import type { StatsChartBlock, StatsReport } from "@readany/core/stats";
 import { Text, View } from "react-native";
 import { BarChart } from "./BarChart";
-import { makeStyles } from "./stats-styles";
-import {
-  formatCompactMinutes,
-  formatDateLabel,
-  localizeSemanticLabel,
-} from "./stats-utils";
-import type { StatsCopy } from "./StatsSections";
 import { StatsBookCover } from "./StatsBookCover";
+import type { StatsCopy } from "./StatsSections";
+import { makeStyles } from "./stats-styles";
+import { formatCompactMinutes, formatDateLabel, localizeSemanticLabel } from "./stats-utils";
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  *  Rhythm Profile (Year / Lifetime)
@@ -42,7 +38,12 @@ export function RhythmProfileSection({
           <Text style={s.rhythmSubDesc}>{copy.timeOfDayDesc}</Text>
           <BarChart
             data={timeOfDayChart.data.map((item) => ({
-              label: localizeSemanticLabel(item.key, item.label, copy.timeOfDayLabels, copy.uncategorized),
+              label: localizeSemanticLabel(
+                item.key,
+                item.label,
+                copy.timeOfDayLabels,
+                copy.uncategorized,
+              ),
               value: item.value,
             }))}
           />
@@ -81,12 +82,23 @@ function CategoryDistributionList({
   return (
     <View style={{ gap: 12 }}>
       {chart.data.map((item, index) => {
-        const label = localizeSemanticLabel(item.key, item.label, copy.timeOfDayLabels, copy.uncategorized);
+        const label = localizeSemanticLabel(
+          item.key,
+          item.label,
+          copy.timeOfDayLabels,
+          copy.uncategorized,
+        );
         const pct = Math.max(10, (item.value / maxValue) * 100);
 
         return (
           <View key={`${item.key}-${index}`} style={{ gap: 4 }}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" }}>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "flex-end",
+              }}
+            >
               <Text style={s.categoryLabel}>{label}</Text>
               <Text style={s.categoryValue}>{formatCompactMinutes(item.value, isZh)}</Text>
             </View>
@@ -119,13 +131,7 @@ export function YearlySnapshotsSection({
   return (
     <View>
       {snapshots.map((snapshot, index) => (
-        <View
-          key={snapshot.year}
-          style={[
-            s.snapshotRow,
-            index > 0 && s.snapshotRowBorder,
-          ]}
-        >
+        <View key={snapshot.year} style={[s.snapshotRow, index > 0 && s.snapshotRowBorder]}>
           {/* Year */}
           <Text style={s.snapshotYear}>{snapshot.year}</Text>
 
@@ -186,9 +192,7 @@ export function JourneySummaryPanel({
       {/* Hero big number */}
       <View style={{ gap: 4 }}>
         <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4 }}>
-          <Text style={s.journeyBigNumber}>
-            {report.context.daysSinceJoined.toLocaleString()}
-          </Text>
+          <Text style={s.journeyBigNumber}>{report.context.daysSinceJoined.toLocaleString()}</Text>
           <Text style={s.journeyBigSuffix}>{copy.daysSuffix}</Text>
         </View>
         <Text style={s.journeyNarrative}>

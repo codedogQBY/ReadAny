@@ -1,9 +1,4 @@
-import type {
-  StatsMetricCard,
-  StatsReport,
-  StatsSectionBlock,
-  StatsViewModel,
-} from "./schema";
+import type { StatsMetricCard, StatsReport, StatsSectionBlock, StatsViewModel } from "./schema";
 
 function toDisplayTime(minutes: number): string {
   if (minutes >= 60) {

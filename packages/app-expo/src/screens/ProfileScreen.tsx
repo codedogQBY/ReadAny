@@ -16,6 +16,10 @@ import {
   Volume2Icon,
 } from "@/components/ui/Icon";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
+import {
+  mergeCurrentSessionIntoDailyStats,
+  mergeCurrentSessionIntoOverallStats,
+} from "@/lib/stats/live-reading-stats";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import {
   formatCharacterCount,
@@ -23,10 +27,6 @@ import {
   formatTimeLocalized,
 } from "@/screens/stats/stats-utils";
 import { useReadingSessionStore } from "@/stores";
-import {
-  mergeCurrentSessionIntoDailyStats,
-  mergeCurrentSessionIntoOverallStats,
-} from "@/lib/stats/live-reading-stats";
 import {
   type ThemeColors,
   fontSize,
@@ -38,9 +38,9 @@ import {
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { readingStatsService } from "@readany/core/stats";
+import type { DailyStats, OverallStats } from "@readany/core/stats";
 import { eventBus } from "@readany/core/utils/event-bus";
 import Constants from "expo-constants";
-import type { DailyStats, OverallStats } from "@readany/core/stats";
 /**
  * ProfileScreen — matching Tauri mobile ProfilePage exactly.
  * Features: reading stats cards, heatmap, settings menu (general/skills/about),
@@ -56,8 +56,8 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  type ViewStyle,
   View,
+  type ViewStyle,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -391,7 +391,9 @@ export function ProfileScreen() {
   );
 
   const booksRead = liveOverall?.totalBooks ?? 0;
-  const totalTime = liveOverall ? formatTimeLocalized(liveOverall.totalReadingTime, isZh) : formatTimeLocalized(0, isZh);
+  const totalTime = liveOverall
+    ? formatTimeLocalized(liveOverall.totalReadingTime, isZh)
+    : formatTimeLocalized(0, isZh);
   const totalCharacters = liveOverall
     ? formatCharacterCount(liveOverall.totalCharactersRead ?? 0, isZh)
     : formatCharacterCount(0, isZh);
@@ -520,7 +522,9 @@ export function ProfileScreen() {
         ))}
 
         {/* Version */}
-        <Text style={s.version}>{t("profile.version", { version: Constants.expoConfig?.version ?? "1.0.0" })}</Text>
+        <Text style={s.version}>
+          {t("profile.version", { version: Constants.expoConfig?.version ?? "1.0.0" })}
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );

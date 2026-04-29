@@ -1,5 +1,5 @@
-import type { Thread } from "../../types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Thread } from "../../types";
 
 const mockExecute = vi.fn();
 const mockSelect = vi.fn();
@@ -56,9 +56,7 @@ describe("thread-queries", () => {
           updated_at: 2000,
         },
       ]);
-      mockGetMessages.mockResolvedValue([
-        { id: "msg-1", role: "user", content: "Hello" },
-      ]);
+      mockGetMessages.mockResolvedValue([{ id: "msg-1", role: "user", content: "Hello" }]);
 
       const threads = await getThreads("book-1");
       expect(threads).toHaveLength(1);
@@ -77,9 +75,7 @@ describe("thread-queries", () => {
       mockSelect.mockResolvedValue([]);
 
       await getThreads();
-      expect(mockSelect).toHaveBeenCalledWith(
-        "SELECT * FROM threads ORDER BY updated_at DESC",
-      );
+      expect(mockSelect).toHaveBeenCalledWith("SELECT * FROM threads ORDER BY updated_at DESC");
     });
 
     it("handles null book_id", async () => {
@@ -109,18 +105,13 @@ describe("thread-queries", () => {
           updated_at: 2000,
         },
       ]);
-      mockGetMessages.mockResolvedValue([
-        { id: "msg-1", role: "user", content: "Hello" },
-      ]);
+      mockGetMessages.mockResolvedValue([{ id: "msg-1", role: "user", content: "Hello" }]);
 
       const thread = await getThread("thread-1");
       expect(thread).not.toBeNull();
       expect(thread!.id).toBe("thread-1");
       expect(thread!.messages).toHaveLength(1);
-      expect(mockSelect).toHaveBeenCalledWith(
-        "SELECT * FROM threads WHERE id = ?",
-        ["thread-1"],
-      );
+      expect(mockSelect).toHaveBeenCalledWith("SELECT * FROM threads WHERE id = ?", ["thread-1"]);
     });
 
     it("returns null when thread not found", async () => {
@@ -190,10 +181,7 @@ describe("thread-queries", () => {
 
   describe("deleteThread", () => {
     it("deletes thread, its messages, and creates tombstones", async () => {
-      mockSelect.mockResolvedValue([
-        { id: "msg-1" },
-        { id: "msg-2" },
-      ]);
+      mockSelect.mockResolvedValue([{ id: "msg-1" }, { id: "msg-2" }]);
       mockExecute.mockResolvedValue(undefined);
 
       await deleteThread("thread-1");
@@ -204,7 +192,9 @@ describe("thread-queries", () => {
       // Should create tombstone for thread
       expect(coreMocks.insertTombstone).toHaveBeenCalledWith(mockDb, "thread-1", "threads");
       // Should delete messages then thread
-      expect(mockExecute).toHaveBeenCalledWith("DELETE FROM messages WHERE thread_id = ?", ["thread-1"]);
+      expect(mockExecute).toHaveBeenCalledWith("DELETE FROM messages WHERE thread_id = ?", [
+        "thread-1",
+      ]);
       expect(mockExecute).toHaveBeenCalledWith("DELETE FROM threads WHERE id = ?", ["thread-1"]);
     });
   });
@@ -215,16 +205,15 @@ describe("thread-queries", () => {
       // Then for each thread's deleteThread: select message IDs
       mockSelect
         .mockResolvedValueOnce([{ id: "thread-1" }, { id: "thread-2" }]) // threads for book
-        .mockResolvedValueOnce([{ id: "msg-1" }])  // messages for thread-1
+        .mockResolvedValueOnce([{ id: "msg-1" }]) // messages for thread-1
         .mockResolvedValueOnce([{ id: "msg-2" }]); // messages for thread-2
       mockExecute.mockResolvedValue(undefined);
 
       await deleteThreadsByBookId("book-1");
 
-      expect(mockSelect).toHaveBeenCalledWith(
-        "SELECT id FROM threads WHERE book_id = ?",
-        ["book-1"],
-      );
+      expect(mockSelect).toHaveBeenCalledWith("SELECT id FROM threads WHERE book_id = ?", [
+        "book-1",
+      ]);
       // Should have created tombstones for all messages and threads
       expect(coreMocks.insertTombstone).toHaveBeenCalledTimes(4); // 2 messages + 2 threads
     });

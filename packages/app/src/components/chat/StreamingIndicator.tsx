@@ -65,9 +65,9 @@ interface StreamingProgressProps {
 export function StreamingProgress({ steps, className }: StreamingProgressProps) {
   return (
     <div className={cn("flex items-center gap-1 text-xs", className)}>
-      {steps.map((step, index) => (
-        <div key={index} className="flex items-center gap-1">
-          {index > 0 && (
+      {steps.map((step, idx) => (
+        <div key={step.label} className="flex items-center gap-1">
+          {idx > 0 && (
             <span
               className={cn(
                 "mx-1",

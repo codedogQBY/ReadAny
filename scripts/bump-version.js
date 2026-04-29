@@ -158,11 +158,9 @@ function runPrebuildChecks() {
   }
 
   console.log("4️⃣  Checking dependencies...");
-  const pkgApp = JSON.parse(
-    fs.readFileSync(path.join(ROOT, "packages/app/package.json"), "utf8")
-  );
+  const pkgApp = JSON.parse(fs.readFileSync(path.join(ROOT, "packages/app/package.json"), "utf8"));
   const pkgAppExpo = JSON.parse(
-    fs.readFileSync(path.join(ROOT, "packages/app-expo/package.json"), "utf8")
+    fs.readFileSync(path.join(ROOT, "packages/app-expo/package.json"), "utf8"),
   );
 
   const depsToCheck = ["pdfjs-dist", "onnxruntime-node", "onnxruntime-web"];

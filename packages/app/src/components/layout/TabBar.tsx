@@ -1,5 +1,5 @@
-import { evictBlobCache } from "@/components/reader/ReaderView";
 import { DesktopWindowControls } from "@/components/layout/DesktopWindowControls";
+import { evictBlobCache } from "@/components/reader/ReaderView";
 /**
  * TabBar — draggable tab bar
  * macOS: native traffic lights (left), can optionally preview custom controls on the right
@@ -41,12 +41,18 @@ function useIsFullscreen() {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
         const w = getCurrentWindow();
         setFs(await w.isFullscreen());
-        const unlisten = await w.onResized(async () => { setFs(await w.isFullscreen()); });
+        const unlisten = await w.onResized(async () => {
+          setFs(await w.isFullscreen());
+        });
         return unlisten;
-      } catch { return undefined; }
+      } catch {
+        return undefined;
+      }
     };
     let unlisten: (() => void) | undefined;
-    check().then((u) => { unlisten = u; });
+    check().then((u) => {
+      unlisten = u;
+    });
     return () => unlisten?.();
   }, []);
   return fs;
@@ -82,7 +88,10 @@ export function TabBar() {
       className="flex h-8 shrink-0 select-none items-center border-neutral-200 bg-muted"
     >
       {/* macOS: space for native traffic lights (hidden in reader mode) */}
-      <div className="flex h-full shrink-0 items-center" style={{ paddingLeft: (isMac && !isFullscreen && !isReaderActive) ? 68 : 4 }}>
+      <div
+        className="flex h-full shrink-0 items-center"
+        style={{ paddingLeft: isMac && !isFullscreen && !isReaderActive ? 68 : 4 }}
+      >
         <button
           type="button"
           className="flex items-center justify-center rounded-md p-1 text-neutral-500 transition-colors hover:bg-neutral-200/60 hover:text-neutral-800"
@@ -95,9 +104,7 @@ export function TabBar() {
       </div>
 
       {/* Tabs */}
-      <div
-        className="flex h-full flex-1 items-center gap-0.5 overflow-x-auto px-1"
-      >
+      <div className="flex h-full flex-1 items-center gap-0.5 overflow-x-auto px-1">
         {visibleTabs.map((tab) => (
           <TabItem
             key={tab.id}
@@ -145,7 +152,10 @@ function TabItem({
         type="button"
         className="ml-0.5 hidden h-4 w-4 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-neutral-200/80 hover:text-foreground group-hover:flex"
         data-no-window-drag
-        onClick={(e) => { e.stopPropagation(); onClose(); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
       >
         <X className="h-3 w-3" />
       </button>

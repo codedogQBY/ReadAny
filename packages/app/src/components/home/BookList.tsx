@@ -24,8 +24,9 @@ function BookListItem({ book, onOpen }: BookListItemProps) {
   const isDownloading = book.syncStatus === "downloading";
 
   return (
-    <div
-      className="flex cursor-pointer items-center gap-3 rounded-xl border bg-background p-3 shadow-sm transition-colors hover:bg-muted/50"
+    <button
+      type="button"
+      className="flex w-full cursor-pointer items-center gap-3 rounded-xl border bg-background p-3 text-left shadow-sm transition-colors hover:bg-muted/50"
       onClick={() => onOpen(book)}
     >
       <div className="flex h-12 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-gradient-to-br from-muted to-muted/50">
@@ -65,7 +66,7 @@ function BookListItem({ book, onOpen }: BookListItemProps) {
           <span className="text-xs text-muted-foreground">{pct}%</span>
         )}
       </div>
-    </div>
+    </button>
   );
 }
 

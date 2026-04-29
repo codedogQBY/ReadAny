@@ -104,7 +104,11 @@ export function withPersist<T extends object>(
     loadFromFS<T>(key).then((persisted) => {
       if (persisted) {
         const migrated = migrate ? migrate(persisted) : persisted;
-        set({ ...migrated, ...(resetAfterHydrate ?? {}), _hasHydrated: true } as unknown as Partial<T>);
+        set({
+          ...migrated,
+          ...(resetAfterHydrate ?? {}),
+          _hasHydrated: true,
+        } as unknown as Partial<T>);
       } else {
         set({ ...(resetAfterHydrate ?? {}), _hasHydrated: true } as unknown as Partial<T>);
       }

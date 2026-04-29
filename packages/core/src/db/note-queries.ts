@@ -1,5 +1,12 @@
 import type { Note } from "../types";
-import { getDB, getDeviceId, nextSyncVersion, nextUpdatedAt, insertTombstone, parseJSON } from "./db-core";
+import {
+  getDB,
+  getDeviceId,
+  insertTombstone,
+  nextSyncVersion,
+  nextUpdatedAt,
+  parseJSON,
+} from "./db-core";
 
 export async function getNotes(bookId: string): Promise<Note[]> {
   const database = await getDB();

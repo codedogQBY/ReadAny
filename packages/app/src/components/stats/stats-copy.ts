@@ -1,9 +1,9 @@
+import type { StatsDimension } from "@readany/core/stats";
 /**
  * stats-copy.ts — i18n copy builder for the Stats page.
  * Centralises all translation keys so components only import a flat `StatsCopy` object.
  */
 import type { TFunction } from "i18next";
-import type { StatsDimension } from "@readany/core/stats";
 
 export type StatsCopy = ReturnType<typeof getStatsCopy>;
 type GoalPeriod = "monthly" | "yearly";

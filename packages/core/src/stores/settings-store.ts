@@ -1,13 +1,45 @@
 import { create } from "zustand";
+import { logAIEndpointDebug, summarizeDebugText } from "../ai/request-debug";
 import type { AIConfig, AIEndpoint, ReadSettings } from "../types";
+import type { SocraticSettings } from "../types/chat";
 import type { TranslationConfig, TranslationTargetLang } from "../types/translation";
 import {
   buildProviderModelsUrl,
-  providerSupportsExactRequestUrl,
   providerRequiresApiKey,
+  providerSupportsExactRequestUrl,
 } from "../utils";
-import { logAIEndpointDebug, summarizeDebugText } from "../ai/request-debug";
 import { withPersist } from "./persist";
+
+export interface BookMiniReviewData {
+  bookId: string;
+  content: string;
+  generatedAt: number;
+  rating?: number;
+  source?: "douban" | "openlibrary" | "ai";
+}
+
+export interface ReviewItemData {
+  id: string;
+  bookId: string;
+  chapterId: string;
+  chapterTitle: string;
+  scheduledDate: number;
+  completedDate?: number;
+  quality?: string;
+  status: string;
+  reviewCount: number;
+  nextReviewDate?: number;
+  notes?: string;
+}
+
+export interface ReviewSettingsData {
+  enabled: boolean;
+  algorithm: "ebbinghaus" | "ai_guided" | "hybrid";
+  intervals: number[];
+  autoAdjust: boolean;
+  showBadges: boolean;
+  items?: Record<string, ReviewItemData>;
+}
 
 export interface SettingsState {
   readSettings: ReadSettings;
@@ -17,15 +49,18 @@ export interface SettingsState {
   hasCompletedOnboarding: boolean;
   showOnboardingGuide: boolean;
   _hasHydrated: boolean;
+  bookMiniReviews: Record<string, BookMiniReviewData>;
+  reviewSettings: ReviewSettingsData;
 
   // Actions
   completeOnboarding: () => void;
   setShowOnboardingGuide: (show: boolean) => void;
   updateReadSettings: (updates: Partial<ReadSettings>) => void;
   updateTranslationConfig: (updates: Partial<TranslationConfig>) => void;
-  updateAIConfig: (
-    updates: Partial<Pick<AIConfig, "temperature" | "maxTokens" | "slidingWindowSize">>,
-  ) => void;
+  updateAIConfig: (updates: Partial<AIConfig>) => void;
+  updateSocraticSettings: (updates: Partial<SocraticSettings>) => void;
+  setBookMiniReviews: (reviews: Record<string, BookMiniReviewData>) => void;
+  updateReviewSettings: (updates: Partial<ReviewSettingsData>) => void;
 
   // Endpoint management
   addEndpoint: (endpoint: AIEndpoint) => void;
@@ -71,6 +106,17 @@ const defaultEndpoint: AIEndpoint = {
   modelsFetched: false,
 };
 
+const defaultSocraticSettings: SocraticSettings = {
+  enabled: false,
+  mode: "socratic",
+  knowledgeScope: "current_chapter",
+  questionComplexity: "medium",
+  enablePreheating: true,
+  preheatingStrategy: "smart",
+  enableWebSearch: false,
+  userProfile: undefined,
+};
+
 const defaultAIConfig: AIConfig = {
   endpoints: [defaultEndpoint],
   activeEndpointId: "default",
@@ -78,6 +124,10 @@ const defaultAIConfig: AIConfig = {
   temperature: 0.7,
   maxTokens: 4096,
   slidingWindowSize: 8,
+  customPrompt: undefined,
+  chatMode: "standard",
+  socraticSettings: defaultSocraticSettings,
+  webSearchCache: {},
 };
 
 /**
@@ -310,9 +360,7 @@ async function fetchLMStudioModels(endpoint: AIEndpoint): Promise<string[]> {
   );
   const response = await fetch(requestUrl);
   if (!response.ok) {
-    throw new Error(
-      `Failed to fetch LM Studio models: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Failed to fetch LM Studio models: ${response.status} ${response.statusText}`);
   }
   const data = await response.json();
   return (data.data || [])
@@ -321,143 +369,236 @@ async function fetchLMStudioModels(endpoint: AIEndpoint): Promise<string[]> {
 }
 
 export const useSettingsStore = create<SettingsState>()(
-  withPersist("settings", (set, get, _api) => ({
-    readSettings: defaultReadSettings,
-    translationConfig: defaultTranslationConfig,
-    aiConfig: defaultAIConfig,
-    settingsUpdatedAt: 0,
-    hasCompletedOnboarding: false,
-    showOnboardingGuide: true,
-    _hasHydrated: false,
+  withPersist(
+    "settings",
+    (set, get, _api) => ({
+      readSettings: defaultReadSettings,
+      translationConfig: defaultTranslationConfig,
+      aiConfig: defaultAIConfig,
+      settingsUpdatedAt: 0,
+      hasCompletedOnboarding: false,
+      showOnboardingGuide: true,
+      _hasHydrated: false,
+      bookMiniReviews: {},
+      reviewSettings: {
+        enabled: true,
+        algorithm: "hybrid",
+        intervals: [],
+        autoAdjust: true,
+        showBadges: false,
+      },
 
-    completeOnboarding: () => set({ hasCompletedOnboarding: true }),
-    setShowOnboardingGuide: (show: boolean) => set({ showOnboardingGuide: show }),
+      completeOnboarding: () => set({ hasCompletedOnboarding: true }),
+      setShowOnboardingGuide: (show: boolean) => set({ showOnboardingGuide: show }),
 
-    updateReadSettings: (updates) =>
-      set((state) => ({
-        readSettings: { ...state.readSettings, ...updates },
-        settingsUpdatedAt: Date.now(),
-      })),
+      updateReadSettings: (updates) =>
+        set((state) => ({
+          readSettings: { ...state.readSettings, ...updates },
+          settingsUpdatedAt: Date.now(),
+        })),
 
-    updateTranslationConfig: (updates) =>
-      set((state) => ({
-        translationConfig: { ...state.translationConfig, ...updates },
-        settingsUpdatedAt: Date.now(),
-      })),
+      updateTranslationConfig: (updates) =>
+        set((state) => ({
+          translationConfig: { ...state.translationConfig, ...updates },
+          settingsUpdatedAt: Date.now(),
+        })),
 
-    updateAIConfig: (updates) =>
-      set((state) => ({
-        aiConfig: { ...state.aiConfig, ...updates },
-      })),
+      updateAIConfig: (updates) =>
+        set((state) => {
+          const newAIConfig = { ...state.aiConfig, ...updates };
+          if (updates.chatMode === "socratic") {
+            newAIConfig.socraticSettings = {
+              ...(newAIConfig.socraticSettings || defaultSocraticSettings),
+              enabled: true,
+            };
+          }
+          return { aiConfig: newAIConfig };
+        }),
 
-    // --- Endpoint management ---
-
-    addEndpoint: (endpoint) =>
-      set((state) => ({
-        aiConfig: {
-          ...state.aiConfig,
-          endpoints: [...state.aiConfig.endpoints, endpoint],
-        },
-      })),
-
-    updateEndpoint: (id, updates) =>
-      set((state) => ({
-        aiConfig: {
-          ...state.aiConfig,
-          endpoints: state.aiConfig.endpoints.map((ep) =>
-            ep.id === id ? { ...ep, ...updates } : ep,
-          ),
-        },
-      })),
-
-    removeEndpoint: (id) =>
-      set((state) => {
-        const newEndpoints = state.aiConfig.endpoints.filter((ep) => ep.id !== id);
-        const newActiveId =
-          state.aiConfig.activeEndpointId === id
-            ? newEndpoints[0]?.id || ""
-            : state.aiConfig.activeEndpointId;
-        return {
+      updateSocraticSettings: (updates) =>
+        set((state) => ({
           aiConfig: {
             ...state.aiConfig,
-            endpoints: newEndpoints,
-            activeEndpointId: newActiveId,
-            activeModel: state.aiConfig.activeEndpointId === id ? "" : state.aiConfig.activeModel,
+            socraticSettings: {
+              ...(state.aiConfig.socraticSettings || defaultSocraticSettings),
+              ...updates,
+            },
           },
-        };
-      }),
+        })),
 
-    setActiveEndpoint: (id) =>
-      set((state) => ({
-        aiConfig: {
-          ...state.aiConfig,
-          activeEndpointId: id,
-          activeModel: "", // reset model when switching endpoint
-        },
-      })),
+      // --- Endpoint management ---
 
-    setActiveModel: (model) =>
-      set((state) => ({
-        aiConfig: { ...state.aiConfig, activeModel: model },
-      })),
+      addEndpoint: (endpoint) =>
+        set((state) => ({
+          aiConfig: {
+            ...state.aiConfig,
+            endpoints: [...state.aiConfig.endpoints, endpoint],
+          },
+        })),
 
-    getActiveEndpoint: () => {
-      const state = get();
-      return state.aiConfig.endpoints.find((ep) => ep.id === state.aiConfig.activeEndpointId);
-    },
+      updateEndpoint: (id, updates) =>
+        set((state) => ({
+          aiConfig: {
+            ...state.aiConfig,
+            endpoints: state.aiConfig.endpoints.map((ep) =>
+              ep.id === id ? { ...ep, ...updates } : ep,
+            ),
+          },
+        })),
 
-    fetchModels: async (endpointId) => {
-      const state = get();
-      const endpoint = state.aiConfig.endpoints.find((ep) => ep.id === endpointId);
-      if (!endpoint) return [];
+      removeEndpoint: (id) =>
+        set((state) => {
+          const newEndpoints = state.aiConfig.endpoints.filter((ep) => ep.id !== id);
+          const newActiveId =
+            state.aiConfig.activeEndpointId === id
+              ? newEndpoints[0]?.id || ""
+              : state.aiConfig.activeEndpointId;
+          return {
+            aiConfig: {
+              ...state.aiConfig,
+              endpoints: newEndpoints,
+              activeEndpointId: newActiveId,
+              activeModel: state.aiConfig.activeEndpointId === id ? "" : state.aiConfig.activeModel,
+            },
+          };
+        }),
 
-      // Mark as fetching
-      set((s) => ({
-        aiConfig: {
-          ...s.aiConfig,
-          endpoints: s.aiConfig.endpoints.map((ep) =>
-            ep.id === endpointId ? { ...ep, modelsFetching: true } : ep,
-          ),
-        },
-      }));
+      setActiveEndpoint: (id) =>
+        set((state) => ({
+          aiConfig: {
+            ...state.aiConfig,
+            activeEndpointId: id,
+            activeModel: "",
+          },
+        })),
 
-      try {
-        const models = await fetchModelsFromEndpoint(endpoint);
+      setActiveModel: (model) =>
+        set((state) => ({
+          aiConfig: { ...state.aiConfig, activeModel: model },
+        })),
+
+      setBookMiniReviews: (reviews) => set({ bookMiniReviews: reviews }),
+
+      updateReviewSettings: (updates) =>
+        set((state) => ({
+          reviewSettings: { ...state.reviewSettings, ...updates },
+        })),
+
+      getActiveEndpoint: () => {
+        const state = get();
+        return state.aiConfig.endpoints.find((ep) => ep.id === state.aiConfig.activeEndpointId);
+      },
+
+      fetchModels: async (endpointId) => {
+        const state = get();
+        const endpoint = state.aiConfig.endpoints.find((ep) => ep.id === endpointId);
+        if (!endpoint) return [];
+
         set((s) => ({
           aiConfig: {
             ...s.aiConfig,
             endpoints: s.aiConfig.endpoints.map((ep) =>
-              ep.id === endpointId
-                ? { ...ep, models, modelsFetched: true, modelsFetching: false }
-                : ep,
+              ep.id === endpointId ? { ...ep, modelsFetching: true } : ep,
             ),
           },
         }));
-        return models;
-      } catch (err) {
-        console.error("Failed to fetch models:", err);
-        set((s) => ({
-          aiConfig: {
-            ...s.aiConfig,
-            endpoints: s.aiConfig.endpoints.map((ep) =>
-              ep.id === endpointId ? { ...ep, modelsFetching: false } : ep,
-            ),
+
+        try {
+          const models = await fetchModelsFromEndpoint(endpoint);
+          set((s) => ({
+            aiConfig: {
+              ...s.aiConfig,
+              endpoints: s.aiConfig.endpoints.map((ep) =>
+                ep.id === endpointId
+                  ? { ...ep, models, modelsFetched: true, modelsFetching: false }
+                  : ep,
+              ),
+            },
+          }));
+          return models;
+        } catch (err) {
+          console.error("Failed to fetch models:", err);
+          set((s) => ({
+            aiConfig: {
+              ...s.aiConfig,
+              endpoints: s.aiConfig.endpoints.map((ep) =>
+                ep.id === endpointId ? { ...ep, modelsFetching: false } : ep,
+              ),
+            },
+          }));
+          throw err;
+        }
+      },
+
+      setTranslationLang: (lang) =>
+        set((state) => ({
+          translationConfig: { ...state.translationConfig, targetLang: lang },
+        })),
+
+      resetToDefaults: () =>
+        set({
+          readSettings: defaultReadSettings,
+          translationConfig: defaultTranslationConfig,
+          aiConfig: defaultAIConfig,
+          bookMiniReviews: {},
+          reviewSettings: {
+            enabled: true,
+            algorithm: "hybrid",
+            intervals: [],
+            autoAdjust: true,
+            showBadges: false,
           },
-        }));
-        throw err;
+        }),
+    }),
+    undefined,
+    (persisted: SettingsState): SettingsState => {
+      if (!persisted.aiConfig) {
+        persisted.aiConfig = defaultAIConfig;
+      } else {
+        if (!persisted.aiConfig.socraticSettings) {
+          persisted.aiConfig.socraticSettings = defaultSocraticSettings;
+        }
+        if (
+          !Array.isArray(persisted.aiConfig.endpoints) ||
+          persisted.aiConfig.endpoints.length === 0
+        ) {
+          persisted.aiConfig.endpoints = defaultAIConfig.endpoints;
+        }
+        if (!persisted.aiConfig.activeEndpointId) {
+          persisted.aiConfig.activeEndpointId = defaultAIConfig.activeEndpointId;
+        }
+        if (typeof persisted.aiConfig.chatMode !== "string") {
+          persisted.aiConfig.chatMode = defaultAIConfig.chatMode;
+        }
+        if (typeof persisted.aiConfig.activeModel !== "string") {
+          persisted.aiConfig.activeModel = defaultAIConfig.activeModel;
+        }
+        if (typeof persisted.aiConfig.temperature !== "number") {
+          persisted.aiConfig.temperature = defaultAIConfig.temperature;
+        }
+        if (typeof persisted.aiConfig.maxTokens !== "number") {
+          persisted.aiConfig.maxTokens = defaultAIConfig.maxTokens;
+        }
+        if (typeof persisted.aiConfig.slidingWindowSize !== "number") {
+          persisted.aiConfig.slidingWindowSize = defaultAIConfig.slidingWindowSize;
+        }
+        if (!persisted.aiConfig.webSearchCache) {
+          persisted.aiConfig.webSearchCache = defaultAIConfig.webSearchCache;
+        }
       }
+      if (!persisted.bookMiniReviews || typeof persisted.bookMiniReviews !== "object") {
+        persisted.bookMiniReviews = {};
+      }
+      if (!persisted.reviewSettings || typeof persisted.reviewSettings !== "object") {
+        persisted.reviewSettings = {
+          enabled: true,
+          algorithm: "hybrid",
+          intervals: [],
+          autoAdjust: true,
+          showBadges: false,
+        };
+      }
+      return persisted;
     },
-
-    setTranslationLang: (lang) =>
-      set((state) => ({
-        translationConfig: { ...state.translationConfig, targetLang: lang },
-      })),
-
-    resetToDefaults: () =>
-      set({
-        readSettings: defaultReadSettings,
-        translationConfig: defaultTranslationConfig,
-        aiConfig: defaultAIConfig,
-      }),
-  })),
+  ),
 );

@@ -1,19 +1,19 @@
-import { useColors, radius } from "@/styles/theme";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import {
   DEFAULT_SYSTEM_VOICE_VALUE,
+  type NativeSystemVoiceOption,
   findSystemVoiceLabel,
   getSystemVoiceOptionsAsync,
   groupSystemVoiceOptions,
   resolveSystemVoiceValue,
-  type NativeSystemVoiceOption,
 } from "@/lib/platform/system-voices";
+import { useColors } from "@/styles/theme";
 import {
   DASHSCOPE_VOICES,
   EDGE_TTS_VOICES,
+  type TTSConfig,
   getLocaleDisplayLabel,
   groupEdgeTTSVoices,
-  type TTSConfig,
 } from "@readany/core/tts";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -53,10 +53,7 @@ export function VoicePickerModal({
     void getSystemVoiceOptionsAsync().then(setSystemVoices);
   }, [visible]);
 
-  const systemVoiceGroups = useMemo(
-    () => groupSystemVoiceOptions(systemVoices),
-    [systemVoices],
-  );
+  const systemVoiceGroups = useMemo(() => groupSystemVoiceOptions(systemVoices), [systemVoices]);
   const edgeVoiceGroups = useMemo(() => groupEdgeTTSVoices(EDGE_TTS_VOICES), []);
   const selectedSystemVoiceValue = useMemo(
     () => resolveSystemVoiceValue(config.voiceName, systemVoices),
@@ -64,12 +61,7 @@ export function VoicePickerModal({
   );
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={s.voicePickerContainer}>
         <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
         <View
@@ -160,9 +152,7 @@ export function VoicePickerModal({
               edgeVoiceGroups.map(([lang, voices]) => (
                 <View key={lang}>
                   <View style={s.voiceLangHeader}>
-                    <Text style={s.voiceLangTxt}>
-                      {getLocaleDisplayLabel(lang, displayLocale)}
-                    </Text>
+                    <Text style={s.voiceLangTxt}>{getLocaleDisplayLabel(lang, displayLocale)}</Text>
                   </View>
                   {voices.map((v) => {
                     const isSelected = config.edgeVoice === v.id;
@@ -192,8 +182,7 @@ export function VoicePickerModal({
                 <TouchableOpacity
                   style={[
                     s.voiceItem,
-                    selectedSystemVoiceValue === DEFAULT_SYSTEM_VOICE_VALUE &&
-                      s.voiceItemSelected,
+                    selectedSystemVoiceValue === DEFAULT_SYSTEM_VOICE_VALUE && s.voiceItemSelected,
                   ]}
                   onPress={() => {
                     onUpdateConfig({ voiceName: "", systemVoiceLabel: "" });
@@ -250,11 +239,7 @@ export function VoicePickerModal({
           </ScrollView>
 
           {/* Cancel button */}
-          <TouchableOpacity
-            style={s.voicePickerCancel}
-            onPress={onClose}
-            activeOpacity={0.7}
-          >
+          <TouchableOpacity style={s.voicePickerCancel} onPress={onClose} activeOpacity={0.7}>
             <Text style={s.voicePickerCancelTxt}>{t("common.cancel")}</Text>
           </TouchableOpacity>
         </View>

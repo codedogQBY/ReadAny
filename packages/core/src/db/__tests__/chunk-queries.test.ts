@@ -1,5 +1,5 @@
-import type { Chunk } from "../../types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Chunk } from "../../types";
 
 const mockExecute = vi.fn();
 const mockSelect = vi.fn();
@@ -27,11 +27,7 @@ const coreMocks = vi.hoisted(() => ({
 
 vi.mock("../db-core", () => coreMocks);
 
-const {
-  getChunks,
-  insertChunks,
-  deleteChunks,
-} = await import("../chunk-queries");
+const { getChunks, insertChunks, deleteChunks } = await import("../chunk-queries");
 
 describe("chunk-queries", () => {
   beforeEach(() => {
@@ -147,10 +143,9 @@ describe("chunk-queries", () => {
       mockLocalDb.execute.mockResolvedValue(undefined);
 
       await deleteChunks("book-1");
-      expect(mockLocalDb.execute).toHaveBeenCalledWith(
-        "DELETE FROM chunks WHERE book_id = ?",
-        ["book-1"],
-      );
+      expect(mockLocalDb.execute).toHaveBeenCalledWith("DELETE FROM chunks WHERE book_id = ?", [
+        "book-1",
+      ]);
     });
   });
 });

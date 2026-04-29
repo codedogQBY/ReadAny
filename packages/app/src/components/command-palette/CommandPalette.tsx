@@ -302,7 +302,8 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   // Reset selection when results change
   useEffect(() => {
     setSelectedIndex(0);
-  }, [query]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- query is the only relevant dependency
+  }, []);
 
   // Focus input on open
   useEffect(() => {
@@ -374,14 +375,26 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   let itemIndex = 0;
 
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh]"
+    <dialog
+      className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh] border-0 bg-transparent p-0 shadow-none"
+      open
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
     >
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px]" onClick={onClose} />
+      <div
+        className="fixed inset-0 bg-black/30 backdrop-blur-[2px]"
+        onClick={onClose}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onClose();
+        }}
+        role="button"
+        tabIndex={0}
+      />
 
       {/* Palette */}
       <div
@@ -480,7 +493,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
           </span>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }
 

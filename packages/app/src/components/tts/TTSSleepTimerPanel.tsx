@@ -62,7 +62,9 @@ export function TTSSleepTimerPanel() {
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Clock3 className="h-4 w-4 text-primary" />
-            <span className="text-xs font-semibold text-foreground">{t("tts.sleepTimer", "定时停止")}</span>
+            <span className="text-xs font-semibold text-foreground">
+              {t("tts.sleepTimer", "定时停止")}
+            </span>
           </div>
           <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
             {remainingLabel
@@ -118,7 +120,12 @@ export function TTSSleepTimerPanel() {
           className="h-8 text-xs"
           placeholder={t("tts.sleepTimerCustomPlaceholder", "Custom minutes")}
         />
-        <Button type="button" size="sm" className="h-8 rounded-full px-3 text-xs" onClick={handleCustomMinutes}>
+        <Button
+          type="button"
+          size="sm"
+          className="h-8 rounded-full px-3 text-xs"
+          onClick={handleCustomMinutes}
+        >
           {t("tts.sleepTimerApply", "Start timer")}
         </Button>
       </div>

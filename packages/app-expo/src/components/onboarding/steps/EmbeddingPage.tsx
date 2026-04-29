@@ -5,7 +5,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { VectorModelConfig } from "@readany/core/types";
 import { Check, Cloud, Plus, Trash2, X } from "lucide-react-native";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
@@ -29,12 +29,8 @@ export function EmbeddingPage() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
 
-  const {
-    vectorModels,
-    addVectorModel,
-    deleteVectorModel,
-    setSelectedVectorModelId,
-  } = useVectorModelStore();
+  const { vectorModels, addVectorModel, deleteVectorModel, setSelectedVectorModelId } =
+    useVectorModelStore();
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState({ name: "", url: "", modelId: "", apiKey: "" });
@@ -273,9 +269,7 @@ export function EmbeddingPage() {
                 ]}
               >
                 <View style={styles.modelItemInfo}>
-                  <Text style={[styles.modelItemName, { color: colors.foreground }]}>
-                    {m.name}
-                  </Text>
+                  <Text style={[styles.modelItemName, { color: colors.foreground }]}>{m.name}</Text>
                   <Text style={[styles.modelItemMeta, { color: colors.mutedForeground }]}>
                     {m.modelId}
                   </Text>

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { DailyReadingFact, StatsSummary } from "./schema";
 import {
   ALL_BADGE_DEFINITIONS,
   BADGE_CATEGORIES,
@@ -7,6 +6,7 @@ import {
   evaluateBadges,
   groupBadgesByCategory,
 } from "./badges";
+import type { DailyReadingFact, StatsSummary } from "./schema";
 
 /* ─── Helpers ─── */
 
@@ -362,9 +362,7 @@ describe("special badges", () => {
   it("earns early-bird when >50% reading between 4-8am", () => {
     const morningFact = makeFact({
       totalTime: 120,
-      hourlyDistribution: Array.from({ length: 24 }, (_, h) =>
-        h === 6 ? 100 : h === 15 ? 20 : 0,
-      ),
+      hourlyDistribution: Array.from({ length: 24 }, (_, h) => (h === 6 ? 100 : h === 15 ? 20 : 0)),
     });
     const badges = evaluateBadges([morningFact], makeSummary());
     expect(badges.some((b) => b.id === "early-bird")).toBe(true);
@@ -373,9 +371,7 @@ describe("special badges", () => {
   it("does not earn early-bird when mostly afternoon reading", () => {
     const afternoonFact = makeFact({
       totalTime: 120,
-      hourlyDistribution: Array.from({ length: 24 }, (_, h) =>
-        h === 14 ? 100 : h === 6 ? 10 : 0,
-      ),
+      hourlyDistribution: Array.from({ length: 24 }, (_, h) => (h === 14 ? 100 : h === 6 ? 10 : 0)),
     });
     const badges = evaluateBadges([afternoonFact], makeSummary());
     expect(badges.some((b) => b.id === "early-bird")).toBe(false);
@@ -432,11 +428,13 @@ describe("special badges", () => {
     // Generate 7 days in the same ISO week (2026-W16 = Mon Apr 13 to Sun Apr 19)
     const facts = [];
     for (let d = 13; d <= 19; d++) {
-      facts.push(makeFact({
-        date: `2026-04-${d}`,
-        weekKey: "2026-W16",
-        totalTime: 30,
-      }));
+      facts.push(
+        makeFact({
+          date: `2026-04-${d}`,
+          weekKey: "2026-W16",
+          totalTime: 30,
+        }),
+      );
     }
     const badges = evaluateBadges(facts, makeSummary());
     expect(badges.some((b) => b.id === "perfect-week")).toBe(true);
@@ -445,11 +443,13 @@ describe("special badges", () => {
   it("does not earn perfect-week with only 6 days in a week", () => {
     const facts = [];
     for (let d = 13; d <= 18; d++) {
-      facts.push(makeFact({
-        date: `2026-04-${d}`,
-        weekKey: "2026-W16",
-        totalTime: 30,
-      }));
+      facts.push(
+        makeFact({
+          date: `2026-04-${d}`,
+          weekKey: "2026-W16",
+          totalTime: 30,
+        }),
+      );
     }
     const badges = evaluateBadges(facts, makeSummary());
     expect(badges.some((b) => b.id === "perfect-week")).toBe(false);
@@ -458,9 +458,7 @@ describe("special badges", () => {
   it("earns midnight-reader when reading during 3-4am", () => {
     const lateNightFact = makeFact({
       totalTime: 30,
-      hourlyDistribution: Array.from({ length: 24 }, (_, h) =>
-        h === 3 ? 30 : 0,
-      ),
+      hourlyDistribution: Array.from({ length: 24 }, (_, h) => (h === 3 ? 30 : 0)),
     });
     const badges = evaluateBadges([lateNightFact], makeSummary());
     expect(badges.some((b) => b.id === "midnight-reader")).toBe(true);
@@ -469,9 +467,7 @@ describe("special badges", () => {
   it("does not earn midnight-reader without 3-4am reading", () => {
     const normalFact = makeFact({
       totalTime: 30,
-      hourlyDistribution: Array.from({ length: 24 }, (_, h) =>
-        h === 10 ? 30 : 0,
-      ),
+      hourlyDistribution: Array.from({ length: 24 }, (_, h) => (h === 10 ? 30 : 0)),
     });
     const badges = evaluateBadges([normalFact], makeSummary());
     expect(badges.some((b) => b.id === "midnight-reader")).toBe(false);
@@ -482,14 +478,17 @@ describe("special badges", () => {
 
 describe("multiple badges at once", () => {
   it("earns all lower-tier badges when exceeding top threshold", () => {
-    const badges = evaluateBadges([], makeSummary({
-      longestStreak: 365,
-      booksTouched: 100,
-      totalReadingTime: 60000,
-      longestSessionTime: 180,
-      completedBooks: 100,
-      totalPagesRead: 200,
-    }));
+    const badges = evaluateBadges(
+      [],
+      makeSummary({
+        longestStreak: 365,
+        booksTouched: 100,
+        totalReadingTime: 60000,
+        longestSessionTime: 180,
+        completedBooks: 100,
+        totalPagesRead: 200,
+      }),
+    );
     const ids = new Set(badges.map((b) => b.id));
 
     // All streak tiers
@@ -537,14 +536,17 @@ describe("badge structure", () => {
   });
 
   it("tiers are assigned correctly across categories", () => {
-    const badges = evaluateBadges(makeActiveDays(1000), makeSummary({
-      longestStreak: 365,
-      totalReadingTime: 60000,
-      booksTouched: 100,
-      completedBooks: 100,
-      totalPagesRead: 200,
-      longestSessionTime: 180,
-    }));
+    const badges = evaluateBadges(
+      makeActiveDays(1000),
+      makeSummary({
+        longestStreak: 365,
+        totalReadingTime: 60000,
+        booksTouched: 100,
+        completedBooks: 100,
+        totalPagesRead: 200,
+        longestSessionTime: 180,
+      }),
+    );
 
     const byId = new Map(badges.map((b) => [b.id, b]));
 

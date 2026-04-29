@@ -18,14 +18,9 @@ import { cn } from "@readany/core/utils";
 import { Clock3, TrendingUp } from "lucide-react";
 import { BarChart } from "./BarChart";
 import { HeatmapChart } from "./HeatmapChart";
-import type { StatsCopy } from "./stats-copy";
-import {
-  formatChartMinutes,
-  formatClock,
-  formatMinutes,
-  getPeakChartDatum,
-} from "./stats-utils";
 import { EmptyState } from "./StatsShared";
+import type { StatsCopy } from "./stats-copy";
+import { formatChartMinutes, formatClock, formatMinutes, getPeakChartDatum } from "./stats-utils";
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  *  Chart Surface
@@ -148,7 +143,8 @@ export function DaySummaryPanel({
     { label: copy.lastSession, value: formatClock(dayFact.lastSessionAt, isZh) },
     {
       label: copy.peakHour,
-      value: dayFact.peakHour !== undefined ? `${String(dayFact.peakHour).padStart(2, "0")}:00` : "—",
+      value:
+        dayFact.peakHour !== undefined ? `${String(dayFact.peakHour).padStart(2, "0")}:00` : "—",
     },
     { label: copy.longestRead, value: formatMinutes(dayFact.longestSessionTime, isZh) },
   ];
@@ -169,9 +165,7 @@ export function DaySummaryPanel({
                   index === 0 ? "sm:border-r sm:pr-5" : "sm:pl-1",
                 )}
               >
-                <div className="text-[12px] font-medium text-muted-foreground/56">
-                  {item.label}
-                </div>
+                <div className="text-[12px] font-medium text-muted-foreground/56">{item.label}</div>
                 <div className="text-[32px] font-bold tabular-nums tracking-[-0.04em] text-foreground/90">
                   {item.value}
                 </div>
@@ -182,9 +176,7 @@ export function DaySummaryPanel({
           <div className="grid gap-4 border-t border-border/14 pt-4 sm:grid-cols-2 lg:border-t-0 lg:border-l lg:pl-5 lg:pt-0">
             {[peakHour, longestRead].map((item) => (
               <div key={item.label} className="space-y-1.5">
-                <div className="text-[12px] font-medium text-muted-foreground/56">
-                  {item.label}
-                </div>
+                <div className="text-[12px] font-medium text-muted-foreground/56">{item.label}</div>
                 <div className="text-[32px] font-bold tabular-nums tracking-[-0.04em] text-foreground/90">
                   {item.value}
                 </div>
@@ -195,18 +187,14 @@ export function DaySummaryPanel({
 
         <div className="mt-5 grid gap-3 border-t border-border/16 pt-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
           <div className="min-w-0 space-y-1.5">
-            <div className="text-[12px] font-medium text-muted-foreground/54">
-              {copy.topFocus}
-            </div>
+            <div className="text-[12px] font-medium text-muted-foreground/54">{copy.topFocus}</div>
             <div className="line-clamp-2 text-[22px] font-semibold leading-snug tracking-[-0.03em] text-foreground/88">
               {topBook?.title ?? copy.noDayTopBook}
             </div>
           </div>
 
           <div className="flex items-center self-start md:pl-4">
-            <div className="text-[18px] font-semibold text-primary/72">
-              {topBookDuration}
-            </div>
+            <div className="text-[18px] font-semibold text-primary/72">{topBookDuration}</div>
           </div>
         </div>
       </div>
@@ -271,5 +259,9 @@ export function InsightsSection({
 
 export { TopBooksSection } from "./TopBooksSection";
 export { MonthCalendarSection } from "./CalendarSection";
-export { RhythmProfileSection, YearlySnapshotsSection, JourneySummaryPanel } from "./LifetimeSections";
+export {
+  RhythmProfileSection,
+  YearlySnapshotsSection,
+  JourneySummaryPanel,
+} from "./LifetimeSections";
 export { GoalsSection } from "./GoalsSection";

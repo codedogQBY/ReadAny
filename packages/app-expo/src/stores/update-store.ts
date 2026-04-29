@@ -27,7 +27,6 @@ export const useUpdateStore = create<UpdateState>()(
     setCheckResult: (result) => set({ checkResult: result }),
     showDialog: () => set({ dialogVisible: true }),
     hideDialog: () => set({ dialogVisible: false }),
-    dismissVersion: (version) =>
-      set({ dismissedVersion: version, dialogVisible: false }),
+    dismissVersion: (version) => set({ dismissedVersion: version, dialogVisible: false }),
   })),
 );

@@ -302,14 +302,14 @@ export class TTS {
       highlight = maybeFilterOrHighlight;
       if (typeof maybeHighlightOrGetCfi === "function") {
         this.#getCfi = maybeHighlightOrGetCfi;
-        granularity = typeof maybeGetCfiOrGranularity === "string" ? maybeGetCfiOrGranularity : "word";
+        granularity =
+          typeof maybeGetCfiOrGranularity === "string" ? maybeGetCfiOrGranularity : "word";
       } else {
         granularity = typeof maybeHighlightOrGetCfi === "string" ? maybeHighlightOrGetCfi : "word";
       }
     } else {
       filterFunc = maybeFilterOrHighlight ?? null;
-      highlight =
-        typeof maybeHighlightOrGetCfi === "function" ? maybeHighlightOrGetCfi : null;
+      highlight = typeof maybeHighlightOrGetCfi === "function" ? maybeHighlightOrGetCfi : null;
       if (typeof maybeGetCfiOrGranularity === "function") {
         this.#getCfi = maybeGetCfiOrGranularity;
       }
@@ -425,7 +425,9 @@ export class TTS {
     const [doc] = this.#list.find(
       (range_) => range.compareBoundaryPoints(Range.END_TO_START, range_) <= 0,
     );
-    this.#detailList.find((detailRange) => range.compareBoundaryPoints(Range.END_TO_START, detailRange) <= 0);
+    this.#detailList.find(
+      (detailRange) => range.compareBoundaryPoints(Range.END_TO_START, detailRange) <= 0,
+    );
     let mark;
     for (const [name, range_] of this.#ranges.entries())
       if (range.compareBoundaryPoints(Range.START_TO_START, range_) <= 0) {

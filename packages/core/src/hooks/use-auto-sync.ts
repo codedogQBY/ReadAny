@@ -58,7 +58,10 @@ export function useAutoSync(onSyncComplete?: () => void) {
     }
 
     // Don't auto-sync if last error was auth-related
-    if (lastErrorRef.current?.includes("connect") || lastErrorRef.current?.includes("Unauthorized")) {
+    if (
+      lastErrorRef.current?.includes("connect") ||
+      lastErrorRef.current?.includes("Unauthorized")
+    ) {
       console.log("[AutoSync] Skipping auto-sync due to connection/auth error");
       return;
     }

@@ -60,6 +60,7 @@
         { "url": "http://127.0.0.1:*/*" }
       ]
     },
-    "websocket:default"
+    "websocket:default",
+    "core:webview:allow-internal-toggle-devtools"
   ]
 }

@@ -1,5 +1,5 @@
-import type { Note } from "../../types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Note } from "../../types";
 
 const mockExecute = vi.fn();
 const mockSelect = vi.fn();
@@ -13,19 +13,19 @@ const coreMocks = vi.hoisted(() => ({
   insertTombstone: vi.fn(),
   parseJSON: vi.fn((str: string | null | undefined, fallback: unknown) => {
     if (!str) return fallback;
-    try { return JSON.parse(str); } catch { return fallback; }
+    try {
+      return JSON.parse(str);
+    } catch {
+      return fallback;
+    }
   }),
 }));
 
 vi.mock("../db-core", () => coreMocks);
 
-const {
-  getNotes,
-  getAllNotes,
-  insertNote,
-  updateNote,
-  deleteNote,
-} = await import("../note-queries");
+const { getNotes, getAllNotes, insertNote, updateNote, deleteNote } = await import(
+  "../note-queries"
+);
 
 const sampleNote: Note = {
   id: "note-1",
@@ -142,7 +142,7 @@ describe("note-queries", () => {
       expect(sql).toContain("INSERT INTO notes");
       expect(params[0]).toBe("note-1");
       expect(params[1]).toBe("book-1");
-      expect(params[2]).toBe("hl-1");  // highlightId
+      expect(params[2]).toBe("hl-1"); // highlightId
       expect(params[4]).toBe("My Note"); // title
       expect(params[7]).toBe('["important","review"]'); // tags serialized
     });

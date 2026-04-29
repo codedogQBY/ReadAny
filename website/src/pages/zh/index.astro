@@ -1,30 +1,20 @@
 ---
 import { useTranslations } from "../../i18n/utils";
-import Layout from "../../layouts/Layout.astro";
-import Header from "../../components/Header.astro";
-import Hero from "../../components/Hero.astro";
-import FeatureShowcase from "../../components/FeatureShowcase.astro";
-import UseCases from "../../components/UseCases.astro";
-import TechStack from "../../components/TechStack.astro";
-import Download from "../../components/Download.astro";
-import FAQ from "../../components/FAQ.astro";
-import Community from "../../components/Community.astro";
-import Footer from "../../components/Footer.astro";
 
 const lang = "zh";
-const t = useTranslations(lang);
+const _t = useTranslations(lang);
 ---
 
 <Layout title="ReadAny - AI 驱动的电子书阅读器">
-  <Header lang={lang} t={t} />
+  <Header lang={lang} t={_t} />
   <main>
-    <Hero t={t} />
-    <FeatureShowcase t={t} />
-    <UseCases t={t} />
-    <TechStack t={t} />
-    <Download t={t} />
-    <FAQ t={t} />
-    <Community t={t} />
+    <Hero t={_t} />
+    <FeatureShowcase t={_t} />
+    <UseCases t={_t} />
+    <TechStack t={_t} />
+    <Download t={_t} />
+    <FAQ t={_t} />
+    <Community t={_t} />
   </main>
-  <Footer t={t} />
+  <Footer t={_t} />
 </Layout>

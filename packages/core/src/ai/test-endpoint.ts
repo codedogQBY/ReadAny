@@ -1,12 +1,12 @@
 import type { AIEndpoint } from "../types";
 import { getDefaultBaseUrl, providerRequiresApiKey } from "../utils";
-import { logAIEndpointDebug, summarizeDebugText } from "./request-debug";
 import {
   buildOpenAICompatibleUrl,
   buildProviderModelsUrl,
   providerSupportsExactRequestUrl,
   resolveProviderBaseUrl,
 } from "../utils/api";
+import { logAIEndpointDebug, summarizeDebugText } from "./request-debug";
 
 const OPENAI_COMPATIBLE_TEST_PROMPT = "Reply with exactly OK.";
 const ANTHROPIC_FALLBACK_MODELS = [
@@ -122,10 +122,14 @@ async function listOpenAICompatibleModels(endpoint: AIEndpoint): Promise<string[
     headers.Authorization = `Bearer ${endpoint.apiKey}`;
   }
 
-  const data = await fetchJson(requestUrl, { headers }, {
-    endpoint,
-    action: "list-models",
-  });
+  const data = await fetchJson(
+    requestUrl,
+    { headers },
+    {
+      endpoint,
+      action: "list-models",
+    },
+  );
   return (data.data || [])
     .map((model: { id: string }) => model.id)
     .filter(Boolean)
@@ -253,7 +257,10 @@ async function listEndpointModels(endpoint: AIEndpoint): Promise<string[]> {
   }
 }
 
-async function resolveTestModel(endpoint: AIEndpoint, preferredModel?: string): Promise<{
+async function resolveTestModel(
+  endpoint: AIEndpoint,
+  preferredModel?: string,
+): Promise<{
   model?: string;
   modelCount?: number;
 }> {
@@ -303,25 +310,29 @@ export function getAIEndpointRequestPreview(endpoint: AIEndpoint, preferredModel
 
 async function testAnthropic(endpoint: AIEndpoint, model: string): Promise<string> {
   const requestUrl = getAIEndpointRequestPreview(endpoint, model);
-  const data = await fetchJson(requestUrl, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": endpoint.apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
+  const data = await fetchJson(
+    requestUrl,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": endpoint.apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 4,
+        temperature: 0,
+        messages: [{ role: "user", content: OPENAI_COMPATIBLE_TEST_PROMPT }],
+      }),
     },
-    body: JSON.stringify({
+    {
+      endpoint,
+      action: "test-connection",
       model,
-      max_tokens: 4,
-      temperature: 0,
-      messages: [{ role: "user", content: OPENAI_COMPATIBLE_TEST_PROMPT }],
-    }),
-  }, {
-    endpoint,
-    action: "test-connection",
-    model,
-  });
+    },
+  );
 
   if (!data?.id) {
     throw new Error("Anthropic test request returned an unexpected response.");
@@ -333,28 +344,32 @@ async function testAnthropic(endpoint: AIEndpoint, model: string): Promise<strin
 async function testGoogle(endpoint: AIEndpoint, model: string): Promise<string> {
   const normalizedModel = normalizeGoogleModel(model);
   const requestUrl = `${resolveProviderBaseUrl("google", endpoint.baseUrl, endpoint.useExactRequestUrl)}/v1beta/models/${normalizedModel}:generateContent?key=${encodeURIComponent(endpoint.apiKey)}`;
-  const data = await fetchJson(requestUrl, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: OPENAI_COMPATIBLE_TEST_PROMPT }],
-        },
-      ],
-      generationConfig: {
-        temperature: 0,
-        maxOutputTokens: 4,
+  const data = await fetchJson(
+    requestUrl,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
       },
-    }),
-  }, {
-    endpoint,
-    action: "test-connection",
-    model: normalizedModel,
-  });
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: OPENAI_COMPATIBLE_TEST_PROMPT }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 4,
+        },
+      }),
+    },
+    {
+      endpoint,
+      action: "test-connection",
+      model: normalizedModel,
+    },
+  );
 
   if (!Array.isArray(data?.candidates) || data.candidates.length === 0) {
     throw new Error("Google test request returned no candidates.");
@@ -372,20 +387,24 @@ async function testOpenAICompatible(endpoint: AIEndpoint, model: string): Promis
     headers.Authorization = `Bearer ${endpoint.apiKey}`;
   }
 
-  const data = await fetchJson(requestUrl, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
+  const data = await fetchJson(
+    requestUrl,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: OPENAI_COMPATIBLE_TEST_PROMPT }],
+        temperature: 0,
+        max_tokens: 4,
+      }),
+    },
+    {
+      endpoint,
+      action: "test-connection",
       model,
-      messages: [{ role: "user", content: OPENAI_COMPATIBLE_TEST_PROMPT }],
-      temperature: 0,
-      max_tokens: 4,
-    }),
-  }, {
-    endpoint,
-    action: "test-connection",
-    model,
-  });
+    },
+  );
 
   if (!Array.isArray(data?.choices) || data.choices.length === 0) {
     throw new Error("Test request returned no choices.");
@@ -400,8 +419,15 @@ export async function testAIEndpoint(
 ): Promise<EndpointTestResult> {
   const baseUrl = getEndpointBaseUrl(endpoint);
   assertConfigured(endpoint, baseUrl);
-  if (endpoint.useExactRequestUrl && providerSupportsExactRequestUrl(endpoint.provider) && !options.model && endpoint.models.length === 0) {
-    throw new Error("Exact request URL mode requires a model name. Add one manually before testing.");
+  if (
+    endpoint.useExactRequestUrl &&
+    providerSupportsExactRequestUrl(endpoint.provider) &&
+    !options.model &&
+    endpoint.models.length === 0
+  ) {
+    throw new Error(
+      "Exact request URL mode requires a model name. Add one manually before testing.",
+    );
   }
 
   const { model, modelCount } = await resolveTestModel(endpoint, options.model);
@@ -421,13 +447,18 @@ export async function testAIEndpoint(
     case "ollama":
       // Pre-check: verify the Ollama server is reachable before running the full test
       try {
-        const tagsUrl = buildProviderModelsUrl("ollama", endpoint.baseUrl, endpoint.apiKey, endpoint.useExactRequestUrl);
+        const tagsUrl = buildProviderModelsUrl(
+          "ollama",
+          endpoint.baseUrl,
+          endpoint.apiKey,
+          endpoint.useExactRequestUrl,
+        );
         await fetchJson(tagsUrl, undefined, { endpoint, action: "ollama-ping" });
       } catch (pingErr) {
         const msg = pingErr instanceof Error ? pingErr.message : String(pingErr);
         throw new Error(
           `Cannot reach Ollama at ${endpoint.baseUrl || "http://localhost:11434"}. ` +
-          `Make sure Ollama is running and set OLLAMA_ORIGINS=* if needed. (${msg})`,
+            `Make sure Ollama is running and set OLLAMA_ORIGINS=* if needed. (${msg})`,
         );
       }
       requestUrl = await testOpenAICompatible(endpoint, model);

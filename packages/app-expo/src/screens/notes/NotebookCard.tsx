@@ -38,8 +38,12 @@ export function NotebookCard({
         </View>
       )}
       <View style={s.notebookInfo}>
-        <Text style={s.notebookTitle} numberOfLines={1}>{book.title}</Text>
-        <Text style={s.notebookAuthor} numberOfLines={1}>{book.author}</Text>
+        <Text style={s.notebookTitle} numberOfLines={1}>
+          {book.title}
+        </Text>
+        <Text style={s.notebookAuthor} numberOfLines={1}>
+          {book.author}
+        </Text>
         <View style={s.notebookStats}>
           <View style={s.notebookStatItem}>
             <NotebookPenIcon size={12} color={colors.mutedForeground} />

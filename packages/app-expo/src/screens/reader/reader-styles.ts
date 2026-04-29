@@ -4,8 +4,8 @@
  */
 import type { ThemeColors } from "@/styles/theme";
 import { makeToolbarStyles } from "./styles/reader-base-styles";
-import { makeSheetStyles } from "./styles/reader-sheet-styles";
 import { makeNoteStyles } from "./styles/reader-note-styles";
+import { makeSheetStyles } from "./styles/reader-sheet-styles";
 
 export { TOOLTIP_FG, TOOLTIP_MUTED, noteTooltipMdStyles } from "./styles/reader-note-styles";
 

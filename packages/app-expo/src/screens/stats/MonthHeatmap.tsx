@@ -2,9 +2,9 @@ import { useColors, withOpacity } from "@/styles/theme";
 import type { StatsChartBlock } from "@readany/core/stats";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Text, TouchableOpacity, View } from "react-native";
+import type { StatsCopy } from "./StatsSections";
 import { makeStyles } from "./stats-styles";
 import { formatCompactMinutes } from "./stats-utils";
-import type { StatsCopy } from "./StatsSections";
 
 type MonthCell = {
   dateKey: string;
@@ -66,7 +66,7 @@ function buildMonthGrid(
     }
 
     const dateKey = toDateKey(date);
-    const value = inCurrentMonth ? valueMap.get(dateKey) ?? 0 : 0;
+    const value = inCurrentMonth ? (valueMap.get(dateKey) ?? 0) : 0;
     cells.push({
       dateKey,
       dayOfMonth,

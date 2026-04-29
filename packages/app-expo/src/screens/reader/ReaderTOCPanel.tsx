@@ -1,23 +1,18 @@
 /**
  * ReaderTOCPanel — bottom-sheet modal with two tabs: Table of Contents and Bookmarks.
  */
-import {
-  BookmarkFilledIcon,
-  BookmarkIcon,
-  Trash2Icon,
-  XIcon,
-} from "@/components/ui/Icon";
+import { BookmarkFilledIcon, BookmarkIcon, Trash2Icon, XIcon } from "@/components/ui/Icon";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { useColors } from "@/styles/theme";
 import { fontSize } from "@/styles/theme";
 import type { TOCItem } from "@readany/core/types";
+import { useTranslation } from "react-i18next";
 import { Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useTranslation } from "react-i18next";
-import { ListIcon } from "./reader-icons";
-import { makeStyles } from "./reader-styles";
 import { TOCTreeItem } from "./TOCTreeItem";
 import { SCREEN_HEIGHT } from "./reader-constants";
+import { ListIcon } from "./reader-icons";
+import { makeStyles } from "./reader-styles";
 
 export type Bookmark = {
   id: string;
@@ -60,12 +55,7 @@ export function ReaderTOCPanel({
   const { t, i18n } = useTranslation();
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={s.modalBackdrop} onPress={onClose} />
       <View
         style={[
@@ -81,10 +71,7 @@ export function ReaderTOCPanel({
         <View style={s.sheetHeader}>
           <View style={s.tocTabBar}>
             <TouchableOpacity
-              style={[
-                s.tocTab,
-                activeTab === "toc" && { backgroundColor: `${colors.primary}14` },
-              ]}
+              style={[s.tocTab, activeTab === "toc" && { backgroundColor: `${colors.primary}14` }]}
               onPress={() => onTabChange("toc")}
             >
               <ListIcon
@@ -116,8 +103,7 @@ export function ReaderTOCPanel({
                 style={[
                   s.tocTabText,
                   {
-                    color:
-                      activeTab === "bookmarks" ? colors.primary : colors.mutedForeground,
+                    color: activeTab === "bookmarks" ? colors.primary : colors.mutedForeground,
                   },
                 ]}
               >

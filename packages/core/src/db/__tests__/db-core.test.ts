@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseJSON, serializeEmbedding, deserializeEmbedding } from "../db-core";
+import { deserializeEmbedding, parseJSON, serializeEmbedding } from "../db-core";
 
 describe("parseJSON", () => {
   it("parses valid JSON string", () => {

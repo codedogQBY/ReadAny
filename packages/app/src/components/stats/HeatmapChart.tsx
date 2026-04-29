@@ -87,7 +87,7 @@ function buildMonthGrid(
     }
 
     const dateKey = toDateKey(date);
-    const value = inCurrentMonth ? valueMap.get(dateKey) ?? 0 : 0;
+    const value = inCurrentMonth ? (valueMap.get(dateKey) ?? 0) : 0;
     cells.push({
       dateKey,
       dayOfMonth,
@@ -152,11 +152,7 @@ export function HeatmapChart({
 
   const activeDays = useMemo(() => data.filter((item) => item.value > 0).length, [data]);
 
-  const setTooltipFromCell = (
-    cell: MonthCell,
-    pinned: boolean,
-    target: HTMLElement,
-  ) => {
+  const setTooltipFromCell = (cell: MonthCell, pinned: boolean, target: HTMLElement) => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
     const wrapperRect = wrapper.getBoundingClientRect();
@@ -217,9 +213,7 @@ export function HeatmapChart({
                   <button
                     key={cell.dateKey}
                     type="button"
-                    onMouseEnter={(event) =>
-                      setTooltipFromCell(cell, false, event.currentTarget)
-                    }
+                    onMouseEnter={(event) => setTooltipFromCell(cell, false, event.currentTarget)}
                     onFocus={(event) => setTooltipFromCell(cell, false, event.currentTarget)}
                     onBlur={() => setTooltip((current) => (current?.pinned ? current : null))}
                     onClick={(event) => {
@@ -238,7 +232,8 @@ export function HeatmapChart({
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20",
                       "hover:-translate-y-0.5",
                       getIntensityClass(cell),
-                      cell.isToday && "ring-1.5 ring-primary/45 ring-offset-1 ring-offset-background",
+                      cell.isToday &&
+                        "ring-1.5 ring-primary/45 ring-offset-1 ring-offset-background",
                       active && "scale-[1.02] shadow-[0_12px_28px_rgba(0,0,0,0.08)]",
                     )}
                   >
@@ -272,7 +267,8 @@ export function HeatmapChart({
             }}
           >
             <div className="flex h-full items-center justify-center whitespace-nowrap">
-              {toMonthDayLabel(tooltip.dateKey, locale)} · {formatCompactMinutes(tooltip.value, isZh)}
+              {toMonthDayLabel(tooltip.dateKey, locale)} ·{" "}
+              {formatCompactMinutes(tooltip.value, isZh)}
             </div>
           </div>
         ) : null}

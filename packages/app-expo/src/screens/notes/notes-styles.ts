@@ -1,11 +1,5 @@
+import { type ThemeColors, fontSize, fontWeight, radius, withOpacity } from "@/styles/theme";
 import { StyleSheet } from "react-native";
-import {
-  type ThemeColors,
-  fontSize,
-  fontWeight,
-  radius,
-  withOpacity,
-} from "@/styles/theme";
 
 export const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
@@ -97,7 +91,12 @@ export const makeStyles = (colors: ThemeColors) =>
       marginBottom: 12,
       gap: 12,
     },
-    notebookCover: { width: 44, height: 64, borderRadius: radius.sm, backgroundColor: colors.muted },
+    notebookCover: {
+      width: 44,
+      height: 64,
+      borderRadius: radius.sm,
+      backgroundColor: colors.muted,
+    },
     notebookCoverFallback: {
       width: 44,
       height: 64,
@@ -107,7 +106,11 @@ export const makeStyles = (colors: ThemeColors) =>
       justifyContent: "center",
     },
     notebookInfo: { flex: 1, gap: 4 },
-    notebookTitle: { fontSize: fontSize.sm, fontWeight: fontWeight.medium, color: colors.foreground },
+    notebookTitle: {
+      fontSize: fontSize.sm,
+      fontWeight: fontWeight.medium,
+      color: colors.foreground,
+    },
     notebookAuthor: { fontSize: fontSize.xs, color: colors.mutedForeground },
     notebookStats: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 4 },
     notebookStatItem: { flexDirection: "row", alignItems: "center", gap: 4 },
@@ -144,7 +147,11 @@ export const makeStyles = (colors: ThemeColors) =>
       justifyContent: "center",
     },
     detailHeaderInfo: { flex: 1, minWidth: 0 },
-    detailTitle: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: colors.foreground },
+    detailTitle: {
+      fontSize: fontSize.sm,
+      fontWeight: fontWeight.semibold,
+      color: colors.foreground,
+    },
     detailAuthor: { fontSize: fontSize.xs, color: colors.mutedForeground },
     exportBtn: {
       width: 32,
@@ -172,7 +179,11 @@ export const makeStyles = (colors: ThemeColors) =>
       borderRadius: radius.md,
     },
     tabBtnActive: { backgroundColor: colors.primary },
-    tabBtnText: { fontSize: fontSize.xs, fontWeight: fontWeight.medium, color: colors.mutedForeground },
+    tabBtnText: {
+      fontSize: fontSize.xs,
+      fontWeight: fontWeight.medium,
+      color: colors.mutedForeground,
+    },
     tabBtnTextActive: { color: colors.primaryForeground },
     detailSearch: {
       flexDirection: "row",
@@ -238,9 +249,18 @@ export const makeStyles = (colors: ThemeColors) =>
     editTabs: { flexDirection: "row", gap: 12, marginBottom: 8, paddingHorizontal: 4 },
     editTabBtn: { paddingBottom: 4 },
     editTabBtnActive: { borderBottomWidth: 2, borderBottomColor: colors.primary },
-    editTabText: { fontSize: fontSize.xs, color: colors.mutedForeground, fontWeight: fontWeight.medium },
+    editTabText: {
+      fontSize: fontSize.xs,
+      color: colors.mutedForeground,
+      fontWeight: fontWeight.medium,
+    },
     editTabTextActive: { color: colors.primary },
-    editPreviewArea: { minHeight: 80, backgroundColor: colors.muted, borderRadius: radius.md, padding: 12 },
+    editPreviewArea: {
+      minHeight: 80,
+      backgroundColor: colors.muted,
+      borderRadius: radius.md,
+      padding: 12,
+    },
     editActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 8 },
     editCancelBtn: {
       flexDirection: "row",

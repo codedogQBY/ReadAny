@@ -1,7 +1,7 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IPlatformService } from "../services/platform";
 import type { ISyncBackend, SyncConfig } from "../sync/sync-backend";
 import type { SyncResult } from "../sync/sync-types";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockPlatformService = vi.hoisted(() => ({
   platformType: "desktop" as const,
@@ -319,11 +319,9 @@ describe("useSyncStore", () => {
       .getState()
       .syncWithBackend(mockLanBackend as unknown as ISyncBackend);
 
-    expect(syncMocks.runSimpleSync).toHaveBeenCalledWith(
-      mockLanBackend,
-      expect.any(Function),
-      { receiveOnly: true },
-    );
+    expect(syncMocks.runSimpleSync).toHaveBeenCalledWith(mockLanBackend, expect.any(Function), {
+      receiveOnly: true,
+    });
     expect(syncMocks.runSync).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       success: true,
@@ -392,9 +390,7 @@ describe("useSyncStore", () => {
       error: "WebDAV 认证失败，请检查用户名和应用密码是否正确。",
     });
     expect(useSyncStore.getState().status).toBe("error");
-    expect(useSyncStore.getState().error).toBe(
-      "WebDAV 认证失败，请检查用户名和应用密码是否正确。",
-    );
+    expect(useSyncStore.getState().error).toBe("WebDAV 认证失败，请检查用户名和应用密码是否正确。");
   });
 
   it("returns the same promise when sync is already in progress", async () => {

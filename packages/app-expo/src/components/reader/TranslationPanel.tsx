@@ -3,9 +3,9 @@ import { useSettingsStore } from "@/stores";
 import { type ThemeColors, fontSize, fontWeight, radius, useColors } from "@/styles/theme";
 import { TRANSLATOR_LANGS, type TranslationTargetLang } from "@readany/core/types/translation";
 import { providerRequiresApiKey } from "@readany/core/utils";
+import { buildOpenAICompatibleUrl } from "@readany/core/utils/api";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { buildOpenAICompatibleUrl } from "@readany/core/utils/api";
 import {
   ActivityIndicator,
   Modal,

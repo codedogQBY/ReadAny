@@ -13,25 +13,25 @@
  */
 import type { Skill } from "../../types";
 import {
-  createSummarizeTool,
-  createExtractEntitiesTool,
   createAnalyzeArgumentsTool,
-  createFindQuotesTool,
   createCompareSectionsTool,
+  createExtractEntitiesTool,
+  createFindQuotesTool,
+  createSummarizeTool,
 } from "./analysis-tools";
-import { createGetAnnotationsTool, createAddCitationTool } from "./annotation-tools";
+import { createAddCitationTool, createGetAnnotationsTool } from "./annotation-tools";
 import { getContextTools } from "./context-tools";
 import {
+  createClassifyBooksTool,
   createListBooksTool,
+  createManageBookTagsTool,
+  createReadingStatsTool,
   createSearchAllHighlightsTool,
   createSearchAllNotesTool,
-  createReadingStatsTool,
-  createClassifyBooksTool,
   createTagBooksTool,
-  createManageBookTagsTool,
 } from "./library-tools";
 import { createMindmapTool } from "./mindmap-tools";
-import { createRagSearchTool, createRagTocTool, createRagContextTool } from "./rag-tools";
+import { createRagContextTool, createRagSearchTool, createRagTocTool } from "./rag-tools";
 import { createGetSkillsTool, skillToTool } from "./skill-tools";
 import type { ToolDefinition } from "./tool-types";
 

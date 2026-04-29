@@ -1,5 +1,5 @@
 import type { Thread } from "../types";
-import { getDB, getDeviceId, nextSyncVersion, nextUpdatedAt, insertTombstone } from "./db-core";
+import { getDB, getDeviceId, insertTombstone, nextSyncVersion, nextUpdatedAt } from "./db-core";
 import { getMessages } from "./message-queries";
 
 export async function getThreads(bookId?: string): Promise<Thread[]> {

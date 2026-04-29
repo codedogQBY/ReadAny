@@ -1,7 +1,7 @@
 /**
  * useReaderBookmark — handles bookmark toggling, pending snippet requests, and bookmark list.
  */
-import { useAnnotationStore, type AnnotationState } from "@/stores";
+import { type AnnotationState, useAnnotationStore } from "@/stores";
 import { generateId } from "@readany/core/utils";
 import { useCallback, useMemo, useRef } from "react";
 

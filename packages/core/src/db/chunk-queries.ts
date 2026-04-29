@@ -1,5 +1,5 @@
 import type { Chunk } from "../types";
-import { getDB, getLocalDB, serializeEmbedding, deserializeEmbedding } from "./db-core";
+import { deserializeEmbedding, getDB, getLocalDB, serializeEmbedding } from "./db-core";
 
 export async function getChunks(bookId: string): Promise<Chunk[]> {
   const database = await getLocalDB();

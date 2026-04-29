@@ -4,14 +4,14 @@ import type { Book } from "@readany/core/types";
 import { type ReactNode, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  type LayoutRectangle,
   Modal,
   Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   View,
-  type LayoutRectangle,
+  useWindowDimensions,
 } from "react-native";
 
 interface BookCardActionSheetProps {
@@ -89,7 +89,10 @@ export function BookCardActionSheet({
   const menuHeight = items.length * rowHeight + 12;
   const safePadding = 12;
   const fallbackX = Math.max(safePadding, screenWidth - menuWidth - safePadding);
-  const fallbackY = Math.max(80, Math.min(screenHeight / 2 - menuHeight / 2, screenHeight - menuHeight - 80));
+  const fallbackY = Math.max(
+    80,
+    Math.min(screenHeight / 2 - menuHeight / 2, screenHeight - menuHeight - 80),
+  );
 
   const menuLeft = anchor
     ? Math.min(
@@ -106,12 +109,7 @@ export function BookCardActionSheet({
 
   return (
     <>
-      <Modal
-        visible={visible}
-        transparent
-        animationType="fade"
-        onRequestClose={onClose}
-      >
+      <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
         <Pressable style={styles.overlay} onPress={onClose}>
           <Pressable
             style={[styles.menu, { left: menuLeft, top: menuTop, width: menuWidth }]}

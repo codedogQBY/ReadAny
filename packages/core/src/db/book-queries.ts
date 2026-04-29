@@ -1,7 +1,14 @@
 import type { Book } from "../types";
-import { getDB, getDeviceId, nextSyncVersion, nextUpdatedAt, insertTombstone, parseJSON } from "./db-core";
-import { deleteThreadsByBookId } from "./thread-queries";
 import { deleteChunks } from "./chunk-queries";
+import {
+  getDB,
+  getDeviceId,
+  insertTombstone,
+  nextSyncVersion,
+  nextUpdatedAt,
+  parseJSON,
+} from "./db-core";
+import { deleteThreadsByBookId } from "./thread-queries";
 
 interface BookRow {
   id: string;

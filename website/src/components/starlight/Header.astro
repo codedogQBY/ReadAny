@@ -1,9 +1,4 @@
 ---
-import Search from '@astrojs/starlight/components/Search.astro';
-import SocialIcons from '@astrojs/starlight/components/SocialIcons.astro';
-import ThemeSelect from './ThemeSelect.astro';
-import LanguageSelect from './LanguageSelect.astro';
-
 const locale = Astro.locals.starlightRoute?.locale;
 const homeHref = locale ? `/ReadAny/${locale}/` : "/ReadAny/";
 ---

@@ -3,16 +3,16 @@ import { Input } from "@/components/ui/input";
 import { MarkdownEditor } from "@/components/ui/markdown-editor";
 import { useResolvedSrc } from "@/hooks/use-resolved-src";
 import type { HighlightWithBook } from "@/lib/db/database";
-import { openDesktopBook } from "@/lib/library/open-book";
 import { getBook as getBookRecord } from "@/lib/db/database";
+import { openDesktopBook } from "@/lib/library/open-book";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useAppStore } from "@/stores/app-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { type ExportFormat, annotationExporter } from "@readany/core/export";
 import type { Highlight, Note } from "@readany/core/types";
-import { eventBus } from "@readany/core/utils/event-bus";
 import { HIGHLIGHT_COLOR_HEX } from "@readany/core/types";
 import { cn } from "@readany/core/utils";
+import { eventBus } from "@readany/core/utils/event-bus";
 import {
   BookOpen,
   Check,

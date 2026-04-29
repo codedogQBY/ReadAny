@@ -8,7 +8,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { DASHSCOPE_VOICES, EDGE_TTS_VOICES, getSystemVoices } from "@/lib/tts/tts-service";
 import {
   DEFAULT_SYSTEM_VOICE_VALUE,
   findSystemVoiceLabel,
@@ -16,6 +15,7 @@ import {
   groupSystemVoiceOptions,
   resolveSystemVoiceValue,
 } from "@/lib/tts/system-voices";
+import { DASHSCOPE_VOICES, EDGE_TTS_VOICES, getSystemVoices } from "@/lib/tts/tts-service";
 import type { TTSEngine } from "@/lib/tts/tts-service";
 import { useReaderStore } from "@/stores/reader-store";
 import { useTTSStore } from "@/stores/tts-store";
@@ -199,15 +199,15 @@ export function FooterBar({
                   </SelectTrigger>
                   <SelectContent className="max-h-[220px]">
                     <SelectItem value={DEFAULT_SYSTEM_VOICE_VALUE}>
-                    {t("tts.defaultVoice")}
-                  </SelectItem>
-                  {systemVoiceGroups.map(([lang, langVoices]) => (
-                    <div key={lang}>
-                      <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      {t("tts.defaultVoice")}
+                    </SelectItem>
+                    {systemVoiceGroups.map(([lang, langVoices]) => (
+                      <div key={lang}>
+                        <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
                           {getLocaleDisplayLabel(lang, displayLocale)}
-                      </div>
-                      {langVoices.map((voice) => (
-                        <SelectItem key={voice.id} value={voice.id}>
+                        </div>
+                        {langVoices.map((voice) => (
+                          <SelectItem key={voice.id} value={voice.id}>
                             {voice.label}
                           </SelectItem>
                         ))}

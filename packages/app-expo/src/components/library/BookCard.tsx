@@ -139,7 +139,9 @@ export const BookCard = memo(function BookCard({
         });
       });
 
-    return (await measureNode(menuTriggerRef.current)) ?? (await measureNode(coverRef.current, true));
+    return (
+      (await measureNode(menuTriggerRef.current)) ?? (await measureNode(coverRef.current, true))
+    );
   }, []);
 
   const openActions = useCallback(async () => {

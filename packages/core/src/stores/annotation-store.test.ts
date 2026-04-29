@@ -1,7 +1,7 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HighlightWithBook } from "../db/database";
 import type { Highlight } from "../types";
 import { eventBus } from "../utils/event-bus";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const dbMocks = vi.hoisted(() => ({
   insertHighlight: vi.fn(),

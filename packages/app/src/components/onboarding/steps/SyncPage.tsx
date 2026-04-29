@@ -163,7 +163,9 @@ export function SyncPage({ onNext, onPrev, step, totalSteps }: any) {
               disabled={status === "testing" || !url || !username || !password}
             >
               {status === "testing" && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-              {status === "success" && <CheckCircle2 className="mr-2 h-3.5 w-3.5 text-emerald-500" />}
+              {status === "success" && (
+                <CheckCircle2 className="mr-2 h-3.5 w-3.5 text-emerald-500" />
+              )}
               {status === "error" && <AlertCircle className="mr-2 h-3.5 w-3.5 text-destructive" />}
               {t("settings.testConnection", "Test Connection")}
             </Button>

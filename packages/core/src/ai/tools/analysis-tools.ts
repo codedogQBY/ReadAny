@@ -44,7 +44,8 @@ export function createSummarizeTool(bookId: string): ToolDefinition {
           return { error: `Chapter ${chapterIndex} not found` };
         }
 
-        const maxTokens = style === "brief" ? MAX_CHAPTER_TOKENS_BRIEF : MAX_CHAPTER_TOKENS_DETAILED;
+        const maxTokens =
+          style === "brief" ? MAX_CHAPTER_TOKENS_BRIEF : MAX_CHAPTER_TOKENS_DETAILED;
         const truncatedChunks: Array<{
           content: string;
           cfi: string;
@@ -220,9 +221,7 @@ export function createExtractEntitiesTool(bookId: string): ToolDefinition {
         entityType,
         chapterIndex,
         chapterTitle: targetChunks[0]?.chapterTitle,
-        content: sampledChunks
-          .map((c) => `[${c.chapterTitle}]\n${c.content}`)
-          .join("\n\n"),
+        content: sampledChunks.map((c) => `[${c.chapterTitle}]\n${c.content}`).join("\n\n"),
         chunks: sampledChunks.map((c) => ({
           content: c.content,
           cfi: c.startCfi || "",
@@ -262,9 +261,7 @@ export function createAnalyzeArgumentsTool(bookId: string): ToolDefinition {
 
       const chunks = await getChunks(bookId);
       const targetChunks =
-        chapterIndex !== undefined
-          ? chunks.filter((c) => c.chapterIndex === chapterIndex)
-          : chunks;
+        chapterIndex !== undefined ? chunks.filter((c) => c.chapterIndex === chapterIndex) : chunks;
 
       if (targetChunks.length === 0) {
         return { error: "No content found" };
@@ -293,9 +290,7 @@ export function createAnalyzeArgumentsTool(bookId: string): ToolDefinition {
         focusType,
         chapterIndex,
         chapterTitle: targetChunks[0]?.chapterTitle,
-        content: sampledChunks
-          .map((c) => `[${c.chapterTitle}]\n${c.content}`)
-          .join("\n\n"),
+        content: sampledChunks.map((c) => `[${c.chapterTitle}]\n${c.content}`).join("\n\n"),
         chunks: sampledChunks.map((c) => ({
           content: c.content,
           cfi: c.startCfi || "",
@@ -372,9 +367,7 @@ export function createFindQuotesTool(bookId: string): ToolDefinition {
         quoteType,
         maxQuotes,
         chapterIndex,
-        content: sampledChunks
-          .map((c) => `[${c.chapterTitle}]\n${c.content}`)
-          .join("\n\n"),
+        content: sampledChunks.map((c) => `[${c.chapterTitle}]\n${c.content}`).join("\n\n"),
         chunks: sampledChunks.map((c) => ({
           content: c.content,
           cfi: c.startCfi || "",

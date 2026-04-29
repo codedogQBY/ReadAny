@@ -37,12 +37,22 @@ export function NoteCard({
   return (
     <View style={s.noteCard}>
       <TouchableOpacity style={s.noteCardTop} onPress={onNavigate}>
-        <View style={[s.colorDot, { backgroundColor: HIGHLIGHT_COLOR_HEX[highlight.color] || colors.amber }]} />
-        <Text style={s.noteQuote} numberOfLines={2}>"{highlight.text}"</Text>
+        <View
+          style={[
+            s.colorDot,
+            { backgroundColor: HIGHLIGHT_COLOR_HEX[highlight.color] || colors.amber },
+          ]}
+        />
+        <Text style={s.noteQuote} numberOfLines={2}>
+          "{highlight.text}"
+        </Text>
       </TouchableOpacity>
 
       {isEditing ? (
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={s.editArea}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={s.editArea}
+        >
           <View style={s.editorContainer}>
             <RichTextEditor
               initialContent={editNote}

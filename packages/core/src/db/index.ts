@@ -72,6 +72,20 @@ export {
   insertSkill,
   updateSkill,
   deleteSkill,
+  // Mini review queries
+  getMiniReview,
+  getAllMiniReviews,
+  insertMiniReview,
+  deleteMiniReview,
+  // Review item queries
+  getReviewItems,
+  getDueReviewItems,
+  getUpcomingReviewItems,
+  getReviewItemStats,
+  insertReviewItem,
+  updateReviewItem,
+  deleteReviewItem,
+  deleteReviewItemsByBookId,
 } from "./database";
 
 export type { HighlightWithBook } from "./database";

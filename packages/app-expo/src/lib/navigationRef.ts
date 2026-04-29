@@ -1,10 +1,10 @@
+import type { RootStackParamList } from "@/navigation/RootNavigator";
 /**
  * navigationRef — allows navigation outside of React component tree.
  * Pass this ref to <NavigationContainer ref={navigationRef}> in App.tsx.
  */
 import { createNavigationContainerRef } from "@react-navigation/native";
 import { StackActions } from "@react-navigation/native";
-import type { RootStackParamList } from "@/navigation/RootNavigator";
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 

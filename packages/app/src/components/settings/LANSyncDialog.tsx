@@ -1,18 +1,18 @@
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useSyncStore } from "@/stores/sync-store";
 import type { LANConnectionState } from "@readany/core/sync/lan-backend";
+import { createLANBackend } from "@readany/core/sync/lan-backend";
 import {
   type LANQRData,
   type LANServerStatus,
   createLANServer,
 } from "@readany/core/sync/lan-server";
-import { createLANBackend } from "@readany/core/sync/lan-backend";
+import { QRCodeSVG } from "qrcode.react";
 /**
  * LANSyncDialog — LAN sync configuration dialog with QR code and manual connection.
  */
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { QRCodeSVG } from "qrcode.react";
 
 interface LANSyncDialogProps {
   open: boolean;
@@ -269,10 +269,12 @@ export function LANSyncDialog({ open, onClose, mode }: LANSyncDialogProps) {
                 </div>
                 <div className="text-center text-xs text-muted-foreground mt-2 space-y-1">
                   <p>
-                    {t("settings.syncLANIP")}: <span className="font-mono text-foreground">{qrData.ip}</span>
+                    {t("settings.syncLANIP")}:{" "}
+                    <span className="font-mono text-foreground">{qrData.ip}</span>
                   </p>
                   <p>
-                    {t("settings.syncLANPort")}: <span className="font-mono text-foreground">{qrData.port}</span>
+                    {t("settings.syncLANPort")}:{" "}
+                    <span className="font-mono text-foreground">{qrData.port}</span>
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground text-center">

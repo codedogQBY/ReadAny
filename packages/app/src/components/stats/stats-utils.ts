@@ -3,12 +3,12 @@
  * No React, no side-effects — only deterministic functions.
  */
 import {
-  fromLocalDateKey,
   type StatsCalendarCell,
   type StatsChartBlock,
   type StatsDimension,
   type StatsInsight,
   type StatsReport,
+  fromLocalDateKey,
 } from "@readany/core/stats";
 import { cn } from "@readany/core/utils";
 import type { ReactNode } from "react";
@@ -179,7 +179,10 @@ export function shiftAnchorDate(date: Date, dimension: StatsDimension, delta: -1
 
 /* ─── Calendar intensity ─── */
 
-export function intensityClass(level: StatsCalendarCell["intensity"], inCurrentMonth: boolean): string {
+export function intensityClass(
+  level: StatsCalendarCell["intensity"],
+  inCurrentMonth: boolean,
+): string {
   if (!inCurrentMonth && level === 0) {
     return "border-transparent bg-muted/15 text-muted-foreground/30";
   }

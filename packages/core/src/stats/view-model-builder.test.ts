@@ -94,7 +94,9 @@ describe("buildStatsViewModel", () => {
       now: new Date(2026, 3, 20),
     });
     expect(
-      buildStatsViewModel(monthReport).sections.some((section) => section.id === "reading-calendar"),
+      buildStatsViewModel(monthReport).sections.some(
+        (section) => section.id === "reading-calendar",
+      ),
     ).toBe(true);
   });
 

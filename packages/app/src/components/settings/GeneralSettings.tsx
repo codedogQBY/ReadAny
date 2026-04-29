@@ -1,9 +1,3 @@
-import {
-  clearDesktopLibraryRoot,
-  getDefaultDesktopLibraryRoot,
-  getDesktopLibraryRoot,
-  migrateDesktopLibraryRoot,
-} from "@/lib/storage/desktop-library-root";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,6 +7,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  clearDesktopLibraryRoot,
+  getDefaultDesktopLibraryRoot,
+  getDesktopLibraryRoot,
+  migrateDesktopLibraryRoot,
+} from "@/lib/storage/desktop-library-root";
 import { Coffee, FolderOpen, HardDrive, Moon, RotateCcw, Sun } from "lucide-react";
 /**
  * GeneralSettings — app-level settings
@@ -220,9 +220,7 @@ export function GeneralSettings() {
             <HardDrive className="h-4 w-4" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-sm font-medium text-foreground">
-              {t("settings.storageLocation")}
-            </h2>
+            <h2 className="text-sm font-medium text-foreground">{t("settings.storageLocation")}</h2>
             <p className="mt-1 text-xs text-muted-foreground">
               {t("settings.storageLocationDesc")}
             </p>
@@ -247,7 +245,11 @@ export function GeneralSettings() {
                 onChange={(e) => setTargetLibraryRoot(e.target.value)}
                 placeholder={t("settings.storageTargetPath")}
               />
-              <Button variant="outline" onClick={handleChooseLibraryFolder} disabled={migratingLibrary}>
+              <Button
+                variant="outline"
+                onClick={handleChooseLibraryFolder}
+                disabled={migratingLibrary}
+              >
                 <FolderOpen className="h-4 w-4" />
                 {t("settings.storageChooseFolder")}
               </Button>

@@ -1,10 +1,10 @@
 import { extractBookMetadata } from "@/lib/book/metadata-extractor";
 import { queueBook as queueAutoVectorize } from "@/lib/rag/auto-vectorize-service";
 import {
+  type ImportBooksResult,
   createEmptyImportBooksResult,
   createImportDuplicateIndex,
   findDuplicateBookByHash,
-  type ImportBooksResult,
 } from "@readany/core";
 import * as db from "@readany/core/db/database";
 import { runWithDbRetry } from "@readany/core/db/write-retry";
@@ -136,11 +136,9 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 async function hashBytes(bytes: Uint8Array): Promise<string> {
-  return Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    bytesToBase64(bytes),
-    { encoding: Crypto.CryptoEncoding.HEX },
-  );
+  return Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, bytesToBase64(bytes), {
+    encoding: Crypto.CryptoEncoding.HEX,
+  });
 }
 
 /**
@@ -167,7 +165,7 @@ function ensureUtf8Bytes(bytes: Uint8Array): Uint8Array {
   // otherwise a multi-byte char split at the boundary causes a false failure.
   let sampleEnd = Math.min(bytes.length, 64 * 1024);
   // Back up past any UTF-8 continuation bytes (10xxxxxx = 0x80-0xBF) at the end
-  while (sampleEnd > 0 && sampleEnd < bytes.length && (bytes[sampleEnd]! & 0xC0) === 0x80) {
+  while (sampleEnd > 0 && sampleEnd < bytes.length && (bytes[sampleEnd]! & 0xc0) === 0x80) {
     sampleEnd--;
   }
   try {
@@ -175,11 +173,11 @@ function ensureUtf8Bytes(bytes: Uint8Array): Uint8Array {
     if (bytes.length > sampleEnd * 2) {
       let midStart = Math.floor(bytes.length / 2);
       // Align mid-sample start to a UTF-8 character boundary
-      while (midStart < bytes.length && (bytes[midStart]! & 0xC0) === 0x80) {
+      while (midStart < bytes.length && (bytes[midStart]! & 0xc0) === 0x80) {
         midStart++;
       }
       let midEnd = Math.min(midStart + 8192, bytes.length);
-      while (midEnd > midStart && midEnd < bytes.length && (bytes[midEnd]! & 0xC0) === 0x80) {
+      while (midEnd > midStart && midEnd < bytes.length && (bytes[midEnd]! & 0xc0) === 0x80) {
         midEnd--;
       }
       new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(midStart, midEnd));
@@ -205,10 +203,14 @@ function ensureUtf8Bytes(bytes: Uint8Array): Uint8Array {
   for (let i = 0; i < sample.length - 1; i++) {
     const b1 = sample[i]!;
     const b2 = sample[i + 1]!;
-    if (b1 >= 0xA1 && b1 <= 0xFE && b2 >= 0xA1 && b2 <= 0xFE) {
+    if (b1 >= 0xa1 && b1 <= 0xfe && b2 >= 0xa1 && b2 <= 0xfe) {
       gbkPairs++;
       i++;
-    } else if (b1 >= 0x81 && b1 <= 0x9F && ((b2 >= 0x40 && b2 <= 0x7E) || (b2 >= 0x80 && b2 <= 0xFC))) {
+    } else if (
+      b1 >= 0x81 &&
+      b1 <= 0x9f &&
+      ((b2 >= 0x40 && b2 <= 0x7e) || (b2 >= 0x80 && b2 <= 0xfc))
+    ) {
       sjisDistinctPairs++;
       i++;
     }
@@ -436,7 +438,9 @@ async function inspectDeletedMobileBookCandidate(
         size: bytes.byteLength,
         type: "text/plain",
         arrayBuffer: () =>
-          Promise.resolve(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)),
+          Promise.resolve(
+            bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+          ),
         slice: (start?: number, end?: number) => {
           const sliced = bytes.slice(start ?? 0, end ?? bytes.byteLength);
           return {
@@ -577,7 +581,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           const absPath = await resolveAppPath(bookToRemove.filePath);
           await platform.deleteFile(absPath);
         }
-        if (!preserveData && bookToRemove.meta.coverUrl && isRelativeAppPath(bookToRemove.meta.coverUrl)) {
+        if (
+          !preserveData &&
+          bookToRemove.meta.coverUrl &&
+          isRelativeAppPath(bookToRemove.meta.coverUrl)
+        ) {
           const coverAbsPath = await resolveAppPath(bookToRemove.meta.coverUrl);
           await platform.deleteFile(coverAbsPath);
         }
@@ -673,20 +681,30 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
                 name: fileName,
                 size: bytes.byteLength,
                 type: "text/plain",
-                arrayBuffer: () => Promise.resolve(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)),
+                arrayBuffer: () =>
+                  Promise.resolve(
+                    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+                  ),
                 slice: (start?: number, end?: number) => {
                   const sliced = bytes.slice(start ?? 0, end ?? bytes.byteLength);
                   return {
-                    arrayBuffer: () => Promise.resolve(sliced.buffer.slice(sliced.byteOffset, sliced.byteOffset + sliced.byteLength)),
+                    arrayBuffer: () =>
+                      Promise.resolve(
+                        sliced.buffer.slice(
+                          sliced.byteOffset,
+                          sliced.byteOffset + sliced.byteLength,
+                        ),
+                      ),
                     size: sliced.byteLength,
                   };
                 },
-                stream: () => new ReadableStream({
-                  start(controller) {
-                    controller.enqueue(bytes);
-                    controller.close();
-                  },
-                }),
+                stream: () =>
+                  new ReadableStream({
+                    start(controller) {
+                      controller.enqueue(bytes);
+                      controller.close();
+                    },
+                  }),
               } as unknown as File;
 
               // Use convertToBytes: pure-JS ZIP builder, no Blob bridge

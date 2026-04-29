@@ -1,12 +1,12 @@
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { useLibraryStore } from "@/stores/library-store";
+import { useMissingBookPromptStore } from "@/stores/missing-book-prompt-store";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { getBook } from "@readany/core/db/database";
 import { getPlatformService } from "@readany/core/services";
 import type { Book } from "@readany/core/types";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import type { TFunction } from "i18next";
 import * as DocumentPicker from "expo-document-picker";
-import { useMissingBookPromptStore } from "@/stores/missing-book-prompt-store";
+import type { TFunction } from "i18next";
 
 type MobileNavigation = NativeStackNavigationProp<RootStackParamList>;
 
@@ -57,7 +57,9 @@ function authorsLikelyMatch(a?: string, b?: string): boolean {
   if (left === right || left.includes(right) || right.includes(left)) return true;
   const leftParts = left.split(/[,，、/&]+/).filter((part) => part.length > 1);
   const rightParts = right.split(/[,，、/&]+/).filter((part) => part.length > 1);
-  return leftParts.some((part) => rightParts.some((candidate) => part.includes(candidate) || candidate.includes(part)));
+  return leftParts.some((part) =>
+    rightParts.some((candidate) => part.includes(candidate) || candidate.includes(part)),
+  );
 }
 
 function shouldConfirmReimportCandidate(

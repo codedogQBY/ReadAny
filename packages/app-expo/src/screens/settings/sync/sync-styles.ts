@@ -1,3 +1,4 @@
+import { StyleSheet } from "react-native";
 import {
   type ThemeColors,
   fontSize,
@@ -6,7 +7,6 @@ import {
   spacing,
   withOpacity,
 } from "../../../styles/theme";
-import { StyleSheet } from "react-native";
 
 export const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({

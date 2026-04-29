@@ -27,10 +27,9 @@ describe("sync-meta", () => {
 
       const result = await getSyncMeta("last_sync_db_hash");
       expect(result).toBe("abc123");
-      expect(mockSelect).toHaveBeenCalledWith(
-        "SELECT value FROM sync_metadata WHERE key = ?",
-        ["last_sync_db_hash"],
-      );
+      expect(mockSelect).toHaveBeenCalledWith("SELECT value FROM sync_metadata WHERE key = ?", [
+        "last_sync_db_hash",
+      ]);
     });
 
     it("returns null when key does not exist", async () => {

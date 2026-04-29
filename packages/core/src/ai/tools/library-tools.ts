@@ -51,7 +51,7 @@ export function createListBooksTool(): ToolDefinition {
         books = books.filter(
           (b) =>
             b.meta.title?.toLowerCase().includes(searchTerm) ||
-            (b.meta.author?.toLowerCase().includes(searchTerm)),
+            b.meta.author?.toLowerCase().includes(searchTerm),
         );
       }
 

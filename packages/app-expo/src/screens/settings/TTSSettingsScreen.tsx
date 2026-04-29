@@ -1,20 +1,20 @@
-import { useTTSStore } from "@/stores";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import {
   DEFAULT_SYSTEM_VOICE_VALUE,
+  type NativeSystemVoiceOption,
   findSystemVoiceLabel,
   getSystemVoiceOptionsAsync,
   groupSystemVoiceOptions,
   resolveSystemVoiceValue,
-  type NativeSystemVoiceOption,
 } from "@/lib/platform/system-voices";
 import { previewTTSConfig, stopTTSPreview } from "@/lib/platform/tts-preview";
+import { useTTSStore } from "@/stores";
 import {
   DASHSCOPE_VOICES,
   EDGE_TTS_VOICES,
+  type TTSEngine,
   getLocaleDisplayLabel,
   groupEdgeTTSVoices,
-  type TTSEngine,
 } from "@readany/core/tts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -57,10 +57,7 @@ export default function TTSSettingsScreen() {
   const displayLocale = i18n.resolvedLanguage || i18n.language;
   const edgeVoiceGroups = useMemo(() => groupEdgeTTSVoices(EDGE_TTS_VOICES), []);
 
-  const systemVoiceGroups = useMemo(
-    () => groupSystemVoiceOptions(systemVoices),
-    [systemVoices],
-  );
+  const systemVoiceGroups = useMemo(() => groupSystemVoiceOptions(systemVoices), [systemVoices]);
   const selectedSystemVoiceValue = useMemo(
     () => resolveSystemVoiceValue(config.voiceName, systemVoices),
     [config.voiceName, systemVoices],
@@ -104,7 +101,9 @@ export default function TTSSettingsScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
-          <View style={[styles.contentColumn, { width: "100%", maxWidth: layout.centeredContentWidth }]}>
+          <View
+            style={[styles.contentColumn, { width: "100%", maxWidth: layout.centeredContentWidth }]}
+          >
             {/* Engine Selection */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>{t("tts.ttsEngine", "TTS 引擎")}</Text>
@@ -131,139 +130,139 @@ export default function TTSSettingsScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>{t("tts.voiceSelect", "声音选择")}</Text>
 
-            {config.engine === "edge" && (
-              <ScrollView style={styles.voiceList} nestedScrollEnabled>
-                {edgeVoiceGroups.map(([lang, voices]) => (
-                  <View key={lang}>
-                    <View style={styles.voiceGroupHeader}>
-                      <Text style={styles.voiceGroupLabel}>
-                        {getLocaleDisplayLabel(lang, displayLocale)}
-                      </Text>
+              {config.engine === "edge" && (
+                <ScrollView style={styles.voiceList} nestedScrollEnabled>
+                  {edgeVoiceGroups.map(([lang, voices]) => (
+                    <View key={lang}>
+                      <View style={styles.voiceGroupHeader}>
+                        <Text style={styles.voiceGroupLabel}>
+                          {getLocaleDisplayLabel(lang, displayLocale)}
+                        </Text>
+                      </View>
+                      {voices.map((v) => (
+                        <TouchableOpacity
+                          key={v.id}
+                          style={styles.voiceItem}
+                          onPress={() => updateConfig({ edgeVoice: v.id })}
+                          activeOpacity={0.7}
+                        >
+                          <Text
+                            style={[
+                              styles.voiceName,
+                              config.edgeVoice === v.id && styles.voiceNameActive,
+                            ]}
+                          >
+                            {v.name}
+                          </Text>
+                          {config.edgeVoice === v.id && <Text style={styles.micIcon}>♪</Text>}
+                        </TouchableOpacity>
+                      ))}
                     </View>
-                    {voices.map((v) => (
+                  ))}
+                </ScrollView>
+              )}
+
+              {config.engine === "dashscope" && (
+                <>
+                  <ScrollView style={styles.voiceList} nestedScrollEnabled>
+                    {DASHSCOPE_VOICES.map((v) => (
                       <TouchableOpacity
                         key={v.id}
                         style={styles.voiceItem}
-                        onPress={() => updateConfig({ edgeVoice: v.id })}
-                        activeOpacity={0.7}
-                      >
-                        <Text
-                          style={[
-                            styles.voiceName,
-                            config.edgeVoice === v.id && styles.voiceNameActive,
-                          ]}
-                        >
-                          {v.name}
-                        </Text>
-                        {config.edgeVoice === v.id && <Text style={styles.micIcon}>♪</Text>}
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                ))}
-              </ScrollView>
-            )}
-
-            {config.engine === "dashscope" && (
-              <>
-                <ScrollView style={styles.voiceList} nestedScrollEnabled>
-                  {DASHSCOPE_VOICES.map((v) => (
-                    <TouchableOpacity
-                      key={v.id}
-                      style={styles.voiceItem}
-                      onPress={() => updateConfig({ dashscopeVoice: v.id })}
-                      activeOpacity={0.7}
-                    >
-                      <View>
-                        <Text
-                          style={[
-                            styles.voiceName,
-                            config.dashscopeVoice === v.id && styles.voiceNameActive,
-                          ]}
-                        >
-                          {v.label}
-                        </Text>
-                        <Text style={styles.voiceSubLabel}>{v.id}</Text>
-                      </View>
-                      {config.dashscopeVoice === v.id && <Text style={styles.micIcon}>♪</Text>}
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-
-                {/* DashScope API Key */}
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>{t("tts.apiKey", "DashScope API Key")}</Text>
-                  <PasswordInput
-                    style={styles.input}
-                    value={config.dashscopeApiKey || ""}
-                    onChangeText={(v) => updateConfig({ dashscopeApiKey: v })}
-                    placeholder="sk-..."
-                    placeholderTextColor={colors.mutedForeground}
-                  />
-                </View>
-              </>
-            )}
-
-            {config.engine === "system" && (
-              <ScrollView style={styles.voiceList} nestedScrollEnabled>
-                <TouchableOpacity
-                  style={styles.voiceItem}
-                  onPress={() => updateConfig({ voiceName: "", systemVoiceLabel: "" })}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.voiceName,
-                      selectedSystemVoiceValue === DEFAULT_SYSTEM_VOICE_VALUE &&
-                        styles.voiceNameActive,
-                    ]}
-                  >
-                    {t("tts.defaultVoice")}
-                  </Text>
-                  {selectedSystemVoiceValue === DEFAULT_SYSTEM_VOICE_VALUE && (
-                    <Text style={styles.micIcon}>♪</Text>
-                  )}
-                </TouchableOpacity>
-                {systemVoiceGroups.map(([lang, voices]) => (
-                  <View key={lang}>
-                    <View style={styles.voiceGroupHeader}>
-                      <Text style={styles.voiceGroupLabel}>
-                        {getLocaleDisplayLabel(lang, displayLocale)}
-                      </Text>
-                    </View>
-                    {voices.map((voice) => (
-                      <TouchableOpacity
-                        key={voice.id}
-                        style={styles.voiceItem}
-                        onPress={() =>
-                          updateConfig({
-                            voiceName: voice.id,
-                            systemVoiceLabel: findSystemVoiceLabel(voice.id, systemVoices),
-                          })
-                        }
+                        onPress={() => updateConfig({ dashscopeVoice: v.id })}
                         activeOpacity={0.7}
                       >
                         <View>
                           <Text
                             style={[
                               styles.voiceName,
-                              selectedSystemVoiceValue === voice.id && styles.voiceNameActive,
+                              config.dashscopeVoice === v.id && styles.voiceNameActive,
                             ]}
                           >
-                            {voice.label}
+                            {v.label}
                           </Text>
-                          <Text style={styles.voiceSubLabel}>
-                            {getLocaleDisplayLabel(voice.lang, displayLocale)}
-                          </Text>
+                          <Text style={styles.voiceSubLabel}>{v.id}</Text>
                         </View>
-                        {selectedSystemVoiceValue === voice.id && (
-                          <Text style={styles.micIcon}>♪</Text>
-                        )}
+                        {config.dashscopeVoice === v.id && <Text style={styles.micIcon}>♪</Text>}
                       </TouchableOpacity>
                     ))}
+                  </ScrollView>
+
+                  {/* DashScope API Key */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.fieldLabel}>{t("tts.apiKey", "DashScope API Key")}</Text>
+                    <PasswordInput
+                      style={styles.input}
+                      value={config.dashscopeApiKey || ""}
+                      onChangeText={(v) => updateConfig({ dashscopeApiKey: v })}
+                      placeholder="sk-..."
+                      placeholderTextColor={colors.mutedForeground}
+                    />
                   </View>
-                ))}
-              </ScrollView>
-            )}
+                </>
+              )}
+
+              {config.engine === "system" && (
+                <ScrollView style={styles.voiceList} nestedScrollEnabled>
+                  <TouchableOpacity
+                    style={styles.voiceItem}
+                    onPress={() => updateConfig({ voiceName: "", systemVoiceLabel: "" })}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.voiceName,
+                        selectedSystemVoiceValue === DEFAULT_SYSTEM_VOICE_VALUE &&
+                          styles.voiceNameActive,
+                      ]}
+                    >
+                      {t("tts.defaultVoice")}
+                    </Text>
+                    {selectedSystemVoiceValue === DEFAULT_SYSTEM_VOICE_VALUE && (
+                      <Text style={styles.micIcon}>♪</Text>
+                    )}
+                  </TouchableOpacity>
+                  {systemVoiceGroups.map(([lang, voices]) => (
+                    <View key={lang}>
+                      <View style={styles.voiceGroupHeader}>
+                        <Text style={styles.voiceGroupLabel}>
+                          {getLocaleDisplayLabel(lang, displayLocale)}
+                        </Text>
+                      </View>
+                      {voices.map((voice) => (
+                        <TouchableOpacity
+                          key={voice.id}
+                          style={styles.voiceItem}
+                          onPress={() =>
+                            updateConfig({
+                              voiceName: voice.id,
+                              systemVoiceLabel: findSystemVoiceLabel(voice.id, systemVoices),
+                            })
+                          }
+                          activeOpacity={0.7}
+                        >
+                          <View>
+                            <Text
+                              style={[
+                                styles.voiceName,
+                                selectedSystemVoiceValue === voice.id && styles.voiceNameActive,
+                              ]}
+                            >
+                              {voice.label}
+                            </Text>
+                            <Text style={styles.voiceSubLabel}>
+                              {getLocaleDisplayLabel(voice.lang, displayLocale)}
+                            </Text>
+                          </View>
+                          {selectedSystemVoiceValue === voice.id && (
+                            <Text style={styles.micIcon}>♪</Text>
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
             </View>
 
             {/* Rate & Pitch */}

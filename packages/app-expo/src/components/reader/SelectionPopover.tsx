@@ -109,18 +109,14 @@ export function SelectionPopover({
     const yAbove = selTop - popoverHeight + SELECTION_POPOVER_ABOVE_OFFSET;
     const yBelow = selBottom + SELECTION_POPOVER_BELOW_OFFSET;
     const aboveValid = yAbove >= SAFE_TOP;
-    const belowValid =
-      yBelow + popoverHeight + POPOVER_MARGIN <= SCREEN_HEIGHT - SAFE_BOTTOM;
+    const belowValid = yBelow + popoverHeight + POPOVER_MARGIN <= SCREEN_HEIGHT - SAFE_BOTTOM;
 
     if (aboveValid) {
       y = yAbove;
     } else if (belowValid) {
       y = yBelow;
     } else {
-      y = Math.max(
-        SAFE_TOP,
-        Math.min(yBelow, SCREEN_HEIGHT - popoverHeight - POPOVER_MARGIN),
-      );
+      y = Math.max(SAFE_TOP, Math.min(yBelow, SCREEN_HEIGHT - popoverHeight - POPOVER_MARGIN));
     }
 
     return { x, y };

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ISyncBackend } from "../sync-backend";
-import { REMOTE_DB_FILE, REMOTE_MANIFEST, SYNC_META_KEYS } from "../sync-types";
+import { REMOTE_DB_FILE, REMOTE_MANIFEST } from "../sync-types";
 
 // --- Mock sync-meta ---
 const metaMocks = vi.hoisted(() => ({
@@ -87,11 +87,7 @@ describe("sync-transfer", () => {
 
   describe("parallelLimit", () => {
     it("executes all tasks and returns results", async () => {
-      const tasks = [
-        () => Promise.resolve(1),
-        () => Promise.resolve(2),
-        () => Promise.resolve(3),
-      ];
+      const tasks = [() => Promise.resolve(1), () => Promise.resolve(2), () => Promise.resolve(3)];
 
       const results = await parallelLimit(tasks, 2);
       expect(results).toHaveLength(3);
@@ -134,10 +130,7 @@ describe("sync-transfer", () => {
       // Should vacuum into snapshot
       expect(mockAdapter.vacuumInto).toHaveBeenCalled();
       // Should upload DB file
-      expect(backend.put).toHaveBeenCalledWith(
-        REMOTE_DB_FILE,
-        expect.any(Uint8Array),
-      );
+      expect(backend.put).toHaveBeenCalledWith(REMOTE_DB_FILE, expect.any(Uint8Array));
       // Should upload manifest
       expect(backend.putJSON).toHaveBeenCalledWith(
         REMOTE_MANIFEST,
@@ -203,9 +196,7 @@ describe("sync-transfer", () => {
       const backend = createMockBackend();
       mockAdapter.integrityCheck.mockResolvedValue(false);
 
-      await expect(
-        executeDownload(backend, null),
-      ).rejects.toThrow("integrity check");
+      await expect(executeDownload(backend, null)).rejects.toThrow("integrity check");
     });
 
     it("restores backup on error after DB close", async () => {

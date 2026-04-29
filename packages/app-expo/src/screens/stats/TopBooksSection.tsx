@@ -1,3 +1,4 @@
+import { ChevronDownIcon, ChevronUpIcon } from "@/components/ui/Icon";
 /**
  * TopBooksSection.tsx — Top books section with expand/collapse.
  * Extracted from StatsSections.tsx.
@@ -5,14 +6,17 @@
 import { useColors, withOpacity } from "@/styles/theme";
 import type { DailyReadingFact, TopBookEntry } from "@readany/core/stats";
 import { computeBookETA } from "@readany/core/stats";
-import { ChevronDownIcon, ChevronUpIcon } from "@/components/ui/Icon";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, TouchableOpacity, View } from "react-native";
-import { makeStyles } from "./stats-styles";
-import { formatCharacterCount, formatCharactersPerMinute, formatTimeLocalized } from "./stats-utils";
-import type { StatsCopy } from "./StatsSections";
 import { StatsBookCover } from "./StatsBookCover";
+import type { StatsCopy } from "./StatsSections";
+import { makeStyles } from "./stats-styles";
+import {
+  formatCharacterCount,
+  formatCharactersPerMinute,
+  formatTimeLocalized,
+} from "./stats-utils";
 
 const TOP_BOOKS_COLLAPSED = 3;
 
@@ -36,7 +40,14 @@ export function TopBooksSection({
 
   if (books.length === 0) {
     return (
-      <Text style={{ fontSize: 13, color: withOpacity(colors.mutedForeground, 0.45), textAlign: "center", paddingVertical: 20 }}>
+      <Text
+        style={{
+          fontSize: 13,
+          color: withOpacity(colors.mutedForeground, 0.45),
+          textAlign: "center",
+          paddingVertical: 20,
+        }}
+      >
         {copy.noTopBooks}
       </Text>
     );
@@ -63,10 +74,7 @@ export function TopBooksSection({
             ? formatCharactersPerMinute(book.avgCharactersPerMinute ?? 0, isZh)
             : null;
         return (
-          <View
-            key={book.bookId}
-            style={[s.bookItem, isFirst && s.bookItemFirst]}
-          >
+          <View key={book.bookId} style={[s.bookItem, isFirst && s.bookItemFirst]}>
             {/* Rank */}
             <View style={[s.bookRank, isFirst ? s.bookRankFirst : s.bookRankDefault]}>
               <Text style={[s.bookRankText, isFirst ? s.bookRankTextFirst : s.bookRankTextDefault]}>
@@ -75,11 +83,7 @@ export function TopBooksSection({
             </View>
 
             {/* Cover — library-style */}
-            <StatsBookCover
-              coverUrl={coverUrl}
-              title={book.title}
-              width={isFirst ? 52 : 36}
-            />
+            <StatsBookCover coverUrl={coverUrl} title={book.title} width={isFirst ? 52 : 36} />
 
             {/* Info */}
             <View style={s.bookInfo}>
@@ -124,13 +128,13 @@ export function TopBooksSection({
           activeOpacity={0.6}
         >
           <Text style={s.expandBtnText}>
-            {expanded
-              ? copy.topBooksCollapse
-              : copy.topBooksExpandCount(books.length)}
+            {expanded ? copy.topBooksCollapse : copy.topBooksExpandCount(books.length)}
           </Text>
-          {expanded
-            ? <ChevronUpIcon size={14} color={withOpacity(colors.mutedForeground, 0.5)} />
-            : <ChevronDownIcon size={14} color={withOpacity(colors.mutedForeground, 0.5)} />}
+          {expanded ? (
+            <ChevronUpIcon size={14} color={withOpacity(colors.mutedForeground, 0.5)} />
+          ) : (
+            <ChevronDownIcon size={14} color={withOpacity(colors.mutedForeground, 0.5)} />
+          )}
         </TouchableOpacity>
       )}
     </View>

@@ -1,11 +1,8 @@
-import { XIcon, Trash2Icon } from "@/components/ui/Icon";
+import { Trash2Icon, XIcon } from "@/components/ui/Icon";
 import { fontSize as fs, fontWeight as fw, radius, useColors, withOpacity } from "@/styles/theme";
 import type { ThemeColors } from "@/styles/theme";
-import {
-  formatRelativeTimeShort,
-  getMonthLabel,
-  groupThreadsByTime,
-} from "@readany/core/utils";
+import { formatRelativeTimeShort, getMonthLabel, groupThreadsByTime } from "@readany/core/utils";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Animated,
@@ -17,7 +14,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useMemo } from "react";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 const SIDEBAR_WIDTH = Math.min(SCREEN_WIDTH * 0.75, 300);
@@ -96,7 +92,11 @@ export function ThreadSidebar({
             <XIcon size={16} color={colors.foreground} />
           </TouchableOpacity>
         </View>
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: 20 }}
+          showsVerticalScrollIndicator={false}
+        >
           {threads.length === 0 ? (
             <View style={s.empty}>
               <Text style={s.emptyText}>{t("chat.noConversations", "暂无对话")}</Text>
@@ -109,7 +109,10 @@ export function ThreadSidebar({
                   <Text style={s.sectionLabel}>{label}</Text>
                   {sectionThreads.map((thread) => {
                     const isActive = thread.id === activeThreadId;
-                    const lastMsg = thread.messages.length > 0 ? thread.messages[thread.messages.length - 1] : null;
+                    const lastMsg =
+                      thread.messages.length > 0
+                        ? thread.messages[thread.messages.length - 1]
+                        : null;
                     const preview = lastMsg?.content?.slice(0, 60) || "";
                     return (
                       <TouchableOpacity
@@ -120,13 +123,18 @@ export function ThreadSidebar({
                       >
                         <View style={s.itemContent}>
                           <View style={s.itemTitleRow}>
-                            <Text style={[s.itemTitle, isActive && s.itemTitleActive]} numberOfLines={1}>
+                            <Text
+                              style={[s.itemTitle, isActive && s.itemTitleActive]}
+                              numberOfLines={1}
+                            >
                               {thread.title || t("chat.newChat", "新对话")}
                             </Text>
                             <Text style={s.itemTime}>{formatTime(thread.updatedAt)}</Text>
                           </View>
                           {preview ? (
-                            <Text style={s.itemPreview} numberOfLines={1}>{preview}</Text>
+                            <Text style={s.itemPreview} numberOfLines={1}>
+                              {preview}
+                            </Text>
                           ) : null}
                         </View>
                         <TouchableOpacity
@@ -179,7 +187,13 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: 12,
     },
     title: { fontSize: fs.sm, fontWeight: fw.semibold, color: colors.foreground },
-    iconBtn: { width: 32, height: 32, borderRadius: radius.full, alignItems: "center", justifyContent: "center" },
+    iconBtn: {
+      width: 32,
+      height: 32,
+      borderRadius: radius.full,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     empty: { paddingVertical: 40, alignItems: "center" },
     emptyText: { fontSize: fs.xs, color: colors.mutedForeground },
     sectionLabel: {

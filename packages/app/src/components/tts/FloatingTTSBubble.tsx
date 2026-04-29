@@ -1,3 +1,6 @@
+import { useAppStore } from "@/stores/app-store";
+import { useLibraryStore } from "@/stores/library-store";
+import { useReaderStore } from "@/stores/reader-store";
 /**
  * FloatingTTSBubble — Global floating mini-player shown when TTS is active on desktop.
  *
@@ -12,14 +15,21 @@
  * - Draggable via CSS user-select:none + mouse events
  */
 import { useTTSStore } from "@/stores/tts-store";
-import { useAppStore } from "@/stores/app-store";
-import { useLibraryStore } from "@/stores/library-store";
-import { useReaderStore } from "@/stores/reader-store";
-import { TTSSleepTimerControl } from "./TTSSleepTimerControl";
 import { eventBus } from "@readany/core/utils/event-bus";
-import { BookOpen, Headphones, Loader2, Minus, Pause, Play, Plus, ScrollText, Square } from "lucide-react";
+import {
+  BookOpen,
+  Headphones,
+  Loader2,
+  Minus,
+  Pause,
+  Play,
+  Plus,
+  ScrollText,
+  Square,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { TTSSleepTimerControl } from "./TTSSleepTimerControl";
 
 // ─── Main floating bubble ─────────────────────────────────────────────────────
 
@@ -64,7 +74,13 @@ export function FloatingTTSBubble() {
   const [playerPos, setPlayerPos] = useState({ left: 16, top: 16 });
   const bubbleRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<{ dragging: boolean; startX: number; startY: number; initX: number; initY: number }>({
+  const dragRef = useRef<{
+    dragging: boolean;
+    startX: number;
+    startY: number;
+    initX: number;
+    initY: number;
+  }>({
     dragging: false,
     startX: 0,
     startY: 0,
@@ -73,37 +89,40 @@ export function FloatingTTSBubble() {
   });
   const hasDraggedRef = useRef(false);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    hasDraggedRef.current = false;
-    dragRef.current = {
-      dragging: true,
-      startX: e.clientX,
-      startY: e.clientY,
-      initX: pos.x,
-      initY: pos.y,
-    };
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      hasDraggedRef.current = false;
+      dragRef.current = {
+        dragging: true,
+        startX: e.clientX,
+        startY: e.clientY,
+        initX: pos.x,
+        initY: pos.y,
+      };
 
-    const onMove = (me: MouseEvent) => {
-      if (!dragRef.current.dragging) return;
-      const dx = me.clientX - dragRef.current.startX;
-      const dy = me.clientY - dragRef.current.startY;
-      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) hasDraggedRef.current = true;
-      setPos({
-        x: dragRef.current.initX - dx, // right-anchored
-        y: dragRef.current.initY - dy, // bottom-anchored
-      });
-    };
+      const onMove = (me: MouseEvent) => {
+        if (!dragRef.current.dragging) return;
+        const dx = me.clientX - dragRef.current.startX;
+        const dy = me.clientY - dragRef.current.startY;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) hasDraggedRef.current = true;
+        setPos({
+          x: dragRef.current.initX - dx, // right-anchored
+          y: dragRef.current.initY - dy, // bottom-anchored
+        });
+      };
 
-    const onUp = () => {
-      dragRef.current.dragging = false;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
+      const onUp = () => {
+        dragRef.current.dragging = false;
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
 
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }, [pos]);
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    },
+    [pos],
+  );
 
   const handleBubbleClick = useCallback(() => {
     if (!hasDraggedRef.current) {
@@ -197,7 +216,7 @@ export function FloatingTTSBubble() {
         ? "播放中"
         : playState === "paused"
           ? "已暂停"
-        : "已停止";
+          : "已停止";
 
   const sleepTimerLabel = useMemo(() => {
     void now;
@@ -222,8 +241,7 @@ export function FloatingTTSBubble() {
     const panelHeight = playerRef.current?.offsetHeight ?? 176;
     const gap = 12;
     const viewportPadding = 16;
-    const clamp = (value: number, min: number, max: number) =>
-      Math.min(Math.max(value, min), max);
+    const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
     const left = clamp(
       rect.left + rect.width / 2 - panelWidth / 2,
@@ -249,15 +267,21 @@ export function FloatingTTSBubble() {
       window.cancelAnimationFrame(frame);
       window.removeEventListener("resize", handleResize);
     };
-  }, [showPlayer, pos, sleepTimerLabel, currentBookTitle, currentChapterTitle, statusText, currentBookId, updatePlayerPosition]);
+  }, [
+    showPlayer,
+    pos,
+    sleepTimerLabel,
+    currentBookTitle,
+    currentChapterTitle,
+    statusText,
+    currentBookId,
+    updatePlayerPosition,
+  ]);
 
   if (!isActive) return null;
 
   return (
-    <div
-      className="pointer-events-none fixed inset-0 z-[9999]"
-      aria-hidden="true"
-    >
+    <div className="pointer-events-none fixed inset-0 z-[9999]" aria-hidden="true">
       {/* ── Bubble ── */}
       <div
         className="pointer-events-auto absolute"
@@ -286,7 +310,6 @@ export function FloatingTTSBubble() {
             <Headphones className="h-6 w-6" />
           )}
         </button>
-
       </div>
 
       {/* ── Mini player popover ── */}
@@ -387,7 +410,6 @@ export function FloatingTTSBubble() {
                 </span>
               ) : null}
             </div>
-
           </div>
         </div>
       )}

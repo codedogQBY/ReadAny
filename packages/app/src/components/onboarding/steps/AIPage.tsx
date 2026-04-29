@@ -10,7 +10,7 @@ import {
 import { testAIEndpoint } from "@readany/core/ai";
 import { useSettingsStore } from "@readany/core/stores/settings-store";
 import type { AIProviderType } from "@readany/core/types";
-import { getDefaultBaseUrl, PROVIDER_CONFIGS, providerRequiresApiKey } from "@readany/core/utils";
+import { PROVIDER_CONFIGS, getDefaultBaseUrl, providerRequiresApiKey } from "@readany/core/utils";
 import { AlertCircle, CheckCircle2, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";

@@ -1,14 +1,11 @@
 import * as db from "@/lib/db/database";
 import { triggerVectorizeBook } from "@/lib/rag/vectorize-trigger";
+import { getDesktopLibraryRoot, resolveDesktopDataPath } from "@/lib/storage/desktop-library-root";
 import {
-  getDesktopLibraryRoot,
-  resolveDesktopDataPath,
-} from "@/lib/storage/desktop-library-root";
-import {
+  type ImportBooksResult,
   createEmptyImportBooksResult,
   createImportDuplicateIndex,
   findDuplicateBookByHash,
-  type ImportBooksResult,
 } from "@readany/core";
 import { debouncedSave, loadFromFS } from "@readany/core/stores/persist";
 import { useVectorModelStore } from "@readany/core/stores/vector-model-store";
@@ -386,10 +383,7 @@ export interface LibraryState {
   removeTagFromBook: (bookId: string, tag: string) => void;
 }
 
-async function restoreDeletedDesktopBook(
-  bookId: string,
-  filePath: string,
-): Promise<Book | null> {
+async function restoreDeletedDesktopBook(bookId: string, filePath: string): Promise<Book | null> {
   await db.initDatabase();
   const originalBook = await db.getBook(bookId, { includeDeleted: true });
   if (!originalBook) return null;
@@ -459,11 +453,14 @@ async function restoreDeletedDesktopBook(
     const meta = bookDoc.metadata;
     if (meta) {
       const rawTitle =
-        typeof meta.title === "string" ? meta.title : meta.title ? Object.values(meta.title)[0] : "";
+        typeof meta.title === "string"
+          ? meta.title
+          : meta.title
+            ? Object.values(meta.title)[0]
+            : "";
       if (rawTitle) title = rawTitle;
 
-      const rawAuthor =
-        typeof meta.author === "string" ? meta.author : meta.author?.name || "";
+      const rawAuthor = typeof meta.author === "string" ? meta.author : meta.author?.name || "";
       if (rawAuthor) author = rawAuthor;
     }
 
@@ -579,11 +576,14 @@ async function inspectDeletedDesktopBookCandidate(
     const meta = bookDoc.metadata;
     if (meta) {
       const rawTitle =
-        typeof meta.title === "string" ? meta.title : meta.title ? Object.values(meta.title)[0] : "";
+        typeof meta.title === "string"
+          ? meta.title
+          : meta.title
+            ? Object.values(meta.title)[0]
+            : "";
       if (rawTitle) title = rawTitle;
 
-      const rawAuthor =
-        typeof meta.author === "string" ? meta.author : meta.author?.name || "";
+      const rawAuthor = typeof meta.author === "string" ? meta.author : meta.author?.name || "";
       if (rawAuthor) author = rawAuthor;
     }
   } catch {
@@ -739,7 +739,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       const { DocumentLoader } = await import("@/lib/reader/document-loader");
 
       for (const filePath of filePaths) {
-        const fileName = decodeURIComponent(filePath.replace(/\\/g, "/").split("/").pop() || "book");
+        const fileName = decodeURIComponent(
+          filePath.replace(/\\/g, "/").split("/").pop() || "book",
+        );
         try {
           const ext = filePath.split(".").pop()?.toLowerCase() || "epub";
           const formatMap: Record<string, Book["format"]> = {
@@ -755,8 +757,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             txt: "txt",
           };
           const format: Book["format"] = formatMap[ext] || "epub";
-          let title =
-            fileName.replace(/\.\w+$/i, "") || "Untitled";
+          let title = fileName.replace(/\.\w+$/i, "") || "Untitled";
           let author = "";
           let coverUrl: string | undefined;
           let fileHash: string | undefined;
@@ -791,9 +792,13 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             const { TxtToEpubConverter } = await import("@readany/core/utils/txt-to-epub");
             const { readFile } = await import("@tauri-apps/plugin-fs");
             const rawBytes = await readFile(filePath);
-            const txtFile = new File([rawBytes], filePath.replace(/\\/g, "/").split("/").pop() || "book.txt", {
-              type: "text/plain",
-            });
+            const txtFile = new File(
+              [rawBytes],
+              filePath.replace(/\\/g, "/").split("/").pop() || "book.txt",
+              {
+                type: "text/plain",
+              },
+            );
             const converter = new TxtToEpubConverter();
             const result = await converter.convert({ file: txtFile });
             title = result.bookTitle;
@@ -808,14 +813,15 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           }
 
           // Copy book file into the managed library root (books/{id}.{ext})
-          const { relativePath, fileBytes } = ext === "txt"
-            ? await (async () => {
-                const { readFile } = await import("@tauri-apps/plugin-fs");
-                const relPath = `books/${bookId}.epub`;
-                const bytes = await readFile(await resolveAppPath(relPath));
-                return { relativePath: relPath, fileBytes: bytes };
-              })()
-            : await copyBookToAppData(bookId, ext, filePath);
+          const { relativePath, fileBytes } =
+            ext === "txt"
+              ? await (async () => {
+                  const { readFile } = await import("@tauri-apps/plugin-fs");
+                  const relPath = `books/${bookId}.epub`;
+                  const bytes = await readFile(await resolveAppPath(relPath));
+                  return { relativePath: relPath, fileBytes: bytes };
+                })()
+              : await copyBookToAppData(bookId, ext, filePath);
           const blob = new Blob([fileBytes]);
           const docFileName = ext === "txt" ? fileName.replace(/\.txt$/i, ".epub") : fileName;
           const file = new File([blob], docFileName, {
@@ -909,9 +915,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
               fileHash: book.fileHash,
               syncStatus: "local",
               lastOpenedAt: Date.now(),
-            }).catch((err) =>
-              console.error("Failed to restore deleted book from database:", err),
-            );
+            }).catch((err) => console.error("Failed to restore deleted book from database:", err));
             debouncedSave("library-books", get().books);
           } else {
             get().addBook(book);
@@ -920,7 +924,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           if (fileHash) {
             duplicateIndex.byHash.set(fileHash, book);
           }
-          
+
           // Auto-vectorize if enabled
           const vmState = useVectorModelStore.getState();
           if (vmState.vectorModelEnabled && vmState.hasVectorCapability()) {

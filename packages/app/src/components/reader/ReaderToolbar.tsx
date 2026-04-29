@@ -4,8 +4,8 @@ import { useAnnotationStore } from "@/stores/annotation-store";
 import { useAppStore } from "@/stores/app-store";
 import { useNotebookStore } from "@/stores/notebook-store";
 import { useReaderStore } from "@/stores/reader-store";
-import { generateId } from "@readany/core/utils";
 import type { ChapterTranslationState } from "@readany/core/hooks";
+import { generateId } from "@readany/core/utils";
 import {
   ArrowLeft,
   Bookmark,

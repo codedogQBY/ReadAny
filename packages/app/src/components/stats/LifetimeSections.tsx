@@ -5,6 +5,7 @@
 import type { StatsChartBlock, StatsReport } from "@readany/core/stats";
 import { cn } from "@readany/core/utils";
 import { BarChart } from "./BarChart";
+import { BookCover } from "./TopBooksSection";
 import type { StatsCopy } from "./stats-copy";
 import {
   formatChartMinutes,
@@ -12,7 +13,6 @@ import {
   formatDateLabel,
   localizeSemanticLabel,
 } from "./stats-utils";
-import { BookCover } from "./TopBooksSection";
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  *  Rhythm Profile (Year / Lifetime)
@@ -126,10 +126,7 @@ export function YearlySnapshotsSection({
   return (
     <div className="divide-y divide-border/20">
       {snapshots.map((snapshot) => (
-        <div
-          key={snapshot.year}
-          className="flex items-center gap-5 py-4 first:pt-0 last:pb-0"
-        >
+        <div key={snapshot.year} className="flex items-center gap-5 py-4 first:pt-0 last:pb-0">
           {/* Year label */}
           <div className="w-12 shrink-0 text-[13px] font-bold tabular-nums text-foreground/70">
             {snapshot.year}
@@ -153,8 +150,12 @@ export function YearlySnapshotsSection({
               {formatCompactMinutes(snapshot.totalReadingTime, isZh)}
             </div>
             <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-[12px] text-muted-foreground/62">
-              <span>{snapshot.booksTouched.toLocaleString()} {copy.books}</span>
-              <span>{snapshot.activeDays.toLocaleString()} {copy.activeDays}</span>
+              <span>
+                {snapshot.booksTouched.toLocaleString()} {copy.books}
+              </span>
+              <span>
+                {snapshot.activeDays.toLocaleString()} {copy.activeDays}
+              </span>
               {snapshot.topBook && (
                 <span className="truncate text-foreground/68">{snapshot.topBook.title}</span>
               )}
@@ -185,7 +186,10 @@ export function JourneySummaryPanel({
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="space-y-2">
           <div className="text-[42px] font-bold tabular-nums leading-none tracking-tighter text-foreground/85">
-            {report.context.daysSinceJoined.toLocaleString()} <span className="text-[24px] font-semibold tracking-normal text-muted-foreground/65">{copy.daysSuffix}</span>
+            {report.context.daysSinceJoined.toLocaleString()}{" "}
+            <span className="text-[24px] font-semibold tracking-normal text-muted-foreground/65">
+              {copy.daysSuffix}
+            </span>
           </div>
           <p className="max-w-lg text-[13px] leading-relaxed text-muted-foreground/62">
             {copy.journeyNarrative(report.context.daysSinceJoined)}
@@ -199,8 +203,14 @@ export function JourneySummaryPanel({
       {/* Metric row — simple divider-separated inline stats */}
       <div className="flex flex-wrap gap-x-8 gap-y-3 border-t border-border/20 pt-5">
         {[
-          { label: copy.activeReadingDays, value: `${report.context.totalActiveDays.toLocaleString()} ${copy.daysSuffix}` },
-          { label: copy.inactiveReadingDays, value: `${report.context.totalInactiveDays.toLocaleString()} ${copy.daysSuffix}` },
+          {
+            label: copy.activeReadingDays,
+            value: `${report.context.totalActiveDays.toLocaleString()} ${copy.daysSuffix}`,
+          },
+          {
+            label: copy.inactiveReadingDays,
+            value: `${report.context.totalInactiveDays.toLocaleString()} ${copy.daysSuffix}`,
+          },
         ].map((item) => (
           <div key={item.label}>
             <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/52">

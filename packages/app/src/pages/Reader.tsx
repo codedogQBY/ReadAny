@@ -1,4 +1,4 @@
-import { ReaderView } from "@/components/reader/ReaderView";
+import { SocraticReaderWrapper } from "@/components/reader/SocraticReaderWrapper";
 import { useAppStore } from "@/stores/app-store";
 import { useReaderStore } from "@/stores/reader-store";
 import { useEffect } from "react";
@@ -13,8 +13,6 @@ export default function Reader() {
   const { bookId } = useParams<{ bookId: string }>();
   const { addTab } = useAppStore();
   const { initTab } = useReaderStore();
-
-  const tabId = bookId ? `reader-${bookId}` : "";
 
   useEffect(() => {
     if (!bookId) return;
@@ -31,5 +29,6 @@ export default function Reader() {
     );
   }
 
-  return <ReaderView bookId={bookId} tabId={tabId} />;
+  console.log("[Reader] Rendering with bookId:", bookId);
+  return <SocraticReaderWrapper bookId={bookId} />;
 }

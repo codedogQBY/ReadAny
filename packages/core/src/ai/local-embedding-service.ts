@@ -7,7 +7,11 @@ import { BUILTIN_EMBEDDING_MODELS } from "./builtin-embedding-models";
 export interface ILocalEmbeddingEngine {
   init(): void | Promise<void>;
   load(modelId: string, hfModelId: string, onProgress?: (p: number) => void): Promise<void>;
-  generate(modelId: string, texts: string[], onItemProgress?: (done: number, total: number) => void): Promise<number[][]>;
+  generate(
+    modelId: string,
+    texts: string[],
+    onItemProgress?: (done: number, total: number) => void,
+  ): Promise<number[][]>;
   dispose(): Promise<void>;
   clearCache(hfModelId: string): Promise<void>;
 }
@@ -22,7 +26,9 @@ export function setLocalEmbeddingEngine(engine: ILocalEmbeddingEngine) {
 
 function getEngine(): ILocalEmbeddingEngine {
   if (!activeEngine) {
-    throw new Error("Local embedding engine not set. Call setLocalEmbeddingEngine() early in your app lifecycle.");
+    throw new Error(
+      "Local embedding engine not set. Call setLocalEmbeddingEngine() early in your app lifecycle.",
+    );
   }
   return activeEngine;
 }
@@ -109,7 +115,11 @@ export class WebWorkerEmbeddingEngine implements ILocalEmbeddingEngine {
     });
   }
 
-  generate(_modelId: string, texts: string[], onItemProgress?: (done: number, total: number) => void): Promise<number[][]> {
+  generate(
+    _modelId: string,
+    texts: string[],
+    onItemProgress?: (done: number, total: number) => void,
+  ): Promise<number[][]> {
     return new Promise((resolve, reject) => {
       const w = this.getWorker();
       const reqId = `req-${++this.requestCounter}`;

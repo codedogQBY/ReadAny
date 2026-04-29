@@ -138,9 +138,7 @@ export function WebDavForm({
           <Text style={styles.successText}>{t("settings.syncTestSuccess")}</Text>
         )}
         {testResult === "error" && (
-          <Text style={styles.errorText}>
-            {t("settings.syncTestFailed", { error: testError })}
-          </Text>
+          <Text style={styles.errorText}>{t("settings.syncTestFailed", { error: testError })}</Text>
         )}
       </View>
     </View>

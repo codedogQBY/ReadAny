@@ -63,7 +63,8 @@ export const PRESET_FONTS: PresetFontDef[] = [
     description: "专为屏幕阅读优化的楷体，兼有仿宋特点，中文阅读体验极佳",
     descriptionEn: "Screen-optimized Kai typeface, excellent for Chinese reading",
     fontFamily: "LXGW WenKai Screen",
-    remoteCssUrl: "https://cdn.bootcdn.net/ajax/libs/lxgw-wenkai-screen-webfont/1.7.0/style.min.css",
+    remoteCssUrl:
+      "https://cdn.bootcdn.net/ajax/libs/lxgw-wenkai-screen-webfont/1.7.0/style.min.css",
     format: "woff2",
     license: "OFL-1.1",
   },
@@ -85,7 +86,8 @@ export const PRESET_FONTS: PresetFontDef[] = [
     description: "Google 出品开源宋体，正式感强，适合严肃阅读场景",
     descriptionEn: "Google's open-source Song typeface, formal and readable",
     fontFamily: "Noto Serif SC",
-    remoteCssUrl: "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&display=swap",
+    remoteCssUrl:
+      "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&display=swap",
     format: "woff2",
     license: "OFL-1.1",
   },
@@ -96,7 +98,8 @@ export const PRESET_FONTS: PresetFontDef[] = [
     description: "专为长文阅读设计的英文字体，Google Play Books 御用字体",
     descriptionEn: "Designed for long-form reading, used by Google Play Books",
     fontFamily: "Literata",
-    remoteCssUrl: "https://fonts.googleapis.com/css2?family=Literata:ital,wght@0,400;0,700;1,400&display=swap",
+    remoteCssUrl:
+      "https://fonts.googleapis.com/css2?family=Literata:ital,wght@0,400;0,700;1,400&display=swap",
     format: "woff2",
     license: "OFL-1.1",
   },

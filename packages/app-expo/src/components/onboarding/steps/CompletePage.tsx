@@ -1,6 +1,6 @@
 import { DarkModeSvg } from "@/components/DarkModeSvg";
-import { useTheme } from "@/styles/theme";
 import { useSettingsStore } from "@/stores";
+import { useTheme } from "@/styles/theme";
 import { useTranslation } from "react-i18next";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown, SlideInRight } from "react-native-reanimated";

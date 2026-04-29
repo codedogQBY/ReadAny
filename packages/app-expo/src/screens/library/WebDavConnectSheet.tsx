@@ -1,9 +1,6 @@
-import {
-  DEFAULT_WEBDAV_IMPORT_REMOTE_ROOT,
-  type WebDavImportSource,
-} from "@readany/core";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { fontSize, fontWeight, radius, useColors, withOpacity } from "@/styles/theme";
+import { DEFAULT_WEBDAV_IMPORT_REMOTE_ROOT, type WebDavImportSource } from "@readany/core";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -25,11 +22,7 @@ interface WebDavConnectSheetProps {
   onSubmit: (source: WebDavImportSource) => Promise<void>;
 }
 
-export function WebDavConnectSheet({
-  visible,
-  onClose,
-  onSubmit,
-}: WebDavConnectSheetProps) {
+export function WebDavConnectSheet({ visible, onClose, onSubmit }: WebDavConnectSheetProps) {
   const { t } = useTranslation();
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -44,7 +37,10 @@ export function WebDavConnectSheet({
   const [error, setError] = useState<string | null>(null);
 
   const canSubmit =
-    url.trim().length > 0 && username.trim().length > 0 && password.trim().length > 0 && !submitting;
+    url.trim().length > 0 &&
+    username.trim().length > 0 &&
+    password.trim().length > 0 &&
+    !submitting;
 
   const s = useMemo(
     () =>
@@ -225,7 +221,9 @@ export function WebDavConnectSheet({
         >
           <View style={s.handle} />
           <View>
-            <Text style={s.title}>{t("library.importSourceTemporaryWebDav", "连接其他 WebDAV")}</Text>
+            <Text style={s.title}>
+              {t("library.importSourceTemporaryWebDav", "连接其他 WebDAV")}
+            </Text>
             <Text style={s.subtitle}>
               {t(
                 "library.importSourceTemporaryWebDavDesc",
@@ -280,7 +278,10 @@ export function WebDavConnectSheet({
                 onChangeText={setRemoteRoot}
                 autoCapitalize="none"
                 autoCorrect={false}
-                placeholder={t("library.webdavImportRemoteRootPlaceholder", "留空则从服务器基准目录开始")}
+                placeholder={t(
+                  "library.webdavImportRemoteRootPlaceholder",
+                  "留空则从服务器基准目录开始",
+                )}
                 placeholderTextColor={colors.mutedForeground}
               />
               <Text style={s.helper}>
@@ -322,7 +323,9 @@ export function WebDavConnectSheet({
               activeOpacity={0.9}
               disabled={!canSubmit}
             >
-              {submitting ? <ActivityIndicator size="small" color={colors.primaryForeground} /> : null}
+              {submitting ? (
+                <ActivityIndicator size="small" color={colors.primaryForeground} />
+              ) : null}
               <Text style={s.primaryBtnText}>
                 {submitting
                   ? t("library.webdavImportConnecting", "连接中...")

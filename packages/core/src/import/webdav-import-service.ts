@@ -1,4 +1,4 @@
-import { sanitizeWebDavUrl, WebDavClient } from "../sync/webdav-client";
+import { WebDavClient, sanitizeWebDavUrl } from "../sync/webdav-client";
 import {
   type WebDavImportEntry,
   type WebDavImportListing,
@@ -86,13 +86,16 @@ export function toWebDavImportRelativePath(source: WebDavImportSource, href: str
   return normalizeWebDavImportPath(normalizedPathname);
 }
 
-function toImportEntry(source: WebDavImportSource, resource: {
-  name: string;
-  path: string;
-  size: number;
-  lastModified: number;
-  isDirectory: boolean;
-}): WebDavImportEntry {
+function toImportEntry(
+  source: WebDavImportSource,
+  resource: {
+    name: string;
+    path: string;
+    size: number;
+    lastModified: number;
+    isDirectory: boolean;
+  },
+): WebDavImportEntry {
   return {
     name: resource.name,
     relativePath: toWebDavImportRelativePath(source, resource.path),

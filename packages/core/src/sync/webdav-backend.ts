@@ -10,7 +10,7 @@ import {
   type WebDavConfig,
 } from "./sync-backend";
 import { REMOTE_COVERS, REMOTE_DATA, REMOTE_FILES } from "./sync-types";
-import { sanitizeWebDavRemoteRoot, WebDavClient } from "./webdav-client";
+import { WebDavClient, sanitizeWebDavRemoteRoot } from "./webdav-client";
 
 /**
  * WebDAV backend implementation.
@@ -27,8 +27,10 @@ export class WebDavBackend implements ISyncBackend {
   }
 
   private getRemoteRoot(): string {
-    return sanitizeWebDavRemoteRoot(this.config.remoteRoot ?? DEFAULT_WEBDAV_REMOTE_ROOT)
-      || DEFAULT_WEBDAV_REMOTE_ROOT;
+    return (
+      sanitizeWebDavRemoteRoot(this.config.remoteRoot ?? DEFAULT_WEBDAV_REMOTE_ROOT) ||
+      DEFAULT_WEBDAV_REMOTE_ROOT
+    );
   }
 
   private baseUrlAlreadyIncludesRemoteRoot(): boolean {
@@ -45,8 +47,8 @@ export class WebDavBackend implements ISyncBackend {
     const remoteRoot = this.getRemoteRoot();
     const resolved = path.replace(/^\/readany(?=\/|$)/, `/${remoteRoot}`);
     if (
-      this.baseUrlAlreadyIncludesRemoteRoot()
-      && (resolved === `/${remoteRoot}` || resolved.startsWith(`/${remoteRoot}/`))
+      this.baseUrlAlreadyIncludesRemoteRoot() &&
+      (resolved === `/${remoteRoot}` || resolved.startsWith(`/${remoteRoot}/`))
     ) {
       const deduped = resolved.slice(remoteRoot.length + 1);
       return deduped ? (deduped.startsWith("/") ? deduped : `/${deduped}`) : "/";

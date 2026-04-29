@@ -1,25 +1,12 @@
+import { BookOpenIcon, ClockIcon, FlameIcon, TrendingUpIcon } from "@/components/ui/Icon";
 /**
  * BadgesSection.tsx — Premium achievement badges for mobile Stats screen.
  * Hexagonal shield badges with metallic gradients and large icons.
  */
 import { useColors, withOpacity } from "@/styles/theme";
-import {
-  BookOpenIcon,
-  ClockIcon,
-  FlameIcon,
-  TrendingUpIcon,
-} from "@/components/ui/Icon";
 import type { BadgeDefinition, EarnedBadge } from "@readany/core/stats";
 import { Text, View } from "react-native";
-import Svg, {
-  Circle,
-  Defs,
-  Ellipse,
-  LinearGradient,
-  Path,
-  RadialGradient,
-  Stop,
-} from "react-native-svg";
+import Svg, { Defs, Ellipse, LinearGradient, Path, RadialGradient, Stop } from "react-native-svg";
 
 const ICON_MAP: Record<string, React.ComponentType<{ size?: number; color?: string }>> = {
   flame: FlameIcon,
@@ -36,8 +23,11 @@ const ICON_MAP: Record<string, React.ComponentType<{ size?: number; color?: stri
 /* ─── Tier themes ─── */
 
 interface TierTheme {
-  bgFrom: string; bgMid: string; bgTo: string;
-  ringFrom: string; ringTo: string;
+  bgFrom: string;
+  bgMid: string;
+  bgTo: string;
+  ringFrom: string;
+  ringTo: string;
   glow: string;
   iconColor: string;
   highlight: string;
@@ -45,22 +35,31 @@ interface TierTheme {
 
 const TIER: Record<string, TierTheme> = {
   bronze: {
-    bgFrom: "#e8a85c", bgMid: "#cd7f32", bgTo: "#8b5e3c",
-    ringFrom: "#d4954a", ringTo: "#7a4f2e",
+    bgFrom: "#e8a85c",
+    bgMid: "#cd7f32",
+    bgTo: "#8b5e3c",
+    ringFrom: "#d4954a",
+    ringTo: "#7a4f2e",
     glow: "rgba(205,127,50,0.35)",
     iconColor: "#fff8ee",
     highlight: "rgba(255,240,210,0.5)",
   },
   silver: {
-    bgFrom: "#e0e0e5", bgMid: "#b0b0b8", bgTo: "#78787f",
-    ringFrom: "#c8c8d0", ringTo: "#6e6e76",
+    bgFrom: "#e0e0e5",
+    bgMid: "#b0b0b8",
+    bgTo: "#78787f",
+    ringFrom: "#c8c8d0",
+    ringTo: "#6e6e76",
     glow: "rgba(180,180,195,0.4)",
     iconColor: "#f8f8fa",
     highlight: "rgba(255,255,255,0.6)",
   },
   gold: {
-    bgFrom: "#ffe566", bgMid: "#f0c030", bgTo: "#b8860b",
-    ringFrom: "#ffd700", ringTo: "#9a7209",
+    bgFrom: "#ffe566",
+    bgMid: "#f0c030",
+    bgTo: "#b8860b",
+    ringFrom: "#ffd700",
+    ringTo: "#9a7209",
     glow: "rgba(255,215,0,0.45)",
     iconColor: "#fffdf0",
     highlight: "rgba(255,255,230,0.7)",
@@ -117,13 +116,19 @@ export function BadgesSection({
               opacity: isEarned ? 1 : 0.2,
             }}
           >
-            <View style={isEarned ? {
-              shadowColor: theme.glow,
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 1,
-              shadowRadius: 10,
-              elevation: 5,
-            } : undefined}>
+            <View
+              style={
+                isEarned
+                  ? {
+                      shadowColor: theme.glow,
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 1,
+                      shadowRadius: 10,
+                      elevation: 5,
+                    }
+                  : undefined
+              }
+            >
               <Svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
                 <Defs>
                   <RadialGradient id={gradId} cx="40%" cy="35%" r="65%" fx="35%" fy="30%">
@@ -145,29 +150,46 @@ export function BadgesSection({
 
                 {/* Highlight spot */}
                 {isEarned && (
-                  <Ellipse cx={CENTER - 6} cy={CENTER - 8} rx={6} ry={4} fill={theme.highlight} opacity={0.6} />
+                  <Ellipse
+                    cx={CENTER - 6}
+                    cy={CENTER - 8}
+                    rx={6}
+                    ry={4}
+                    fill={theme.highlight}
+                    opacity={0.6}
+                  />
                 )}
               </Svg>
 
               {/* Icon */}
-              <View style={{
-                position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
-                alignItems: "center", justifyContent: "center",
-              }}>
+              <View
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
                 <Icon size={22} color={isEarned ? theme.iconColor : "#a1a1aa"} />
               </View>
             </View>
 
             {/* Label */}
-            <Text style={{
-              fontSize: 9,
-              fontWeight: "600",
-              color: isEarned
-                ? withOpacity(colors.foreground, 0.7)
-                : withOpacity(colors.mutedForeground, 0.25),
-              textAlign: "center",
-              lineHeight: 12,
-            }} numberOfLines={2}>
+            <Text
+              style={{
+                fontSize: 9,
+                fontWeight: "600",
+                color: isEarned
+                  ? withOpacity(colors.foreground, 0.7)
+                  : withOpacity(colors.mutedForeground, 0.25),
+                textAlign: "center",
+                lineHeight: 12,
+              }}
+              numberOfLines={2}
+            >
               {t(`stats.desktop.badge_${badge.id}_title`)}
             </Text>
           </View>

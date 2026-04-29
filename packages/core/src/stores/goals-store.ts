@@ -11,7 +11,10 @@ export interface GoalsState {
   _hasHydrated: boolean;
 
   addGoal: (goal: ReadingGoal) => void;
-  updateGoal: (id: string, updates: Partial<Pick<ReadingGoal, "target" | "type" | "period">>) => void;
+  updateGoal: (
+    id: string,
+    updates: Partial<Pick<ReadingGoal, "target" | "type" | "period">>,
+  ) => void;
   removeGoal: (id: string) => void;
 }
 
@@ -22,14 +25,11 @@ export const useGoalsStore = create<GoalsState>(
       goals: [],
       _hasHydrated: false,
 
-      addGoal: (goal) =>
-        set((state) => ({ goals: [...state.goals, goal] })),
+      addGoal: (goal) => set((state) => ({ goals: [...state.goals, goal] })),
 
       updateGoal: (id, updates) =>
         set((state) => ({
-          goals: state.goals.map((g) =>
-            g.id === id ? { ...g, ...updates } : g,
-          ),
+          goals: state.goals.map((g) => (g.id === id ? { ...g, ...updates } : g)),
         })),
 
       removeGoal: (id) =>

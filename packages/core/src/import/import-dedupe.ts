@@ -36,10 +36,7 @@ export function normalizeImportIdentity(value: string): string {
 }
 
 function buildBookNameCandidates(book: Book): string[] {
-  const candidates = [
-    book.meta.title,
-    getPathLeaf(book.filePath),
-  ]
+  const candidates = [book.meta.title, getPathLeaf(book.filePath)]
     .filter(Boolean)
     .map((value) => normalizeImportIdentity(value as string))
     .filter(Boolean);

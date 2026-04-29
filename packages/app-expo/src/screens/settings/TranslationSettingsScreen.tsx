@@ -1,10 +1,11 @@
-import { useSettingsStore } from "@/stores";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
+import { useSettingsStore } from "@/stores";
 import {
   TRANSLATOR_LANGS,
   TRANSLATOR_PROVIDERS,
   type TranslationTargetLang,
 } from "@readany/core/types/translation";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   KeyboardAvoidingView,
@@ -28,7 +29,6 @@ import {
   useColors,
 } from "../../styles/theme";
 import { SettingsHeader } from "./SettingsHeader";
-import { useState } from "react";
 
 export default function TranslationSettingsScreen() {
   const colors = useColors();
@@ -88,7 +88,9 @@ export default function TranslationSettingsScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
-          <View style={[styles.contentColumn, { width: "100%", maxWidth: layout.centeredContentWidth }]}>
+          <View
+            style={[styles.contentColumn, { width: "100%", maxWidth: layout.centeredContentWidth }]}
+          >
             {/* Provider */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>{t("translation.engine", "翻译引擎")}</Text>
@@ -122,7 +124,9 @@ export default function TranslationSettingsScreen() {
             {/* DeepL API Key */}
             {translationConfig.provider.id === "deepl" && (
               <View style={[styles.section, styles.sectionSpaced]}>
-                <Text style={styles.sectionTitle}>{t("translation.deeplApiKey", "DeepL API Key")}</Text>
+                <Text style={styles.sectionTitle}>
+                  {t("translation.deeplApiKey", "DeepL API Key")}
+                </Text>
                 <PasswordInput
                   style={styles.apiKeyInput}
                   value={translationConfig.provider.apiKey || ""}
@@ -173,7 +177,9 @@ export default function TranslationSettingsScreen() {
             {/* AI Model Selection */}
             {isAIProvider && (
               <View style={[styles.section, styles.sectionSpaced]}>
-                <Text style={styles.sectionTitle}>{t("settings.translationModel", "翻译模型")}</Text>
+                <Text style={styles.sectionTitle}>
+                  {t("settings.translationModel", "翻译模型")}
+                </Text>
                 {endpointsWithModels.length > 0 ? (
                   <TouchableOpacity
                     style={styles.modelSelector}

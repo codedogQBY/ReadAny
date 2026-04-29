@@ -406,7 +406,9 @@ export function SyncSettings() {
           </div>
         </div>
         <div>
-          <label className="mb-1 block text-sm text-foreground">{t("settings.syncRemoteRoot")}</label>
+          <label className="mb-1 block text-sm text-foreground">
+            {t("settings.syncRemoteRoot")}
+          </label>
           <input
             type="text"
             value={webdavRemoteRoot}
@@ -419,7 +421,9 @@ export function SyncSettings() {
         <div className="flex items-center justify-between pt-1">
           <div>
             <span className="text-sm text-foreground">{t("settings.syncAllowInsecure")}</span>
-            <p className="mt-0.5 text-xs text-muted-foreground">{t("settings.syncAllowInsecureDesc")}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {t("settings.syncAllowInsecureDesc")}
+            </p>
           </div>
           <Switch
             checked={webdavAllowInsecure}
@@ -680,17 +684,23 @@ export function SyncSettings() {
             <div className="flex items-center justify-between pt-1">
               <div>
                 <span className="text-sm text-foreground">{t("settings.syncAutoSync")}</span>
-                <p className="mt-0.5 text-xs text-muted-foreground">{t("settings.syncAutoSyncDesc")}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {t("settings.syncAutoSyncDesc")}
+                </p>
               </div>
               <Switch
-                checked={config?.type === "webdav" || config?.type === "s3" ? config.autoSync : false}
+                checked={
+                  config?.type === "webdav" || config?.type === "s3" ? config.autoSync : false
+                }
                 onCheckedChange={(checked) => setAutoSync(checked)}
               />
             </div>
             <div className="flex items-center justify-between gap-3 border-t border-border/40 pt-3">
               <div>
                 <span className="text-sm text-foreground">{t("settings.syncInterval")}</span>
-                <p className="mt-0.5 text-xs text-muted-foreground">{t("settings.syncIntervalDesc")}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {t("settings.syncIntervalDesc")}
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <input
@@ -708,7 +718,11 @@ export function SyncSettings() {
                   }}
                   className="w-20 rounded-md border border-input bg-background px-3 py-1.5 text-right text-sm text-foreground outline-none focus:border-primary"
                 />
-                <span className="text-xs text-muted-foreground">{t("settings.syncIntervalMinutes", { count: Number.parseInt(syncIntervalInput || "30", 10) || 30 })}</span>
+                <span className="text-xs text-muted-foreground">
+                  {t("settings.syncIntervalMinutes", {
+                    count: Number.parseInt(syncIntervalInput || "30", 10) || 30,
+                  })}
+                </span>
               </div>
             </div>
           </>

@@ -1,11 +1,5 @@
+import { type ThemeColors, fontSize, fontWeight, radius, withOpacity } from "@/styles/theme";
 import { StyleSheet } from "react-native";
-import {
-  type ThemeColors,
-  fontSize,
-  fontWeight,
-  radius,
-  withOpacity,
-} from "@/styles/theme";
 
 export const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
@@ -301,7 +295,13 @@ export const makeStyles = (colors: ThemeColors) =>
 
     /* ── Bar chart ── */
     barChartWrap: { height: 180 },
-    barChartContent: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 6, paddingBottom: 4 },
+    barChartContent: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+      justifyContent: "space-between",
+      gap: 6,
+      paddingBottom: 4,
+    },
     barCol: { alignItems: "center", justifyContent: "flex-end", width: 28 },
     barTrack: { justifyContent: "flex-end", alignItems: "center" },
     barFill: { borderRadius: 4 },
@@ -433,7 +433,11 @@ export const makeStyles = (colors: ThemeColors) =>
       letterSpacing: 1,
       marginBottom: 2,
     },
-    bookTitle: { fontSize: 13, fontWeight: fontWeight.semibold, color: withOpacity(colors.foreground, 0.8) },
+    bookTitle: {
+      fontSize: 13,
+      fontWeight: fontWeight.semibold,
+      color: withOpacity(colors.foreground, 0.8),
+    },
     bookTitleFirst: { fontSize: 14 },
     bookAuthor: { fontSize: 11, color: withOpacity(colors.mutedForeground, 0.58), marginTop: 2 },
     bookStatsRow: { flexDirection: "row", alignItems: "baseline", gap: 6, marginTop: 6 },
@@ -475,7 +479,11 @@ export const makeStyles = (colors: ThemeColors) =>
       borderRadius: radius.md,
       marginTop: 4,
     },
-    expandBtnText: { fontSize: 12, fontWeight: fontWeight.medium, color: withOpacity(colors.mutedForeground, 0.64) },
+    expandBtnText: {
+      fontSize: 12,
+      fontWeight: fontWeight.medium,
+      color: withOpacity(colors.mutedForeground, 0.64),
+    },
 
     /* ── Insights ── */
     insightItem: {
@@ -494,8 +502,17 @@ export const makeStyles = (colors: ThemeColors) =>
     insightDotWarning: { backgroundColor: withOpacity(colors.destructive, 0.45) },
     insightDotPositive: { backgroundColor: withOpacity(colors.primary, 0.45) },
     insightDotDefault: { backgroundColor: withOpacity(colors.border, 0.6) },
-    insightTitle: { fontSize: 13, fontWeight: fontWeight.semibold, color: withOpacity(colors.foreground, 0.75) },
-    insightBody: { fontSize: 13, color: withOpacity(colors.mutedForeground, 0.62), lineHeight: 18, marginTop: 2 },
+    insightTitle: {
+      fontSize: 13,
+      fontWeight: fontWeight.semibold,
+      color: withOpacity(colors.foreground, 0.75),
+    },
+    insightBody: {
+      fontSize: 13,
+      color: withOpacity(colors.mutedForeground, 0.62),
+      lineHeight: 18,
+      marginTop: 2,
+    },
 
     /* ── Streak ── */
     streakCard: {
@@ -518,7 +535,11 @@ export const makeStyles = (colors: ThemeColors) =>
       justifyContent: "center",
     },
     streakInfo: { gap: 2, flex: 1 },
-    streakLabel: { fontSize: fontSize.xs, fontWeight: fontWeight.semibold, color: colors.foreground },
+    streakLabel: {
+      fontSize: fontSize.xs,
+      fontWeight: fontWeight.semibold,
+      color: colors.foreground,
+    },
     streakDesc: { fontSize: 12, color: colors.mutedForeground },
 
     /* ── Empty state ── */
@@ -534,8 +555,19 @@ export const makeStyles = (colors: ThemeColors) =>
       justifyContent: "center",
       marginBottom: 12,
     },
-    emptyTitle: { fontSize: 16, fontWeight: fontWeight.semibold, color: withOpacity(colors.foreground, 0.75) },
-    emptyDesc: { fontSize: 13, color: withOpacity(colors.mutedForeground, 0.5), textAlign: "center", marginTop: 4, maxWidth: 240, lineHeight: 18 },
+    emptyTitle: {
+      fontSize: 16,
+      fontWeight: fontWeight.semibold,
+      color: withOpacity(colors.foreground, 0.75),
+    },
+    emptyDesc: {
+      fontSize: 13,
+      color: withOpacity(colors.mutedForeground, 0.5),
+      textAlign: "center",
+      marginTop: 4,
+      maxWidth: 240,
+      lineHeight: 18,
+    },
 
     /* ── Day summary ── */
     daySummaryPanel: {
@@ -938,5 +970,4 @@ export const makeStyles = (colors: ThemeColors) =>
       fontWeight: fontWeight.bold,
       color: withOpacity(colors.foreground, 0.8),
     },
-
   });

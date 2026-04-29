@@ -272,12 +272,7 @@ export interface LifetimeReport extends BaseStatsReport {
   milestones: StatsInsight[];
 }
 
-export type StatsReport =
-  | DayReport
-  | WeekReport
-  | MonthReport
-  | YearReport
-  | LifetimeReport;
+export type StatsReport = DayReport | WeekReport | MonthReport | YearReport | LifetimeReport;
 
 /* ─── Reading Goals ─── */
 

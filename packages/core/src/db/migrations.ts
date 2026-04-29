@@ -73,7 +73,9 @@ const migrations: Migration[] = [
 /** Run pending migrations */
 export async function runMigrations(): Promise<void> {
   const platform = getPlatformService();
-  const db: IDatabase = await platform.loadDatabase(`sqlite:${await getDatabaseFilePath("readany.db")}`);
+  const db: IDatabase = await platform.loadDatabase(
+    `sqlite:${await getDatabaseFilePath("readany.db")}`,
+  );
 
   // Create migrations table if not exists
   await db.execute(`
@@ -107,7 +109,9 @@ export async function runMigrations(): Promise<void> {
 export async function getSchemaVersion(): Promise<number> {
   try {
     const platform = getPlatformService();
-    const db: IDatabase = await platform.loadDatabase(`sqlite:${await getDatabaseFilePath("readany.db")}`);
+    const db: IDatabase = await platform.loadDatabase(
+      `sqlite:${await getDatabaseFilePath("readany.db")}`,
+    );
     const rows = await db.select<{ max_version: number | null }>(
       "SELECT MAX(version) as max_version FROM schema_migrations",
     );

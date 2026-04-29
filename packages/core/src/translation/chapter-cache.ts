@@ -106,10 +106,7 @@ export async function updateChapterTranslationSettings(
 }
 
 /** Clear chapter cache for a specific chapter */
-export async function clearChapterCache(
-  bookId: string,
-  sectionIndex: number,
-): Promise<void> {
+export async function clearChapterCache(bookId: string, sectionIndex: number): Promise<void> {
   try {
     const platform = getPlatformService();
     const prefix = `${CHAPTER_CACHE_PREFIX}${bookId}_${sectionIndex}_`;

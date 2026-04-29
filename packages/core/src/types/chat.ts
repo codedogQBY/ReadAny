@@ -147,6 +147,31 @@ export interface AIEndpoint {
   modelsFetching?: boolean;
 }
 
+export type ChatMode = "standard" | "socratic";
+export type SocraticMode = "socratic" | "feynman" | "critical" | "associative";
+export type KnowledgeScope = "current_chapter" | "book_summary" | "author_background" | "custom_kb";
+export type PreheatingStrategy = "auto" | "smart" | "manual";
+export type PreheatingPhase = "opening" | "connection" | "transition" | "reading" | "review";
+
+export interface SocraticSettings {
+  enabled: boolean;
+  mode: SocraticMode;
+  knowledgeScope: KnowledgeScope;
+  questionComplexity: "simple" | "medium" | "deep";
+  enablePreheating: boolean;
+  preheatingStrategy: PreheatingStrategy;
+  enableWebSearch: boolean;
+  webSearchSources?: WebSearchSource[];
+  webSearchTimeout?: number;
+  userProfile?: {
+    background?: string;
+    interests?: string[];
+  };
+}
+
+export type WebSearchSource = "google" | "douban" | "openlibrary";
+export type WebSearchCache = Record<string, unknown>;
+
 export interface AIConfig {
   endpoints: AIEndpoint[];
   activeEndpointId: string;
@@ -154,6 +179,10 @@ export interface AIConfig {
   temperature: number;
   maxTokens: number;
   slidingWindowSize: number;
+  customPrompt?: string;
+  chatMode?: ChatMode;
+  socraticSettings?: SocraticSettings;
+  webSearchCache?: Record<string, unknown>;
 }
 
 export type AIModel = string;

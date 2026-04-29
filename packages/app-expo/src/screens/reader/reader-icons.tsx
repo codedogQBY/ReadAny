@@ -1,7 +1,3 @@
-/**
- * SVG icon components used by ReaderScreen.
- */
-import React from "react";
 import Svg, { Path, Rect } from "react-native-svg";
 
 // ──────────────────────────── Settings Icon (Gear) ────────────────────────────

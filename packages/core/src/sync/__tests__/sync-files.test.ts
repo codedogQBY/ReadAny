@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ISyncBackend, RemoteFile } from "../sync-backend";
-import { REMOTE_FILES, REMOTE_COVERS } from "../sync-types";
+import { REMOTE_FILES } from "../sync-types";
 
 // --- Mock sync-adapter ---
 const mockAdapter = {
@@ -109,7 +109,13 @@ describe("sync-files", () => {
 
       // Remote has the file
       const remoteFiles: RemoteFile[] = [
-        { name: "book-1.epub", path: "/readany/data/file/book-1.epub", size: 100, lastModified: 1000, isDirectory: false },
+        {
+          name: "book-1.epub",
+          path: "/readany/data/file/book-1.epub",
+          size: 100,
+          lastModified: 1000,
+          isDirectory: false,
+        },
       ];
       const backend = createMockBackend({
         listDir: vi.fn().mockImplementation(async (path: string) => {
@@ -138,7 +144,13 @@ describe("sync-files", () => {
       mockAdapter.fileExists.mockResolvedValue(false);
 
       const remoteFiles: RemoteFile[] = [
-        { name: "book-1.epub", path: "/readany/data/file/book-1.epub", size: 100, lastModified: 1000, isDirectory: false },
+        {
+          name: "book-1.epub",
+          path: "/readany/data/file/book-1.epub",
+          size: 100,
+          lastModified: 1000,
+          isDirectory: false,
+        },
       ];
       const backend = createMockBackend({
         listDir: vi.fn().mockImplementation(async (path: string) => {
@@ -186,11 +198,7 @@ describe("sync-files", () => {
         get: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3, 4, 5])),
       });
 
-      const result = await downloadBookFile(
-        backend,
-        "book-1",
-        "books/book-1.epub",
-      );
+      const result = await downloadBookFile(backend, "book-1", "books/book-1.epub");
 
       expect(result).toBe(true);
       expect(backend.get).toHaveBeenCalledWith(`${REMOTE_FILES}/book-1.epub`);
@@ -203,11 +211,7 @@ describe("sync-files", () => {
         exists: vi.fn().mockResolvedValue(false),
       });
 
-      const result = await downloadBookFile(
-        backend,
-        "book-1",
-        "books/book-1.epub",
-      );
+      const result = await downloadBookFile(backend, "book-1", "books/book-1.epub");
 
       expect(result).toBe(false);
       expect(mockSetBookSyncStatus).toHaveBeenCalledWith("book-1", "remote");
@@ -232,11 +236,7 @@ describe("sync-files", () => {
         get: vi.fn().mockRejectedValue(new Error("network error")),
       });
 
-      const result = await downloadBookFile(
-        backend,
-        "book-1",
-        "books/book-1.epub",
-      );
+      const result = await downloadBookFile(backend, "book-1", "books/book-1.epub");
 
       expect(result).toBe(false);
       expect(mockSetBookSyncStatus).toHaveBeenCalledWith("book-1", "remote");

@@ -67,11 +67,12 @@ export function MessageList({
   }, [isNearBottom]);
 
   // Auto-scroll when new messages/parts arrive, but only if user is near bottom
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- scrollToBottom is a stable callback, doScroll captures stable refs
   useEffect(() => {
     if (userAtBottomRef.current) {
       scrollToBottom("smooth");
     }
-  }, [messages.length, messages[messages.length - 1]?.parts.length, scrollToBottom]);
+  });
 
   // Auto-scroll during streaming (text growing inside a part) — use a timer
   useEffect(() => {
@@ -114,7 +115,7 @@ export function MessageList({
             currentStep={currentStep}
           />
         ))}
-        {showStreamingIndicator && <StreamingIndicator step={currentStep!} />}
+        {showStreamingIndicator && currentStep && <StreamingIndicator step={currentStep} />}
       </div>
 
       {/* Sticky scroll-to-bottom button — stays at visible bottom of scroll container */}

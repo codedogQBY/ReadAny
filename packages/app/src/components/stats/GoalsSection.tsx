@@ -185,22 +185,45 @@ export function GoalsSection({
         const sw = 5;
         const circ = 2 * Math.PI * r;
         const dashOffset = circ - (percentage / 100) * circ;
-        const ringColor = percentage >= 100
-          ? "stroke-emerald-500/80"
-          : onTrack ? "stroke-primary/60" : "stroke-amber-400/60";
+        const ringColor =
+          percentage >= 100
+            ? "stroke-emerald-500/80"
+            : onTrack
+              ? "stroke-primary/60"
+              : "stroke-amber-400/60";
 
         return (
-          <div key={goal.id} className="group flex items-center gap-5 rounded-xl px-4 py-4 transition-colors hover:bg-muted/[0.08]">
+          <div
+            key={goal.id}
+            className="group flex items-center gap-5 rounded-xl px-4 py-4 transition-colors hover:bg-muted/[0.08]"
+          >
             {/* Progress ring */}
             <div className="relative flex-shrink-0">
               <svg width={86} height={86} className="-rotate-90">
-                <circle cx={43} cy={43} r={r} fill="none" strokeWidth={sw} className="stroke-muted/25" />
-                <circle cx={43} cy={43} r={r} fill="none" strokeWidth={sw} strokeLinecap="round"
-                  strokeDasharray={circ} strokeDashoffset={dashOffset}
-                  className={cn("transition-all duration-700", ringColor)} />
+                <circle
+                  cx={43}
+                  cy={43}
+                  r={r}
+                  fill="none"
+                  strokeWidth={sw}
+                  className="stroke-muted/25"
+                />
+                <circle
+                  cx={43}
+                  cy={43}
+                  r={r}
+                  fill="none"
+                  strokeWidth={sw}
+                  strokeLinecap="round"
+                  strokeDasharray={circ}
+                  strokeDashoffset={dashOffset}
+                  className={cn("transition-all duration-700", ringColor)}
+                />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-[18px] font-bold tabular-nums text-foreground/85">{percentage}%</span>
+                <span className="text-[18px] font-bold tabular-nums text-foreground/85">
+                  {percentage}%
+                </span>
               </div>
             </div>
 
@@ -208,14 +231,24 @@ export function GoalsSection({
             <div className="min-w-0 flex-1 space-y-1">
               <div className="flex items-center gap-2">
                 <span className="text-[13px] font-semibold text-foreground/80">
-                  {goal.period === "monthly" ? copy.goalMonthly : copy.goalYearly} · {goalTypeLabel(goal.type)}
+                  {goal.period === "monthly" ? copy.goalMonthly : copy.goalYearly} ·{" "}
+                  {goalTypeLabel(goal.type)}
                 </span>
-                <span className={cn(
-                  "rounded-full px-2 py-0.5 text-[10px] font-medium",
-                  percentage >= 100 ? "bg-emerald-500/10 text-emerald-600"
-                    : onTrack ? "bg-primary/8 text-primary/70" : "bg-amber-400/10 text-amber-600",
-                )}>
-                  {percentage >= 100 ? copy.goalComplete : onTrack ? copy.goalOnTrack : copy.goalBehindPace}
+                <span
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-[10px] font-medium",
+                    percentage >= 100
+                      ? "bg-emerald-500/10 text-emerald-600"
+                      : onTrack
+                        ? "bg-primary/8 text-primary/70"
+                        : "bg-amber-400/10 text-amber-600",
+                  )}
+                >
+                  {percentage >= 100
+                    ? copy.goalComplete
+                    : onTrack
+                      ? copy.goalOnTrack
+                      : copy.goalBehindPace}
                 </span>
               </div>
               <div className="text-[15px] font-bold tabular-nums text-foreground/85">
@@ -223,15 +256,20 @@ export function GoalsSection({
               </div>
               {percentage < 100 && (
                 <div className="text-[12px] text-muted-foreground/62">
-                  {copy.goalRemaining.replace("{{remaining}}", formatGoalValue(remaining, goal.type))}
+                  {copy.goalRemaining.replace(
+                    "{{remaining}}",
+                    formatGoalValue(remaining, goal.type),
+                  )}
                 </div>
               )}
             </div>
 
             {/* Remove */}
             {onRemoveGoal && (
-              <button onClick={() => onRemoveGoal(goal.id)}
-                className="shrink-0 rounded-lg px-2 py-1 text-[11px] text-muted-foreground/52 opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive/70 group-hover:opacity-100">
+              <button
+                onClick={() => onRemoveGoal(goal.id)}
+                className="shrink-0 rounded-lg px-2 py-1 text-[11px] text-muted-foreground/52 opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive/70 group-hover:opacity-100"
+              >
                 {copy.removeGoal}
               </button>
             )}
@@ -241,17 +279,22 @@ export function GoalsSection({
 
       {/* Empty state */}
       {progress.length === 0 && !showForm && (
-        <p className="py-4 text-center text-[13px] text-muted-foreground/62">
-          {copy.noGoals}
-        </p>
+        <p className="py-4 text-center text-[13px] text-muted-foreground/62">{copy.noGoals}</p>
       )}
 
       {/* Add goal form / button */}
       {showForm ? (
-        <GoalAddForm copy={copy} onSubmit={handleSubmit} onCancel={() => setShowForm(false)} period={defaultPeriod} />
+        <GoalAddForm
+          copy={copy}
+          onSubmit={handleSubmit}
+          onCancel={() => setShowForm(false)}
+          period={defaultPeriod}
+        />
       ) : onAddGoal ? (
-        <button onClick={() => setShowForm(true)}
-          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/30 py-3 text-[13px] font-medium text-muted-foreground/65 transition-colors hover:border-primary/20 hover:bg-primary/[0.02] hover:text-primary/70">
+        <button
+          onClick={() => setShowForm(true)}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/30 py-3 text-[13px] font-medium text-muted-foreground/65 transition-colors hover:border-primary/20 hover:bg-primary/[0.02] hover:text-primary/70"
+        >
           + {copy.setGoal}
         </button>
       ) : null}

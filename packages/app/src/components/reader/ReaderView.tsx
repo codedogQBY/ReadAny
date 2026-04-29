@@ -20,6 +20,7 @@ import { useResolvedSrc } from "@/hooks/use-resolved-src";
 import { DocumentLoader } from "@/lib/reader/document-loader";
 import type { BookDoc, BookFormat } from "@/lib/reader/document-loader";
 import { isFixedLayoutBook, isFixedLayoutFormat } from "@/lib/reader/document-loader";
+import { smartReviewSystem } from "@/lib/smart-review";
 import { resolveDesktopDataPath } from "@/lib/storage/desktop-library-root";
 import { useAnnotationStore } from "@/stores/annotation-store";
 import { useAppStore } from "@/stores/app-store";
@@ -312,6 +313,7 @@ function useAutoHideControls(
 interface ReaderViewProps {
   bookId: string;
   tabId: string;
+  initialShowChat?: boolean;
 }
 
 type TTSSegment = {
@@ -319,7 +321,7 @@ type TTSSegment = {
   cfi: string | null;
 };
 
-export function ReaderView({ bookId, tabId }: ReaderViewProps) {
+export function ReaderView({ bookId, tabId, initialShowChat }: ReaderViewProps) {
   const TOOLBAR_PIN_STORAGE_KEY = "readany-reader-toolbar-pinned";
   const readerTab = useReaderStore((s) => s.tabs[tabId]);
   const removeReaderTab = useReaderStore((s) => s.removeTab);
@@ -659,7 +661,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const [searchIndex, setSearchIndex] = useState<number>(0);
   const [totalPages, setTotalPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(0);
-  const [showChat, setShowChat] = useState(false);
+  const [showChat, setShowChat] = useState(initialShowChat ?? false);
   const [showSettings, setShowSettings] = useState(false);
   const [showTTS, setShowTTS] = useState(false);
   const [isReimporting, setIsReimporting] = useState(false);
@@ -1045,7 +1047,18 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
       // Update chapter info
       if (detail.tocItem?.label) {
+        // Capture previous chapter BEFORE updating
+        const prevChapterTitle = useReaderStore.getState().tabs[tabId]?.chapterTitle;
+        const currentBookId = useReaderStore.getState().tabs[tabId]?.bookId;
+
         setChapter(tabId, detail.section?.current ?? 0, detail.tocItem.label, detail.tocItem.href);
+
+        // Auto-create smart review item when moving to a new chapter
+        if (prevChapterTitle && prevChapterTitle !== detail.tocItem.label && currentBookId) {
+          smartReviewSystem.createReviewItem(currentBookId, `ch-${detail.section?.current ?? 0}`, prevChapterTitle).catch((err) => {
+            console.error("[ReaderView] Failed to create review item:", err);
+          });
+        }
       }
 
       // Display true pages only when the renderer exposes them.

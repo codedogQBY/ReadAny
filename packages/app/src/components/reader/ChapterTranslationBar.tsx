@@ -22,8 +22,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { ChapterTranslationState } from "@readany/core/hooks";
 import { useSettingsStore } from "@/stores/settings-store";
+import type { ChapterTranslationState } from "@readany/core/hooks";
 import type { TranslationTargetLang } from "@readany/core/types/translation";
 import { TRANSLATOR_LANGS } from "@readany/core/types/translation";
 import { Check, Eye, EyeOff, Languages, Loader2, Trash2, X } from "lucide-react";
@@ -111,39 +111,37 @@ export function ChapterTranslationMenu({
         )}
 
         {/* ── translating: progress + cancel ── */}
-        {state.status === "translating" && (() => {
-          const { translatedChars, totalChars } = state.progress;
-          const pct = totalChars > 0 ? Math.round((translatedChars / totalChars) * 100) : 0;
-          return (
-            <>
-              <div className="px-2 py-2 space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
-                  <span className="text-xs text-muted-foreground">
-                    {t("translation.translatingProgress", {
-                      count: Math.round(translatedChars / 100),
-                      total: Math.round(totalChars / 100),
-                    })}
-                  </span>
+        {state.status === "translating" &&
+          (() => {
+            const { translatedChars, totalChars } = state.progress;
+            const pct = totalChars > 0 ? Math.round((translatedChars / totalChars) * 100) : 0;
+            return (
+              <>
+                <div className="px-2 py-2 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
+                    <span className="text-xs text-muted-foreground">
+                      {t("translation.translatingProgress", {
+                        count: Math.round(translatedChars / 100),
+                        total: Math.round(totalChars / 100),
+                      })}
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all duration-300"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                  <div
-                    className="h-full bg-primary rounded-full transition-all duration-300"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-              </div>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="gap-2 text-xs text-destructive"
-                onSelect={onCancel}
-              >
-                <X className="h-3.5 w-3.5" />
-                {t("translation.cancelTranslation")}
-              </DropdownMenuItem>
-            </>
-          );
-        })()}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="gap-2 text-xs text-destructive" onSelect={onCancel}>
+                  <X className="h-3.5 w-3.5" />
+                  {t("translation.cancelTranslation")}
+                </DropdownMenuItem>
+              </>
+            );
+          })()}
 
         {/* ── complete: toggle original / translation + clear ── */}
         {state.status === "complete" && (

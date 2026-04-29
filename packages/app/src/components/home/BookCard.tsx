@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useResolvedSrc } from "@/hooks/use-resolved-src";
+import { bookMiniReviewService } from "@/lib/book-mini-review";
 import { openDesktopBook } from "@/lib/library/open-book";
 /**
  * BookCard — Readest-inspired book card with realistic cover rendering
@@ -26,9 +27,10 @@ import {
   Loader2,
   MoreVertical,
   Plus,
+  RefreshCw,
   Trash2,
 } from "lucide-react";
-import { memo, useCallback, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 interface BookCardProps {
@@ -55,6 +57,9 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
   const [configGuide, setConfigGuide] = useState<ConfigGuideType>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [preserveDataOnDelete, setPreserveDataOnDelete] = useState(true);
+  const [miniReview, setMiniReview] = useState<string | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [showReview, setShowReview] = useState(false);
   const coverRef = useRef<HTMLDivElement>(null);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
@@ -63,27 +68,20 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
   const coverSrc = useResolvedSrc(book.meta.coverUrl);
 
   const handleOpen = async () => {
-    if (
-      showMenu ||
-      showDeleteDialog ||
-      Date.now() < suppressOpenUntilRef.current
-    ) {
+    if (showMenu || showDeleteDialog || Date.now() < suppressOpenUntilRef.current) {
       return;
     }
     await openDesktopBook({ book, t });
   };
 
-  const handleDelete = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      suppressOpenUntilRef.current = Date.now() + 600;
-      setShowMenu(false);
-      setMenuPos(null);
-      setPreserveDataOnDelete(true);
-      setShowDeleteDialog(true);
-    },
-    [],
-  );
+  const handleDelete = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    suppressOpenUntilRef.current = Date.now() + 600;
+    setShowMenu(false);
+    setMenuPos(null);
+    setPreserveDataOnDelete(true);
+    setShowDeleteDialog(true);
+  }, []);
 
   const handleVectorize = useCallback(
     async (e: React.MouseEvent) => {
@@ -123,6 +121,62 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
     setImageError(true);
   };
 
+  // Load cached mini review on mount, and poll for auto-generated updates
+  useEffect(() => {
+    const loadCached = () => {
+      const cached = bookMiniReviewService.getReview(book.id);
+      if (cached) {
+        setMiniReview(cached.content);
+        return true;
+      }
+      return false;
+    };
+
+    // Immediate load
+    loadCached();
+
+    // Poll every 3s for auto-generated reviews (stops once found)
+    const interval = setInterval(() => {
+      if (loadCached()) {
+        clearInterval(interval);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [book.id]);
+
+  const handleGenerateReview = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    suppressOpenUntilRef.current = Date.now() + 400;
+    setReviewLoading(true);
+    try {
+      const review = await bookMiniReviewService.generateReview(book);
+      if (review) {
+        setMiniReview(review.content);
+      }
+    } catch {
+      console.error("[BookCard] Failed to generate review");
+    } finally {
+      setReviewLoading(false);
+    }
+  }, [book]);
+
+  const handleRefreshReview = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    suppressOpenUntilRef.current = Date.now() + 400;
+    setReviewLoading(true);
+    try {
+      const review = await bookMiniReviewService.refreshReview(book);
+      if (review) {
+        setMiniReview(review.content);
+      }
+    } catch {
+      console.error("[BookCard] Failed to refresh review");
+    } finally {
+      setReviewLoading(false);
+    }
+  }, [book]);
+
   const hasCover = coverSrc && !imageError;
 
   // Vectorize progress percentage for display
@@ -136,6 +190,13 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
     <div
       className="group relative flex h-full cursor-pointer flex-col justify-end"
       onClick={handleOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          handleOpen();
+        }
+      }}
+      role="button"
+      tabIndex={0}
     >
       {/* Cover area — 28:41 aspect ratio (Readest standard) */}
       <div
@@ -267,11 +328,23 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
               setShowTagMenu(false);
               setMenuPos(null);
             }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                setShowMenu(false);
+                setShowTagMenu(false);
+                setMenuPos(null);
+              }
+            }}
+            role="button"
+            tabIndex={0}
           />
           <div
             className="fixed z-50 min-w-36 rounded-lg border bg-popover p-1 shadow-lg"
             style={{ bottom: window.innerHeight - menuPos.y + 4, left: menuPos.x - 152 }}
             onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+            role="menu"
           >
             {/* Vectorize button */}
             <button
@@ -299,6 +372,26 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
                 </>
               )}
             </button>
+            {/* Mini review button */}
+            <button
+              type="button"
+              className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${
+                reviewLoading
+                  ? "text-muted-foreground opacity-50 cursor-not-allowed"
+                  : "text-foreground hover:bg-muted"
+              }`}
+              disabled={reviewLoading}
+              onClick={miniReview ? handleRefreshReview : handleGenerateReview}
+            >
+              {reviewLoading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : miniReview ? (
+                <RefreshCw className="h-3.5 w-3.5" />
+              ) : (
+                <span className="h-3.5 w-3.5 flex items-center justify-center text-[10px]">✨</span>
+              )}
+              {miniReview ? t("home.refreshReview", "刷新微评") : t("home.generateReview", "生成微评")}
+            </button>
             {/* Tags submenu */}
             <div className="relative">
               <button
@@ -318,6 +411,8 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
                 <div
                   className="absolute right-full top-0 z-50 mr-1 min-w-36 max-h-52 overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg"
                   onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  role="menu"
                 >
                   {allTags.map((tag) => {
                     const hasTag = book.tags.includes(tag);
@@ -381,8 +476,8 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
         </>
       )}
 
-      {/* Info area — minimal, below cover */}
-      <div className="flex w-full flex-col pt-2">
+      {/* Info area — fixed height to keep cards aligned */}
+      <div className="flex w-full flex-col pt-2" style={{ minHeight: "72px" }}>
         <h4 className="truncate text-xs font-semibold leading-tight text-foreground">
           {book.meta.title}
         </h4>
@@ -391,6 +486,29 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
             {book.meta.author}
           </p>
         )}
+
+        {/* Mini review — fixed 4-line area, always reserves space */}
+        <div className="mt-0.5" style={{ minHeight: "36px" }}>
+          {miniReview ? (
+            <button
+              type="button"
+              className="flex w-full items-start gap-0.5 text-left text-[9px] leading-tight text-muted-foreground/70 hover:text-muted-foreground transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                suppressOpenUntilRef.current = Date.now() + 200;
+                setShowReview(!showReview);
+              }}
+            >
+              <span className="shrink-0">✨</span>
+              <span className={showReview ? "" : "line-clamp-4"}>{miniReview}</span>
+            </button>
+          ) : reviewLoading ? (
+            <div className="flex items-center gap-1 text-[9px] text-muted-foreground/50">
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+              <span>{t("home.generatingReview", "生成微评中…")}</span>
+            </div>
+          ) : null}
+        </div>
 
         {/* Tag badges */}
         {book.tags.length > 0 ? (

@@ -1,11 +1,11 @@
 import { DarkModeSvg } from "@/components/DarkModeSvg";
+import { useSettingsStore } from "@/stores";
 import { useTheme } from "@/styles/theme";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { testAIEndpoint } from "@readany/core/ai";
-import { useSettingsStore } from "@/stores";
 import type { AIProviderType } from "@readany/core/types";
-import { getDefaultBaseUrl, PROVIDER_CONFIGS, providerRequiresApiKey } from "@readany/core/utils";
+import { PROVIDER_CONFIGS, getDefaultBaseUrl, providerRequiresApiKey } from "@readany/core/utils";
 import { AlertCircle, CheckCircle2, Eye, EyeOff } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";

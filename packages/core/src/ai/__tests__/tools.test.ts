@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---- Mocks ----
 vi.mock("../../db/database", () => ({
@@ -40,19 +40,19 @@ vi.mock("../skills/builtin-skills", () => ({
 }));
 
 import {
-  getBooks,
-  getBook,
-  getChunks,
-  getHighlights,
-  getNotes,
   getAllHighlights,
   getAllNotes,
+  getBook,
+  getBooks,
+  getChunks,
   getSkills as getDbSkills,
+  getHighlights,
+  getNotes,
   getReadingSessionsByDateRange,
   updateBook,
 } from "../../db/database";
-import { search } from "../../rag/search";
 import { emitLibraryChanged } from "../../events/library-events";
+import { search } from "../../rag/search";
 import { loadFromFS } from "../../stores/persist";
 import { getAvailableTools } from "../tools";
 
@@ -148,7 +148,9 @@ describe("getAvailableTools", () => {
       prompt: "Do the thing",
       enabled: true,
       builtIn: false,
-      parameters: [{ name: "input", type: "string" as const, description: "Input text", required: true }],
+      parameters: [
+        { name: "input", type: "string" as const, description: "Input text", required: true },
+      ],
     };
     const tools = getAvailableTools({ bookId: null, isVectorized: false, enabledSkills: [skill] });
     const skillTool = findTool(tools, "custom-skill");
@@ -166,7 +168,10 @@ describe("listBooks tool", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("should return all books", async () => {
-    vi.mocked(getBooks).mockResolvedValue([makeBook(), makeBook({ id: "book-2", meta: { title: "Book 2", author: "Author 2" } })] as any);
+    vi.mocked(getBooks).mockResolvedValue([
+      makeBook(),
+      makeBook({ id: "book-2", meta: { title: "Book 2", author: "Author 2" } }),
+    ] as any);
 
     const tools = getAvailableTools({ bookId: null, isVectorized: false, enabledSkills: [] });
     const tool = findTool(tools, "listBooks");
@@ -513,7 +518,11 @@ describe("compareSections tool", () => {
 
     const tools = getAvailableTools({ bookId: "book-1", isVectorized: true, enabledSkills: [] });
     const tool = findTool(tools, "compareSections");
-    const result = (await tool.execute({ chapterIndex1: 0, chapterIndex2: 1, compareType: "themes" })) as any;
+    const result = (await tool.execute({
+      chapterIndex1: 0,
+      chapterIndex2: 1,
+      compareType: "themes",
+    })) as any;
 
     expect(result.chapter1.title).toBe("Intro");
     expect(result.chapter2.title).toBe("Conclusion");
@@ -670,7 +679,13 @@ describe("searchAllHighlights tool", () => {
 
   it("should return highlights with book titles", async () => {
     vi.mocked(getAllHighlights).mockResolvedValue([
-      { text: "Important", bookId: "b1", chapterTitle: "Ch 1", color: "yellow", createdAt: Date.now() },
+      {
+        text: "Important",
+        bookId: "b1",
+        chapterTitle: "Ch 1",
+        color: "yellow",
+        createdAt: Date.now(),
+      },
     ] as any);
     vi.mocked(getBooks).mockResolvedValue([
       makeBook({ id: "b1", meta: { title: "My Book" } }),
@@ -758,9 +773,7 @@ describe("classifyBooks tool", () => {
   it("should return specific book when bookId provided", async () => {
     vi.mocked(getBooks).mockResolvedValue([makeBook({ id: "b1" })] as any);
     vi.mocked(getBook).mockResolvedValue(makeBook({ id: "b1" }) as any);
-    vi.mocked(getChunks).mockResolvedValue([
-      makeChunk({ content: "Content" }),
-    ] as any);
+    vi.mocked(getChunks).mockResolvedValue([makeChunk({ content: "Content" })] as any);
 
     const tools = getAvailableTools({ bookId: null, isVectorized: false, enabledSkills: [] });
     const tool = findTool(tools, "classifyBooks");
@@ -885,7 +898,9 @@ describe("manageBookTags tool", () => {
   });
 
   it("removeFromBook: should remove tags from specific book", async () => {
-    vi.mocked(getBook).mockResolvedValue(makeBook({ id: "b1", tags: ["tag1", "tag2", "tag3"] }) as any);
+    vi.mocked(getBook).mockResolvedValue(
+      makeBook({ id: "b1", tags: ["tag1", "tag2", "tag3"] }) as any,
+    );
     vi.mocked(updateBook).mockResolvedValue(undefined);
 
     const tools = getAvailableTools({ bookId: null, isVectorized: false, enabledSkills: [] });
@@ -952,7 +967,11 @@ describe("mindmap tool", () => {
     const tool = findTool(tools, "mindmap");
 
     const mermaidInput = "mindmap\n  Root\n    Branch 1\n      Leaf A\n    Branch 2";
-    const result = (await tool.execute({ reasoning: "test", title: "Test", markdown: mermaidInput })) as any;
+    const result = (await tool.execute({
+      reasoning: "test",
+      title: "Test",
+      markdown: mermaidInput,
+    })) as any;
 
     expect(result.type).toBe("mindmap");
     // Should have been converted — no longer starts with "mindmap"
@@ -965,7 +984,11 @@ describe("mindmap tool", () => {
     const tool = findTool(tools, "mindmap");
 
     const mermaidFenced = "```mermaid\nmindmap\n  Root\n    A\n    B\n```";
-    const result = (await tool.execute({ reasoning: "test", title: "Test", markdown: mermaidFenced })) as any;
+    const result = (await tool.execute({
+      reasoning: "test",
+      title: "Test",
+      markdown: mermaidFenced,
+    })) as any;
 
     expect(result.markdown).not.toContain("```mermaid");
     expect(result.markdown).toContain("#");
@@ -981,8 +1004,24 @@ describe("getSkills tool", () => {
   it("should return matching skills", async () => {
     const { getBuiltinSkills } = await import("../skills/builtin-skills");
     vi.mocked(getBuiltinSkills).mockReturnValue([
-      { id: "mindmap", name: "思维导图", description: "Generate mindmap", prompt: "...", parameters: [], enabled: true, builtIn: true },
-      { id: "summary", name: "摘要", description: "Generate summary", prompt: "...", parameters: [], enabled: true, builtIn: true },
+      {
+        id: "mindmap",
+        name: "思维导图",
+        description: "Generate mindmap",
+        prompt: "...",
+        parameters: [],
+        enabled: true,
+        builtIn: true,
+      },
+      {
+        id: "summary",
+        name: "摘要",
+        description: "Generate summary",
+        prompt: "...",
+        parameters: [],
+        enabled: true,
+        builtIn: true,
+      },
     ] as any);
     vi.mocked(getDbSkills).mockResolvedValue([]);
 
@@ -997,7 +1036,15 @@ describe("getSkills tool", () => {
   it("should return all available skills when no match", async () => {
     const { getBuiltinSkills } = await import("../skills/builtin-skills");
     vi.mocked(getBuiltinSkills).mockReturnValue([
-      { id: "skill1", name: "Skill 1", description: "Desc", prompt: "...", parameters: [], enabled: true, builtIn: true },
+      {
+        id: "skill1",
+        name: "Skill 1",
+        description: "Desc",
+        prompt: "...",
+        parameters: [],
+        enabled: true,
+        builtIn: true,
+      },
     ] as any);
     vi.mocked(getDbSkills).mockResolvedValue([]);
 
@@ -1018,10 +1065,23 @@ describe("searchAllNotes tool", () => {
 
   it("should combine notes and highlight notes", async () => {
     vi.mocked(getAllNotes).mockResolvedValue([
-      { title: "Note 1", content: "Content 1", bookId: "b1", chapterTitle: "Ch 1", tags: ["tag1"], createdAt: Date.now() },
+      {
+        title: "Note 1",
+        content: "Content 1",
+        bookId: "b1",
+        chapterTitle: "Ch 1",
+        tags: ["tag1"],
+        createdAt: Date.now(),
+      },
     ] as any);
     vi.mocked(getAllHighlights).mockResolvedValue([
-      { text: "Highlighted text with a note", note: "My annotation", bookId: "b1", chapterTitle: "Ch 1", createdAt: Date.now() },
+      {
+        text: "Highlighted text with a note",
+        note: "My annotation",
+        bookId: "b1",
+        chapterTitle: "Ch 1",
+        createdAt: Date.now(),
+      },
     ] as any);
     vi.mocked(getBooks).mockResolvedValue([makeBook({ id: "b1" })] as any);
 

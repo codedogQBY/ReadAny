@@ -20,7 +20,8 @@ import { CommandPalette } from "@/components/command-palette/CommandPalette";
 import { HomePage } from "@/components/home/HomePage";
 import { NotesPage } from "@/components/notes/NotesPage";
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
-import { ReaderView, evictBlobCache } from "@/components/reader/ReaderView";
+import { evictBlobCache } from "@/components/reader/ReaderView";
+import { SocraticReaderWrapper } from "@/components/reader/SocraticReaderWrapper";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { MissingBookPromptDialog } from "@/components/shared/MissingBookPromptDialog";
 import { ReadingStatsPanel } from "@/components/stats/ReadingStatsPanel";
@@ -29,8 +30,8 @@ import SkillsPage from "@/pages/Skills";
 import { useAppStore } from "@/stores/app-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useReaderStore } from "@/stores/reader-store";
-import { useSettingsStore } from "@readany/core/stores/settings-store";
 import { useFontStore } from "@readany/core/stores";
+import { useSettingsStore } from "@readany/core/stores/settings-store";
 import { BookOpen } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -82,31 +83,44 @@ export function AppLayout() {
 
     // 2. Inject @font-face for local and direct-URL remote fonts
     if (customFonts.every((f) => f.remoteCssUrl)) return;
-    import("@tauri-apps/api/core").then(({ convertFileSrc }) => {
-      const styleId = "__readany_app_font_faces__";
-      let el = document.getElementById(styleId) as HTMLStyleElement | null;
-      if (!el) {
-        el = document.createElement("style");
-        el.id = styleId;
-        document.head.appendChild(el);
-      }
-      el.textContent = customFonts
-        .map((f) => {
-          if (f.remoteCssUrl) return ""; // handled by <link>
-          if (f.source === "remote") {
-            const src = f.remoteUrlWoff2
-              ? `url('${f.remoteUrlWoff2}') format('woff2')${f.remoteUrl ? `, url('${f.remoteUrl}') format('woff')` : ""}`
-              : f.remoteUrl ? `url('${f.remoteUrl}') format('woff')` : "";
-            return src ? `@font-face { font-family: '${f.fontFamily}'; src: ${src}; font-display: swap; }` : "";
-          }
-          if (!f.filePath) return "";
-          const fileUrl = convertFileSrc(f.filePath);
-          const fmt = f.format === "otf" ? "opentype" : f.format === "woff" ? "woff" : f.format === "woff2" ? "woff2" : "truetype";
-          return `@font-face { font-family: '${f.fontFamily}'; src: url('${fileUrl}') format('${fmt}'); }`;
-        })
-        .filter(Boolean)
-        .join("\n");
-    }).catch(() => {});
+    import("@tauri-apps/api/core")
+      .then(({ convertFileSrc }) => {
+        const styleId = "__readany_app_font_faces__";
+        let el = document.getElementById(styleId) as HTMLStyleElement | null;
+        if (!el) {
+          el = document.createElement("style");
+          el.id = styleId;
+          document.head.appendChild(el);
+        }
+        el.textContent = customFonts
+          .map((f) => {
+            if (f.remoteCssUrl) return ""; // handled by <link>
+            if (f.source === "remote") {
+              const src = f.remoteUrlWoff2
+                ? `url('${f.remoteUrlWoff2}') format('woff2')${f.remoteUrl ? `, url('${f.remoteUrl}') format('woff')` : ""}`
+                : f.remoteUrl
+                  ? `url('${f.remoteUrl}') format('woff')`
+                  : "";
+              return src
+                ? `@font-face { font-family: '${f.fontFamily}'; src: ${src}; font-display: swap; }`
+                : "";
+            }
+            if (!f.filePath) return "";
+            const fileUrl = convertFileSrc(f.filePath);
+            const fmt =
+              f.format === "otf"
+                ? "opentype"
+                : f.format === "woff"
+                  ? "woff"
+                  : f.format === "woff2"
+                    ? "woff2"
+                    : "truetype";
+            return `@font-face { font-family: '${f.fontFamily}'; src: url('${fileUrl}') format('${fmt}'); }`;
+          })
+          .filter(Boolean)
+          .join("\n");
+      })
+      .catch(() => {});
   }, [customFonts]);
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -140,10 +154,12 @@ export function AppLayout() {
       }
       if (e.key === "F11") {
         e.preventDefault();
-        import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
-          const win = getCurrentWindow();
-          win.isFullscreen().then((fs) => win.setFullscreen(!fs));
-        }).catch(() => {});
+        import("@tauri-apps/api/window")
+          .then(({ getCurrentWindow }) => {
+            const win = getCurrentWindow();
+            win.isFullscreen().then((fs) => win.setFullscreen(!fs));
+          })
+          .catch(() => {});
       }
     };
     window.addEventListener("keydown", handleKeyDown, { capture: true });
@@ -327,9 +343,7 @@ export function AppLayout() {
         <TabBar />
       </div>
       <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        {!isReaderActive && (
-          <div className="h-8 shrink-0" />
-        )}
+        {!isReaderActive && <div className="h-8 shrink-0" />}
         {/* === Home layer (sidebar + content card) === */}
         <div
           className="flex min-h-0 flex-1 w-full overflow-hidden"
@@ -371,7 +385,7 @@ export function AppLayout() {
                   t={t}
                 />
               ) : (
-                <ReaderView bookId={tab.bookId!} tabId={tab.id} />
+                <SocraticReaderWrapper bookId={tab.bookId!} />
               )}
             </div>
           );

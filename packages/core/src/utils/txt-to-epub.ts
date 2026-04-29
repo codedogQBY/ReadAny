@@ -134,9 +134,10 @@ export class TxtToEpubConverter {
    * Uses Uint8ArrayWriter from @zip.js/zip.js to keep data in JS memory.
    */
   public async convertToBytes(options: Txt2EpubOptions): Promise<TxtBytesConversionResult> {
-    const { chapters, metadata } = options.file.size <= LARGE_TXT_THRESHOLD_BYTES
-      ? await this.processSmallFile(options)
-      : await this.processLargeFile(options);
+    const { chapters, metadata } =
+      options.file.size <= LARGE_TXT_THRESHOLD_BYTES
+        ? await this.processSmallFile(options)
+        : await this.processLargeFile(options);
 
     const epubBytes = await this.createEpubAsBytes(chapters, metadata);
     return {
@@ -147,7 +148,9 @@ export class TxtToEpubConverter {
     };
   }
 
-  private async processSmallFile(options: Txt2EpubOptions): Promise<{ chapters: Chapter[]; metadata: Metadata }> {
+  private async processSmallFile(
+    options: Txt2EpubOptions,
+  ): Promise<{ chapters: Chapter[]; metadata: Metadata }> {
     const { file: txtFile, author: providedAuthor, language: providedLanguage } = options;
 
     const fileContent = await txtFile.arrayBuffer();
@@ -158,19 +161,29 @@ export class TxtToEpubConverter {
 
     const bookTitle = this.extractBookTitle(this.getBaseFilename(txtFile.name));
     const fileHeader = txtContent.slice(0, HEADER_TEXT_MAX_CHARS);
-    const { author, language } = this.extractAuthorAndLanguage(fileHeader, providedAuthor, providedLanguage);
+    const { author, language } = this.extractAuthorAndLanguage(
+      fileHeader,
+      providedAuthor,
+      providedLanguage,
+    );
     const identifier = simpleHash(txtFile);
     const metadata = { bookTitle, author, language, identifier };
 
     const fallbackParagraphsPerChapter = 100;
-    let chapters = this.extractChapters(txtContent, metadata, { linesBetweenSegments: 8, fallbackParagraphsPerChapter });
+    let chapters = this.extractChapters(txtContent, metadata, {
+      linesBetweenSegments: 8,
+      fallbackParagraphsPerChapter,
+    });
 
     if (chapters.length === 0) {
       throw new Error("No chapters detected.");
     }
 
     if (chapters.length <= 1) {
-      const probeChapterCount = this.probeChapterCount(txtContent, metadata, { linesBetweenSegments: 7, fallbackParagraphsPerChapter });
+      const probeChapterCount = this.probeChapterCount(txtContent, metadata, {
+        linesBetweenSegments: 7,
+        fallbackParagraphsPerChapter,
+      });
       chapters = this.extractChapters(txtContent, metadata, {
         linesBetweenSegments: probeChapterCount > 1 ? 7 : 6,
         fallbackParagraphsPerChapter,
@@ -180,26 +193,47 @@ export class TxtToEpubConverter {
     return { chapters, metadata };
   }
 
-  private async processLargeFile(options: Txt2EpubOptions): Promise<{ chapters: Chapter[]; metadata: Metadata }> {
+  private async processLargeFile(
+    options: Txt2EpubOptions,
+  ): Promise<{ chapters: Chapter[]; metadata: Metadata }> {
     const { file: txtFile, author: providedAuthor, language: providedLanguage } = options;
     const detectedEncoding = (await this.detectEncodingFromFile(txtFile)) || "utf-8";
     const runtimeEncoding = this.resolveSupportedEncoding(detectedEncoding);
 
     const bookTitle = this.extractBookTitle(this.getBaseFilename(txtFile.name));
-    const fileHeader = await this.readHeaderTextFromFile(txtFile, runtimeEncoding, HEADER_TEXT_MAX_CHARS, HEADER_TEXT_MAX_BYTES);
-    const { author, language } = this.extractAuthorAndLanguage(fileHeader, providedAuthor, providedLanguage);
+    const fileHeader = await this.readHeaderTextFromFile(
+      txtFile,
+      runtimeEncoding,
+      HEADER_TEXT_MAX_CHARS,
+      HEADER_TEXT_MAX_BYTES,
+    );
+    const { author, language } = this.extractAuthorAndLanguage(
+      fileHeader,
+      providedAuthor,
+      providedLanguage,
+    );
     const identifier = simpleHash(txtFile);
     const metadata = { bookTitle, author, language, identifier };
 
     const fallbackParagraphsPerChapter = 100;
-    let chapters = await this.extractChaptersFromFileBySegments(txtFile, runtimeEncoding, metadata, { linesBetweenSegments: 8, fallbackParagraphsPerChapter });
+    let chapters = await this.extractChaptersFromFileBySegments(
+      txtFile,
+      runtimeEncoding,
+      metadata,
+      { linesBetweenSegments: 8, fallbackParagraphsPerChapter },
+    );
 
     if (chapters.length === 0) {
       throw new Error("No chapters detected.");
     }
 
     if (chapters.length <= 1) {
-      const probeChapterCount = await this.probeChapterCountFromFileBySegments(txtFile, runtimeEncoding, metadata, { linesBetweenSegments: 7, fallbackParagraphsPerChapter });
+      const probeChapterCount = await this.probeChapterCountFromFileBySegments(
+        txtFile,
+        runtimeEncoding,
+        metadata,
+        { linesBetweenSegments: 7, fallbackParagraphsPerChapter },
+      );
       chapters = await this.extractChaptersFromFileBySegments(txtFile, runtimeEncoding, metadata, {
         linesBetweenSegments: probeChapterCount > 1 ? 7 : 6,
         fallbackParagraphsPerChapter,
@@ -604,7 +638,10 @@ export class TxtToEpubConverter {
     try {
       this.assertStrictUtf8Sample(new Uint8Array(utf8HeadSample));
       if (buffer.byteLength > utf8HeadSampleSize * 2) {
-        const midSampleSize = Math.min(ENCODING_MID_SAMPLE_BYTES, buffer.byteLength - utf8HeadSampleSize);
+        const midSampleSize = Math.min(
+          ENCODING_MID_SAMPLE_BYTES,
+          buffer.byteLength - utf8HeadSampleSize,
+        );
         const midSampleStart = Math.floor((buffer.byteLength - midSampleSize) / 2);
         const midSample = buffer.slice(midSampleStart, midSampleStart + midSampleSize);
         this.assertStrictUtf8Sample(new Uint8Array(midSample));
@@ -655,10 +692,14 @@ export class TxtToEpubConverter {
       for (let i = 0; i < sample.length - 1; i++) {
         const b1 = sample[i]!;
         const b2 = sample[i + 1]!;
-        if (b1 >= 0xA1 && b1 <= 0xFE && b2 >= 0xA1 && b2 <= 0xFE) {
+        if (b1 >= 0xa1 && b1 <= 0xfe && b2 >= 0xa1 && b2 <= 0xfe) {
           gbkPairs++;
           i++;
-        } else if (b1 >= 0x81 && b1 <= 0x9F && ((b2 >= 0x40 && b2 <= 0x7E) || (b2 >= 0x80 && b2 <= 0xFC))) {
+        } else if (
+          b1 >= 0x81 &&
+          b1 <= 0x9f &&
+          ((b2 >= 0x40 && b2 <= 0x7e) || (b2 >= 0x80 && b2 <= 0xfc))
+        ) {
           sjisDistinctPairs++;
           i++;
         }
@@ -708,8 +749,7 @@ export class TxtToEpubConverter {
 
     if (headSample[0] === 0xff && headSample[1] === 0xfe) return "utf-16le";
     if (headSample[0] === 0xfe && headSample[1] === 0xff) return "utf-16be";
-    if (headSample[0] === 0xef && headSample[1] === 0xbb && headSample[2] === 0xbf)
-      return "utf-8";
+    if (headSample[0] === 0xef && headSample[1] === 0xbb && headSample[2] === 0xbf) return "utf-8";
 
     const sample = headSample.slice(0, Math.min(4096, headSample.length));
     let highByteCount = 0;
@@ -727,10 +767,14 @@ export class TxtToEpubConverter {
       for (let i = 0; i < sample.length - 1; i++) {
         const b1 = sample[i]!;
         const b2 = sample[i + 1]!;
-        if (b1 >= 0xA1 && b1 <= 0xFE && b2 >= 0xA1 && b2 <= 0xFE) {
+        if (b1 >= 0xa1 && b1 <= 0xfe && b2 >= 0xa1 && b2 <= 0xfe) {
           gbkPairs++;
           i++;
-        } else if (b1 >= 0x81 && b1 <= 0x9F && ((b2 >= 0x40 && b2 <= 0x7E) || (b2 >= 0x80 && b2 <= 0xFC))) {
+        } else if (
+          b1 >= 0x81 &&
+          b1 <= 0x9f &&
+          ((b2 >= 0x40 && b2 <= 0x7e) || (b2 >= 0x80 && b2 <= 0xfc))
+        ) {
           sjisDistinctPairs++;
           i++;
         }
@@ -1070,30 +1114,43 @@ function buildStoreOnlyZip(entries: Array<{ name: string; data: Uint8Array }>): 
     localOffsets.push(offset);
 
     // Local file header signature
-    view.setUint32(offset, 0x04034b50, true); offset += 4;
+    view.setUint32(offset, 0x04034b50, true);
+    offset += 4;
     // Version needed
-    view.setUint16(offset, 20, true); offset += 2;
+    view.setUint16(offset, 20, true);
+    offset += 2;
     // General purpose bit flag
-    view.setUint16(offset, 0, true); offset += 2;
+    view.setUint16(offset, 0, true);
+    offset += 2;
     // Compression method: 0 = stored
-    view.setUint16(offset, 0, true); offset += 2;
+    view.setUint16(offset, 0, true);
+    offset += 2;
     // Last mod time / date (zero)
-    view.setUint16(offset, 0, true); offset += 2;
-    view.setUint16(offset, 0, true); offset += 2;
+    view.setUint16(offset, 0, true);
+    offset += 2;
+    view.setUint16(offset, 0, true);
+    offset += 2;
     // CRC-32
-    view.setUint32(offset, crc, true); offset += 4;
+    view.setUint32(offset, crc, true);
+    offset += 4;
     // Compressed size
-    view.setUint32(offset, entry.data.length, true); offset += 4;
+    view.setUint32(offset, entry.data.length, true);
+    offset += 4;
     // Uncompressed size
-    view.setUint32(offset, entry.data.length, true); offset += 4;
+    view.setUint32(offset, entry.data.length, true);
+    offset += 4;
     // File name length
-    view.setUint16(offset, nb.length, true); offset += 2;
+    view.setUint16(offset, nb.length, true);
+    offset += 2;
     // Extra field length
-    view.setUint16(offset, 0, true); offset += 2;
+    view.setUint16(offset, 0, true);
+    offset += 2;
     // File name
-    buf.set(nb, offset); offset += nb.length;
+    buf.set(nb, offset);
+    offset += nb.length;
     // File data
-    buf.set(entry.data, offset); offset += entry.data.length;
+    buf.set(entry.data, offset);
+    offset += entry.data.length;
   }
 
   // Write central directory
@@ -1104,60 +1161,86 @@ function buildStoreOnlyZip(entries: Array<{ name: string; data: Uint8Array }>): 
     const crc = crc32(entry.data);
 
     // Central directory header signature
-    view.setUint32(offset, 0x02014b50, true); offset += 4;
+    view.setUint32(offset, 0x02014b50, true);
+    offset += 4;
     // Version made by
-    view.setUint16(offset, 20, true); offset += 2;
+    view.setUint16(offset, 20, true);
+    offset += 2;
     // Version needed
-    view.setUint16(offset, 20, true); offset += 2;
+    view.setUint16(offset, 20, true);
+    offset += 2;
     // General purpose bit flag
-    view.setUint16(offset, 0, true); offset += 2;
+    view.setUint16(offset, 0, true);
+    offset += 2;
     // Compression method: 0 = stored
-    view.setUint16(offset, 0, true); offset += 2;
+    view.setUint16(offset, 0, true);
+    offset += 2;
     // Last mod time / date (zero)
-    view.setUint16(offset, 0, true); offset += 2;
-    view.setUint16(offset, 0, true); offset += 2;
+    view.setUint16(offset, 0, true);
+    offset += 2;
+    view.setUint16(offset, 0, true);
+    offset += 2;
     // CRC-32
-    view.setUint32(offset, crc, true); offset += 4;
+    view.setUint32(offset, crc, true);
+    offset += 4;
     // Compressed size
-    view.setUint32(offset, entry.data.length, true); offset += 4;
+    view.setUint32(offset, entry.data.length, true);
+    offset += 4;
     // Uncompressed size
-    view.setUint32(offset, entry.data.length, true); offset += 4;
+    view.setUint32(offset, entry.data.length, true);
+    offset += 4;
     // File name length
-    view.setUint16(offset, nb.length, true); offset += 2;
+    view.setUint16(offset, nb.length, true);
+    offset += 2;
     // Extra field length
-    view.setUint16(offset, 0, true); offset += 2;
+    view.setUint16(offset, 0, true);
+    offset += 2;
     // File comment length
-    view.setUint16(offset, 0, true); offset += 2;
+    view.setUint16(offset, 0, true);
+    offset += 2;
     // Disk number start
-    view.setUint16(offset, 0, true); offset += 2;
+    view.setUint16(offset, 0, true);
+    offset += 2;
     // Internal file attributes
-    view.setUint16(offset, 0, true); offset += 2;
+    view.setUint16(offset, 0, true);
+    offset += 2;
     // External file attributes
-    view.setUint32(offset, 0, true); offset += 4;
+    view.setUint32(offset, 0, true);
+    offset += 4;
     // Relative offset of local header
-    view.setUint32(offset, localOffsets[i]!, true); offset += 4;
+    view.setUint32(offset, localOffsets[i]!, true);
+    offset += 4;
     // File name
-    buf.set(nb, offset); offset += nb.length;
+    buf.set(nb, offset);
+    offset += nb.length;
   }
 
   const cdSize = offset - cdStart;
 
   // End of central directory
-  view.setUint32(offset, 0x06054b50, true); offset += 4;
+  view.setUint32(offset, 0x06054b50, true);
+  offset += 4;
   // Disk number
-  view.setUint16(offset, 0, true); offset += 2;
+  view.setUint16(offset, 0, true);
+  offset += 2;
   // Disk where CD starts
-  view.setUint16(offset, 0, true); offset += 2;
+  view.setUint16(offset, 0, true);
+  offset += 2;
   // Number of CD records on this disk
-  view.setUint16(offset, entries.length, true); offset += 2;
+  view.setUint16(offset, entries.length, true);
+  offset += 2;
   // Total CD records
-  view.setUint16(offset, entries.length, true); offset += 2;
+  view.setUint16(offset, entries.length, true);
+  offset += 2;
   // Size of central directory
-  view.setUint32(offset, cdSize, true); offset += 4;
+  view.setUint32(offset, cdSize, true);
+  offset += 4;
   // Offset of CD start
-  view.setUint32(offset, cdStart, true); offset += 4;
+  view.setUint32(offset, cdStart, true);
+  offset += 4;
   // Comment length
-  view.setUint16(offset, 0, true); offset += 2;
+  view.setUint16(offset, 0, true);
+  offset += 2;
 
   return buf;
 }

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import type { DailyReadingFact } from "./schema";
 import {
   buildDayReport,
   buildLifetimeReport,
@@ -10,6 +9,7 @@ import {
   buildWeekReport,
   buildYearReport,
 } from "./report-builder";
+import type { DailyReadingFact } from "./schema";
 
 const facts: DailyReadingFact[] = [
   {

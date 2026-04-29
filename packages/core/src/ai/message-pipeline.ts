@@ -18,6 +18,7 @@ interface PipelineContext {
   enabledSkills: Skill[];
   isVectorized: boolean;
   userLanguage: string;
+  customPrompt?: string;
 }
 
 export interface ProcessedMessage {
@@ -42,7 +43,8 @@ export function processMessages(
   context: PipelineContext,
   config: PipelineConfig = DEFAULT_CONFIG,
 ): ProcessedMessages {
-  const systemPrompt = buildSystemPrompt(context);
+  const systemPrompt =
+    buildSystemPrompt(context) + (context.customPrompt ? "\n\n---\n\n" + context.customPrompt : "");
 
   // Apply sliding window — keep last N messages
   const windowedMessages = applySlidingWindow(thread.messages, config.slidingWindowSize);

@@ -10,17 +10,38 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { useSettingsStore } from "@/stores/settings-store";
 import { getAIEndpointRequestPreview, testAIEndpoint } from "@readany/core/ai";
 import { getPlatformService } from "@readany/core/services";
 import type { AIEndpoint, AIProviderType } from "@readany/core/types";
+import type {
+  ChatMode,
+  KnowledgeScope,
+  PreheatingStrategy,
+  SocraticMode,
+  WebSearchSource,
+} from "@readany/core/types/chat";
 import {
-  getDefaultBaseUrl,
   PROVIDER_CONFIGS,
-  providerSupportsExactRequestUrl,
+  getDefaultBaseUrl,
   providerRequiresApiKey,
+  providerSupportsExactRequestUrl,
 } from "@readany/core/utils";
-import { AlertCircle, CheckCircle2, Copy, Loader2, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import {
+  AlertCircle,
+  BookOpen,
+  Brain,
+  CheckCircle2,
+  Copy,
+  Globe,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -76,8 +97,7 @@ function EndpointCard({
   }, [endpoint.models, testModel]);
 
   const requestPreview = useMemo(
-    () =>
-      getAIEndpointRequestPreview(endpoint, testModel === "__auto__" ? undefined : testModel),
+    () => getAIEndpointRequestPreview(endpoint, testModel === "__auto__" ? undefined : testModel),
     [endpoint, testModel],
   );
   const supportsExactRequestUrl = providerSupportsExactRequestUrl(endpoint.provider);
@@ -89,8 +109,7 @@ function EndpointCard({
       await getPlatformService().copyToClipboard(requestPreview);
       toast.success(t("notes.copiedToClipboard"));
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : t("common.failed", "失败");
+      const message = error instanceof Error ? error.message : t("common.failed", "失败");
       toast.error(message);
     }
   }, [requestPreview, t]);
@@ -273,7 +292,9 @@ function EndpointCard({
               id={`apiKey-${endpoint.id}`}
               value={endpoint.apiKey}
               onChange={(e) => onUpdate(endpoint.id, { apiKey: e.target.value })}
-              placeholder={PROVIDER_CONFIGS[endpoint.provider || "openai"]?.keyPlaceholder || "sk-..."}
+              placeholder={
+                PROVIDER_CONFIGS[endpoint.provider || "openai"]?.keyPlaceholder || "sk-..."
+              }
               className="h-8 text-sm"
             />
           </div>
@@ -294,7 +315,10 @@ function EndpointCard({
               id={`baseUrl-${endpoint.id}`}
               value={endpoint.baseUrl}
               onChange={(e) => onUpdate(endpoint.id, { baseUrl: e.target.value })}
-              placeholder={PROVIDER_CONFIGS[endpoint.provider || "openai"]?.placeholder || "https://api.example.com"}
+              placeholder={
+                PROVIDER_CONFIGS[endpoint.provider || "openai"]?.placeholder ||
+                "https://api.example.com"
+              }
               className="h-8 text-sm"
             />
             {supportsExactRequestUrl && (
@@ -320,13 +344,13 @@ function EndpointCard({
             )}
             {!exactRequestUrlEnabled &&
               PROVIDER_CONFIGS[endpoint.provider || "openai"]?.needsV1Suffix && (
-              <div className="mt-1 text-[11px] text-muted-foreground">
-                {t(
-                  "settings.ai_baseUrlHint",
-                  "OpenAI-compatible endpoints append /v1 by default. End the URL with / to use your custom path as-is.",
-                )}
-              </div>
-            )}
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  {t(
+                    "settings.ai_baseUrlHint",
+                    "OpenAI-compatible endpoints append /v1 by default. End the URL with / to use your custom path as-is.",
+                  )}
+                </div>
+              )}
             {endpoint.provider === "ollama" && (
               <div className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
                 {t(
@@ -387,22 +411,22 @@ function EndpointCard({
                 variant="outline"
                 size="sm"
                 className="h-7 text-xs gap-1"
-              disabled={
-                exactRequestUrlEnabled ||
-                (providerRequiresApiKey(endpoint.provider) && !endpoint.apiKey) ||
-                endpoint.modelsFetching
-              }
-              onClick={() => onFetchModels(endpoint.id)}
-            >
-              {endpoint.modelsFetching ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <RefreshCw className="h-3 w-3" />
-              )}
-              {endpoint.modelsFetching
-                ? t("settings.ai_fetchingModels")
-                : t("settings.ai_fetchModels")}
-            </Button>
+                disabled={
+                  exactRequestUrlEnabled ||
+                  (providerRequiresApiKey(endpoint.provider) && !endpoint.apiKey) ||
+                  endpoint.modelsFetching
+                }
+                onClick={() => onFetchModels(endpoint.id)}
+              >
+                {endpoint.modelsFetching ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3 w-3" />
+                )}
+                {endpoint.modelsFetching
+                  ? t("settings.ai_fetchingModels")
+                  : t("settings.ai_fetchModels")}
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -514,6 +538,7 @@ export function AISettings() {
   const { t } = useTranslation();
   const {
     aiConfig,
+    _hasHydrated,
     addEndpoint,
     updateEndpoint,
     removeEndpoint,
@@ -526,7 +551,43 @@ export function AISettings() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const activeEndpoint = aiConfig.endpoints.find((ep) => ep.id === aiConfig.activeEndpointId);
+  // Guard: wait for store to hydrate from persistence before rendering
+  if (!_hasHydrated || !aiConfig || !Array.isArray(aiConfig.endpoints)) {
+    console.log("[AISettings] Guard check failed:", {
+      _hasHydrated,
+      hasAiConfig: !!aiConfig,
+      endpointsType: aiConfig && aiConfig.endpoints ? typeof aiConfig.endpoints : "N/A",
+      isArray: aiConfig && aiConfig.endpoints ? Array.isArray(aiConfig.endpoints) : "N/A",
+      aiConfigKeys: aiConfig ? Object.keys(aiConfig) : [],
+    });
+    return (
+      <div className="p-4 text-sm text-muted-foreground">
+        加载中... (_hasHydrated: {_hasHydrated ? "true" : "false"}, aiConfig:{" "}
+        {aiConfig ? "存在" : "不存在"})
+      </div>
+    );
+  }
+
+  const defaultSocraticSettings = {
+    enabled: false,
+    mode: "socratic" as const,
+    knowledgeScope: "current_chapter" as const,
+    enablePreheating: true,
+    preheatingStrategy: "smart" as const,
+    enableWebSearch: false,
+    webSearchSources: ["google", "douban", "openlibrary"] as WebSearchSource[],
+    webSearchTimeout: 3000,
+    userProfile: undefined,
+  };
+
+  const socraticSettings = aiConfig.socraticSettings ?? defaultSocraticSettings;
+
+  const endpoints = aiConfig.endpoints ?? [];
+  const activeEndpoint = endpoints.find((ep) => ep.id === aiConfig.activeEndpointId);
+  const chatMode =
+    aiConfig.chatMode === "socratic" || aiConfig.chatMode === "standard"
+      ? aiConfig.chatMode
+      : "standard";
 
   const handleAddEndpoint = useCallback(() => {
     const defaultProvider: AIProviderType = "openai";
@@ -554,7 +615,6 @@ export function AISettings() {
             "No models returned. Check your API key, model access, and whether the base URL points to the API root.",
           );
         } else if (!aiConfig.activeModel) {
-          // 自动选中第一个模型（如果当前没有选中任何模型）
           setActiveEndpoint(endpointId);
           setActiveModel(models[0]);
         }
@@ -564,6 +624,25 @@ export function AISettings() {
     },
     [fetchModels, aiConfig.activeModel, setActiveEndpoint, setActiveModel],
   );
+
+  const updateSocraticSettings = useCallback(
+    (updates: Partial<typeof socraticSettings>) => {
+      updateAIConfig({
+        socraticSettings: {
+          ...socraticSettings,
+          ...updates,
+        },
+      } as any);
+    },
+    [socraticSettings, updateAIConfig],
+  );
+
+  const handleClearWebSearchCache = useCallback(() => {
+    updateAIConfig({
+      webSearchCache: {},
+    } as any);
+    toast.success(t("settings.ai_cacheCleared", "联网缓存已清除"));
+  }, [updateAIConfig, t]);
 
   return (
     <div className="space-y-6 p-4 pt-3">
@@ -723,6 +802,303 @@ export function AISettings() {
             <span>16</span>
             <span>30</span>
           </div>
+        </div>
+
+        {/* Custom Prompt */}
+        <div>
+          <h3 className="mb-2 text-xs text-muted-foreground">
+            {t("settings.ai_customPrompt", "自定义提示词")}
+          </h3>
+          <textarea
+            value={aiConfig.customPrompt || ""}
+            onChange={(e) => updateAIConfig({ customPrompt: e.target.value })}
+            placeholder={t("settings.ai_customPromptPlaceholder", "输入你的自定义提示词...")}
+            className="w-full h-24 p-2 border border-border rounded-md text-sm resize-none"
+          />
+          <div className="mt-2 text-xs text-muted-foreground">
+            {t(
+              "settings.ai_customPromptHint",
+              "自定义提示词将覆盖默认的系统提示词，为空时使用默认提示词",
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* AI Advanced Settings */}
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-primary" />
+          {t("settings.ai_advancedSettings", "AI 高级设置")}
+        </h2>
+
+        {/* Chat Mode Toggle */}
+        <div className="rounded-lg bg-muted/60 p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Brain className="h-4 w-4 text-primary" />
+              <div>
+                <h3 className="text-sm font-medium">{t("settings.ai_chatMode", "聊天模式")}</h3>
+                <p className="text-xs text-muted-foreground">
+                  {t("settings.ai_chatModeHint", "切换标准对话和苏格拉底式提问模式")}
+                </p>
+              </div>
+            </div>
+            <Select
+              value={chatMode}
+              onValueChange={(v) => updateAIConfig({ chatMode: v as ChatMode })}
+            >
+              <SelectTrigger className="w-[160px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="standard">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="h-3 w-3" />
+                    <span>{t("settings.ai_modeStandard", "标准模式")}</span>
+                  </div>
+                </SelectItem>
+                <SelectItem value="socratic">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-3 w-3" />
+                    <span>{t("settings.ai_modeSocratic", "苏格拉底模式")}</span>
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {chatMode === "socratic" && (
+            <>
+              {/* Socratic Mode */}
+              <div className="space-y-2">
+                <h3 className="text-xs text-muted-foreground">
+                  {t("settings.ai_socraticMode", "苏格拉底阅读风格")}
+                </h3>
+                <Select
+                  value={socraticSettings.mode}
+                  onValueChange={(v) => updateSocraticSettings({ mode: v as SocraticMode })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="socratic">苏格拉底式提问</SelectItem>
+                    <SelectItem value="feynman">费曼讲解法</SelectItem>
+                    <SelectItem value="critical">批判性思维</SelectItem>
+                    <SelectItem value="associative">跨界联想</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {t("settings.ai_socraticModeHint", "选择 AI 的对话风格和引导策略")}
+                </p>
+              </div>
+
+              {/* Knowledge Scope */}
+              <div className="space-y-2">
+                <h3 className="text-xs text-muted-foreground">
+                  {t("settings.ai_knowledgeScope", "知识范围")}
+                </h3>
+                <Select
+                  value={socraticSettings.knowledgeScope}
+                  onValueChange={(v) =>
+                    updateSocraticSettings({ knowledgeScope: v as KnowledgeScope })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="current_chapter">当前章节（默认）</SelectItem>
+                    <SelectItem value="book_summary">全书概要</SelectItem>
+                    <SelectItem value="author_background">作者背景</SelectItem>
+                    <SelectItem value="custom_kb">自定义知识库</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Preheating Settings */}
+              <div className="space-y-3 pt-2 border-t border-border/50">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-medium">
+                      {t("settings.ai_enablePreheating", "读前思维预热")}
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      {t("settings.ai_enablePreheatingHint", "打开书籍前，AI 先进行思维引导")}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={socraticSettings.enablePreheating}
+                    onCheckedChange={(v) => updateSocraticSettings({ enablePreheating: v })}
+                  />
+                </div>
+
+                {socraticSettings.enablePreheating && (
+                  <div className="space-y-2 pl-4">
+                    <h3 className="text-xs text-muted-foreground">
+                      {t("settings.ai_preheatingStrategy", "预热策略")}
+                    </h3>
+                    <Select
+                      value={socraticSettings.preheatingStrategy}
+                      onValueChange={(v) =>
+                        updateSocraticSettings({ preheatingStrategy: v as PreheatingStrategy })
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto">
+                          {t("settings.ai_preheatingAuto", "自动（每次自动开始预热）")}
+                        </SelectItem>
+                        <SelectItem value="manual">
+                          {t("settings.ai_preheatingManual", "手动（用户点击按钮开始）")}
+                        </SelectItem>
+                        <SelectItem value="smart">
+                          {t("settings.ai_preheatingSmart", "智能（首次自动，后续手动）")}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+
+              {/* Web Search Settings */}
+              <div className="space-y-3 pt-2 border-t border-border/50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Globe className="h-4 w-4 text-primary" />
+                    <div>
+                      <h3 className="text-sm font-medium">
+                        {t("settings.ai_enableWebSearch", "联网预热")}
+                      </h3>
+                      <p className="text-xs text-muted-foreground">
+                        {t("settings.ai_enableWebSearchHint", "从豆瓣、知乎等平台检索书评和笔记")}
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={socraticSettings.enableWebSearch}
+                    onCheckedChange={(v) => updateSocraticSettings({ enableWebSearch: v })}
+                  />
+                </div>
+
+                {socraticSettings.enableWebSearch && (
+                  <div className="space-y-3 pl-6">
+                    {/* Search Sources */}
+                    <div className="space-y-2">
+                      <h3 className="text-xs text-muted-foreground">
+                        {t("settings.ai_webSearchSources", "搜索数据源")}
+                      </h3>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { id: "google", label: "Google" },
+                          { id: "douban", label: "豆瓣" },
+                          { id: "openlibrary", label: "Open Library" },
+                          { id: "zhihu", label: "知乎" },
+                        ].map((source) => (
+                          <label
+                            key={source.id}
+                            className="flex items-center gap-1.5 text-xs cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={(socraticSettings.webSearchSources || []).includes(
+                                source.id as any,
+                              )}
+                              onChange={(e) => {
+                                const currentSources = socraticSettings.webSearchSources || [];
+                                const newSources = e.target.checked
+                                  ? [...currentSources, source.id]
+                                  : currentSources.filter((s) => s !== source.id);
+                                updateSocraticSettings({ webSearchSources: newSources as any });
+                              }}
+                              className="rounded border-border"
+                            />
+                            <span>{source.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {t(
+                          "settings.ai_webSearchSourcesHint",
+                          "选择搜索数据源，优先使用前几个，失败后自动切换",
+                        )}
+                      </p>
+                    </div>
+
+                    {/* Timeout Setting */}
+                    <div className="space-y-2">
+                      <h3 className="text-xs text-muted-foreground">
+                        {t("settings.ai_webSearchTimeout", "超时时间")}:{" "}
+                        {(socraticSettings.webSearchTimeout || 3000) / 1000}s
+                      </h3>
+                      <Slider
+                        min={1000}
+                        max={10000}
+                        step={500}
+                        value={[socraticSettings.webSearchTimeout || 3000]}
+                        onValueChange={([v]) => updateSocraticSettings({ webSearchTimeout: v })}
+                      />
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>1s</span>
+                        <span>5s</span>
+                        <span>10s</span>
+                      </div>
+                    </div>
+
+                    {/* Cache Info */}
+                    <div className="flex items-center justify-between rounded-md bg-background/50 px-3 py-2">
+                      <div className="text-xs text-muted-foreground">
+                        {t("settings.ai_webSearchCache", "缓存数据")}
+                        {Object.keys(aiConfig.webSearchCache ?? {}).length > 0 && (
+                          <span className="ml-2 text-primary">
+                            ({Object.keys(aiConfig.webSearchCache ?? {}).length}{" "}
+                            {t("settings.ai_cacheEntries", "条")})
+                          </span>
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs text-muted-foreground hover:text-destructive"
+                        onClick={handleClearWebSearchCache}
+                      >
+                        <Trash2 className="h-3 w-3 mr-1" />
+                        {t("settings.ai_clearCache", "清除缓存")}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* User Profile */}
+              <div className="space-y-2 pt-2 border-t border-border/50">
+                <h3 className="text-xs text-muted-foreground">
+                  {t("settings.ai_userProfile", "用户画像（可选）")}
+                </h3>
+                <Textarea
+                  value={socraticSettings.userProfile?.background || ""}
+                  onChange={(e) =>
+                    updateSocraticSettings({
+                      userProfile: {
+                        ...socraticSettings.userProfile,
+                        background: e.target.value,
+                      },
+                    })
+                  }
+                  placeholder={t(
+                    "settings.ai_userProfilePlaceholder",
+                    "描述你的背景、兴趣、专业领域...",
+                  )}
+                  className="h-20 text-sm resize-none"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t("settings.ai_userProfileHint", "AI 会根据你的背景生成更个性化的提问")}
+                </p>
+              </div>
+            </>
+          )}
         </div>
       </section>
     </div>

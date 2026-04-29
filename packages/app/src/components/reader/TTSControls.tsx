@@ -1,3 +1,4 @@
+import { TTSSleepTimerPanel } from "@/components/tts/TTSSleepTimerPanel";
 import { Button } from "@/components/ui/button";
 import { PasswordInput } from "@/components/ui/password-input";
 import {
@@ -8,7 +9,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { DASHSCOPE_VOICES, getSystemVoices } from "@/lib/tts/tts-service";
 import {
   DEFAULT_SYSTEM_VOICE_VALUE,
   findSystemVoiceLabel,
@@ -16,9 +16,9 @@ import {
   groupSystemVoiceOptions,
   resolveSystemVoiceValue,
 } from "@/lib/tts/system-voices";
+import { DASHSCOPE_VOICES, getSystemVoices } from "@/lib/tts/tts-service";
 import type { TTSEngine } from "@/lib/tts/tts-service";
 import { useTTSStore } from "@/stores/tts-store";
-import { TTSSleepTimerPanel } from "@/components/tts/TTSSleepTimerPanel";
 import { getLocaleDisplayLabel } from "@readany/core/tts";
 import { cn } from "@readany/core/utils";
 import { ChevronDown, ChevronUp, Headphones, Minus, Pause, Play, Plus, Square } from "lucide-react";
@@ -129,8 +129,8 @@ export function TTSControls({ onClose, className }: TTSControlsProps) {
                   </SelectTrigger>
                   <SelectContent className="max-h-[220px]">
                     <SelectItem value={DEFAULT_SYSTEM_VOICE_VALUE}>
-                    {t("tts.defaultVoice")}
-                  </SelectItem>
+                      {t("tts.defaultVoice")}
+                    </SelectItem>
                     {systemVoiceGroups.map(([lang, langVoices]) => (
                       <div key={lang}>
                         <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">

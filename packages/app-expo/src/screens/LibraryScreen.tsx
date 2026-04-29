@@ -9,12 +9,13 @@ import {
   SortAscIcon,
   XIcon,
 } from "@/components/ui/Icon";
+import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
+import { openMobileBook } from "@/lib/library/open-mobile-book";
 import { setCallback, setExtractorRef } from "@/lib/rag/auto-vectorize-service";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { WebDavConnectSheet } from "@/screens/library/WebDavConnectSheet";
 import { WebDavImportSourceSheet } from "@/screens/library/WebDavImportSourceSheet";
 import { useLibraryStore } from "@/stores/library-store";
-import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import {
   type ThemeColors,
   fontSize,
@@ -26,12 +27,12 @@ import {
 } from "@/styles/theme";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { onLibraryChanged } from "@readany/core/events/library-events";
 import {
   DEFAULT_WEBDAV_IMPORT_REMOTE_ROOT,
-  getPlatformService,
   type WebDavImportSource,
+  getPlatformService,
 } from "@readany/core";
+import { onLibraryChanged } from "@readany/core/events/library-events";
 import { useSyncStore } from "@readany/core/stores";
 import { SYNC_SECRET_KEYS } from "@readany/core/sync/sync-backend";
 import type { Book, SortField } from "@readany/core/types";
@@ -41,7 +42,7 @@ import * as DocumentPicker from "expo-document-picker";
  * Features: header search/sort/import, tag filter, vectorization progress banner,
  * tag management sheet, book grid (3 cols), empty/loading states.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
@@ -64,7 +65,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { TagManagementSheet } from "./library/TagManagementSheet";
 import { useBookDownload } from "./library/useBookDownload";
 import { useVectorizationQueue } from "./library/useVectorizationQueue";
-import { openMobileBook } from "@/lib/library/open-mobile-book";
 
 const BOOK_PNG = require("../../assets/book.png");
 const BOOK_DARK_PNG = require("../../assets/book-dark.png");
@@ -189,8 +189,9 @@ export function LibraryScreen() {
     },
   });
 
-  const { vectorQueue, vectorizingBookId, vectorProgress, handleVectorize } =
-    useVectorizationQueue({ extractorRef, nav });
+  const { vectorQueue, vectorizingBookId, vectorProgress, handleVectorize } = useVectorizationQueue(
+    { extractorRef, nav },
+  );
 
   const openSearch = useCallback(() => {
     setShowSearch(true);
@@ -206,7 +207,9 @@ export function LibraryScreen() {
     });
   }, [searchAnim, setFilter]);
 
-  useEffect(() => { loadBooks(); }, [loadBooks]);
+  useEffect(() => {
+    loadBooks();
+  }, [loadBooks]);
   useEffect(() => {
     void loadSyncConfig();
   }, [loadSyncConfig]);
@@ -214,7 +217,9 @@ export function LibraryScreen() {
   useEffect(() => {
     setExtractorRef(extractorRef.current);
     setCallback((bookId, progress) => {
-      console.log(`[AutoVectorize] Book ${bookId}: ${progress.status} (${Math.round(progress.progress * 100)}%)`);
+      console.log(
+        `[AutoVectorize] Book ${bookId}: ${progress.status} (${Math.round(progress.progress * 100)}%)`,
+      );
     });
     return () => {
       setExtractorRef(null);
@@ -246,11 +251,21 @@ export function LibraryScreen() {
     result.sort((a, b) => {
       let cmp = 0;
       switch (sortField) {
-        case "title": cmp = a.meta.title.localeCompare(b.meta.title); break;
-        case "author": cmp = (a.meta.author || "").localeCompare(b.meta.author || ""); break;
-        case "addedAt": cmp = (a.addedAt || 0) - (b.addedAt || 0); break;
-        case "lastOpenedAt": cmp = (a.lastOpenedAt || 0) - (b.lastOpenedAt || 0); break;
-        case "progress": cmp = a.progress - b.progress; break;
+        case "title":
+          cmp = a.meta.title.localeCompare(b.meta.title);
+          break;
+        case "author":
+          cmp = (a.meta.author || "").localeCompare(b.meta.author || "");
+          break;
+        case "addedAt":
+          cmp = (a.addedAt || 0) - (b.addedAt || 0);
+          break;
+        case "lastOpenedAt":
+          cmp = (a.lastOpenedAt || 0) - (b.lastOpenedAt || 0);
+          break;
+        case "progress":
+          cmp = a.progress - b.progress;
+          break;
       }
       return sortOrder === "desc" ? -cmp : cmp;
     });
@@ -359,7 +374,10 @@ export function LibraryScreen() {
         ),
         [
           { text: t("common.cancel", "取消"), style: "cancel" },
-          { text: t("settings.syncTitle", "WebDAV 同步"), onPress: () => nav.navigate("SyncSettings") },
+          {
+            text: t("settings.syncTitle", "WebDAV 同步"),
+            onPress: () => nav.navigate("SyncSettings"),
+          },
         ],
       );
       return;
@@ -376,7 +394,10 @@ export function LibraryScreen() {
         ),
         [
           { text: t("common.cancel", "取消"), style: "cancel" },
-          { text: t("settings.syncTitle", "WebDAV 同步"), onPress: () => nav.navigate("SyncSettings") },
+          {
+            text: t("settings.syncTitle", "WebDAV 同步"),
+            onPress: () => nav.navigate("SyncSettings"),
+          },
         ],
       );
       return;
@@ -430,7 +451,10 @@ export function LibraryScreen() {
       if (filter.sortField === field) {
         setFilter({ sortOrder: filter.sortOrder === "asc" ? "desc" : "asc" });
       } else {
-        setFilter({ sortField: field, sortOrder: field === "title" || field === "author" ? "asc" : "desc" });
+        setFilter({
+          sortField: field,
+          sortOrder: field === "title" || field === "author" ? "asc" : "desc",
+        });
       }
       setShowSort(false);
     },
@@ -456,7 +480,16 @@ export function LibraryScreen() {
         />
       </View>
     ),
-    [gridItemWidth, handleOpen, removeBook, handleManageTags, handleVectorize, vectorizingBookId, vectorQueue, vectorProgress],
+    [
+      gridItemWidth,
+      handleOpen,
+      removeBook,
+      handleManageTags,
+      handleVectorize,
+      vectorizingBookId,
+      vectorQueue,
+      vectorProgress,
+    ],
   );
 
   return (
@@ -484,9 +517,18 @@ export function LibraryScreen() {
                   style={[
                     s.animatedSearchWrap,
                     {
-                      width: searchAnim.interpolate({ inputRange: [0, 1], outputRange: [36, searchExpandedWidth] }),
-                      borderBottomColor: searchAnim.interpolate({ inputRange: [0, 1], outputRange: ["transparent", colors.primary] }),
-                      borderBottomWidth: searchAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] }),
+                      width: searchAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [36, searchExpandedWidth],
+                      }),
+                      borderBottomColor: searchAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ["transparent", colors.primary],
+                      }),
+                      borderBottomWidth: searchAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, 1],
+                      }),
                     },
                   ]}
                 >
@@ -494,16 +536,29 @@ export function LibraryScreen() {
                     style={s.headerBtn}
                     onPress={() => {
                       if (showSearch) {
-                        if (!filter.search.trim()) { closeSearch(); Keyboard.dismiss(); }
+                        if (!filter.search.trim()) {
+                          closeSearch();
+                          Keyboard.dismiss();
+                        }
                       } else {
                         openSearch();
                       }
                     }}
                     activeOpacity={0.7}
                   >
-                    <SearchIcon size={18} color={showSearch ? colors.primary : colors.mutedForeground} />
+                    <SearchIcon
+                      size={18}
+                      color={showSearch ? colors.primary : colors.mutedForeground}
+                    />
                   </TouchableOpacity>
-                  <Animated.View style={{ flex: 1, opacity: searchAnim, flexDirection: "row", alignItems: "center" }}>
+                  <Animated.View
+                    style={{
+                      flex: 1,
+                      opacity: searchAnim,
+                      flexDirection: "row",
+                      alignItems: "center",
+                    }}
+                  >
                     <TextInput
                       ref={searchInputRef}
                       style={s.searchInputInline}
@@ -511,11 +566,19 @@ export function LibraryScreen() {
                       placeholderTextColor={colors.mutedForeground}
                       value={filter.search}
                       onChangeText={(text) => setFilter({ search: text })}
-                      onBlur={() => { if (!filter.search.trim()) closeSearch(); }}
+                      onBlur={() => {
+                        if (!filter.search.trim()) closeSearch();
+                      }}
                       returnKeyType="search"
                     />
                     {filter.search.length > 0 && showSearch && (
-                      <TouchableOpacity style={s.clearSearchBtn} onPress={() => { setFilter({ search: "" }); searchInputRef.current?.focus(); }}>
+                      <TouchableOpacity
+                        style={s.clearSearchBtn}
+                        onPress={() => {
+                          setFilter({ search: "" });
+                          searchInputRef.current?.focus();
+                        }}
+                      >
                         <XIcon size={14} color={colors.mutedForeground} />
                       </TouchableOpacity>
                     )}
@@ -534,29 +597,51 @@ export function LibraryScreen() {
                   disabled={isImporting || isPickingImport}
                   activeOpacity={0.8}
                 >
-                  {isImporting || isPickingImport
-                    ? <ActivityIndicator size="small" color={colors.primaryForeground} />
-                    : <PlusIcon size={18} color={colors.primaryForeground} />}
+                  {isImporting || isPickingImport ? (
+                    <ActivityIndicator size="small" color={colors.primaryForeground} />
+                  ) : (
+                    <PlusIcon size={18} color={colors.primaryForeground} />
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
           </View>
 
           {hasBooks && allTags.length > 0 && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tagScroll} contentContainerStyle={s.tagScrollContent}>
-              <TouchableOpacity style={[s.tagChip, !activeTag && s.tagChipActive]} onPress={() => setActiveTag("")}>
-                <Text style={[s.tagChipText, !activeTag && s.tagChipTextActive]}>{t("library.all", "全部")}</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={s.tagScroll}
+              contentContainerStyle={s.tagScrollContent}
+            >
+              <TouchableOpacity
+                style={[s.tagChip, !activeTag && s.tagChipActive]}
+                onPress={() => setActiveTag("")}
+              >
+                <Text style={[s.tagChipText, !activeTag && s.tagChipTextActive]}>
+                  {t("library.all", "全部")}
+                </Text>
               </TouchableOpacity>
               {allTags.map((tag) => (
-                <TouchableOpacity key={tag} style={[s.tagChip, activeTag === tag && s.tagChipActive]} onPress={() => setActiveTag(activeTag === tag ? "" : tag)}>
-                  <Text style={[s.tagChipText, activeTag === tag && s.tagChipTextActive]}>{tag}</Text>
+                <TouchableOpacity
+                  key={tag}
+                  style={[s.tagChip, activeTag === tag && s.tagChipActive]}
+                  onPress={() => setActiveTag(activeTag === tag ? "" : tag)}
+                >
+                  <Text style={[s.tagChipText, activeTag === tag && s.tagChipTextActive]}>
+                    {tag}
+                  </Text>
                 </TouchableOpacity>
               ))}
               <TouchableOpacity
                 style={[s.tagChip, activeTag === "__uncategorized__" && s.tagChipActive]}
-                onPress={() => setActiveTag(activeTag === "__uncategorized__" ? "" : "__uncategorized__")}
+                onPress={() =>
+                  setActiveTag(activeTag === "__uncategorized__" ? "" : "__uncategorized__")
+                }
               >
-                <Text style={[s.tagChipText, activeTag === "__uncategorized__" && s.tagChipTextActive]}>
+                <Text
+                  style={[s.tagChipText, activeTag === "__uncategorized__" && s.tagChipTextActive]}
+                >
                   {t("sidebar.uncategorized", "未分类")}
                 </Text>
               </TouchableOpacity>
@@ -566,7 +651,12 @@ export function LibraryScreen() {
       </View>
 
       {/* Sort dropdown */}
-      <Modal visible={showSort} transparent animationType="fade" onRequestClose={() => setShowSort(false)}>
+      <Modal
+        visible={showSort}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowSort(false)}
+      >
         <Pressable style={s.sortOverlay} onPress={() => setShowSort(false)} />
         <View style={s.sortDropdown}>
           {SORT_OPTIONS.map(({ field, labelKey }) => (
@@ -582,7 +672,9 @@ export function LibraryScreen() {
               ) : (
                 <ArrowDownAZIcon size={14} color={colors.mutedForeground} />
               )}
-              <Text style={[s.sortText, filter.sortField === field && s.sortTextActive]}>{t(labelKey)}</Text>
+              <Text style={[s.sortText, filter.sortField === field && s.sortTextActive]}>
+                {t(labelKey)}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -591,66 +683,71 @@ export function LibraryScreen() {
       {/* Content */}
       <View style={s.content}>
         <View style={s.contentInner}>
-        {!isLoaded && (
-          <View style={s.loadingWrap}>
-            <ActivityIndicator size="large" color={colors.mutedForeground} />
-          </View>
-        )}
-        {isImporting && (
-          <View style={s.importBanner}>
-            <ActivityIndicator size="small" color={colors.primary} />
-            <Text style={s.importBannerText}>{t("library.importing", "正在导入...")}</Text>
-          </View>
-        )}
-        {downloadingBookId && (
-          <View style={s.downloadBanner}>
-            <ActivityIndicator size="small" color={colors.primary} />
-            <View style={s.downloadBannerInfo}>
-              <Text style={s.downloadBannerStatus}>{t("library.downloading", "下载中")}</Text>
-              <Text style={s.downloadBannerTitle} numberOfLines={1}>{downloadingBookTitle}</Text>
+          {!isLoaded && (
+            <View style={s.loadingWrap}>
+              <ActivityIndicator size="large" color={colors.mutedForeground} />
             </View>
-          </View>
-        )}
-        {isLoaded && books.length === 0 && (
-          <View style={s.emptyWrap}>
-            <Image source={isDark ? BOOK_DARK_PNG : BOOK_PNG} style={{ width: 160, height: 160 }} />
-            <Text style={s.emptyTitle}>{t("library.empty", "暂无书籍")}</Text>
-            <Text style={s.emptyHint}>{t("library.emptyHint", "导入电子书开始阅读之旅")}</Text>
-            <View ref={emptyImportAnchorRef} collapsable={false}>
-              <TouchableOpacity
-                style={s.emptyImportBtn}
-                onPress={() => handleOpenImportSources(emptyImportAnchorRef)}
-                disabled={isPickingImport}
-                activeOpacity={0.8}
-              >
-                <Text style={s.emptyImportText}>{t("library.importFirst", "导入书籍")}</Text>
-              </TouchableOpacity>
+          )}
+          {isImporting && (
+            <View style={s.importBanner}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={s.importBannerText}>{t("library.importing", "正在导入...")}</Text>
             </View>
-          </View>
-        )}
-        {isLoaded && hasBooks && isEmpty && (
-          <View style={s.noResultsWrap}>
-            <SearchIcon size={40} color={withOpacity(colors.mutedForeground, 0.3)} />
-            <Text style={s.noResultsText}>{t("library.noResults", "没有找到匹配的书籍")}</Text>
-          </View>
-        )}
-        {isLoaded && hasBooks && filter.search && !isEmpty && (
-          <Text style={s.resultsCount}>
-            {t("library.resultsCount", { count: filteredBooks.length })}
-          </Text>
-        )}
-        {isLoaded && !isEmpty && (
-          <FlatList
-            data={filteredBooks}
-            renderItem={renderBookCard}
-            keyExtractor={(item) => item.id}
-            key={`library-grid-${columnCount}`}
-            numColumns={columnCount}
-            columnWrapperStyle={s.gridRow}
-            contentContainerStyle={s.gridContent}
-            showsVerticalScrollIndicator={false}
-          />
-        )}
+          )}
+          {downloadingBookId && (
+            <View style={s.downloadBanner}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <View style={s.downloadBannerInfo}>
+                <Text style={s.downloadBannerStatus}>{t("library.downloading", "下载中")}</Text>
+                <Text style={s.downloadBannerTitle} numberOfLines={1}>
+                  {downloadingBookTitle}
+                </Text>
+              </View>
+            </View>
+          )}
+          {isLoaded && books.length === 0 && (
+            <View style={s.emptyWrap}>
+              <Image
+                source={isDark ? BOOK_DARK_PNG : BOOK_PNG}
+                style={{ width: 160, height: 160 }}
+              />
+              <Text style={s.emptyTitle}>{t("library.empty", "暂无书籍")}</Text>
+              <Text style={s.emptyHint}>{t("library.emptyHint", "导入电子书开始阅读之旅")}</Text>
+              <View ref={emptyImportAnchorRef} collapsable={false}>
+                <TouchableOpacity
+                  style={s.emptyImportBtn}
+                  onPress={() => handleOpenImportSources(emptyImportAnchorRef)}
+                  disabled={isPickingImport}
+                  activeOpacity={0.8}
+                >
+                  <Text style={s.emptyImportText}>{t("library.importFirst", "导入书籍")}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+          {isLoaded && hasBooks && isEmpty && (
+            <View style={s.noResultsWrap}>
+              <SearchIcon size={40} color={withOpacity(colors.mutedForeground, 0.3)} />
+              <Text style={s.noResultsText}>{t("library.noResults", "没有找到匹配的书籍")}</Text>
+            </View>
+          )}
+          {isLoaded && hasBooks && filter.search && !isEmpty && (
+            <Text style={s.resultsCount}>
+              {t("library.resultsCount", { count: filteredBooks.length })}
+            </Text>
+          )}
+          {isLoaded && !isEmpty && (
+            <FlatList
+              data={filteredBooks}
+              renderItem={renderBookCard}
+              keyExtractor={(item) => item.id}
+              key={`library-grid-${columnCount}`}
+              numColumns={columnCount}
+              columnWrapperStyle={s.gridRow}
+              contentContainerStyle={s.gridContent}
+              showsVerticalScrollIndicator={false}
+            />
+          )}
         </View>
       </View>
 
@@ -687,60 +784,195 @@ export function LibraryScreen() {
 
 const makeStyles = (
   colors: ThemeColors,
-  layout: { horizontalPadding: number; contentWidth: number; gridGap: number; gridItemWidth: number },
+  layout: {
+    horizontalPadding: number;
+    contentWidth: number;
+    gridGap: number;
+    gridItemWidth: number;
+  },
 ) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-    header: { paddingHorizontal: layout.horizontalPadding, paddingTop: 12, paddingBottom: 8, alignItems: "center" },
+    header: {
+      paddingHorizontal: layout.horizontalPadding,
+      paddingTop: 12,
+      paddingBottom: 8,
+      alignItems: "center",
+    },
     headerInner: { width: "100%", maxWidth: layout.contentWidth },
-    headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
-    headerTitle: { fontSize: fontSize["2xl"], fontWeight: fontWeight.bold, color: colors.foreground },
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 8,
+    },
+    headerTitle: {
+      fontSize: fontSize["2xl"],
+      fontWeight: fontWeight.bold,
+      color: colors.foreground,
+    },
     headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
-    headerBtn: { width: 36, height: 36, borderRadius: radius.full, alignItems: "center", justifyContent: "center" },
-    importBtn: { width: 36, height: 36, borderRadius: radius.full, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
-    animatedSearchWrap: { flexDirection: "row", alignItems: "center", height: 36, overflow: "hidden" },
-    searchInputInline: { flex: 1, fontSize: fontSize.sm, color: colors.foreground, padding: 0, minWidth: 50 },
+    headerBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: radius.full,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    importBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: radius.full,
+      backgroundColor: colors.primary,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    animatedSearchWrap: {
+      flexDirection: "row",
+      alignItems: "center",
+      height: 36,
+      overflow: "hidden",
+    },
+    searchInputInline: {
+      flex: 1,
+      fontSize: fontSize.sm,
+      color: colors.foreground,
+      padding: 0,
+      minWidth: 50,
+    },
     clearSearchBtn: { width: 24, height: 36, alignItems: "center", justifyContent: "center" },
     tagScroll: { marginBottom: 4 },
     tagScrollContent: { gap: 6, paddingRight: 8 },
-    tagChip: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: radius.full, backgroundColor: colors.muted },
+    tagChip: {
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+      borderRadius: radius.full,
+      backgroundColor: colors.muted,
+    },
     tagChipActive: { backgroundColor: colors.primary },
-    tagChipText: { fontSize: fontSize.xs, fontWeight: fontWeight.medium, color: colors.mutedForeground },
+    tagChipText: {
+      fontSize: fontSize.xs,
+      fontWeight: fontWeight.medium,
+      color: colors.mutedForeground,
+    },
     tagChipTextActive: { color: colors.primaryForeground },
     sortOverlay: { flex: 1 },
     sortDropdown: {
-      position: "absolute", top: 110, right: layout.horizontalPadding, minWidth: 180,
-      backgroundColor: colors.card, borderRadius: radius.xl, borderWidth: 0.5, borderColor: colors.border,
-      padding: 4, elevation: 5, shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3, shadowRadius: 8,
+      position: "absolute",
+      top: 110,
+      right: layout.horizontalPadding,
+      minWidth: 180,
+      backgroundColor: colors.card,
+      borderRadius: radius.xl,
+      borderWidth: 0.5,
+      borderColor: colors.border,
+      padding: 4,
+      elevation: 5,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
     },
-    sortItem: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.lg },
+    sortItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: radius.lg,
+    },
     sortItemActive: { backgroundColor: colors.muted },
     sortText: { fontSize: fontSize.xs, color: colors.foreground },
     sortTextActive: { fontWeight: fontWeight.medium },
     content: { flex: 1, paddingHorizontal: layout.horizontalPadding, alignItems: "center" },
     contentInner: { flex: 1, width: "100%", maxWidth: layout.contentWidth },
     loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
-    importBanner: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.muted + "0D", borderRadius: radius.lg, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12 },
+    importBanner: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      backgroundColor: colors.muted + "0D",
+      borderRadius: radius.lg,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      marginBottom: 12,
+    },
     importBannerText: { fontSize: fontSize.xs, color: colors.primary },
-    downloadBanner: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.muted + "0D", borderRadius: radius.lg, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12 },
+    downloadBanner: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      backgroundColor: colors.muted + "0D",
+      borderRadius: radius.lg,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      marginBottom: 12,
+    },
     downloadBannerInfo: { flex: 1, minWidth: 0 },
-    downloadBannerStatus: { fontSize: fontSize.xs, fontWeight: fontWeight.medium, color: colors.primary },
+    downloadBannerStatus: {
+      fontSize: fontSize.xs,
+      fontWeight: fontWeight.medium,
+      color: colors.primary,
+    },
     downloadBannerTitle: { fontSize: 12, color: colors.mutedForeground, marginTop: 2 },
-    vecBanner: { backgroundColor: colors.muted + "0D", borderRadius: radius.lg, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12 },
+    vecBanner: {
+      backgroundColor: colors.muted + "0D",
+      borderRadius: radius.lg,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      marginBottom: 12,
+    },
     vecBannerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
     vecBannerInfo: { flex: 1, minWidth: 0 },
     vecBannerStatusRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-    vecBannerStatus: { fontSize: fontSize.xs, fontWeight: fontWeight.medium, color: colors.primary },
+    vecBannerStatus: {
+      fontSize: fontSize.xs,
+      fontWeight: fontWeight.medium,
+      color: colors.primary,
+    },
     vecBannerTitle: { fontSize: 12, color: colors.mutedForeground, marginTop: 2 },
-    vecProgressBg: { height: 4, backgroundColor: colors.muted + "1A", borderRadius: radius.full, marginTop: 8, overflow: "hidden" },
+    vecProgressBg: {
+      height: 4,
+      backgroundColor: colors.muted + "1A",
+      borderRadius: radius.full,
+      marginTop: 8,
+      overflow: "hidden",
+    },
     vecProgressFill: { height: 4, backgroundColor: colors.primary, borderRadius: radius.full },
     emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
-    emptyIconWrap: { width: 80, height: 80, borderRadius: radius.full, backgroundColor: colors.muted, alignItems: "center", justifyContent: "center", marginBottom: 16 },
-    emptyTitle: { fontSize: fontSize.lg, fontWeight: fontWeight.semibold, color: colors.foreground, marginBottom: 8 },
-    emptyHint: { fontSize: fontSize.sm, color: colors.mutedForeground, textAlign: "center", maxWidth: 240, marginBottom: 24 },
-    emptyImportBtn: { backgroundColor: colors.primary, borderRadius: radius.full, paddingHorizontal: 24, paddingVertical: 10 },
-    emptyImportText: { fontSize: fontSize.sm, fontWeight: fontWeight.medium, color: colors.primaryForeground },
+    emptyIconWrap: {
+      width: 80,
+      height: 80,
+      borderRadius: radius.full,
+      backgroundColor: colors.muted,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 16,
+    },
+    emptyTitle: {
+      fontSize: fontSize.lg,
+      fontWeight: fontWeight.semibold,
+      color: colors.foreground,
+      marginBottom: 8,
+    },
+    emptyHint: {
+      fontSize: fontSize.sm,
+      color: colors.mutedForeground,
+      textAlign: "center",
+      maxWidth: 240,
+      marginBottom: 24,
+    },
+    emptyImportBtn: {
+      backgroundColor: colors.primary,
+      borderRadius: radius.full,
+      paddingHorizontal: 24,
+      paddingVertical: 10,
+    },
+    emptyImportText: {
+      fontSize: fontSize.sm,
+      fontWeight: fontWeight.medium,
+      color: colors.primaryForeground,
+    },
     noResultsWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 80 },
     noResultsText: { fontSize: fontSize.sm, color: colors.mutedForeground, marginTop: 12 },
     resultsCount: { fontSize: fontSize.xs, color: colors.mutedForeground, marginBottom: 8 },

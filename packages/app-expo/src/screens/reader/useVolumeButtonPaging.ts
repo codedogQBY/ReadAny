@@ -1,9 +1,9 @@
+import { useEffect, useRef } from "react";
 /**
  * useVolumeButtonPaging — intercepts hardware volume buttons for page turning.
  * When active, suppresses the system volume UI and restores volume after each press.
  */
-import { Platform, NativeModules } from "react-native";
-import { useEffect, useRef } from "react";
+import { NativeModules } from "react-native";
 import { getVolumeManager } from "./reader-constants";
 
 export interface UseVolumeButtonPagingOptions {

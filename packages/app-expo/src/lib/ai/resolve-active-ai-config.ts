@@ -1,9 +1,12 @@
-import { providerRequiresApiKey } from "@readany/core/utils";
-import type { AIConfig, AIEndpoint } from "@readany/core/types";
 import { useSettingsStore } from "@/stores";
 import type { SettingsState } from "@/stores/settings-store";
+import type { AIConfig, AIEndpoint } from "@readany/core/types";
+import { providerRequiresApiKey } from "@readany/core/utils";
 
-function canUseEndpoint(endpoint: AIEndpoint | undefined, model: string | undefined): endpoint is AIEndpoint {
+function canUseEndpoint(
+  endpoint: AIEndpoint | undefined,
+  model: string | undefined,
+): endpoint is AIEndpoint {
   if (!endpoint || !model) return false;
   return !providerRequiresApiKey(endpoint.provider) || Boolean(endpoint.apiKey);
 }

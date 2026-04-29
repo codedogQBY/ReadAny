@@ -1,7 +1,10 @@
 import type { ChapterData } from "@readany/core/rag";
 import type { Book } from "@readany/core/types";
 
-export type AutoVectorizeCallback = (bookId: string, progress: { status: string; progress: number }) => void;
+export type AutoVectorizeCallback = (
+  bookId: string,
+  progress: { status: string; progress: number },
+) => void;
 
 interface ExtractorRef {
   extractChapters: (base64BookData: string, mimeType?: string) => Promise<ChapterData[]>;
@@ -15,7 +18,7 @@ interface QueueItem {
 
 let extractorRef: ExtractorRef | null = null;
 let callback: AutoVectorizeCallback | null = null;
-let queue: QueueItem[] = [];
+const queue: QueueItem[] = [];
 let processing = false;
 
 export function setExtractorRef(ref: ExtractorRef | null) {

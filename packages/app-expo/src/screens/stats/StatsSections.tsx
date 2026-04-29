@@ -1,3 +1,4 @@
+import { ClockIcon } from "@/components/ui/Icon";
 /**
  * StatsSections.tsx — Section components for the mobile Stats screen.
  * Each section is a self-contained visual block with no business logic.
@@ -21,16 +22,11 @@ import type {
   StatsInsight,
   TopBookEntry,
 } from "@readany/core/stats";
-import { ClockIcon } from "@/components/ui/Icon";
-import { useState } from "react";
-import { Text, TouchableOpacity, type ViewStyle, View } from "react-native";
+import { Text, View, type ViewStyle } from "react-native";
 import { BarChart } from "./BarChart";
 import { MonthHeatmap } from "./MonthHeatmap";
 import { makeStyles } from "./stats-styles";
-import {
-  formatClock,
-  formatTimeLocalized,
-} from "./stats-utils";
+import { formatClock, formatTimeLocalized } from "./stats-utils";
 
 /* ─── Types ─── */
 
@@ -121,9 +117,7 @@ export function ChartSurface({
     return (
       <View style={s.singlePointCard}>
         <Text style={s.singlePointEyebrow}>{copy.singlePointLabel}</Text>
-        <Text style={s.singlePointValue}>
-          {formatTimeLocalized(point.value, isZh)}
-        </Text>
+        <Text style={s.singlePointValue}>{formatTimeLocalized(point.value, isZh)}</Text>
         <Text style={s.singlePointLabel}>{point.label}</Text>
         <Text style={s.singlePointDesc}>{copy.singlePointDesc}</Text>
       </View>
@@ -165,7 +159,11 @@ export function DaySummaryPanel({
   const facts = [
     { label: copy.firstSession, value: formatClock(dayFact.firstSessionAt, isZh) },
     { label: copy.lastSession, value: formatClock(dayFact.lastSessionAt, isZh) },
-    { label: copy.peakHour, value: dayFact.peakHour !== undefined ? `${String(dayFact.peakHour).padStart(2, "0")}:00` : "—" },
+    {
+      label: copy.peakHour,
+      value:
+        dayFact.peakHour !== undefined ? `${String(dayFact.peakHour).padStart(2, "0")}:00` : "—",
+    },
     { label: copy.longestRead, value: formatTimeLocalized(dayFact.longestSessionTime, isZh) },
   ];
 
@@ -176,7 +174,10 @@ export function DaySummaryPanel({
     <View style={s.daySummaryPanel}>
       <View style={s.daySummaryHeroRow}>
         {[firstSession, lastSession].map((item, index) => (
-          <View key={item.label} style={[s.daySummaryHeroBlock, index === 0 && s.daySummaryHeroBlockDivider]}>
+          <View
+            key={item.label}
+            style={[s.daySummaryHeroBlock, index === 0 && s.daySummaryHeroBlockDivider]}
+          >
             <Text style={s.daySummaryHeroLabel}>{item.label}</Text>
             <Text style={s.daySummaryHeroValue}>{item.value}</Text>
           </View>
@@ -221,7 +222,14 @@ export function InsightsSection({
 
   if (insights.length === 0) {
     return (
-      <Text style={{ fontSize: 13, color: withOpacity(colors.mutedForeground, 0.45), textAlign: "center", paddingVertical: 16 }}>
+      <Text
+        style={{
+          fontSize: 13,
+          color: withOpacity(colors.mutedForeground, 0.45),
+          textAlign: "center",
+          paddingVertical: 16,
+        }}
+      >
         {copy.noInsights}
       </Text>
     );
@@ -231,9 +239,12 @@ export function InsightsSection({
     <View>
       {insights.map((insight) => {
         const dotStyle =
-          insight.tone === "celebration" ? s.insightDotCelebration
-            : insight.tone === "warning" ? s.insightDotWarning
-              : insight.tone === "positive" ? s.insightDotPositive
+          insight.tone === "celebration"
+            ? s.insightDotCelebration
+            : insight.tone === "warning"
+              ? s.insightDotWarning
+              : insight.tone === "positive"
+                ? s.insightDotPositive
                 : s.insightDotDefault;
 
         return (
@@ -273,8 +284,15 @@ export function SectionCard({
 
   return (
     <View style={[s.sectionCard, featured && s.sectionFeatured, style]}>
-      {(title || action) ? (
-        <View style={[s.sectionHeader, action ? { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" } : undefined]}>
+      {title || action ? (
+        <View
+          style={[
+            s.sectionHeader,
+            action
+              ? { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }
+              : undefined,
+          ]}
+        >
           <View style={{ flex: 1 }}>
             {title ? <Text style={s.sectionTitle}>{title}</Text> : null}
           </View>
@@ -310,20 +328,31 @@ export function MetricTile({
 
   return (
     <View style={[s.metricTile, style]}>
-      <Text style={s.metricLabel} numberOfLines={1}>{label}</Text>
+      <Text style={s.metricLabel} numberOfLines={1}>
+        {label}
+      </Text>
       <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4 }}>
-        <Text style={s.metricValue} numberOfLines={1}>{value}</Text>
+        <Text style={s.metricValue} numberOfLines={1}>
+          {value}
+        </Text>
         {deltaLabel && delta !== undefined && delta !== 0 && (
-          <Text style={{
-            fontSize: 9,
-            fontWeight: "700",
-            color: delta > 0 ? "rgba(16,185,129,0.7)" : "rgba(239,68,68,0.7)",
-          }}>
-            {delta > 0 ? "↑" : "↓"}{deltaLabel}
+          <Text
+            style={{
+              fontSize: 9,
+              fontWeight: "700",
+              color: delta > 0 ? "rgba(16,185,129,0.7)" : "rgba(239,68,68,0.7)",
+            }}
+          >
+            {delta > 0 ? "↑" : "↓"}
+            {deltaLabel}
           </Text>
         )}
       </View>
-      {sublabel && <Text style={s.metricSub} numberOfLines={1}>{sublabel}</Text>}
+      {sublabel && (
+        <Text style={s.metricSub} numberOfLines={1}>
+          {sublabel}
+        </Text>
+      )}
     </View>
   );
 }
@@ -359,5 +388,9 @@ export function EmptyState({
 
 export { TopBooksSection } from "./TopBooksSection";
 export { MonthCalendarSection } from "./CalendarSection";
-export { RhythmProfileSection, YearlySnapshotsSection, JourneySummaryPanel } from "./LifetimeSections";
+export {
+  RhythmProfileSection,
+  YearlySnapshotsSection,
+  JourneySummaryPanel,
+} from "./LifetimeSections";
 export { StatsBookCover } from "./StatsBookCover";

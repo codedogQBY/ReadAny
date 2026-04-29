@@ -1,5 +1,5 @@
-import type { Bookmark } from "../../types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Bookmark } from "../../types";
 
 const mockExecute = vi.fn();
 const mockSelect = vi.fn();
@@ -14,11 +14,7 @@ const coreMocks = vi.hoisted(() => ({
 
 vi.mock("../db-core", () => coreMocks);
 
-const {
-  getBookmarks,
-  insertBookmark,
-  deleteBookmark,
-} = await import("../bookmark-queries");
+const { getBookmarks, insertBookmark, deleteBookmark } = await import("../bookmark-queries");
 
 const sampleBookmark: Bookmark = {
   id: "bm-1",

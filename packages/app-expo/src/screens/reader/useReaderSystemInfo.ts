@@ -110,8 +110,7 @@ export function useReaderSystemInfo({
   }, []);
 
   const isBatteryCharging =
-    batteryState === Battery.BatteryState.CHARGING ||
-    batteryState === Battery.BatteryState.FULL;
+    batteryState === Battery.BatteryState.CHARGING || batteryState === Battery.BatteryState.FULL;
 
   return { readerClock, batteryLevel, batteryState, isBatteryCharging, stableTopInset, insets };
 }

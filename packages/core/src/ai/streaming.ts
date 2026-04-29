@@ -65,6 +65,7 @@ export class StreamingChat {
         enabledSkills: options.enabledSkills,
         isVectorized: options.isVectorized,
         userLanguage: options.book?.meta.language || "",
+        customPrompt: options.aiConfig.customPrompt,
       },
       { slidingWindowSize: options.aiConfig.slidingWindowSize },
     );

@@ -7,9 +7,9 @@ import { useEffect, useState } from "react";
 
 const EMPTY_ITEMS: readonly [] = [];
 
-export function useResolvedCovers<T extends { bookId?: string; id?: string; coverUrl?: string | null }>(
-  items?: T[],
-): Map<string, string> {
+export function useResolvedCovers<
+  T extends { bookId?: string; id?: string; coverUrl?: string | null },
+>(items?: T[]): Map<string, string> {
   const [resolvedCovers, setResolvedCovers] = useState<Map<string, string>>(new Map());
   const safeItems = items ?? EMPTY_ITEMS;
 

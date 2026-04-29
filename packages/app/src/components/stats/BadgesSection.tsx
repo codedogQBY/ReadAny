@@ -19,7 +19,10 @@ import {
 } from "lucide-react";
 import type { StatsCopy } from "./stats-copy";
 
-const ICON_MAP: Record<string, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
+const ICON_MAP: Record<
+  string,
+  React.ComponentType<{ className?: string; style?: React.CSSProperties }>
+> = {
   flame: Flame,
   library: LibraryBig,
   clock: Clock3,
@@ -51,22 +54,31 @@ interface TierTheme {
 
 const TIER: Record<string, TierTheme> = {
   bronze: {
-    bgFrom: "#e8a85c", bgMid: "#cd7f32", bgTo: "#8b5e3c",
-    ringFrom: "#d4954a", ringTo: "#7a4f2e",
+    bgFrom: "#e8a85c",
+    bgMid: "#cd7f32",
+    bgTo: "#8b5e3c",
+    ringFrom: "#d4954a",
+    ringTo: "#7a4f2e",
     glow: "rgba(205,127,50,0.35)",
     iconColor: "#fff8ee",
     highlight: "rgba(255,240,210,0.5)",
   },
   silver: {
-    bgFrom: "#e0e0e5", bgMid: "#b0b0b8", bgTo: "#78787f",
-    ringFrom: "#c8c8d0", ringTo: "#6e6e76",
+    bgFrom: "#e0e0e5",
+    bgMid: "#b0b0b8",
+    bgTo: "#78787f",
+    ringFrom: "#c8c8d0",
+    ringTo: "#6e6e76",
     glow: "rgba(180,180,195,0.4)",
     iconColor: "#f8f8fa",
     highlight: "rgba(255,255,255,0.6)",
   },
   gold: {
-    bgFrom: "#ffe566", bgMid: "#f0c030", bgTo: "#b8860b",
-    ringFrom: "#ffd700", ringTo: "#9a7209",
+    bgFrom: "#ffe566",
+    bgMid: "#f0c030",
+    bgTo: "#b8860b",
+    ringFrom: "#ffd700",
+    ringTo: "#9a7209",
     glow: "rgba(255,215,0,0.45)",
     iconColor: "#fffdf0",
     highlight: "rgba(255,255,230,0.7)",
@@ -104,11 +116,7 @@ export function BadgesSection({
   const earnedIds = new Set(earned.map((b) => b.id));
 
   if (allBadges.length === 0) {
-    return (
-      <p className="py-6 text-center text-[13px] text-muted-foreground/45">
-        {copy.noBadges}
-      </p>
-    );
+    return <p className="py-6 text-center text-[13px] text-muted-foreground/45">{copy.noBadges}</p>;
   }
 
   return (
@@ -135,9 +143,13 @@ export function BadgesSection({
             {/* Shield badge */}
             <div
               className="relative"
-              style={isEarned ? {
-                filter: `drop-shadow(0 2px 6px ${theme.glow}) drop-shadow(0 0 12px ${theme.glow})`,
-              } : undefined}
+              style={
+                isEarned
+                  ? {
+                      filter: `drop-shadow(0 2px 6px ${theme.glow}) drop-shadow(0 0 12px ${theme.glow})`,
+                    }
+                  : undefined
+              }
             >
               <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
                 <defs>
@@ -155,16 +167,10 @@ export function BadgesSection({
                 </defs>
 
                 {/* Outer ring — hexagonal */}
-                <path
-                  d={hexPath(center, center, outerR)}
-                  fill={`url(#${ringGradId})`}
-                />
+                <path d={hexPath(center, center, outerR)} fill={`url(#${ringGradId})`} />
 
                 {/* Inner face — hexagonal */}
-                <path
-                  d={hexPath(center, center, innerR)}
-                  fill={`url(#${gradId})`}
-                />
+                <path d={hexPath(center, center, innerR)} fill={`url(#${gradId})`} />
 
                 {/* Highlight spot — top-left reflection */}
                 {isEarned && (
@@ -182,17 +188,22 @@ export function BadgesSection({
               {/* Icon — large, centered */}
               <div className="absolute inset-0 flex items-center justify-center pt-0.5">
                 <Icon
-                  className={cn(ICON_SIZE, "drop-shadow-sm transition-transform group-hover:scale-110")}
+                  className={cn(
+                    ICON_SIZE,
+                    "drop-shadow-sm transition-transform group-hover:scale-110",
+                  )}
                   style={{ color: isEarned ? theme.iconColor : "#a1a1aa" }}
                 />
               </div>
             </div>
 
             {/* Label */}
-            <span className={cn(
-              "max-w-[72px] text-center text-[11px] font-semibold leading-tight",
-              isEarned ? "text-foreground/70" : "text-muted-foreground/25",
-            )}>
+            <span
+              className={cn(
+                "max-w-[72px] text-center text-[11px] font-semibold leading-tight",
+                isEarned ? "text-foreground/70" : "text-muted-foreground/25",
+              )}
+            >
               {t(`stats.desktop.badge_${badge.id}_title`)}
             </span>
           </div>

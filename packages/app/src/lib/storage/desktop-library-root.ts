@@ -93,9 +93,7 @@ async function collectDirRelativePaths(root: string, subDir: string): Promise<st
   const dir = await join(root, subDir);
   if (!(await exists(dir))) return [];
   const entries = await readDir(dir);
-  return entries
-    .filter((e) => e.isFile)
-    .map((e) => `${subDir}/${e.name}`);
+  return entries.filter((e) => e.isFile).map((e) => `${subDir}/${e.name}`);
 }
 
 async function ensureTargetDirs(root: string): Promise<void> {
@@ -246,7 +244,10 @@ export async function migrateDesktopLibraryRoot(nextRoot: string): Promise<Migra
     useFontStore.setState({ fonts: updatedFonts });
     const { writeFile } = await import("@tauri-apps/plugin-fs");
     const indexPath = await join(targetRoot, FONTS_DIR, "custom-fonts.json");
-    await writeFile(indexPath, new TextEncoder().encode(JSON.stringify({ fonts: updatedFonts, selectedFontId }, null, 2)));
+    await writeFile(
+      indexPath,
+      new TextEncoder().encode(JSON.stringify({ fonts: updatedFonts, selectedFontId }, null, 2)),
+    );
   } catch {
     // Non-fatal: font paths may need manual fix, but books are safe
   }

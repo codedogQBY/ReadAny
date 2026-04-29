@@ -1,7 +1,7 @@
 import { useColors } from "@/styles/theme";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { LayoutChangeEvent, Text, TouchableOpacity, View } from "react-native";
+import { type LayoutChangeEvent, Text, TouchableOpacity, View } from "react-native";
 import { makeStyles } from "./stats-styles";
 import { formatTime } from "./stats-utils";
 
@@ -45,7 +45,14 @@ export function BarChart({
       onPress={() => setSelectedIdx(null)}
       style={[s.barChartWrap, { flexDirection: "row" }]}
     >
-      <View style={{ width: Y_AXIS_WIDTH, height: BAR_HEIGHT + 20, justifyContent: "space-between", paddingRight: 4 }}>
+      <View
+        style={{
+          width: Y_AXIS_WIDTH,
+          height: BAR_HEIGHT + 20,
+          justifyContent: "space-between",
+          paddingRight: 4,
+        }}
+      >
         {yTicks.map((tick, i) => (
           <Text key={i} style={{ fontSize: 8, color: colors.mutedForeground, textAlign: "right" }}>
             {tick.label}
@@ -100,7 +107,14 @@ export function BarChart({
             elevation: 3,
           }}
         >
-          <Text style={{ fontSize: 12, color: colors.cardForeground, fontWeight: "500", textAlign: "center" }}>
+          <Text
+            style={{
+              fontSize: 12,
+              color: colors.cardForeground,
+              fontWeight: "500",
+              textAlign: "center",
+            }}
+          >
             {formatTime(data[selectedIdx].value)}
           </Text>
         </View>

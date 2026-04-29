@@ -1,9 +1,9 @@
+import { create } from "zustand";
+import { getPlatformService, waitForPlatformService } from "../services/platform";
 /**
  * Custom font store — manages user-uploaded fonts
  */
 import type { CustomFont, FontFormat, FontPreset } from "../types/font";
-import { create } from "zustand";
-import { getPlatformService, waitForPlatformService } from "../services/platform";
 
 const FONTS_DIR = "readany-fonts";
 const FONTS_INDEX_FILE = "custom-fonts.json";

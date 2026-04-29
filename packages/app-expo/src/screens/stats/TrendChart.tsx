@@ -3,7 +3,16 @@ import type { TrendPoint } from "@readany/core/stats";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, TouchableOpacity, View } from "react-native";
-import Svg, { Defs, G, Line, LinearGradient, Path, Rect, Stop, Text as SvgText } from "react-native-svg";
+import Svg, {
+  Defs,
+  G,
+  Line,
+  LinearGradient,
+  Path,
+  Rect,
+  Stop,
+  Text as SvgText,
+} from "react-native-svg";
 import { makeStyles } from "./stats-styles";
 import { formatDate, formatTime } from "./stats-utils";
 
@@ -70,25 +79,62 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
             <G>
               {yTicks.map((tick) => (
                 <G key={tick.value}>
-                  <Line x1={MARGIN_LEFT} y1={tick.y} x2={containerWidth - 8} y2={tick.y} stroke={colors.border} strokeWidth={1} />
-                  <SvgText x={MARGIN_LEFT - 4} y={tick.y} fontSize={9} fill={colors.mutedForeground} textAnchor="end" alignmentBaseline="middle">
-                    {tick.value < 60 ? `${Math.round(tick.value)}m` : `${(tick.value / 60).toFixed(1)}h`}
+                  <Line
+                    x1={MARGIN_LEFT}
+                    y1={tick.y}
+                    x2={containerWidth - 8}
+                    y2={tick.y}
+                    stroke={colors.border}
+                    strokeWidth={1}
+                  />
+                  <SvgText
+                    x={MARGIN_LEFT - 4}
+                    y={tick.y}
+                    fontSize={9}
+                    fill={colors.mutedForeground}
+                    textAnchor="end"
+                    alignmentBaseline="middle"
+                  >
+                    {tick.value < 60
+                      ? `${Math.round(tick.value)}m`
+                      : `${(tick.value / 60).toFixed(1)}h`}
                   </SvgText>
                 </G>
               ))}
               <Path d={areaPath} fill="url(#trendGradient)" />
               <Path d={linePath} fill="none" stroke={colors.emerald} strokeWidth={2} />
-              <Line x1={MARGIN_LEFT} y1={MARGIN_TOP + innerHeight} x2={containerWidth - 8} y2={MARGIN_TOP + innerHeight} stroke={colors.border} strokeWidth={1} />
+              <Line
+                x1={MARGIN_LEFT}
+                y1={MARGIN_TOP + innerHeight}
+                x2={containerWidth - 8}
+                y2={MARGIN_TOP + innerHeight}
+                stroke={colors.border}
+                strokeWidth={1}
+              />
               {xTicks.map((d) => {
                 const idx = data.findIndex((dd) => dd.date === d.date);
                 return (
-                  <SvgText key={d.date} x={xScale(idx)} y={CHART_HEIGHT + 14} fontSize={9} fill={colors.mutedForeground} textAnchor="middle">
+                  <SvgText
+                    key={d.date}
+                    x={xScale(idx)}
+                    y={CHART_HEIGHT + 14}
+                    fontSize={9}
+                    fill={colors.mutedForeground}
+                    textAnchor="middle"
+                  >
                     {formatDate(d.date)}
                   </SvgText>
                 );
               })}
               {data.map((d, i) => (
-                <Rect key={d.date} x={xScale(i) - 12} y={0} width={24} height={CHART_HEIGHT} fill="transparent" />
+                <Rect
+                  key={d.date}
+                  x={xScale(i) - 12}
+                  y={0}
+                  width={24}
+                  height={CHART_HEIGHT}
+                  fill="transparent"
+                />
               ))}
             </G>
           </Svg>
@@ -97,7 +143,13 @@ export function TrendChart({ data }: { data: TrendPoint[] }) {
             {data.map((d, i) => (
               <TouchableOpacity
                 key={d.date}
-                style={{ position: "absolute", left: xScale(i) - 12, top: 0, width: 24, height: CHART_HEIGHT }}
+                style={{
+                  position: "absolute",
+                  left: xScale(i) - 12,
+                  top: 0,
+                  width: 24,
+                  height: CHART_HEIGHT,
+                }}
                 onPress={() => setSelectedIdx(selectedIdx === i ? null : i)}
                 activeOpacity={0.7}
               />

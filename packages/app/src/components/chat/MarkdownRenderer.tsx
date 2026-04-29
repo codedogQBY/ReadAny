@@ -64,7 +64,7 @@ const MermaidBlock = memo(function MermaidBlock({ code }: { code: string }) {
           }
         </style>`,
       );
-    } catch (err) {
+    } catch (_err) {
       return null;
     }
   }, [code]);
@@ -127,7 +127,7 @@ const MermaidBlock = memo(function MermaidBlock({ code }: { code: string }) {
         .zoom<SVGSVGElement, unknown>()
         .scaleExtent([0.1, 10])
         .on("zoom", (event) => {
-          contentG!.setAttribute("transform", String(event.transform));
+          contentG?.setAttribute("transform", String(event.transform));
         });
 
       d3.select(svgElement).call(zoom);
@@ -182,10 +182,10 @@ const MermaidBlock = memo(function MermaidBlock({ code }: { code: string }) {
     }
 
     const allElements = clonedSvg.querySelectorAll("*");
-    let minX = Number.POSITIVE_INFINITY,
-      minY = Number.POSITIVE_INFINITY,
-      maxX = Number.NEGATIVE_INFINITY,
-      maxY = Number.NEGATIVE_INFINITY;
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
 
     allElements.forEach((el) => {
       if (el instanceof SVGGraphicsElement) {
@@ -261,6 +261,11 @@ const MermaidBlock = memo(function MermaidBlock({ code }: { code: string }) {
           <div
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => setExpanded(false)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setExpanded(false);
+            }}
+            role="button"
+            tabIndex={0}
           />
           <div className="relative z-10 m-4 flex h-[90vh] w-[90vw] max-w-6xl flex-col rounded-lg border bg-background shadow-lg">
             <div className="flex items-center justify-between border-b px-4 py-3">

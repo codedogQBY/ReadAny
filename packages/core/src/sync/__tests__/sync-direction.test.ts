@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ISyncBackend } from "../sync-backend";
-import { SYNC_META_KEYS, SYNC_SCHEMA_VERSION, REMOTE_MANIFEST } from "../sync-types";
+import { SYNC_META_KEYS, SYNC_SCHEMA_VERSION } from "../sync-types";
 
 // --- Mock sync-meta ---
 const metaMocks = vi.hoisted(() => ({

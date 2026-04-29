@@ -135,15 +135,7 @@ export async function aiTranslateBatch(
 ): Promise<string[]> {
   // Single text — just delegate
   if (texts.length <= 1) {
-    return aiTranslate(
-      texts,
-      _sourceLang,
-      targetLang,
-      apiKey,
-      baseUrl,
-      model,
-      useExactRequestUrl,
-    );
+    return aiTranslate(texts, _sourceLang, targetLang, apiKey, baseUrl, model, useExactRequestUrl);
   }
 
   const targetLangName = getLanguageName(targetLang);
@@ -200,15 +192,7 @@ export async function aiTranslateBatch(
   }
 
   // Fallback to individual
-  return aiTranslate(
-    texts,
-    _sourceLang,
-    targetLang,
-    apiKey,
-    baseUrl,
-    model,
-    useExactRequestUrl,
-  );
+  return aiTranslate(texts, _sourceLang, targetLang, apiKey, baseUrl, model, useExactRequestUrl);
 }
 
 /** Parse "1. xxx\n2. yyy\n..." format into an array */
@@ -260,14 +244,20 @@ export function getDeepLUrl(baseUrl: string | undefined, path: "translate" | "us
 }
 
 function isOfficialDeepLHost(hostname: string): boolean {
-  return hostname === "api.deepl.com" || hostname === "api-free.deepl.com" || hostname.endsWith(".deepl.com");
+  return (
+    hostname === "api.deepl.com" ||
+    hostname === "api-free.deepl.com" ||
+    hostname.endsWith(".deepl.com")
+  );
 }
 
 function resolveDeepLConfig(baseUrl: string | undefined, apiKey: string): ResolvedDeepLConfig {
   const rawBaseUrl = baseUrl?.trim();
   const normalizedBaseUrl = normalizeDeepLBaseUrl(rawBaseUrl);
   const url = new URL(normalizedBaseUrl);
-  const rawPathSegments = (rawBaseUrl ? new URL(rawBaseUrl) : url).pathname.split("/").filter(Boolean);
+  const rawPathSegments = (rawBaseUrl ? new URL(rawBaseUrl) : url).pathname
+    .split("/")
+    .filter(Boolean);
   const pathSegments = [...rawPathSegments];
   const hasTranslateSuffix = (rawBaseUrl || "").replace(/\/+$/, "").endsWith("/translate");
   const exactTranslateUrl = hasTranslateSuffix ? (rawBaseUrl || "").replace(/\/+$/, "") : undefined;
@@ -306,7 +296,12 @@ function resolveDeepLConfig(baseUrl: string | undefined, apiKey: string): Resolv
 }
 
 function extractDeepLXTranslation(data: any): string | null {
-  const candidate = typeof data?.data === "string" ? data.data : typeof data?.translation === "string" ? data.translation : null;
+  const candidate =
+    typeof data?.data === "string"
+      ? data.data
+      : typeof data?.translation === "string"
+        ? data.translation
+        : null;
   if (!candidate) {
     return null;
   }

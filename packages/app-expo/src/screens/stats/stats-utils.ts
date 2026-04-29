@@ -3,10 +3,10 @@
  * No React, no side-effects — only deterministic functions.
  */
 import {
-  fromLocalDateKey,
   type StatsChartBlock,
   type StatsInsight,
   type StatsReport,
+  fromLocalDateKey,
 } from "@readany/core/stats";
 
 /* ─── Time formatters ─── */
@@ -171,19 +171,43 @@ export function localizeInsight(
   isZh: boolean,
 ): StatsInsight {
   if (insight.id === "no-reading") {
-    return { ...insight, title: t("stats.desktop.insightTitleNoReading"), body: t("stats.desktop.insightBodyNoReading") };
+    return {
+      ...insight,
+      title: t("stats.desktop.insightTitleNoReading"),
+      body: t("stats.desktop.insightBodyNoReading"),
+    };
   }
   if (insight.id === "streak") {
-    return { ...insight, title: t("stats.desktop.insightTitleStreak"), body: t("stats.desktop.insightBodyStreak", { days: report.summary.currentStreak }) };
+    return {
+      ...insight,
+      title: t("stats.desktop.insightTitleStreak"),
+      body: t("stats.desktop.insightBodyStreak", { days: report.summary.currentStreak }),
+    };
   }
   if (insight.id === "focus") {
-    return { ...insight, title: t("stats.desktop.insightTitleFocus"), body: t("stats.desktop.insightBodyFocus", { minutes: Math.round(report.summary.longestSessionTime) }) };
+    return {
+      ...insight,
+      title: t("stats.desktop.insightTitleFocus"),
+      body: t("stats.desktop.insightBodyFocus", {
+        minutes: Math.round(report.summary.longestSessionTime),
+      }),
+    };
   }
   if (insight.id === "top-book") {
-    return { ...insight, title: t("stats.desktop.insightTitleTopBook"), body: t("stats.desktop.insightBodyTopBook", { title: report.topBooks[0]?.title ?? "—" }) };
+    return {
+      ...insight,
+      title: t("stats.desktop.insightTitleTopBook"),
+      body: t("stats.desktop.insightBodyTopBook", { title: report.topBooks[0]?.title ?? "—" }),
+    };
   }
   if (insight.id === "joined" && report.dimension === "lifetime") {
-    return { ...insight, title: t("stats.desktop.milestoneTitleJoined"), body: t("stats.desktop.milestoneBodyJoined", { date: formatDateLabel(report.context.joinedSince, isZh) }) };
+    return {
+      ...insight,
+      title: t("stats.desktop.milestoneTitleJoined"),
+      body: t("stats.desktop.milestoneBodyJoined", {
+        date: formatDateLabel(report.context.joinedSince, isZh),
+      }),
+    };
   }
   return insight;
 }

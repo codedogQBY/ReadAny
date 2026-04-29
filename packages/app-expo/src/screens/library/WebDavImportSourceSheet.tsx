@@ -1,9 +1,4 @@
-import {
-  BookOpenIcon,
-  ChevronRightIcon,
-  CloudIcon,
-  GlobeIcon,
-} from "@/components/ui/Icon";
+import { BookOpenIcon, ChevronRightIcon, CloudIcon, GlobeIcon } from "@/components/ui/Icon";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { fontSize, fontWeight, radius, useColors, withOpacity } from "@/styles/theme";
 import { useMemo } from "react";
@@ -65,8 +60,7 @@ export function WebDavImportSourceSheet({
     Math.max(screenPadding, preferredLeft),
     layout.width - popoverWidth - screenPadding,
   );
-  const showBelow =
-    activeAnchor.y + activeAnchor.height + 12 + 230 < layout.height - screenPadding;
+  const showBelow = activeAnchor.y + activeAnchor.height + 12 + 230 < layout.height - screenPadding;
   const popoverTop = showBelow
     ? activeAnchor.y + activeAnchor.height + 10
     : Math.max(screenPadding, activeAnchor.y - 230);
@@ -143,10 +137,7 @@ export function WebDavImportSourceSheet({
       onDismiss={onDismiss}
     >
       <Pressable style={s.overlay} onPress={onClose}>
-        <Pressable
-          style={s.sheetWrap}
-          onPress={(event) => event.stopPropagation()}
-        >
+        <Pressable style={s.sheetWrap} onPress={(event) => event.stopPropagation()}>
           <View style={s.sheet}>
             <ScrollView style={s.options} bounces={false}>
               <TouchableOpacity

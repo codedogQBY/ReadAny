@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { Book, ReadingSession } from "../types";
-import type { DailyReadingFact } from "./schema";
 import { mergeCurrentSessionIntoDailyFacts } from "./live-facts";
+import type { DailyReadingFact } from "./schema";
 
 const books: Book[] = [
   {

@@ -1,5 +1,5 @@
-import type { Message } from "../../types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Message } from "../../types";
 
 const mockExecute = vi.fn();
 const mockSelect = vi.fn();
@@ -11,16 +11,17 @@ const coreMocks = vi.hoisted(() => ({
   nextSyncVersion: vi.fn(),
   parseJSON: vi.fn((str: string | null | undefined, fallback: unknown) => {
     if (!str) return fallback;
-    try { return JSON.parse(str); } catch { return fallback; }
+    try {
+      return JSON.parse(str);
+    } catch {
+      return fallback;
+    }
   }),
 }));
 
 vi.mock("../db-core", () => coreMocks);
 
-const {
-  getMessages,
-  insertMessage,
-} = await import("../message-queries");
+const { getMessages, insertMessage } = await import("../message-queries");
 
 describe("message-queries", () => {
   beforeEach(() => {

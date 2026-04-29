@@ -1,6 +1,7 @@
+import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
+import { useUpdateStore } from "@/stores/update-store";
 import { getPlatformService } from "@readany/core/services";
 import { checkForUpdate } from "@readany/core/update";
-import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -15,6 +16,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import AppIcon from "../../../assets/icon.png";
 import {
   type ThemeColors,
   fontSize,
@@ -23,9 +25,7 @@ import {
   spacing,
   useColors,
 } from "../../styles/theme";
-import { useUpdateStore } from "@/stores/update-store";
 import { SettingsHeader } from "./SettingsHeader";
-import AppIcon from "../../../assets/icon.png";
 
 const TECH_STACK = [
   { label: "Expo SDK 55", descKey: "about.nativeContainer" },
@@ -83,12 +83,19 @@ export default function AboutScreen() {
     >
       <SettingsHeader title={t("about.title", "关于")} />
 
-      <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, { alignItems: "center" }]}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.scrollContent, { alignItems: "center" }]}
+      >
         <View style={{ width: "100%", maxWidth: layout.centeredContentWidth }}>
           {/* Logo & Version */}
           <View style={styles.logoSection}>
             <View style={styles.logoBadge}>
-              <Image source={AppIcon} style={{ width: 80, height: 80, borderRadius: 18 }} resizeMode="contain" />
+              <Image
+                source={AppIcon}
+                style={{ width: 80, height: 80, borderRadius: 18 }}
+                resizeMode="contain"
+              />
             </View>
             <Text style={styles.appName}>ReadAny</Text>
             <Text style={styles.version}>v{version}</Text>

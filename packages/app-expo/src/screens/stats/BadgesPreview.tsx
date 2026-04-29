@@ -20,7 +20,14 @@ export function BadgesPreview({
 
   if (earned.length === 0) {
     return (
-      <Text style={{ fontSize: 13, color: withOpacity(colors.mutedForeground, 0.4), paddingVertical: 6, textAlign: "center" }}>
+      <Text
+        style={{
+          fontSize: 13,
+          color: withOpacity(colors.mutedForeground, 0.4),
+          paddingVertical: 6,
+          textAlign: "center",
+        }}
+      >
         {t("stats.desktop.noBadges")}
       </Text>
     );
@@ -30,13 +37,19 @@ export function BadgesPreview({
     <View style={{ gap: 10 }}>
       {/* Header */}
       <View style={{ flexDirection: "row", alignItems: "center" }}>
-        <Text style={{ fontSize: 13, fontWeight: "500", color: withOpacity(colors.foreground, 0.6) }}>
+        <Text
+          style={{ fontSize: 13, fontWeight: "500", color: withOpacity(colors.foreground, 0.6) }}
+        >
           {t("stats.desktop.badgesEarnedCount", { count: earned.length })}
         </Text>
       </View>
 
       {/* Horizontal badge scroll */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingVertical: 4 }}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 10, paddingVertical: 4 }}
+      >
         {earned.slice(0, 6).map((badge) => (
           <TouchableOpacity
             key={badge.id}
@@ -46,7 +59,12 @@ export function BadgesPreview({
           >
             <BadgeIconMobile badge={badge} isEarned size={56} />
             <Text
-              style={{ fontSize: 9, fontWeight: "600", color: withOpacity(colors.foreground, 0.55), textAlign: "center" }}
+              style={{
+                fontSize: 9,
+                fontWeight: "600",
+                color: withOpacity(colors.foreground, 0.55),
+                textAlign: "center",
+              }}
               numberOfLines={1}
             >
               {t(`stats.desktop.badge_${badge.id}_title`)}

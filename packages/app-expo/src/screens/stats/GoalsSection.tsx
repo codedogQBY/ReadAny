@@ -1,3 +1,4 @@
+import { useColors, withOpacity } from "@/styles/theme";
 /**
  * GoalsSection.tsx — Mobile goal progress rings + inline add form.
  * Feature-parity with desktop GoalsSection (packages/app/src/components/stats/GoalsSection.tsx).
@@ -5,9 +6,16 @@
 import type { GoalPeriod, GoalProgress, GoalType, StatsDimension } from "@readany/core/stats";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import {
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import Svg, { Circle } from "react-native-svg";
-import { useColors, withOpacity } from "@/styles/theme";
 import { formatCharacterCount } from "./stats-utils";
 
 const GOAL_TYPE_DEFAULTS: Record<GoalType, number> = {
@@ -48,9 +56,7 @@ export function GoalsSection({
   const [formOpen, setFormOpen] = useState(false);
   const isZh = i18n.language.startsWith("zh");
   const supportsGoalPeriod =
-    currentDimension === undefined ||
-    currentDimension === "month" ||
-    currentDimension === "year";
+    currentDimension === undefined || currentDimension === "month" || currentDimension === "year";
 
   const defaultPeriod: GoalPeriod = currentDimension === "year" ? "yearly" : "monthly";
 
@@ -61,7 +67,7 @@ export function GoalsSection({
         ? t("stats.desktop.goalTimeUnit")
         : type === "characters"
           ? t("stats.desktop.goalCharactersUnit")
-        : t("stats.desktop.goalPagesUnit");
+          : t("stats.desktop.goalPagesUnit");
 
   return (
     <View style={{ gap: 12 }}>
@@ -220,11 +226,7 @@ function GoalRow({
           justifyContent: "center",
         }}
       >
-        <Svg
-          width={size}
-          height={size}
-          style={{ transform: [{ rotate: "-90deg" }] }}
-        >
+        <Svg width={size} height={size} style={{ transform: [{ rotate: "-90deg" }] }}>
           <Circle
             cx={size / 2}
             cy={size / 2}
@@ -277,9 +279,7 @@ function GoalRow({
               backgroundColor: statusBg,
             }}
           >
-            <Text style={{ fontSize: 10, fontWeight: "600", color: statusFg }}>
-              {statusText}
-            </Text>
+            <Text style={{ fontSize: 10, fontWeight: "600", color: statusFg }}>{statusText}</Text>
           </View>
         </View>
         <Text
@@ -364,12 +364,10 @@ function GoalAddFormModal({
         ? t("stats.desktop.goalTimeUnit")
         : type === "characters"
           ? t("stats.desktop.goalCharactersInputUnit")
-        : t("stats.desktop.goalPagesUnit");
+          : t("stats.desktop.goalPagesUnit");
 
   const periodLabel =
-    defaultPeriod === "monthly"
-      ? t("stats.desktop.goalMonthly")
-      : t("stats.desktop.goalYearly");
+    defaultPeriod === "monthly" ? t("stats.desktop.goalMonthly") : t("stats.desktop.goalYearly");
 
   const handleTypeChange = (next: GoalType) => {
     setType(next);
@@ -455,9 +453,7 @@ function GoalAddFormModal({
                     fontSize: 12,
                     fontWeight: "500",
                     color:
-                      type === opt.key
-                        ? colors.primary
-                        : withOpacity(colors.mutedForeground, 0.7),
+                      type === opt.key ? colors.primary : withOpacity(colors.mutedForeground, 0.7),
                   }}
                 >
                   {opt.label}

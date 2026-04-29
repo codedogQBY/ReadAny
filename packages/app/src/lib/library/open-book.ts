@@ -1,14 +1,14 @@
 import { useAppStore } from "@/stores/app-store";
 import { useLibraryStore } from "@/stores/library-store";
-import { getPlatformService } from "@readany/core/services";
+import { useMissingBookPromptStore } from "@/stores/missing-book-prompt-store";
 import { setBookSyncStatus } from "@readany/core/db/database";
+import { getPlatformService } from "@readany/core/services";
+import { useSyncStore } from "@readany/core/stores/sync-store";
 import { downloadBookFile } from "@readany/core/sync";
 import { createSyncBackend } from "@readany/core/sync/sync-backend-factory";
-import { useSyncStore } from "@readany/core/stores/sync-store";
 import type { Book } from "@readany/core/types";
 import type { TFunction } from "i18next";
 import { toast } from "sonner";
-import { useMissingBookPromptStore } from "@/stores/missing-book-prompt-store";
 
 interface OpenDesktopBookOptions {
   book: Book;
@@ -27,7 +27,9 @@ function authorsLikelyMatch(a?: string, b?: string): boolean {
   if (left === right || left.includes(right) || right.includes(left)) return true;
   const leftParts = left.split(/[,，、/&]+/).filter((part) => part.length > 1);
   const rightParts = right.split(/[,，、/&]+/).filter((part) => part.length > 1);
-  return leftParts.some((part) => rightParts.some((candidate) => part.includes(candidate) || candidate.includes(part)));
+  return leftParts.some((part) =>
+    rightParts.some((candidate) => part.includes(candidate) || candidate.includes(part)),
+  );
 }
 
 function shouldConfirmReimportCandidate(

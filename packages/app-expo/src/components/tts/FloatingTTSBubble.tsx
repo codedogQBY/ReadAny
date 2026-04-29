@@ -1,3 +1,4 @@
+import { HeadphonesIcon } from "@/components/ui/Icon";
 /**
  * FloatingTTSBubble — Global draggable mini-player shown when TTS is active.
  *
@@ -5,9 +6,7 @@
  * above every screen. Tapping it expands a compact player modal.
  */
 import { useTTSStore } from "@/stores";
-import { HeadphonesIcon } from "@/components/ui/Icon";
 import { useColors } from "@/styles/theme";
-import { TTSMiniPlayer } from "./TTSMiniPlayer";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -18,6 +17,7 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { TTSMiniPlayer } from "./TTSMiniPlayer";
 
 const BUBBLE_SIZE = 56;
 
@@ -58,14 +58,22 @@ export function FloatingTTSBubble() {
         pan.setOffset({ x: (pan.x as any)._value, y: (pan.y as any)._value });
         pan.setValue({ x: 0, y: 0 });
       },
-      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], { useNativeDriver: false }),
-      onPanResponderRelease: () => { pan.flattenOffset(); },
+      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], {
+        useNativeDriver: false,
+      }),
+      onPanResponderRelease: () => {
+        pan.flattenOffset();
+      },
     }),
   ).current;
 
   useEffect(() => {
-    const id = pan.addListener((value) => { setBubbleOffset({ x: value.x, y: value.y }); });
-    return () => { pan.removeListener(id); };
+    const id = pan.addListener((value) => {
+      setBubbleOffset({ x: value.x, y: value.y });
+    });
+    return () => {
+      pan.removeListener(id);
+    };
   }, [pan]);
 
   // Ripple pulse rings — only when playing
@@ -78,7 +86,12 @@ export function FloatingTTSBubble() {
         Animated.loop(
           Animated.sequence([
             Animated.delay(delay),
-            Animated.timing(anim, { toValue: 1, duration: 1600, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+            Animated.timing(anim, {
+              toValue: 1,
+              duration: 1600,
+              easing: Easing.out(Easing.ease),
+              useNativeDriver: true,
+            }),
             Animated.timing(anim, { toValue: 0, duration: 0, useNativeDriver: true }),
           ]),
         );
@@ -86,7 +99,10 @@ export function FloatingTTSBubble() {
       const a2 = makeRipple(ring2, 700);
       a1.start();
       a2.start();
-      return () => { a1.stop(); a2.stop(); };
+      return () => {
+        a1.stop();
+        a2.stop();
+      };
     }
     ring1.setValue(0);
     ring2.setValue(0);
@@ -97,20 +113,33 @@ export function FloatingTTSBubble() {
     opacity: anim.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0, 0.35, 0] }),
   });
 
-  const handleBubbleTap = useCallback(() => { setShowPlayer((v) => !v); }, []);
+  const handleBubbleTap = useCallback(() => {
+    setShowPlayer((v) => !v);
+  }, []);
 
   const measureBubble = useCallback(() => {
     requestAnimationFrame(() => {
-      (bubbleRef.current as any)?.measureInWindow((left: number, top: number, width: number, height: number) => {
-        if (width > 0 && height > 0) {
-          setAnchorLayout({ left, top, size: Math.max(width, height), screenWidth, screenHeight });
-        }
-      });
+      (bubbleRef.current as any)?.measureInWindow(
+        (left: number, top: number, width: number, height: number) => {
+          if (width > 0 && height > 0) {
+            setAnchorLayout({
+              left,
+              top,
+              size: Math.max(width, height),
+              screenWidth,
+              screenHeight,
+            });
+          }
+        },
+      );
     });
   }, [screenHeight, screenWidth]);
 
   useEffect(() => {
-    if (!isActive) { setAnchorLayout(null); return; }
+    if (!isActive) {
+      setAnchorLayout(null);
+      return;
+    }
     measureBubble();
   }, [bubbleOffset.x, bubbleOffset.y, isActive, measureBubble, showPlayer]);
 

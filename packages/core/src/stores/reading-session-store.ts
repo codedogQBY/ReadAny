@@ -150,7 +150,12 @@ export const useReadingSessionStore = create<ReadingSessionState>((set, get) => 
       >();
       for (const s of sessions) {
         const day = new Date(s.startedAt).toISOString().split("T")[0];
-        const existing = dailyStatsMap.get(day) || { readingTime: 0, pagesRead: 0, charactersRead: 0, sessions: 0 };
+        const existing = dailyStatsMap.get(day) || {
+          readingTime: 0,
+          pagesRead: 0,
+          charactersRead: 0,
+          sessions: 0,
+        };
         dailyStatsMap.set(day, {
           readingTime: existing.readingTime + s.totalActiveTime,
           pagesRead: existing.pagesRead + s.pagesRead,

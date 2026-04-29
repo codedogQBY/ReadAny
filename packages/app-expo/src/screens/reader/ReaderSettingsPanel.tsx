@@ -4,12 +4,12 @@
 import { XIcon } from "@/components/ui/Icon";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { useColors } from "@/styles/theme";
+import { useFontStore } from "@readany/core/stores";
 import type { ReadSettings } from "@readany/core/types";
+import { useTranslation } from "react-i18next";
 import { Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useTranslation } from "react-i18next";
 import { makeStyles } from "./reader-styles";
-import { useFontStore } from "@readany/core/stores";
 
 interface Props {
   visible: boolean;
@@ -40,12 +40,7 @@ export function ReaderSettingsPanel({ visible, readSettings, onClose, onUpdateSe
   } = readSettings;
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={s.modalBackdrop} onPress={onClose} />
       <View
         style={[
@@ -174,7 +169,9 @@ export function ReaderSettingsPanel({ visible, readSettings, onClose, onUpdateSe
                     style={[s.themeBtn, selectedFontId === font.id && s.themeBtnActive]}
                     onPress={() => setSelectedFont(font.id)}
                   >
-                    <Text style={[s.themeBtnText, selectedFontId === font.id && s.themeBtnTextActive]}>
+                    <Text
+                      style={[s.themeBtnText, selectedFontId === font.id && s.themeBtnTextActive]}
+                    >
                       {font.name}
                     </Text>
                   </TouchableOpacity>
@@ -191,7 +188,10 @@ export function ReaderSettingsPanel({ visible, readSettings, onClose, onUpdateSe
                 onPress={() => onUpdateSetting("viewMode", "paginated")}
               >
                 <Text
-                  style={[s.viewModeBtnText, settingViewMode === "paginated" && s.viewModeBtnTextActive]}
+                  style={[
+                    s.viewModeBtnText,
+                    settingViewMode === "paginated" && s.viewModeBtnTextActive,
+                  ]}
                 >
                   {t("reader.paginated", "翻页")}
                 </Text>
@@ -201,7 +201,10 @@ export function ReaderSettingsPanel({ visible, readSettings, onClose, onUpdateSe
                 onPress={() => onUpdateSetting("viewMode", "scroll")}
               >
                 <Text
-                  style={[s.viewModeBtnText, settingViewMode === "scroll" && s.viewModeBtnTextActive]}
+                  style={[
+                    s.viewModeBtnText,
+                    settingViewMode === "scroll" && s.viewModeBtnTextActive,
+                  ]}
                 >
                   {t("reader.scrollMode", "滚动")}
                 </Text>
@@ -211,10 +214,20 @@ export function ReaderSettingsPanel({ visible, readSettings, onClose, onUpdateSe
           <View style={s.settingRow}>
             <Text style={s.settingLabel}>{t("settings.showTopTitleProgress")}</Text>
             <TouchableOpacity
-              style={[s.settingToggleBtn, showTopTitleProgress !== false && s.settingToggleBtnActive]}
-              onPress={() => onUpdateSetting("showTopTitleProgress", !(showTopTitleProgress !== false))}
+              style={[
+                s.settingToggleBtn,
+                showTopTitleProgress !== false && s.settingToggleBtnActive,
+              ]}
+              onPress={() =>
+                onUpdateSetting("showTopTitleProgress", !(showTopTitleProgress !== false))
+              }
             >
-              <Text style={[s.settingToggleText, showTopTitleProgress !== false && s.settingToggleTextActive]}>
+              <Text
+                style={[
+                  s.settingToggleText,
+                  showTopTitleProgress !== false && s.settingToggleTextActive,
+                ]}
+              >
                 {showTopTitleProgress !== false ? t("settings.enabled") : t("settings.disabled")}
               </Text>
             </TouchableOpacity>
@@ -222,10 +235,20 @@ export function ReaderSettingsPanel({ visible, readSettings, onClose, onUpdateSe
           <View style={s.settingRow}>
             <Text style={s.settingLabel}>{t("settings.showBottomTimeBattery")}</Text>
             <TouchableOpacity
-              style={[s.settingToggleBtn, showBottomTimeBattery !== false && s.settingToggleBtnActive]}
-              onPress={() => onUpdateSetting("showBottomTimeBattery", !(showBottomTimeBattery !== false))}
+              style={[
+                s.settingToggleBtn,
+                showBottomTimeBattery !== false && s.settingToggleBtnActive,
+              ]}
+              onPress={() =>
+                onUpdateSetting("showBottomTimeBattery", !(showBottomTimeBattery !== false))
+              }
             >
-              <Text style={[s.settingToggleText, showBottomTimeBattery !== false && s.settingToggleTextActive]}>
+              <Text
+                style={[
+                  s.settingToggleText,
+                  showBottomTimeBattery !== false && s.settingToggleTextActive,
+                ]}
+              >
                 {showBottomTimeBattery !== false ? t("settings.enabled") : t("settings.disabled")}
               </Text>
             </TouchableOpacity>

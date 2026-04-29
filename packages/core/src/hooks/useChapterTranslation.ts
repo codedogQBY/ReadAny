@@ -8,20 +8,20 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AIConfig } from "../types";
 import { useSettingsStore } from "../stores/settings-store";
+import { getFromCache } from "../translation/cache";
 import {
   clearChapterCache,
   isChapterFullyCached,
   markChapterFullyCached,
 } from "../translation/chapter-cache";
-import { getFromCache } from "../translation/cache";
 import type {
   ChapterParagraph,
   ChapterTranslationProgress,
   ChapterTranslationResult,
 } from "../translation/chapter-translator";
 import { translateChapter } from "../translation/chapter-translator";
+import type { AIConfig } from "../types";
 import type { TranslationConfig } from "../types/translation";
 
 // ---------------------------------------------------------------------------
@@ -157,7 +157,16 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
         abortRef.current = null;
       }
     },
-    [state.status, translationConfig, aiConfig, bookId, sectionIndex, getParagraphs, injectTranslations, removeTranslations],
+    [
+      state.status,
+      translationConfig,
+      aiConfig,
+      bookId,
+      sectionIndex,
+      getParagraphs,
+      injectTranslations,
+      removeTranslations,
+    ],
   );
 
   // Keep ref in sync so auto-restore effect doesn't depend on startTranslation identity
@@ -212,13 +221,17 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
     // Small delay to ensure DOM is fully stable after navigation
     const timer = setTimeout(async () => {
       try {
-        const cached = await isChapterFullyCached(bookId, sectionIndex, translationConfig.targetLang);
+        const cached = await isChapterFullyCached(
+          bookId,
+          sectionIndex,
+          translationConfig.targetLang,
+        );
         if (cached && !cancelled) {
           // Get paragraphs and restore translations from cache
           const paragraphs = await getParagraphs();
           const providerId = translationConfig.provider.id;
           const results: ChapterTranslationResult[] = [];
-          
+
           for (const p of paragraphs) {
             const translation = await getFromCache(
               p.text,
@@ -234,12 +247,12 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
               });
             }
           }
-          
+
           // Inject translations to DOM
           if (results.length > 0) {
             injectTranslations(results);
           }
-          
+
           // Always show both original and translation by default
           setState({
             status: "complete",
@@ -252,8 +265,27 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
       }
     }, 300);
 
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [ready, bookId, sectionIndex, translationConfig.targetLang, state.status, getParagraphs, injectTranslations, translationConfig.provider.id]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    ready,
+    bookId,
+    sectionIndex,
+    translationConfig.targetLang,
+    state.status,
+    getParagraphs,
+    injectTranslations,
+    translationConfig.provider.id,
+  ]);
 
-  return { state, startTranslation, cancelTranslation, toggleOriginalVisible, toggleTranslationVisible, reset };
+  return {
+    state,
+    startTranslation,
+    cancelTranslation,
+    toggleOriginalVisible,
+    toggleTranslationVisible,
+    reset,
+  };
 }

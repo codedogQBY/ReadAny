@@ -1,7 +1,7 @@
-import { useSettingsStore } from "@/stores";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
+import { useSettingsStore } from "@/stores";
 import type { AIEndpoint } from "@readany/core/types";
-import { getDefaultBaseUrl, PROVIDER_CONFIGS } from "@readany/core/utils";
+import { PROVIDER_CONFIGS, getDefaultBaseUrl } from "@readany/core/utils";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -96,7 +96,10 @@ export default function AISettingsScreen() {
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top"]}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={["top"]}
+    >
       <SettingsHeader
         title={t("settings.ai_title", "AI 设置")}
         subtitle={t("settings.realtimeHint")}
@@ -117,14 +120,19 @@ export default function AISettingsScreen() {
           overScrollMode="never"
           bounces={true}
         >
-          <View style={[styles.contentColumn, { width: "100%", maxWidth: layout.centeredContentWidth }]}>
+          <View
+            style={[styles.contentColumn, { width: "100%", maxWidth: layout.centeredContentWidth }]}
+          >
             {/* Endpoints */}
             <View style={styles.endpointList}>
               {aiConfig.endpoints.map((ep) => {
                 const isActive = ep.id === aiConfig.activeEndpointId;
                 const isExpanded = expandedId === ep.id;
                 return (
-                  <View key={ep.id} style={[styles.endpointCard, isActive && styles.endpointCardActive]}>
+                  <View
+                    key={ep.id}
+                    style={[styles.endpointCard, isActive && styles.endpointCardActive]}
+                  >
                     <TouchableOpacity
                       style={styles.endpointHeader}
                       onPress={() => setExpandedId(isExpanded ? null : ep.id)}
@@ -132,10 +140,14 @@ export default function AISettingsScreen() {
                     >
                       <View style={styles.endpointInfo}>
                         <View style={styles.endpointNameRow}>
-                          <Text style={styles.endpointName}>{ep.name || t("common.unnamed", "未命名")}</Text>
+                          <Text style={styles.endpointName}>
+                            {ep.name || t("common.unnamed", "未命名")}
+                          </Text>
                           {isActive && (
                             <View style={styles.currentBadge}>
-                              <Text style={styles.currentBadgeText}>{t("common.current", "当前")}</Text>
+                              <Text style={styles.currentBadgeText}>
+                                {t("common.current", "当前")}
+                              </Text>
                             </View>
                           )}
                         </View>
@@ -172,20 +184,37 @@ export default function AISettingsScreen() {
               <View style={styles.paramRow}>
                 <Text style={styles.paramLabel}>Temperature</Text>
                 <View style={styles.stepperContainer}>
-                  <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.7}
-                    onPress={() => updateAIConfig({ temperature: Math.round(Math.max(0, aiConfig.temperature - 0.1) * 10) / 10 })}>
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    activeOpacity={0.7}
+                    onPress={() =>
+                      updateAIConfig({
+                        temperature: Math.round(Math.max(0, aiConfig.temperature - 0.1) * 10) / 10,
+                      })
+                    }
+                  >
                     <MinusIcon size={16} color={colors.foreground} />
                   </TouchableOpacity>
                   <TextInput
                     style={styles.stepperInput}
                     value={String(aiConfig.temperature)}
-                    onChangeText={(v) => { const n = Number.parseFloat(v); if (!Number.isNaN(n) && n >= 0 && n <= 1) updateAIConfig({ temperature: n }); }}
+                    onChangeText={(v) => {
+                      const n = Number.parseFloat(v);
+                      if (!Number.isNaN(n) && n >= 0 && n <= 1) updateAIConfig({ temperature: n });
+                    }}
                     keyboardType="decimal-pad"
                     placeholder="0.0 - 1.0"
                     textAlign="center"
                   />
-                  <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.7}
-                    onPress={() => updateAIConfig({ temperature: Math.round(Math.min(1, aiConfig.temperature + 0.1) * 10) / 10 })}>
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    activeOpacity={0.7}
+                    onPress={() =>
+                      updateAIConfig({
+                        temperature: Math.round(Math.min(1, aiConfig.temperature + 0.1) * 10) / 10,
+                      })
+                    }
+                  >
                     <PlusIcon size={16} color={colors.foreground} />
                   </TouchableOpacity>
                 </View>
@@ -194,42 +223,71 @@ export default function AISettingsScreen() {
               <View style={[styles.paramRow, { marginTop: spacing.md }]}>
                 <Text style={styles.paramLabel}>Max Tokens</Text>
                 <View style={styles.stepperContainer}>
-                  <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.7}
-                    onPress={() => updateAIConfig({ maxTokens: Math.max(256, aiConfig.maxTokens - 256) })}>
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    activeOpacity={0.7}
+                    onPress={() =>
+                      updateAIConfig({ maxTokens: Math.max(256, aiConfig.maxTokens - 256) })
+                    }
+                  >
                     <MinusIcon size={16} color={colors.foreground} />
                   </TouchableOpacity>
                   <TextInput
                     style={styles.stepperInput}
                     value={String(aiConfig.maxTokens)}
-                    onChangeText={(v) => { const n = Number.parseInt(v, 10); if (!Number.isNaN(n) && n > 0) updateAIConfig({ maxTokens: n }); }}
-                    keyboardType="number-pad"
-                    textAlign="center"
-                  />
-                  <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.7}
-                    onPress={() => updateAIConfig({ maxTokens: Math.min(32768, aiConfig.maxTokens + 256) })}>
-                    <PlusIcon size={16} color={colors.foreground} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={[styles.paramRow, { marginTop: spacing.md }]}>
-                <Text style={styles.paramLabel}>{t("settings.ai_slidingWindow", "上下文窗口")}</Text>
-                <View style={styles.stepperContainer}>
-                  <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.7}
-                    onPress={() => updateAIConfig({ slidingWindowSize: Math.max(1, aiConfig.slidingWindowSize - 1) })}>
-                    <MinusIcon size={16} color={colors.foreground} />
-                  </TouchableOpacity>
-                  <TextInput
-                    style={styles.stepperInput}
-                    value={String(aiConfig.slidingWindowSize)}
-                    onChangeText={(v) => { const n = Number.parseInt(v, 10); if (!Number.isNaN(n) && n > 0) updateAIConfig({ slidingWindowSize: n }); }}
+                    onChangeText={(v) => {
+                      const n = Number.parseInt(v, 10);
+                      if (!Number.isNaN(n) && n > 0) updateAIConfig({ maxTokens: n });
+                    }}
                     keyboardType="number-pad"
                     textAlign="center"
                   />
                   <TouchableOpacity
                     style={styles.stepperBtn}
                     activeOpacity={0.7}
-                    onPress={() => updateAIConfig({ slidingWindowSize: Math.min(100, aiConfig.slidingWindowSize + 1) })}
+                    onPress={() =>
+                      updateAIConfig({ maxTokens: Math.min(32768, aiConfig.maxTokens + 256) })
+                    }
+                  >
+                    <PlusIcon size={16} color={colors.foreground} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={[styles.paramRow, { marginTop: spacing.md }]}>
+                <Text style={styles.paramLabel}>
+                  {t("settings.ai_slidingWindow", "上下文窗口")}
+                </Text>
+                <View style={styles.stepperContainer}>
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    activeOpacity={0.7}
+                    onPress={() =>
+                      updateAIConfig({
+                        slidingWindowSize: Math.max(1, aiConfig.slidingWindowSize - 1),
+                      })
+                    }
+                  >
+                    <MinusIcon size={16} color={colors.foreground} />
+                  </TouchableOpacity>
+                  <TextInput
+                    style={styles.stepperInput}
+                    value={String(aiConfig.slidingWindowSize)}
+                    onChangeText={(v) => {
+                      const n = Number.parseInt(v, 10);
+                      if (!Number.isNaN(n) && n > 0) updateAIConfig({ slidingWindowSize: n });
+                    }}
+                    keyboardType="number-pad"
+                    textAlign="center"
+                  />
+                  <TouchableOpacity
+                    style={styles.stepperBtn}
+                    activeOpacity={0.7}
+                    onPress={() =>
+                      updateAIConfig({
+                        slidingWindowSize: Math.min(100, aiConfig.slidingWindowSize + 1),
+                      })
+                    }
                   >
                     <PlusIcon size={16} color={colors.foreground} />
                   </TouchableOpacity>

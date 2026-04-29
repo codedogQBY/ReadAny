@@ -1,8 +1,8 @@
-import { useEffect } from "react";
-import { Platform } from "react-native";
+import { useUpdateStore } from "@/stores/update-store";
 import { getPlatformService } from "@readany/core/services";
 import { checkForUpdate } from "@readany/core/update";
-import { useUpdateStore } from "@/stores/update-store";
+import { useEffect } from "react";
+import { Platform } from "react-native";
 
 /**
  * Background update checker — runs once on mount.
@@ -28,11 +28,7 @@ export function useUpdateChecker() {
 
         setCheckResult(result);
 
-        if (
-          result.hasUpdate &&
-          result.latestVersion &&
-          result.latestVersion !== dismissedVersion
-        ) {
+        if (result.hasUpdate && result.latestVersion && result.latestVersion !== dismissedVersion) {
           showDialog();
         }
       } catch (err) {

@@ -1,7 +1,7 @@
 import type { IDatabase } from "../services/platform";
 import { getPlatformService } from "../services/platform";
-import { runSerializedDbTask } from "./write-retry";
 import { generateId } from "../utils/generate-id";
+import { runSerializedDbTask } from "./write-retry";
 
 // Lazy-loaded database instances
 let db: IDatabase | null = null;
@@ -110,6 +110,8 @@ export async function cleanupOrphanedSyncRows(databaseArg?: IDatabase): Promise<
     "DELETE FROM notes WHERE book_id NOT IN (SELECT id FROM books)",
     "DELETE FROM bookmarks WHERE book_id NOT IN (SELECT id FROM books)",
     "DELETE FROM reading_sessions WHERE book_id NOT IN (SELECT id FROM books)",
+    "DELETE FROM mini_reviews WHERE book_id NOT IN (SELECT id FROM books)",
+    "DELETE FROM review_items WHERE book_id NOT IN (SELECT id FROM books)",
     "DELETE FROM book_tags WHERE book_id NOT IN (SELECT id FROM books) OR tag_id NOT IN (SELECT id FROM tags)",
     "DELETE FROM messages WHERE thread_id NOT IN (SELECT id FROM threads)",
   ];
@@ -285,7 +287,11 @@ export async function nextSyncVersion(database: IDatabase, table: string): Promi
   return (rows[0]?.max_v || 0) + 1;
 }
 
-export async function nextUpdatedAt(database: IDatabase, table: string, id: string): Promise<number> {
+export async function nextUpdatedAt(
+  database: IDatabase,
+  table: string,
+  id: string,
+): Promise<number> {
   const now = Date.now();
 
   try {
@@ -301,7 +307,11 @@ export async function nextUpdatedAt(database: IDatabase, table: string, id: stri
 }
 
 /** Insert a tombstone record for sync deletion tracking */
-export async function insertTombstone(database: IDatabase, id: string, tableName: string): Promise<void> {
+export async function insertTombstone(
+  database: IDatabase,
+  id: string,
+  tableName: string,
+): Promise<void> {
   const deviceId = await getDeviceId();
   try {
     await database.execute(
@@ -469,13 +479,57 @@ export async function initDatabase(): Promise<void> {
     )
   `);
 
+      await database.execute(`
+    CREATE TABLE IF NOT EXISTS mini_reviews (
+      id TEXT PRIMARY KEY,
+      book_id TEXT NOT NULL,
+      content TEXT NOT NULL DEFAULT '',
+      generated_at INTEGER NOT NULL,
+      rating INTEGER,
+      source TEXT,
+      updated_at INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+    )
+  `);
+
+      await database.execute(`
+    CREATE TABLE IF NOT EXISTS review_items (
+      id TEXT PRIMARY KEY,
+      book_id TEXT NOT NULL,
+      chapter_id TEXT NOT NULL,
+      chapter_title TEXT NOT NULL DEFAULT '',
+      scheduled_date INTEGER NOT NULL,
+      completed_date INTEGER,
+      quality TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      review_count INTEGER NOT NULL DEFAULT 0,
+      next_review_date INTEGER,
+      notes TEXT,
+      updated_at INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+    )
+  `);
+
       // Create indexes
-      await database.execute("CREATE INDEX IF NOT EXISTS idx_highlights_book ON highlights(book_id)");
+      await database.execute(
+        "CREATE INDEX IF NOT EXISTS idx_highlights_book ON highlights(book_id)",
+      );
       await database.execute("CREATE INDEX IF NOT EXISTS idx_notes_book ON notes(book_id)");
       await database.execute("CREATE INDEX IF NOT EXISTS idx_bookmarks_book ON bookmarks(book_id)");
-      await database.execute("CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id)");
+      await database.execute(
+        "CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id)",
+      );
       await database.execute(
         "CREATE INDEX IF NOT EXISTS idx_reading_sessions_book ON reading_sessions(book_id)",
+      );
+      await database.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mini_reviews_book ON mini_reviews(book_id)",
+      );
+      await database.execute(
+        "CREATE INDEX IF NOT EXISTS idx_review_items_book ON review_items(book_id)",
+      );
+      await database.execute(
+        "CREATE INDEX IF NOT EXISTS idx_review_items_status ON review_items(status)",
       );
 
       // Migrations: add columns that may be missing from older schema versions
@@ -502,7 +556,9 @@ export async function initDatabase(): Promise<void> {
       // --- Sync migrations ---
       // Migration 4: Add updated_at and file_hash to books
       try {
-        await database.execute("ALTER TABLE books ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0");
+        await database.execute(
+          "ALTER TABLE books ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0",
+        );
       } catch {
         // Column already exists
       }
@@ -556,6 +612,8 @@ export async function initDatabase(): Promise<void> {
         "threads",
         "messages",
         "skills",
+        "mini_reviews",
+        "review_items",
       ];
       for (const table of syncTables) {
         try {
@@ -637,7 +695,9 @@ export async function initDatabase(): Promise<void> {
         // Column already exists or table doesn't exist yet
       }
       try {
-        await database.execute("CREATE INDEX IF NOT EXISTS idx_books_deleted_at ON books(deleted_at)");
+        await database.execute(
+          "CREATE INDEX IF NOT EXISTS idx_books_deleted_at ON books(deleted_at)",
+        );
       } catch {
         // Older installs may fail to add the column on the first pass; don't block startup.
       }

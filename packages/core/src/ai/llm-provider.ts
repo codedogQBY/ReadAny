@@ -1,8 +1,8 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { AIConfig, AIEndpoint } from "../types";
-import { logAIEndpointDebug, summarizeDebugText } from "./request-debug";
 import { providerRequiresApiKey } from "../utils";
 import { formatApiHost } from "../utils/api";
+import { logAIEndpointDebug, summarizeDebugText } from "./request-debug";
 
 /**
  * Optional custom fetch for streaming support (e.g. expo/fetch in React Native).

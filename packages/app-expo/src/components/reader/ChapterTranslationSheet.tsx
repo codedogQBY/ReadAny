@@ -8,15 +8,23 @@
  *   error → message + retry + clear
  */
 
-import { CheckIcon, EyeIcon, EyeOffIcon, LanguagesIcon, Trash2Icon, XIcon } from "@/components/ui/Icon";
-import type { ChapterTranslationState } from "@readany/core/hooks";
+import { CheckIcon, EyeIcon, EyeOffIcon, LanguagesIcon, Trash2Icon } from "@/components/ui/Icon";
 import { useSettingsStore } from "@/stores";
+import { type ThemeColors, fontSize, useColors } from "@/styles/theme";
+import type { ChapterTranslationState } from "@readany/core/hooks";
 import type { TranslationTargetLang } from "@readany/core/types/translation";
 import { TRANSLATOR_LANGS } from "@readany/core/types/translation";
-import { type ThemeColors, fontSize, useColors } from "@/styles/theme";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  FlatList,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 interface ChapterTranslationSheetProps {
   visible: boolean;
@@ -275,13 +283,19 @@ export function ChapterTranslationSheet({
     if (state.status === "error") {
       return (
         <>
-          <Text style={[s.statusText, { color: colors.destructive || "#ef4444", textAlign: "center" }]} numberOfLines={2}>
+          <Text
+            style={[s.statusText, { color: colors.destructive || "#ef4444", textAlign: "center" }]}
+            numberOfLines={2}
+          >
             {state.message}
           </Text>
-          <Pressable style={s.primaryButton} onPress={() => {
-            setTranslationLang(selectedLang);
-            onStart(selectedLang);
-          }}>
+          <Pressable
+            style={s.primaryButton}
+            onPress={() => {
+              setTranslationLang(selectedLang);
+              onStart(selectedLang);
+            }}
+          >
             <Text style={s.primaryButtonText}>{t("common.retry")}</Text>
           </Pressable>
           <Pressable
@@ -304,12 +318,7 @@ export function ChapterTranslationSheet({
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={s.overlay} onPress={onClose}>
         <Pressable style={s.sheet} onPress={(e) => e.stopPropagation()}>
           {/* Drag handle */}

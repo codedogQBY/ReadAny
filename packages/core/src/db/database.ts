@@ -104,3 +104,21 @@ export {
   updateSkill,
   deleteSkill,
 } from "./skill-queries";
+
+export {
+  getMiniReview,
+  getAllMiniReviews,
+  insertMiniReview,
+  deleteMiniReview,
+} from "./mini-review-queries";
+
+export {
+  getReviewItems,
+  getDueReviewItems,
+  getUpcomingReviewItems,
+  getReviewItemStats,
+  insertReviewItem,
+  updateReviewItem,
+  deleteReviewItem,
+  deleteReviewItemsByBookId,
+} from "./review-item-queries";

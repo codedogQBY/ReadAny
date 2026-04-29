@@ -109,7 +109,12 @@ export function withPersist<T extends object>(
         const migrated = migrate ? migrate(persisted) : persisted;
         // Merge persisted data with current state (don't replace methods)
         const currentState = get();
-        const mergedState = { ...currentState, ...migrated, ...(resetAfterHydrate ?? {}), _hasHydrated: true };
+        const mergedState = {
+          ...currentState,
+          ...migrated,
+          ...(resetAfterHydrate ?? {}),
+          _hasHydrated: true,
+        };
         (set as (state: T, replace: true) => void)(mergedState as T, true);
       } else {
         const currentState = get();

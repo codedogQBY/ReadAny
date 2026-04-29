@@ -1,12 +1,14 @@
 import { ConfigGuideDialog, type ConfigGuideType } from "@/components/shared/ConfigGuideDialog";
+import { useSocraticChat } from "@/hooks/use-socratic-chat";
 /**
  * ChatPanel — book-scoped sidebar chat panel.
  */
 import { useStreamingChat } from "@/hooks/use-streaming-chat";
+import { conversationExportService, type ExportTemplateType } from "@/lib/conversation-export";
 import { useChatStore } from "@/stores/chat-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { getPlatformService } from "@readany/core/services";
-import type { Book, CitationPart } from "@readany/core/types";
+import type { AIConfig, Book, CitationPart } from "@readany/core/types";
 import {
   convertToMessageV2,
   exportChatAsJSON,
@@ -20,12 +22,15 @@ import {
   providerRequiresApiKey,
 } from "@readany/core/utils";
 import {
+  BookOpen,
   ClipboardCopy,
   Download,
   FileJson,
   FileText,
   History,
+  Loader2,
   MessageCirclePlus,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -60,6 +65,50 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
     bookId,
   });
 
+  // Use socratic chat hook for preheating support
+  const { startPreheating, processCommand, addUserAnswer, getSystemPrompt, isPreheatingComplete } =
+    useSocraticChat({
+      book: book || null,
+      bookId,
+    });
+
+  // Handle preheating trigger from sessionStorage
+  useEffect(() => {
+    if (!bookId) return;
+    const preheatKey = `preheating-start-${bookId}`;
+    const shouldPreheat = sessionStorage.getItem(preheatKey);
+    console.log("[ChatPanel] Checking preheating:", { bookId, shouldPreheat });
+    if (shouldPreheat === "true") {
+      sessionStorage.removeItem(preheatKey);
+      console.log("[ChatPanel] Starting preheating...");
+      startPreheating();
+      // Send initial preheating message after a short delay to ensure thread is ready
+      setTimeout(() => {
+        const aiConfig = useSettingsStore.getState().aiConfig;
+        const socraticSettings = aiConfig.socraticSettings || {
+          mode: "socratic",
+          knowledgeScope: "book_summary",
+        };
+        const bookTitle = book?.meta?.title || "这本书";
+        const mode = socraticSettings.mode || "socratic";
+        const scope = socraticSettings.knowledgeScope || "book_summary";
+        const preheatingPrompt = `开始${mode === "socratic" ? "苏格拉底式" : mode}预热。我正在准备阅读《${bookTitle}》。请根据${scope === "book_summary" ? "全书概要" : scope === "current_chapter" ? "当前章节" : "作者背景"}，提出1-3个引导性问题，帮助我建立阅读框架。`;
+        console.log("[ChatPanel] Sending preheating message:", preheatingPrompt);
+
+        // Use socratic system prompt for preheating
+        const socraticSystemPrompt = getSystemPrompt();
+        const aiConfigOverride = socraticSystemPrompt
+          ? {
+              ...aiConfig,
+              customPrompt: socraticSystemPrompt,
+            }
+          : undefined;
+
+        sendMessage(preheatingPrompt, bookId, false, false, undefined, aiConfigOverride);
+      }, 500);
+    }
+  }, [bookId, startPreheating, sendMessage, book, getSystemPrompt]);
+
   // Load book threads on mount
   useEffect(() => {
     if (bookId) {
@@ -75,6 +124,7 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [attachedQuotes, setAttachedQuotes] = useState<AttachedQuote[]>([]);
   const [configGuide, setConfigGuide] = useState<ConfigGuideType>(null);
+  const [exporting, setExporting] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
@@ -112,10 +162,58 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
         return;
       }
 
-      sendMessage(content, bookId, deepThinking, spoilerFree, quotes);
+      // Check if this is a command
+      if (content.trim().startsWith("/")) {
+        const result = processCommand(content);
+        if (result?.success) {
+          // Get socratic system prompt for command responses too
+          let aiConfigOverride: AIConfig | undefined;
+          if (aiConfig.chatMode === "socratic") {
+            const socraticSystemPrompt = getSystemPrompt();
+            if (socraticSystemPrompt) {
+              aiConfigOverride = {
+                ...aiConfig,
+                customPrompt: socraticSystemPrompt,
+              };
+            }
+          }
+          // Add command as user message
+          sendMessage(content, bookId, deepThinking, spoilerFree, quotes, aiConfigOverride);
+          // Send system response
+          setTimeout(() => {
+            sendMessage(
+              result.message || "命令已执行",
+              bookId,
+              false,
+              false,
+              undefined,
+              aiConfigOverride,
+            );
+          }, 100);
+          setAttachedQuotes([]);
+          return;
+        }
+      }
+
+      // In socratic mode, track user answers and use socratic system prompt
+      let aiConfigOverride: AIConfig | undefined;
+      if (aiConfig.chatMode === "socratic") {
+        if (!isPreheatingComplete) {
+          addUserAnswer(content);
+        }
+        const socraticSystemPrompt = getSystemPrompt();
+        if (socraticSystemPrompt) {
+          aiConfigOverride = {
+            ...aiConfig,
+            customPrompt: socraticSystemPrompt,
+          };
+        }
+      }
+
+      sendMessage(content, bookId, deepThinking, spoilerFree, quotes, aiConfigOverride);
       setAttachedQuotes([]);
     },
-    [sendMessage, bookId],
+    [sendMessage, bookId, processCommand, addUserAnswer, isPreheatingComplete, getSystemPrompt],
   );
 
   const handleRemoveQuote = useCallback((id: string) => {
@@ -235,6 +333,44 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
     toast.success(t("chat.copiedSuccess"));
   }, [allMessages, exportOpts, t]);
 
+  // AI-enhanced export using conversationExportService
+  const handleAIExport = useCallback(async (templateType: ExportTemplateType) => {
+    setShowExportMenu(false);
+    setExporting(true);
+    try {
+      const convMessages = allMessages.map((m) => ({
+        id: m.id,
+        role: m.role as "user" | "assistant" | "system",
+        content: m.parts
+          .filter((p) => p.type === "text")
+          .map((p) => p.text)
+          .join("\n"),
+        timestamp: m.createdAt ?? Date.now(),
+      }));
+
+      const result = await conversationExportService.exportConversation(
+        convMessages,
+        book?.meta?.title || t("chat.aiAssistant"),
+        activeThread?.title || "",
+        {
+          template: templateType,
+          format: "markdown",
+          includeMetadata: true,
+          useAIEnhancement: true,
+        },
+      );
+
+      const platform = getPlatformService();
+      await platform.shareOrDownloadFile(result.content, result.filename, result.mimeType);
+      toast.success(t("chat.exportSuccess"));
+    } catch (err) {
+      console.error("[ChatPanel] AI export failed:", err);
+      toast.error(t("chat.exportFailed", "导出失败"));
+    } finally {
+      setExporting(false);
+    }
+  }, [allMessages, book, activeThread, t]);
+
   const SUGGESTIONS = [
     t("chat.suggestions.summarizeChapter"),
     t("chat.suggestions.explainConcepts"),
@@ -271,7 +407,62 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
                 <Download className="size-3.5" />
               </button>
               {showExportMenu && (
-                <div className="absolute right-0 top-full z-50 mt-1 min-w-48 animate-in fade-in slide-in-from-top-1 rounded-lg border bg-popover p-1.5 shadow-lg">
+                <div className="absolute right-0 top-full z-50 mt-1 min-w-52 animate-in fade-in slide-in-from-top-1 rounded-lg border bg-popover p-1.5 shadow-lg">
+                  {/* AI Enhanced Exports */}
+                  <div className="px-2 py-1 text-[10px] font-medium text-primary/70 uppercase tracking-wider flex items-center gap-1">
+                    <Sparkles className="size-3" />
+                    {t("chat.aiExport", "AI 智能导出")}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={exporting}
+                    onClick={() => handleAIExport("summary")}
+                    className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted disabled:opacity-50"
+                  >
+                    {exporting ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" /> : <Sparkles className="size-4 shrink-0 text-primary" />}
+                    <span className="flex-1 whitespace-nowrap text-left">
+                      {t("chat.exportAISummary", "AI 对话摘要")}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={exporting}
+                    onClick={() => handleAIExport("key_insights")}
+                    className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted disabled:opacity-50"
+                  >
+                    {exporting ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" /> : <Sparkles className="size-4 shrink-0 text-primary" />}
+                    <span className="flex-1 whitespace-nowrap text-left">
+                      {t("chat.exportAIInsights", "AI 核心洞察")}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={exporting}
+                    onClick={() => handleAIExport("chapter_notes")}
+                    className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted disabled:opacity-50"
+                  >
+                    {exporting ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" /> : <BookOpen className="size-4 shrink-0 text-primary" />}
+                    <span className="flex-1 whitespace-nowrap text-left">
+                      {t("chat.exportAIChapterNotes", "AI 章节笔记")}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={exporting}
+                    onClick={() => handleAIExport("questions_answers")}
+                    className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted disabled:opacity-50"
+                  >
+                    {exporting ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" /> : <Sparkles className="size-4 shrink-0 text-primary" />}
+                    <span className="flex-1 whitespace-nowrap text-left">
+                      {t("chat.exportAIQA", "AI 问答整理")}
+                    </span>
+                  </button>
+
+                  <div className="mx-2 my-1 border-t" />
+                  {/* Standard Exports */}
+                  <div className="px-2 py-1 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">
+                    {t("chat.standardExport", "标准导出")}
+                  </div>
                   <button
                     type="button"
                     onClick={handleExportMarkdown}
@@ -342,11 +533,14 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
                     if (!olderByMonth.has(monthLabel)) {
                       olderByMonth.set(monthLabel, []);
                     }
-                    olderByMonth.get(monthLabel)!.push(thread);
+                    olderByMonth.get(monthLabel)?.push(thread);
                   }
                   const sortedMonths = [...olderByMonth.keys()].sort((a, b) => b.localeCompare(a));
                   for (const month of sortedMonths) {
-                    sections.push({ key: month, label: month, threads: olderByMonth.get(month)! });
+                    const monthThreads = olderByMonth.get(month);
+                    if (monthThreads) {
+                      sections.push({ key: month, label: month, threads: monthThreads });
+                    }
                   }
 
                   return sections.map(({ key, label, threads }) => {
@@ -363,9 +557,10 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
                               : null;
                           const preview = lastMsg?.content?.slice(0, 60) || "";
                           return (
-                            <div
+                            <button
+                              type="button"
                               key={thread.id}
-                              className={`group flex cursor-pointer items-start gap-2 rounded-md px-2.5 py-2 transition-colors ${
+                              className={`group flex w-full cursor-pointer items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors ${
                                 thread.id === activeThreadId
                                   ? "bg-primary/10 text-primary"
                                   : "text-neutral-600 hover:bg-muted"
@@ -397,7 +592,7 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
                               >
                                 <Trash2 className="size-3" />
                               </button>
-                            </div>
+                            </button>
                           );
                         })}
                       </div>

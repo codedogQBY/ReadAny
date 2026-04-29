@@ -17,9 +17,7 @@ export function PeriodBookList({
   const s = makeStyles(colors);
 
   if (books.length === 0) {
-    return (
-      <Text style={s.periodBooksEmpty}>{t("stats.noBooksInPeriod")}</Text>
-    );
+    return <Text style={s.periodBooksEmpty}>{t("stats.noBooksInPeriod")}</Text>;
   }
 
   return (
@@ -37,13 +35,17 @@ export function PeriodBookList({
             )}
             <View style={s.bookInfo}>
               <View style={s.bookTitleRow}>
-                <Text style={s.bookTitle} numberOfLines={1}>{book.title}</Text>
+                <Text style={s.bookTitle} numberOfLines={1}>
+                  {book.title}
+                </Text>
                 <Text style={s.bookTime}>{formatTime(book.totalTime)}</Text>
               </View>
               {book.author && <Text style={s.bookAuthor}>{book.author}</Text>}
               <View style={s.progressRow}>
                 <View style={s.progressTrack}>
-                  <View style={[s.progressFill, { width: `${Math.min(book.progress * 100, 100)}%` }]} />
+                  <View
+                    style={[s.progressFill, { width: `${Math.min(book.progress * 100, 100)}%` }]}
+                  />
                 </View>
                 <Text style={s.progressPercent}>{Math.round(book.progress * 100)}%</Text>
               </View>

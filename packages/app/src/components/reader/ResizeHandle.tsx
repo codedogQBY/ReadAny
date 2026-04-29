@@ -68,7 +68,7 @@ export function ResizeHandle({
       document.body.style.userSelect = "none";
       document.body.style.cursor = "col-resize";
     }
-    
+
     return () => {
       // Always cleanup on unmount or when isDragging changes
       document.body.style.userSelect = "";

@@ -1,11 +1,6 @@
 import type { Book, ReadingSession } from "../types";
+import { getMonthKey, getWeekKey, getYearKey, toLocalDateKey } from "./period-utils";
 import type { DailyBookBreakdown, DailyReadingFact } from "./schema";
-import {
-  getMonthKey,
-  getWeekKey,
-  getYearKey,
-  toLocalDateKey,
-} from "./period-utils";
 
 function toMinutes(milliseconds: number): number {
   return milliseconds / 60000;
@@ -59,7 +54,10 @@ function getPeakHour(hourBuckets: Map<number, number>): number | undefined {
   let bestValue = -1;
 
   for (const [hour, totalMinutes] of hourBuckets) {
-    if (totalMinutes > bestValue || (totalMinutes === bestValue && bestHour !== undefined && hour < bestHour)) {
+    if (
+      totalMinutes > bestValue ||
+      (totalMinutes === bestValue && bestHour !== undefined && hour < bestHour)
+    ) {
       bestHour = hour;
       bestValue = totalMinutes;
     }
@@ -96,7 +94,9 @@ export function buildDailyReadingFacts(
     day.sessionsCount += 1;
     day.longestSessionTime = Math.max(day.longestSessionTime, totalTime);
     day.firstSessionAt =
-      day.firstSessionAt === undefined ? session.startedAt : Math.min(day.firstSessionAt, session.startedAt);
+      day.firstSessionAt === undefined
+        ? session.startedAt
+        : Math.min(day.firstSessionAt, session.startedAt);
     day.lastSessionAt =
       day.lastSessionAt === undefined ? sessionEndAt : Math.max(day.lastSessionAt, sessionEndAt);
     day.hourBuckets.set(sessionHour, (day.hourBuckets.get(sessionHour) ?? 0) + totalTime);
@@ -123,7 +123,8 @@ export function buildDailyReadingFacts(
 
     existingBook.totalTime += totalTime;
     existingBook.pagesRead += session.pagesRead;
-    existingBook.charactersRead = (existingBook.charactersRead ?? 0) + (session.charactersRead ?? 0);
+    existingBook.charactersRead =
+      (existingBook.charactersRead ?? 0) + (session.charactersRead ?? 0);
     existingBook.sessionsCount += 1;
 
     day.books.set(session.bookId, existingBook);
@@ -133,7 +134,9 @@ export function buildDailyReadingFacts(
   return Array.from(days.values())
     .sort((a, b) => a.date.localeCompare(b.date))
     .map((day) => {
-      const bookBreakdown = Array.from(day.books.values()).sort((a, b) => b.totalTime - a.totalTime);
+      const bookBreakdown = Array.from(day.books.values()).sort(
+        (a, b) => b.totalTime - a.totalTime,
+      );
 
       return {
         date: day.date,

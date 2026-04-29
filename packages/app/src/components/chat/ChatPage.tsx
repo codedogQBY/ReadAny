@@ -3,6 +3,7 @@ import { ConfigGuideDialog, type ConfigGuideType } from "@/components/shared/Con
  * ChatPage — standalone full-page chat for general conversations.
  */
 import { useStreamingChat } from "@/hooks/use-streaming-chat";
+import { conversationExportService, type ExportTemplateType } from "@/lib/conversation-export";
 import { useChatReaderStore } from "@/stores/chat-reader-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -29,8 +30,10 @@ import {
   History,
   Library,
   Lightbulb,
+  Loader2,
   MessageCirclePlus,
   ScrollText,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -63,6 +66,11 @@ function ThreadsSidebar({
       <div
         className={`absolute inset-0 transition-opacity duration-300 ${open ? "bg-black/5 opacity-100" : "opacity-0"}`}
         onClick={onClose}
+        onKeyDown={(e) => {
+          if (e.key === "Escape" || e.key === "Enter") onClose();
+        }}
+        role="button"
+        tabIndex={0}
       />
       <div
         className={`absolute left-0 top-0 h-full w-72 transform rounded-r-2xl border-r bg-background px-3 py-3 shadow-lg transition-all duration-300 ease-out flex flex-col ${open ? "translate-x-0 opacity-100" : "-translate-x-full opacity-0"}`}
@@ -94,11 +102,14 @@ function ThreadsSidebar({
               if (!olderByMonth.has(monthLabel)) {
                 olderByMonth.set(monthLabel, []);
               }
-              olderByMonth.get(monthLabel)!.push(thread);
+              olderByMonth.get(monthLabel)?.push(thread);
             }
             const sortedMonths = [...olderByMonth.keys()].sort((a, b) => b.localeCompare(a));
             for (const month of sortedMonths) {
-              sections.push({ key: month, label: month, threads: olderByMonth.get(month)! });
+              const monthThreads = olderByMonth.get(month);
+              if (monthThreads) {
+                sections.push({ key: month, label: month, threads: monthThreads });
+              }
             }
 
             return sections.map(({ key, label, threads }) => {
@@ -115,13 +126,14 @@ function ThreadsSidebar({
                         : null;
                     const preview = lastMsg?.content?.slice(0, 80) || "";
                     return (
-                      <div
+                      <button
+                        type="button"
                         key={thread.id}
                         onClick={() => {
                           onSelect(thread.id);
                           onClose();
                         }}
-                        className={`group flex cursor-pointer items-start gap-2 rounded-lg px-3 py-2.5 transition-colors ${thread.id === activeThreadId ? "bg-primary/10 text-primary" : "text-foreground hover:bg-muted"}`}
+                        className={`group flex w-full cursor-pointer items-start gap-2 rounded-lg px-3 py-2.5 text-left transition-colors ${thread.id === activeThreadId ? "bg-primary/10 text-primary" : "text-foreground hover:bg-muted"}`}
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
@@ -148,7 +160,7 @@ function ThreadsSidebar({
                         >
                           <Trash2 className="size-3.5" />
                         </button>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -185,14 +197,15 @@ function EmptyState({ onSuggestionClick }: { onSuggestionClick: (text: string) =
             </h2>
             <div className="grid grid-cols-2 gap-3">
               {SUGGESTIONS.map(({ key, icon: Icon }) => (
-                <div
+                <button
+                  type="button"
                   key={key}
                   onClick={() => onSuggestionClick(t(key))}
-                  className="flex cursor-pointer flex-col items-start gap-3 rounded-xl bg-muted/70 p-4 transition-colors hover:bg-muted"
+                  className="flex cursor-pointer flex-col items-start gap-3 rounded-xl bg-muted/70 p-4 text-left transition-colors hover:bg-muted"
                 >
                   <Icon className="size-5 text-muted-foreground" />
                   <span className="text-sm text-foreground">{t(key)}</span>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -220,6 +233,7 @@ export function ChatPage() {
   const [showThreads, setShowThreads] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [configGuide, setConfigGuide] = useState<ConfigGuideType>(null);
+  const [exporting, setExporting] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -314,6 +328,39 @@ export function ChatPage() {
     toast.success(t("chat.copiedSuccess"));
   }, [allMessages, exportOpts, t]);
 
+  // AI-enhanced export
+  const handleAIExport = useCallback(async (templateType: ExportTemplateType) => {
+    setShowExportMenu(false);
+    setExporting(true);
+    try {
+      const convMessages = allMessages.map((m) => ({
+        id: m.id,
+        role: m.role as "user" | "assistant" | "system",
+        content: m.parts
+          .filter((p: any) => p.type === "text")
+          .map((p: any) => p.text)
+          .join("\n"),
+        timestamp: m.createdAt ?? Date.now(),
+      }));
+
+      const result = await conversationExportService.exportConversation(
+        convMessages,
+        exportTitle,
+        "",
+        { template: templateType, format: "markdown", includeMetadata: true, useAIEnhancement: true },
+      );
+
+      const platform = getPlatformService();
+      await platform.shareOrDownloadFile(result.content, result.filename, result.mimeType);
+      toast.success(t("chat.exportSuccess"));
+    } catch (err) {
+      console.error("[ChatPage] AI export failed:", err);
+      toast.error(t("chat.exportFailed", "导出失败"));
+    } finally {
+      setExporting(false);
+    }
+  }, [allMessages, exportTitle, t]);
+
   return (
     <div className="relative flex h-full flex-col">
       <ThreadsSidebar
@@ -352,7 +399,51 @@ export function ChatPage() {
                 <Download className="size-4" />
               </button>
               {showExportMenu && (
-                <div className="absolute right-0 top-full z-50 mt-1 min-w-48 animate-in fade-in slide-in-from-top-1 rounded-lg border bg-popover p-1.5 shadow-lg">
+                <div className="absolute right-0 top-full z-50 mt-1 min-w-52 animate-in fade-in slide-in-from-top-1 rounded-lg border bg-popover p-1.5 shadow-lg">
+                  {/* AI Enhanced Exports */}
+                  <div className="px-2 py-1 text-[10px] font-medium text-primary/70 uppercase tracking-wider flex items-center gap-1">
+                    <Sparkles className="size-3" />
+                    {t("chat.aiExport", "AI 智能导出")}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={exporting}
+                    onClick={() => handleAIExport("summary")}
+                    className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted disabled:opacity-50"
+                  >
+                    {exporting ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" /> : <Sparkles className="size-4 shrink-0 text-primary" />}
+                    <span className="flex-1 whitespace-nowrap text-left">
+                      {t("chat.exportAISummary", "AI 对话摘要")}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={exporting}
+                    onClick={() => handleAIExport("key_insights")}
+                    className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted disabled:opacity-50"
+                  >
+                    {exporting ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" /> : <Sparkles className="size-4 shrink-0 text-primary" />}
+                    <span className="flex-1 whitespace-nowrap text-left">
+                      {t("chat.exportAIInsights", "AI 核心洞察")}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={exporting}
+                    onClick={() => handleAIExport("chapter_notes")}
+                    className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted disabled:opacity-50"
+                  >
+                    {exporting ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" /> : <BookOpen className="size-4 shrink-0 text-primary" />}
+                    <span className="flex-1 whitespace-nowrap text-left">
+                      {t("chat.exportAIChapterNotes", "AI 章节笔记")}
+                    </span>
+                  </button>
+
+                  <div className="mx-2 my-1 border-t" />
+                  {/* Standard Exports */}
+                  <div className="px-2 py-1 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">
+                    {t("chat.standardExport", "标准导出")}
+                  </div>
                   <button
                     type="button"
                     onClick={handleExportMarkdown}

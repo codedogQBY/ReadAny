@@ -12,13 +12,13 @@ import { BUILTIN_EMBEDDING_MODELS } from "@readany/core/ai/builtin-embedding-mod
 import { onLibraryChanged } from "@readany/core/events/library-events";
 import { setVectorDB } from "@readany/core/rag";
 import { setPlatformService } from "@readany/core/services";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { TauriPlatformService } from "./lib/platform/tauri-platform-service";
 import { syncLegacyDesktopLibraryRootConfig } from "./lib/storage/desktop-library-root";
 import { TauriVectorDB } from "./lib/tauri-vector-db";
 import { useLibraryStore } from "./stores/library-store";
 import { flushAllWrites } from "./stores/persist";
 import { useVectorModelStore } from "./stores/vector-model-store";
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 
 // Register platform service before any database/core operations
 const tauriPlatform = new TauriPlatformService();
@@ -92,6 +92,14 @@ i18nReady.then(() => {
   // Initialize database and load books
   desktopDataRootReady.then(() => {
     useLibraryStore.getState().loadBooks();
+
+    // Initialize review services from SQLite (persisted data)
+    import("@/lib/book-mini-review").then(({ bookMiniReviewService }) => {
+      bookMiniReviewService.initializeFromDB();
+    }).catch(console.error);
+    import("@/lib/smart-review").then(({ smartReviewSystem }) => {
+      smartReviewSystem.initializeFromDB();
+    }).catch(console.error);
   });
 
   // Refresh library store when AI tools modify books/tags

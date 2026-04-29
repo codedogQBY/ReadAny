@@ -1,14 +1,15 @@
 import { useMissingBookPromptStore } from "@/stores/missing-book-prompt-store";
-import {
-  type ThemeColors,
-  fontSize,
-  fontWeight,
-  radius,
-  spacing,
-  useColors,
-} from "@/styles/theme";
+import { type ThemeColors, fontSize, fontWeight, radius, spacing, useColors } from "@/styles/theme";
 import { useEffect, useMemo, useRef } from "react";
-import { Animated, BackHandler, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  Animated,
+  BackHandler,
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 export function MissingBookPrompt() {
   const colors = useColors();
@@ -45,10 +46,18 @@ export function MissingBookPrompt() {
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.description}>{description}</Text>
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.secondaryButton} onPress={() => resolvePrompt(false)} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => resolvePrompt(false)}
+            activeOpacity={0.8}
+          >
             <Text style={styles.secondaryText}>{cancelLabel}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.primaryButton} onPress={() => resolvePrompt(true)} activeOpacity={0.85}>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => resolvePrompt(true)}
+            activeOpacity={0.85}
+          >
             <Text style={styles.primaryText}>{confirmLabel}</Text>
           </TouchableOpacity>
         </View>

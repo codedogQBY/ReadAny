@@ -19,12 +19,17 @@ export function HighlightCard({
   return (
     <View style={s.highlightCard}>
       <TouchableOpacity
-        style={[s.colorDot, { backgroundColor: HIGHLIGHT_COLOR_HEX[highlight.color] || colors.amber, marginTop: 4 }]}
+        style={[
+          s.colorDot,
+          { backgroundColor: HIGHLIGHT_COLOR_HEX[highlight.color] || colors.amber, marginTop: 4 },
+        ]}
         onPress={onNavigate}
       />
       <View style={s.highlightBody}>
         <TouchableOpacity onPress={onNavigate}>
-          <Text style={s.highlightText} numberOfLines={2}>"{highlight.text}"</Text>
+          <Text style={s.highlightText} numberOfLines={2}>
+            "{highlight.text}"
+          </Text>
         </TouchableOpacity>
         {highlight.chapterTitle && <Text style={s.highlightChapter}>{highlight.chapterTitle}</Text>}
       </View>

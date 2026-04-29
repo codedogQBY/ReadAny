@@ -51,7 +51,10 @@ export default function AppearanceSettingsScreen() {
         subtitle={t("settings.realtimeHint")}
       />
 
-      <ScrollView style={s.scroll} contentContainerStyle={[s.scrollContent, { alignItems: "center" }]}>
+      <ScrollView
+        style={s.scroll}
+        contentContainerStyle={[s.scrollContent, { alignItems: "center" }]}
+      >
         <View style={{ width: "100%", maxWidth: layout.centeredContentWidth, gap: 24 }}>
           {/* Theme */}
           <View style={s.section}>
@@ -101,7 +104,9 @@ export default function AppearanceSettingsScreen() {
             <Text style={[s.sectionTitle, { color: colors.mutedForeground }]}>
               {t("settings.language", "语言")}
             </Text>
-            <View style={[s.listCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View
+              style={[s.listCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
               {LANGUAGES.map((l, idx) => (
                 <TouchableOpacity
                   key={l.code}
