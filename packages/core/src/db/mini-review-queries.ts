@@ -7,6 +7,8 @@ export interface MiniReviewRow {
   generated_at: number;
   rating: number | null;
   source: string | null;
+  type: string | null;
+  is_pinned: number | null;
 }
 
 export async function getMiniReview(bookId: string): Promise<MiniReviewRow | null> {
@@ -30,14 +32,28 @@ export async function insertMiniReview(review: {
   generatedAt: number;
   rating?: number;
   source?: string;
+  type?: string;
+  isPinned?: boolean;
 }): Promise<void> {
   const db = await getDB();
   const deviceId = await getDeviceId();
   const syncVersion = await nextSyncVersion(db, "mini_reviews");
   const updatedAt = Date.now();
   await db.execute(
-    "INSERT OR REPLACE INTO mini_reviews (id, book_id, content, generated_at, rating, source, updated_at, sync_version, last_modified_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    [review.id, review.bookId, review.content, review.generatedAt, review.rating ?? null, review.source ?? null, updatedAt, syncVersion, deviceId],
+    "INSERT OR REPLACE INTO mini_reviews (id, book_id, content, generated_at, rating, source, type, is_pinned, updated_at, sync_version, last_modified_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [
+      review.id,
+      review.bookId,
+      review.content,
+      review.generatedAt,
+      review.rating ?? null,
+      review.source ?? null,
+      review.type ?? "hook",
+      review.isPinned ? 1 : 0,
+      updatedAt,
+      syncVersion,
+      deviceId,
+    ],
   );
 }
 

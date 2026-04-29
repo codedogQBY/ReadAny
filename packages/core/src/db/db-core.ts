@@ -487,6 +487,8 @@ export async function initDatabase(): Promise<void> {
       generated_at INTEGER NOT NULL,
       rating INTEGER,
       source TEXT,
+      type TEXT DEFAULT 'hook',
+      is_pinned INTEGER DEFAULT 0,
       updated_at INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
     )

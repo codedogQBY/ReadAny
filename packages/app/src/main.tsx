@@ -90,7 +90,16 @@ i18nReady.then(() => {
   });
 
   // Initialize database and load books
-  desktopDataRootReady.then(() => {
+  desktopDataRootReady.then(async () => {
+    // Run database migrations first
+    try {
+      const { runMigrations } = await import("@/lib/db/migrations");
+      await runMigrations();
+      console.log('[Main] Database migrations completed');
+    } catch (err) {
+      console.error('[Main] Migration failed:', err);
+    }
+    
     useLibraryStore.getState().loadBooks();
 
     // Initialize review services from SQLite (persisted data)

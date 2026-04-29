@@ -68,6 +68,14 @@ const migrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_books_deleted_at ON books(deleted_at);
     `,
   },
+  {
+    version: 9,
+    description: "Add type and is_pinned columns to mini_reviews",
+    up: `
+      ALTER TABLE mini_reviews ADD COLUMN type TEXT DEFAULT 'hook';
+      ALTER TABLE mini_reviews ADD COLUMN is_pinned INTEGER DEFAULT 0;
+    `,
+  },
 ];
 
 /** Run pending migrations */

@@ -20,6 +20,54 @@ const migrations: Migration[] = [
     description: "Add format column to books",
     up: "ALTER TABLE books ADD COLUMN format TEXT NOT NULL DEFAULT 'epub'",
   },
+  {
+    version: 3,
+    description: "Create mini_reviews table",
+    up: `
+      CREATE TABLE IF NOT EXISTS mini_reviews (
+        id TEXT PRIMARY KEY,
+        book_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        generated_at INTEGER NOT NULL,
+        rating INTEGER,
+        source TEXT,
+        FOREIGN KEY (book_id) REFERENCES books(id)
+      )
+    `,
+  },
+  {
+    version: 4,
+    description: "Add index on mini_reviews.book_id",
+    up: "CREATE INDEX IF NOT EXISTS idx_mini_reviews_book_id ON mini_reviews(book_id)",
+  },
+  {
+    version: 5,
+    description: "Add created_at to books",
+    up: "ALTER TABLE books ADD COLUMN created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)",
+  },
+  {
+    version: 6,
+    description: "Add updated_at to books",
+    up: "ALTER TABLE books ADD COLUMN updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000)",
+  },
+  {
+    version: 7,
+    description: "Add reading_progress to books",
+    up: "ALTER TABLE books ADD COLUMN reading_progress REAL NOT NULL DEFAULT 0.0",
+  },
+  {
+    version: 8,
+    description: "Add last_read_at to books",
+    up: "ALTER TABLE books ADD COLUMN last_read_at INTEGER",
+  },
+  {
+    version: 9,
+    description: "Add type and is_pinned columns to mini_reviews",
+    up: `
+      ALTER TABLE mini_reviews ADD COLUMN type TEXT DEFAULT 'hook';
+      ALTER TABLE mini_reviews ADD COLUMN is_pinned INTEGER DEFAULT 0;
+    `,
+  },
 ];
 
 /** Run pending migrations */

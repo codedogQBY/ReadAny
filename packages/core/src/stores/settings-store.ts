@@ -51,6 +51,8 @@ export interface SettingsState {
   _hasHydrated: boolean;
   bookMiniReviews: Record<string, BookMiniReviewData>;
   reviewSettings: ReviewSettingsData;
+  miniReviewDefaultType: "hook" | "question" | "resonance" | "anecdote";  // 默认微评类型
+  hasShownPreheatingDialog: boolean;  // 是否已显示过预热对话框(用于智能策略)
 
   // Actions
   completeOnboarding: () => void;
@@ -61,6 +63,8 @@ export interface SettingsState {
   updateSocraticSettings: (updates: Partial<SocraticSettings>) => void;
   setBookMiniReviews: (reviews: Record<string, BookMiniReviewData>) => void;
   updateReviewSettings: (updates: Partial<ReviewSettingsData>) => void;
+  setMiniReviewDefaultType: (type: "hook" | "question" | "resonance" | "anecdote") => void;
+  markPreheatingDialogShown: () => void;  // 标记预热对话框已显示
 
   // Endpoint management
   addEndpoint: (endpoint: AIEndpoint) => void;
@@ -387,6 +391,8 @@ export const useSettingsStore = create<SettingsState>()(
         autoAdjust: true,
         showBadges: false,
       },
+      miniReviewDefaultType: "hook",  // 默认微评类型
+      hasShownPreheatingDialog: false,  // 智能策略标记
 
       completeOnboarding: () => set({ hasCompletedOnboarding: true }),
       setShowOnboardingGuide: (show: boolean) => set({ showOnboardingGuide: show }),
@@ -477,12 +483,23 @@ export const useSettingsStore = create<SettingsState>()(
           aiConfig: { ...state.aiConfig, activeModel: model },
         })),
 
-      setBookMiniReviews: (reviews) => set({ bookMiniReviews: reviews }),
+      setBookMiniReviews: (reviews) => {
+        console.log('[SettingsStore] setBookMiniReviews called, count:', Object.keys(reviews).length);
+        set({ bookMiniReviews: reviews });
+      },
 
       updateReviewSettings: (updates) =>
         set((state) => ({
           reviewSettings: { ...state.reviewSettings, ...updates },
         })),
+
+      setMiniReviewDefaultType: (type) => set({ miniReviewDefaultType: type }),
+
+      markPreheatingDialogShown: () => {
+        console.log('[SettingsStore] markPreheatingDialogShown called, current:', get().hasShownPreheatingDialog);
+        set({ hasShownPreheatingDialog: true });
+        console.log('[SettingsStore] hasShownPreheatingDialog set to true');
+      },
 
       getActiveEndpoint: () => {
         const state = get();
@@ -552,6 +569,31 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     undefined,
     (persisted: SettingsState): SettingsState => {
+      // 确保 readSettings 有默认值
+      if (!persisted.readSettings || typeof persisted.readSettings !== "object") {
+        persisted.readSettings = defaultReadSettings;
+      }
+      
+      // 确保 translationConfig 有默认值
+      if (!persisted.translationConfig || typeof persisted.translationConfig !== "object") {
+        persisted.translationConfig = defaultTranslationConfig;
+      }
+      
+      // 确保 settingsUpdatedAt 有默认值
+      if (typeof persisted.settingsUpdatedAt !== "number") {
+        persisted.settingsUpdatedAt = 0;
+      }
+      
+      // 确保 hasCompletedOnboarding 有默认值
+      if (typeof persisted.hasCompletedOnboarding !== "boolean") {
+        persisted.hasCompletedOnboarding = false;
+      }
+      
+      // 确保 showOnboardingGuide 有默认值
+      if (typeof persisted.showOnboardingGuide !== "boolean") {
+        persisted.showOnboardingGuide = true;
+      }
+      
       if (!persisted.aiConfig) {
         persisted.aiConfig = defaultAIConfig;
       } else {
@@ -588,6 +630,13 @@ export const useSettingsStore = create<SettingsState>()(
       }
       if (!persisted.bookMiniReviews || typeof persisted.bookMiniReviews !== "object") {
         persisted.bookMiniReviews = {};
+      }
+      if (!persisted.miniReviewDefaultType || !["hook", "question", "resonance", "anecdote"].includes(persisted.miniReviewDefaultType)) {
+        persisted.miniReviewDefaultType = "hook";
+      }
+      // 确保 hasShownPreheatingDialog 有默认值
+      if (typeof persisted.hasShownPreheatingDialog !== "boolean") {
+        persisted.hasShownPreheatingDialog = false;
       }
       if (!persisted.reviewSettings || typeof persisted.reviewSettings !== "object") {
         persisted.reviewSettings = {

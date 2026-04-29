@@ -48,6 +48,18 @@ interface ChatPanelProps {
 export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
   const { t } = useTranslation();
   const bookId = book?.id;
+  
+  // Get AI config for manual preheating strategy
+  const aiConfig = useSettingsStore((s) => s.aiConfig);
+  const socraticSettings = aiConfig.socraticSettings || {
+    enabled: false,
+    mode: "socratic" as const,
+    knowledgeScope: "current_chapter" as const,
+    questionComplexity: "medium" as const,
+    enablePreheating: true,
+    preheatingStrategy: "smart" as const,
+    enableWebSearch: false,
+  };
 
   const {
     threads,
@@ -92,10 +104,8 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
         const bookTitle = book?.meta?.title || "这本书";
         const mode = socraticSettings.mode || "socratic";
         const scope = socraticSettings.knowledgeScope || "book_summary";
-        const preheatingPrompt = `开始${mode === "socratic" ? "苏格拉底式" : mode}预热。我正在准备阅读《${bookTitle}》。请根据${scope === "book_summary" ? "全书概要" : scope === "current_chapter" ? "当前章节" : "作者背景"}，提出1-3个引导性问题，帮助我建立阅读框架。`;
-        console.log("[ChatPanel] Sending preheating message:", preheatingPrompt);
-
-        // Use socratic system prompt for preheating
+        
+        // Use socratic system prompt for preheating (hidden from user)
         const socraticSystemPrompt = getSystemPrompt();
         const aiConfigOverride = socraticSystemPrompt
           ? {
@@ -104,7 +114,10 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
             }
           : undefined;
 
-        sendMessage(preheatingPrompt, bookId, false, false, undefined, aiConfigOverride);
+        // Send a simple trigger message instead of the full prompt
+        const triggerMessage = `开始${mode === "socratic" ? "苏格拉底式" : mode}预热`;
+        console.log("[ChatPanel] Sending preheating trigger:", triggerMessage);
+        sendMessage(triggerMessage, bookId, false, false, undefined, aiConfigOverride);
       }, 500);
     }
   }, [bookId, startPreheating, sendMessage, book, getSystemPrompt]);
@@ -617,6 +630,31 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
           />
         ) : (
           <div className="flex h-full flex-col items-start justify-end gap-3 overflow-y-auto p-4 pb-6">
+            {/* Manual preheating trigger button */}
+            {aiConfig.chatMode === "socratic" && 
+             socraticSettings.enablePreheating && 
+             socraticSettings.preheatingStrategy === "manual" && 
+             allMessages.length === 0 && (
+              <button
+                onClick={() => {
+                  console.log("[ChatPanel] Manual preheating triggered");
+                  // Set flag and trigger preheating via sessionStorage check
+                  sessionStorage.setItem(`preheating-start-${bookId}`, "true");
+                  // Dispatch custom event to notify SocraticReaderWrapper
+                  window.dispatchEvent(new CustomEvent('trigger-preheating', { detail: { bookId } }));
+                }}
+                className="w-full rounded-lg border-2 border-dashed border-primary/30 bg-primary/5 px-4 py-3 text-left transition-colors hover:border-primary/50 hover:bg-primary/10"
+              >
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  <span className="font-medium text-foreground">{t("chat.startPreheating", "开始思维预热")}</span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("chat.preheatingDesc", "AI将提出引导性问题，帮助您建立阅读框架")}
+                </p>
+              </button>
+            )}
+            
             <div className="flex flex-col items-start gap-3 pl-1">
               <img src="/think.svg" alt="" className="h-28 w-28 shrink-0 dark:invert" />
               <div className="space-y-1">

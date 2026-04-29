@@ -151,8 +151,8 @@ export function PreheatingDialog({
             </div>
           </div>
 
-          {/* What to expect */}
-          <div className="rounded-lg border bg-muted/30 p-3">
+          {/* What to expect - Hidden */}
+          {/* <div className="rounded-lg border bg-muted/30 p-3">
             <h4 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               {t("preheating.whatToExpect", "预热内容")}
             </h4>
@@ -170,7 +170,7 @@ export function PreheatingDialog({
                 <span>{t("preheating.step3", "准备好后，点击「开始阅读」进入精读模式")}</span>
               </li>
             </ul>
-          </div>
+          </div> */}
 
           {/* Time estimate */}
           <p className="text-xs text-muted-foreground">

@@ -67,67 +67,104 @@ function sanitizeBuiltinStates(
 }
 
 export const useVectorModelStore = create<VectorModelState>()(
-  withPersist("vector-model", (set, get, _api) => ({
-    vectorModels: [],
-    selectedVectorModelId: null,
-    vectorModelEnabled: true,
-    vectorModelMode: "builtin",
-    selectedBuiltinModelId: "all-MiniLM-L6-v2",
-    builtinModelStates: {},
+  withPersist(
+    "vector-model",
+    (set, get, _api) => ({
+      vectorModels: [],
+      selectedVectorModelId: null,
+      vectorModelEnabled: true,
+      vectorModelMode: "builtin",
+      selectedBuiltinModelId: "all-MiniLM-L6-v2",
+      builtinModelStates: {},
 
-    setVectorModelEnabled: (vectorModelEnabled) => set({ vectorModelEnabled }),
-    setVectorModelMode: (vectorModelMode) => set({ vectorModelMode }),
+      setVectorModelEnabled: (vectorModelEnabled) => set({ vectorModelEnabled }),
+      setVectorModelMode: (vectorModelMode) => set({ vectorModelMode }),
 
-    // --- Remote models ---
-    addVectorModel: (model) => {
-      const { vectorModels } = get();
-      set({ vectorModels: [...vectorModels, model] });
-    },
+      // --- Remote models ---
+      addVectorModel: (model) => {
+        const { vectorModels } = get();
+        set({ vectorModels: [...vectorModels, model] });
+      },
 
-    updateVectorModel: (id, updates) => {
-      const { vectorModels } = get();
-      set({
-        vectorModels: vectorModels.map((m) => (m.id === id ? { ...m, ...updates } : m)),
-      });
-    },
+      updateVectorModel: (id, updates) => {
+        const { vectorModels } = get();
+        set({
+          vectorModels: vectorModels.map((m) => (m.id === id ? { ...m, ...updates } : m)),
+        });
+      },
 
-    deleteVectorModel: (id) => {
-      const { vectorModels, selectedVectorModelId } = get();
-      const newModels = vectorModels.filter((m) => m.id !== id);
-      const newSelected = selectedVectorModelId === id ? null : selectedVectorModelId;
-      set({ vectorModels: newModels, selectedVectorModelId: newSelected });
-    },
+      deleteVectorModel: (id) => {
+        const { vectorModels, selectedVectorModelId } = get();
+        const newModels = vectorModels.filter((m) => m.id !== id);
+        const newSelected = selectedVectorModelId === id ? null : selectedVectorModelId;
+        set({ vectorModels: newModels, selectedVectorModelId: newSelected });
+      },
 
-    setSelectedVectorModelId: (selectedVectorModelId) => set({ selectedVectorModelId }),
+      setSelectedVectorModelId: (selectedVectorModelId) => set({ selectedVectorModelId }),
 
-    getSelectedVectorModel: () => {
-      const { vectorModels, selectedVectorModelId } = get();
-      return vectorModels.find((m) => m.id === selectedVectorModelId) || null;
-    },
+      getSelectedVectorModel: () => {
+        const { vectorModels, selectedVectorModelId } = get();
+        return vectorModels.find((m) => m.id === selectedVectorModelId) || null;
+      },
 
-    // --- Builtin models ---
-    setSelectedBuiltinModelId: (selectedBuiltinModelId) => set({ selectedBuiltinModelId }),
+      // --- Builtin models ---
+      setSelectedBuiltinModelId: (selectedBuiltinModelId) => set({ selectedBuiltinModelId }),
 
-    updateBuiltinModelState: (id, state) =>
-      set((s) => ({
-        builtinModelStates: {
-          ...s.builtinModelStates,
-          [id]: { ...s.builtinModelStates[id], ...state } as BuiltinModelState,
-        },
-      })),
+      updateBuiltinModelState: (id, state) =>
+        set((s) => ({
+          builtinModelStates: {
+            ...s.builtinModelStates,
+            [id]: { ...s.builtinModelStates[id], ...state } as BuiltinModelState,
+          },
+        })),
 
-    // --- Computed ---
-    hasVectorCapability: () => {
-      const { vectorModelEnabled, vectorModelMode } = get();
-      if (!vectorModelEnabled) return false;
-      if (vectorModelMode === "builtin") {
-        const { selectedBuiltinModelId } = get();
-        return !!selectedBuiltinModelId;
+      // --- Computed ---
+      hasVectorCapability: () => {
+        const { vectorModelEnabled, vectorModelMode } = get();
+        if (!vectorModelEnabled) return false;
+        if (vectorModelMode === "builtin") {
+          const { selectedBuiltinModelId } = get();
+          return !!selectedBuiltinModelId;
+        }
+        const selected = get().getSelectedVectorModel();
+        return selected != null;
+      },
+    }),
+    undefined,
+    (persisted: VectorModelState): VectorModelState => {
+      // 确保 vectorModels 有默认值
+      if (!Array.isArray(persisted.vectorModels)) {
+        persisted.vectorModels = [];
       }
-      const selected = get().getSelectedVectorModel();
-      return selected != null;
+      
+      // 确保 selectedVectorModelId 有默认值
+      if (persisted.selectedVectorModelId !== null && typeof persisted.selectedVectorModelId !== "string") {
+        persisted.selectedVectorModelId = null;
+      }
+      
+      // 确保 vectorModelEnabled 有默认值
+      if (typeof persisted.vectorModelEnabled !== "boolean") {
+        persisted.vectorModelEnabled = true;
+      }
+      
+      // 确保 vectorModelMode 有默认值
+      if (persisted.vectorModelMode !== "remote" && persisted.vectorModelMode !== "builtin") {
+        persisted.vectorModelMode = "builtin";
+      }
+      
+      // 确保 selectedBuiltinModelId 有默认值
+      if (persisted.selectedBuiltinModelId !== null && typeof persisted.selectedBuiltinModelId !== "string") {
+        persisted.selectedBuiltinModelId = "all-MiniLM-L6-v2";
+      }
+      
+      // 确保 builtinModelStates 有默认值
+      if (!persisted.builtinModelStates || typeof persisted.builtinModelStates !== "object") {
+        persisted.builtinModelStates = {};
+      }
+      
+      return persisted;
     },
-  })),
+  ),
 );
 
 // After rehydration, sanitize builtin model states (reset interrupted downloads)

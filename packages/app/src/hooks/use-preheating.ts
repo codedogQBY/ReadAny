@@ -34,6 +34,11 @@ export function usePreheating({
   onPreheatingSkip,
 }: UsePreheatingOptions): UsePreheatingReturn {
   const aiConfig = useSettingsStore((s) => s.aiConfig);
+  const hasShownPreheatingDialog = useSettingsStore((s) => s.hasShownPreheatingDialog);
+  const markPreheatingDialogShown = useSettingsStore((s) => s.markPreheatingDialogShown);
+  
+  console.log('[usePreheating] hasShownPreheatingDialog:', hasShownPreheatingDialog);
+  
   const socraticSettings = aiConfig.socraticSettings || {
     enabled: false,
     mode: "socratic" as const,
@@ -49,14 +54,12 @@ export function usePreheating({
   const [currentPhase, setCurrentPhase] = useState<
     "idle" | "opening" | "connection" | "transition" | "reading" | "review"
   >("idle");
-  const [hasShownDialog, setHasShownDialog] = useState(false);
 
   const isSocraticEnabled = aiConfig.chatMode === "socratic" && socraticSettings.enabled;
 
   useEffect(() => {
     if (!isSocraticEnabled || !book) {
       setShouldShowPreheatingDialog(false);
-      setHasShownDialog(false);
       return;
     }
 
@@ -65,9 +68,12 @@ export function usePreheating({
       return;
     }
 
+    // 智能策略：首次启动时显示一次，之后不再自动显示
     const shouldAutoShow =
       socraticSettings.preheatingStrategy === "auto" ||
-      (socraticSettings.preheatingStrategy === "smart" && !hasShownDialog);
+      (socraticSettings.preheatingStrategy === "smart" && !hasShownPreheatingDialog);
+
+    console.log('[usePreheating] Strategy:', socraticSettings.preheatingStrategy, 'shouldAutoShow:', shouldAutoShow);
 
     if (shouldAutoShow) {
       setShouldShowPreheatingDialog(true);
@@ -77,7 +83,7 @@ export function usePreheating({
     book,
     socraticSettings.enablePreheating,
     socraticSettings.preheatingStrategy,
-    hasShownDialog,
+    hasShownPreheatingDialog,
     onPreheatingSkip,
   ]);
 
@@ -90,26 +96,32 @@ export function usePreheating({
   }, []);
 
   const startPreheating = useCallback(() => {
+    console.log('[usePreheating] startPreheating called');
     setIsPreheating(true);
     setCurrentPhase("opening");
     setShouldShowPreheatingDialog(false);
-    setHasShownDialog(true);
-  }, []);
+    markPreheatingDialogShown();  // 标记已显示
+    console.log('[usePreheating] markPreheatingDialogShown called');
+  }, [markPreheatingDialogShown]);
 
   const skipPreheating = useCallback(() => {
+    console.log('[usePreheating] skipPreheating called');
     setIsPreheating(false);
     setCurrentPhase("reading");
     setShouldShowPreheatingDialog(false);
-    setHasShownDialog(true);
+    markPreheatingDialogShown();  // 标记已显示
+    console.log('[usePreheating] markPreheatingDialogShown called');
     onPreheatingSkip();
-  }, [onPreheatingSkip]);
+  }, [onPreheatingSkip, markPreheatingDialogShown]);
 
   const completePreheating = useCallback(() => {
+    console.log('[usePreheating] completePreheating called');
     setIsPreheating(false);
     setCurrentPhase("reading");
-    setHasShownDialog(true);
+    markPreheatingDialogShown();  // 标记已显示
+    console.log('[usePreheating] markPreheatingDialogShown called');
     onPreheatingComplete();
-  }, [onPreheatingComplete]);
+  }, [onPreheatingComplete, markPreheatingDialogShown]);
 
   return {
     shouldShowPreheatingDialog,

@@ -150,16 +150,23 @@ function ThreadsSidebar({
                             </p>
                           )}
                         </div>
-                        <button
-                          type="button"
+                        <div
+                          role="button"
+                          tabIndex={0}
                           onClick={(e) => {
                             e.stopPropagation();
                             removeThread(thread.id);
                           }}
-                          className="mt-0.5 hidden shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:block"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.stopPropagation();
+                              removeThread(thread.id);
+                            }
+                          }}
+                          className="mt-0.5 hidden shrink-0 cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:block"
                         >
                           <Trash2 className="size-3.5" />
-                        </button>
+                        </div>
                       </button>
                     );
                   })}

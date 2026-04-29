@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useResolvedSrc } from "@/hooks/use-resolved-src";
-import { bookMiniReviewService } from "@/lib/book-mini-review";
+import { bookMiniReviewService, type MiniReviewType } from "@/lib/book-mini-review";
 import { openDesktopBook } from "@/lib/library/open-book";
 /**
  * BookCard — Readest-inspired book card with realistic cover rendering
@@ -28,6 +28,7 @@ import {
   MoreVertical,
   Plus,
   RefreshCw,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
@@ -49,6 +50,11 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
   const hasVectorCapability = useVectorModelStore((s) => s.hasVectorCapability);
   const [showMenu, setShowMenu] = useState(false);
   const [showTagMenu, setShowTagMenu] = useState(false);
+  const [showTypeSelector, setShowTypeSelector] = useState(false);
+  const [currentReviewType, setCurrentReviewType] = useState<MiniReviewType>(() => {
+    // 初始化时从服务获取默认类型
+    return bookMiniReviewService.getDefaultType();
+  });
   const [newTagInput, setNewTagInput] = useState("");
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -59,7 +65,6 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
   const [preserveDataOnDelete, setPreserveDataOnDelete] = useState(true);
   const [miniReview, setMiniReview] = useState<string | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
-  const [showReview, setShowReview] = useState(false);
   const coverRef = useRef<HTMLDivElement>(null);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
@@ -123,59 +128,191 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
 
   // Load cached mini review on mount, and poll for auto-generated updates
   useEffect(() => {
-    const loadCached = () => {
-      const cached = bookMiniReviewService.getReview(book.id);
-      if (cached) {
-        setMiniReview(cached.content);
-        return true;
+    console.log('[BookCard] Loading review for book:', book.id, 'type:', currentReviewType);
+    
+    // 先尝试从缓存加载
+    const cached = bookMiniReviewService.getReview(book.id, currentReviewType);
+    if (cached) {
+      console.log('[BookCard] Found cached review:', cached.content.substring(0, 50));
+      setMiniReview(cached.content);
+      return;
+    }
+    
+    // 如果已经有微评或正在加载，不重复生成
+    if (miniReview || reviewLoading) {
+      console.log('[BookCard] Skip generation - already has review or loading');
+      return;
+    }
+    
+    // 禁用缓存，直接生成微评
+    let cancelled = false;
+    
+    const generateIfNeeded = async () => {
+      console.log('[BookCard] Generating review (no cache)');
+      setReviewLoading(true);
+      
+      // 最多重试2次，减少等待时间
+      let retries = 0;
+      const maxRetries = 2;
+      
+      while (retries <= maxRetries && !cancelled) {
+        try {
+          const review = await bookMiniReviewService.generateReview(book, { 
+            type: currentReviewType,
+            timeout: 15000, // 增加到15秒，给AI更多响应时间
+          });
+          if (review && !cancelled) {
+            setMiniReview(review.content);
+            console.log('[BookCard] Review generated:', review.content.substring(0, 50));
+            setReviewLoading(false);
+            return; // 成功则退出
+          } else if (!review && !cancelled) {
+            // 返回null表示字数不符合或超时，需要重新生成
+            console.log('[BookCard] Review length invalid or timeout, retrying...');
+          }
+        } catch (err) {
+          if (!cancelled) {
+            console.error(`[BookCard] Failed to generate review (attempt ${retries + 1}):`, err);
+          }
+        }
+        
+        retries++;
+        if (retries <= maxRetries && !cancelled) {
+          console.log(`[BookCard] Retrying... (${retries}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, 1000)); // 增加到1秒后重试
+        }
       }
-      return false;
+      
+      // 所有重试都失败
+      if (!cancelled) {
+        console.error('[BookCard] All retry attempts failed');
+        setReviewLoading(false);
+        setMiniReview('微评生成失败，请点击刷新重试');
+      }
     };
 
-    // Immediate load
-    loadCached();
+    generateIfNeeded();
+    
+    return () => {
+      cancelled = true;
+      console.log('[BookCard] Cleanup - cancelled generation');
+    };
+  }, [book.id, currentReviewType]);
 
-    // Poll every 3s for auto-generated reviews (stops once found)
-    const interval = setInterval(() => {
-      if (loadCached()) {
-        clearInterval(interval);
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [book.id]);
-
-  const handleGenerateReview = useCallback(async (e: React.MouseEvent) => {
+  const handleGenerateReview = useCallback(async (e: React.MouseEvent, type?: MiniReviewType) => {
     e.stopPropagation();
     suppressOpenUntilRef.current = Date.now() + 400;
     setReviewLoading(true);
-    try {
-      const review = await bookMiniReviewService.generateReview(book);
-      if (review) {
-        setMiniReview(review.content);
+    const reviewType = type || currentReviewType;
+    
+    // 最多重试2次
+    let retries = 0;
+    const maxRetries = 2;
+    
+    while (retries <= maxRetries) {
+      try {
+        const review = await bookMiniReviewService.generateReview(book, { 
+          type: reviewType,
+          timeout: 15000, // 增加到15秒
+          forceRefresh: true, // 强制刷新，不使用缓存
+        });
+        if (review) {
+          setMiniReview(review.content);
+          setCurrentReviewType(reviewType);
+          setReviewLoading(false);
+          return; // 成功则退出
+        }
+      } catch {
+        console.error(`[BookCard] Failed to generate review (attempt ${retries + 1})`);
       }
-    } catch {
-      console.error("[BookCard] Failed to generate review");
-    } finally {
-      setReviewLoading(false);
+      
+      retries++;
+      if (retries <= maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 1000)); // 增加到1秒
+      }
     }
-  }, [book]);
+    
+    // 所有重试都失败
+    setReviewLoading(false);
+    setMiniReview('微评生成失败，请再次点击重试');
+  }, [book, currentReviewType]);
 
   const handleRefreshReview = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
     suppressOpenUntilRef.current = Date.now() + 400;
     setReviewLoading(true);
-    try {
-      const review = await bookMiniReviewService.refreshReview(book);
-      if (review) {
-        setMiniReview(review.content);
+    
+    // 最多重试2次
+    let retries = 0;
+    const maxRetries = 2;
+    
+    while (retries <= maxRetries) {
+      try {
+        const review = await bookMiniReviewService.refreshReview(book, { 
+          type: currentReviewType,
+          forceRefresh: true, // 强制刷新
+        });
+        if (review) {
+          setMiniReview(review.content);
+          setReviewLoading(false);
+          return; // 成功则退出
+        }
+      } catch {
+        console.error(`[BookCard] Failed to refresh review (attempt ${retries + 1})`);
       }
-    } catch {
-      console.error("[BookCard] Failed to refresh review");
-    } finally {
-      setReviewLoading(false);
+      
+      retries++;
+      if (retries <= maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 1000)); // 增加到1秒
+      }
     }
-  }, [book]);
+    
+    // 所有重试都失败
+    setReviewLoading(false);
+    setMiniReview('微评刷新失败，请再次点击重试');
+  }, [book, currentReviewType]);
+
+  const handleTypeChange = useCallback(async (e: React.MouseEvent, type: MiniReviewType) => {
+    e.stopPropagation();
+    suppressOpenUntilRef.current = Date.now() + 300;
+    setCurrentReviewType(type);
+    setShowTypeSelector(false);
+    
+    // 加载新类型的微评,如果没有则自动生成
+    const review = bookMiniReviewService.getReview(book.id, type);
+    if (review) {
+      setMiniReview(review.content);
+    } else {
+      // 自动生成新类型的微评
+      setReviewLoading(true);
+      
+      // 最多重试2次
+      let retries = 0;
+      const maxRetries = 2;
+      
+      while (retries <= maxRetries) {
+        try {
+          const newReview = await bookMiniReviewService.generateReview(book, { type });
+          if (newReview) {
+            setMiniReview(newReview.content);
+            setReviewLoading(false);
+            return; // 成功则退出
+          }
+        } catch {
+          console.error(`[BookCard] Failed to generate review for type ${type} (attempt ${retries + 1})`);
+        }
+        
+        retries++;
+        if (retries <= maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000)); // 增加到1秒
+        }
+      }
+      
+      // 所有重试都失败
+      setReviewLoading(false);
+      setMiniReview('微评生成失败，请再次点击重试');
+    }
+  }, [book.id]);
 
   const hasCover = coverSrc && !imageError;
 
@@ -392,6 +529,49 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
               )}
               {miniReview ? t("home.refreshReview", "刷新微评") : t("home.generateReview", "生成微评")}
             </button>
+            {/* Mini review type selector */}
+            <div className="relative">
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-foreground hover:bg-muted"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  suppressOpenUntilRef.current = Date.now() + 300;
+                  setShowTypeSelector(!showTypeSelector);
+                }}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                {t("home.reviewType", "微评类型")}
+                <ChevronRight className="ml-auto h-3 w-3" />
+              </button>
+              {showTypeSelector && (
+                <div
+                  className="absolute right-full top-0 z-50 mr-1 min-w-40 rounded-lg border bg-popover p-1 shadow-lg"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  role="menu"
+                >
+                  {[
+                    { type: "hook" as const, label: "钩子式", desc: "颠覆认知" },
+                    { type: "question" as const, label: "问题式", desc: "引发思考" },
+                    { type: "resonance" as const, label: "共鸣式", desc: "情感共鸣" },
+                    { type: "anecdote" as const, label: "作者轶事", desc: "有趣背景" },
+                  ].map((item) => (
+                    <button
+                      key={item.type}
+                      type="button"
+                      className={`flex w-full flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-xs hover:bg-muted ${
+                        currentReviewType === item.type ? "bg-muted" : ""
+                      }`}
+                      onClick={(e) => handleTypeChange(e, item.type)}
+                    >
+                      <div className="font-medium">{item.label}</div>
+                      <div className="text-[10px] text-muted-foreground">{item.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             {/* Tags submenu */}
             <div className="relative">
               <button
@@ -488,20 +668,22 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
         )}
 
         {/* Mini review — fixed 4-line area, always reserves space */}
-        <div className="mt-0.5" style={{ minHeight: "36px" }}>
+        <div className="mt-0.5 relative" style={{ minHeight: "36px", maxHeight: "4.5em", overflow: "hidden" }}>
           {miniReview ? (
-            <button
-              type="button"
-              className="flex w-full items-start gap-0.5 text-left text-[9px] leading-tight text-muted-foreground/70 hover:text-muted-foreground transition-colors"
-              onClick={(e) => {
-                e.stopPropagation();
-                suppressOpenUntilRef.current = Date.now() + 200;
-                setShowReview(!showReview);
+            <div
+              className="flex w-full items-start gap-0.5 text-left text-[9px] leading-tight text-muted-foreground/70"
+              style={{
+                display: '-webkit-box',
+                WebkitLineClamp: 4,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                lineHeight: '1.125',
               }}
             >
               <span className="shrink-0">✨</span>
-              <span className={showReview ? "" : "line-clamp-4"}>{miniReview}</span>
-            </button>
+              <span>{miniReview}</span>
+            </div>
           ) : reviewLoading ? (
             <div className="flex items-center gap-1 text-[9px] text-muted-foreground/50">
               <Loader2 className="h-2.5 w-2.5 animate-spin" />

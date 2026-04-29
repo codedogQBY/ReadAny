@@ -17,31 +17,9 @@ export function BookGrid({ books }: { books: Book[] }) {
     let cancelled = false;
 
     async function autoGenerateReviews() {
-      const booksWithoutReview = books.filter((book) => {
-        if (generatedRef.current.has(book.id)) return false;
-        const existing = bookMiniReviewService.getReview(book.id);
-        return !existing;
-      });
-
-      // Generate reviews one by one with delay
-      for (let i = 0; i < booksWithoutReview.length && !cancelled; i++) {
-        const book = booksWithoutReview[i];
-        generatedRef.current.add(book.id);
-
-        try {
-          await bookMiniReviewService.generateReview(book, {
-            timeout: 15000,
-            useCache: true,
-          });
-        } catch {
-          // Silently fail — user can still manually generate
-        }
-
-        // Wait between requests to avoid rate limiting
-        if (i < booksWithoutReview.length - 1 && !cancelled) {
-          await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY));
-        }
-      }
+      // 禁用自动生成功能，因为现在每次打开都会重新生成
+      // BookCard 组件会在挂载时自动调用 generateReview
+      console.log('[BookGrid] Auto-generation disabled - using on-demand generation');
     }
 
     if (books.length > 0) {
