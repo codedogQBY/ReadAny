@@ -1,3 +1,4 @@
+import { resolveDesktopDataPath } from "@/lib/storage/desktop-library-root";
 import { useAppStore } from "@/stores/app-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useMissingBookPromptStore } from "@/stores/missing-book-prompt-store";
@@ -59,11 +60,6 @@ const BOOK_IMPORT_FILTERS = [
     extensions: ["epub", "pdf", "mobi", "azw", "azw3", "cbz", "fb2", "fbz", "txt"],
   },
 ];
-
-function isLikelyRelativeDesktopPath(path: string): boolean {
-  if (!path) return false;
-  return !/^(\/|file:\/\/|asset:\/\/|https?:\/\/|[A-Za-z]:[\\/])/i.test(path);
-}
 
 function openReaderTab(book: Book, initialCfi?: string) {
   const { addTab, setActiveTab } = useAppStore.getState();
@@ -141,9 +137,7 @@ export async function openDesktopBook({
   // Check whether the local book file is accessible
   let fileAccessible = false;
   if (!isSoftDeleted && book.filePath) {
-    const targetPath = isLikelyRelativeDesktopPath(book.filePath)
-      ? await platform.joinPath(await platform.getAppDataDir(), book.filePath)
-      : book.filePath;
+    const targetPath = await resolveDesktopDataPath(book.filePath);
     fileAccessible = await platform.exists(targetPath).catch(() => false);
   }
 

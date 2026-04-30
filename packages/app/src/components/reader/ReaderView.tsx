@@ -97,20 +97,15 @@ async function measureReflowableBookCharacters(bookDoc: BookDoc): Promise<number
 
 // --- Tauri file loading ---
 async function loadFileAsBlob(filePath: string): Promise<Blob> {
-  // Resolve relative paths (e.g., "books/{id}.epub") to absolute paths
-  let resolvedPath = filePath;
-  if (
-    !filePath.startsWith("/") &&
-    !filePath.startsWith("file://") &&
-    !filePath.startsWith("asset://") &&
-    !filePath.startsWith("http")
-  ) {
-    resolvedPath = await resolveDesktopDataPath(filePath);
-  }
+  // Resolve managed relative paths (e.g., "books/{id}.epub") to the active desktop library root.
+  const resolvedPath = await resolveDesktopDataPath(filePath);
 
   try {
     const { convertFileSrc } = await import("@tauri-apps/api/core");
-    const assetUrl = convertFileSrc(resolvedPath);
+    const assetUrl =
+      resolvedPath.startsWith("asset://") || resolvedPath.startsWith("http")
+        ? resolvedPath
+        : convertFileSrc(resolvedPath);
     const response = await fetch(assetUrl);
     if (!response.ok) throw new Error(`fetch failed: ${response.status}`);
     return await response.blob();

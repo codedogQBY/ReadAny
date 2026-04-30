@@ -1,6 +1,10 @@
 import * as db from "@/lib/db/database";
 import { triggerVectorizeBook } from "@/lib/rag/vectorize-trigger";
-import { getDesktopLibraryRoot, resolveDesktopDataPath } from "@/lib/storage/desktop-library-root";
+import {
+  getDesktopLibraryRoot,
+  isDesktopManagedRelativePath,
+  resolveDesktopDataPath,
+} from "@/lib/storage/desktop-library-root";
 import {
   type ImportBooksResult,
   createEmptyImportBooksResult,
@@ -205,16 +209,6 @@ async function resolveAppPath(relativePath: string): Promise<string> {
   return resolveDesktopDataPath(relativePath);
 }
 
-/** Check if a path is relative (not absolute or a protocol URL) */
-function isRelativePath(p: string): boolean {
-  return (
-    !p.startsWith("/") &&
-    !p.startsWith("file://") &&
-    !p.startsWith("asset://") &&
-    !p.startsWith("http")
-  );
-}
-
 /**
  * Resolve a book or cover path to a displayable asset:// URL.
  * Handles both legacy absolute/asset:// paths and new relative paths.
@@ -224,11 +218,7 @@ export async function resolveFileSrc(path: string): Promise<string> {
   // Already a displayable URL
   if (path.startsWith("asset://") || path.startsWith("http")) return path;
   const { convertFileSrc } = await import("@tauri-apps/api/core");
-  if (isRelativePath(path)) {
-    const abs = await resolveAppPath(path);
-    return convertFileSrc(abs);
-  }
-  return convertFileSrc(path);
+  return convertFileSrc(await resolveDesktopDataPath(path));
 }
 
 /**
@@ -327,7 +317,10 @@ export interface LibraryState {
   removeTagFromBook: (bookId: string, tag: string) => void;
 }
 
-async function restoreDeletedDesktopBook(bookId: string, filePath: string): Promise<Book | null> {
+async function restoreDeletedDesktopBook(
+  bookId: string,
+  filePath: string,
+): Promise<Book | null> {
   await db.initDatabase();
   const originalBook = await db.getBook(bookId, { includeDeleted: true });
   if (!originalBook) return null;
@@ -538,14 +531,11 @@ async function inspectDeletedDesktopBookCandidate(
     const meta = bookDoc.metadata;
     if (meta) {
       const rawTitle =
-        typeof meta.title === "string"
-          ? meta.title
-          : meta.title
-            ? Object.values(meta.title)[0]
-            : "";
+        typeof meta.title === "string" ? meta.title : meta.title ? Object.values(meta.title)[0] : "";
       if (rawTitle) title = rawTitle;
 
-      const rawAuthor = typeof meta.author === "string" ? meta.author : meta.author?.name || "";
+      const rawAuthor =
+        typeof meta.author === "string" ? meta.author : meta.author?.name || "";
       if (rawAuthor) author = rawAuthor;
     }
   } catch {
@@ -648,7 +638,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         const { remove } = await import("@tauri-apps/plugin-fs");
 
         // Delete book file if it's a relative path (in app data dir)
-        if (book.filePath && isRelativePath(book.filePath)) {
+        if (book.filePath && isDesktopManagedRelativePath(book.filePath)) {
           try {
             const bookAbsPath = await resolveAppPath(book.filePath);
             await remove(bookAbsPath);
@@ -658,7 +648,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           }
         }
 
-        if (!preserveData && book.meta.coverUrl && isRelativePath(book.meta.coverUrl)) {
+        if (!preserveData && book.meta.coverUrl && isDesktopManagedRelativePath(book.meta.coverUrl)) {
           try {
             const coverAbsPath = await resolveAppPath(book.meta.coverUrl);
             await remove(coverAbsPath);
@@ -701,9 +691,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       const { DocumentLoader } = await import("@/lib/reader/document-loader");
 
       for (const filePath of filePaths) {
-        const fileName = decodeURIComponent(
-          filePath.replace(/\\/g, "/").split("/").pop() || "book",
-        );
+        const fileName = decodeURIComponent(filePath.replace(/\\/g, "/").split("/").pop() || "book");
         try {
           const ext = filePath.split(".").pop()?.toLowerCase() || "epub";
           const formatMap: Record<string, Book["format"]> = {
@@ -719,7 +707,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             txt: "txt",
           };
           const format: Book["format"] = formatMap[ext] || "epub";
-          let title = fileName.replace(/\.\w+$/i, "") || "Untitled";
+          let title =
+            fileName.replace(/\.\w+$/i, "") || "Untitled";
           let author = "";
           let coverUrl: string | undefined;
           let fileHash: string | undefined;
@@ -754,13 +743,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             const { TxtToEpubConverter } = await import("@readany/core/utils/txt-to-epub");
             const { readFile } = await import("@tauri-apps/plugin-fs");
             const rawBytes = await readFile(filePath);
-            const txtFile = new File(
-              [rawBytes],
-              filePath.replace(/\\/g, "/").split("/").pop() || "book.txt",
-              {
-                type: "text/plain",
-              },
-            );
+            const txtFile = new File([rawBytes], filePath.replace(/\\/g, "/").split("/").pop() || "book.txt", {
+              type: "text/plain",
+            });
             const converter = new TxtToEpubConverter();
             const result = await converter.convert({ file: txtFile });
             title = result.bookTitle;
@@ -900,7 +885,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
               fileHash: book.fileHash,
               syncStatus: "local",
               lastOpenedAt: Date.now(),
-            }).catch((err) => console.error("Failed to restore deleted book from database:", err));
+            }).catch((err) =>
+              console.error("Failed to restore deleted book from database:", err),
+            );
             debouncedSave("library-books", get().books);
           } else {
             get().addBook(book);
@@ -909,7 +896,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           if (fileHash) {
             duplicateIndex.byHash.set(fileHash, book);
           }
-
+          
           // Auto-vectorize if enabled
           const vmState = useVectorModelStore.getState();
           if (vmState.vectorModelEnabled && vmState.hasVectorCapability()) {

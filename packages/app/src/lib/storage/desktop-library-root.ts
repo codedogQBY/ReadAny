@@ -13,6 +13,34 @@ function normalizeDir(path: string): string {
   return trimmed.replace(/[\\/]+$/, "");
 }
 
+function fileUrlToFsPath(path: string): string {
+  try {
+    const url = new URL(path);
+    if (url.protocol !== "file:") return path;
+    const pathname = decodeURIComponent(url.pathname);
+    if (url.hostname) {
+      return `\\\\${url.hostname}${pathname.replace(/\//g, "\\")}`;
+    }
+    return pathname.replace(/^\/([A-Za-z]:[\\/])/, "$1");
+  } catch {
+    return path.replace(/^file:\/\//, "");
+  }
+}
+
+function isProtocolPath(path: string): boolean {
+  return /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(path);
+}
+
+function isWindowsAbsolutePath(path: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("\\\\");
+}
+
+export function isDesktopManagedRelativePath(path: string): boolean {
+  const trimmed = path.trim();
+  if (!trimmed) return false;
+  return !trimmed.startsWith("/") && !isWindowsAbsolutePath(trimmed) && !isProtocolPath(trimmed);
+}
+
 function readLegacyStoredRoot(): string | null {
   if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -145,17 +173,12 @@ export async function clearDesktopLibraryRoot(): Promise<void> {
 }
 
 export async function resolveDesktopDataPath(path: string): Promise<string> {
-  if (!path) return "";
-  if (
-    path.startsWith("/") ||
-    path.startsWith("file://") ||
-    path.startsWith("asset://") ||
-    path.startsWith("http")
-  ) {
-    return path;
-  }
+  const trimmed = path.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("file://")) return fileUrlToFsPath(trimmed);
+  if (!isDesktopManagedRelativePath(trimmed)) return trimmed;
 
-  return joinWithinRoot(await getDesktopLibraryRoot(), path);
+  return joinWithinRoot(await getDesktopLibraryRoot(), trimmed);
 }
 
 type MigrationResult = {

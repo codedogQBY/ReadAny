@@ -283,6 +283,8 @@ export function ProfileScreen() {
   const s = makeStyles(colors);
   const { t, i18n } = useTranslation();
   const layout = useResponsiveLayout();
+  const statsGridColumns = layout.isTablet ? 4 : 2;
+  const statCardSlotWidth = `${100 / statsGridColumns}%` as `${number}%`;
   const nav = useNavigation<Nav>();
   const [overall, setOverall] = useState<OverallStats | null>(null);
   const [dailyStats, setDailyStats] = useState<DailyStats[]>([]);
@@ -404,7 +406,6 @@ export function ProfileScreen() {
     ? formatCharactersPerMinute(liveOverall.avgCharactersPerMinute ?? 0, isZh)
     : formatCharactersPerMinute(0, isZh);
   const longestStreak = liveOverall?.longestStreak ?? 0;
-  const statCardWidth = layout.isTabletLandscape ? "23.2%" : "48.2%";
   const overviewCards = [
     {
       key: "time",
@@ -462,16 +463,24 @@ export function ProfileScreen() {
           ) : (
             <View style={s.statsGrid}>
               {overviewCards.map((card) => (
-                <StatCard
+                <View
                   key={card.key}
-                  icon={card.icon}
-                  title={card.title}
-                  value={card.value}
-                  unit={card.unit}
-                  metaLabel={card.metaLabel}
-                  metaValue={card.metaValue}
-                  style={{ width: statCardWidth }}
-                />
+                  style={{
+                    width: statCardSlotWidth,
+                    paddingHorizontal: 6,
+                    paddingBottom: 12,
+                  }}
+                >
+                  <StatCard
+                    icon={card.icon}
+                    title={card.title}
+                    value={card.value}
+                    unit={card.unit}
+                    metaLabel={card.metaLabel}
+                    metaValue={card.metaValue}
+                    style={{ width: "100%" }}
+                  />
+                </View>
               ))}
             </View>
           )}
@@ -549,7 +558,7 @@ const makeStyles = (colors: ThemeColors) =>
     // Stats
     statsSection: { paddingHorizontal: 16, paddingTop: 16 },
     statsLoading: { alignItems: "center", justifyContent: "center", paddingVertical: 32 },
-    statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+    statsGrid: { flexDirection: "row", flexWrap: "wrap", marginHorizontal: -6 },
     statCard: {
       backgroundColor: colors.card,
       borderRadius: radius.xl,

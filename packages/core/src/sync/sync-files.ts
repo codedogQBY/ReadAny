@@ -16,6 +16,20 @@ export interface SyncFilesOptions {
   disableRemoteDeletes?: boolean;
 }
 
+function isAbsoluteOrProtocolPath(path: string): boolean {
+  return (
+    path.startsWith("/") ||
+    /^[A-Za-z]:[\\/]/.test(path) ||
+    path.startsWith("\\\\") ||
+    /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(path)
+  );
+}
+
+function getDirName(path: string): string {
+  const separatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return separatorIndex > 0 ? path.substring(0, separatorIndex) : "";
+}
+
 /**
  * Sync book files and covers between local and remote.
  * Files are downloaded in parallel (up to 8 concurrent downloads) for better performance.
@@ -78,10 +92,9 @@ export async function syncFiles(
   const bookFileInfos: BookFileInfo[] = [];
   for (const book of books) {
     if (!book.file_path) continue;
-    const localPath =
-      book.file_path.startsWith("/") || book.file_path.startsWith("file://")
-        ? book.file_path
-        : adapter.joinPath(appDataDir, book.file_path);
+    const localPath = isAbsoluteOrProtocolPath(book.file_path)
+      ? book.file_path
+      : adapter.joinPath(appDataDir, book.file_path);
     const ext = book.file_path.split(".").pop() || "epub";
     const remoteName = `${book.id}.${ext}`;
     bookFileInfos.push({ book, localPath, remoteName, ext });
@@ -90,10 +103,9 @@ export async function syncFiles(
   const coverFileInfos: CoverFileInfo[] = [];
   for (const book of books) {
     if (!book.cover_url) continue;
-    const coverLocalPath =
-      book.cover_url.startsWith("/") || book.cover_url.startsWith("file://")
-        ? book.cover_url
-        : adapter.joinPath(appDataDir, book.cover_url);
+    const coverLocalPath = isAbsoluteOrProtocolPath(book.cover_url)
+      ? book.cover_url
+      : adapter.joinPath(appDataDir, book.cover_url);
     const coverExt = book.cover_url.split(".").pop() || "jpg";
     const coverRemoteName = `${book.id}.${coverExt}`;
     coverFileInfos.push({ book, coverLocalPath, coverRemoteName });
@@ -408,12 +420,11 @@ export async function downloadBookFile(
 
     // Save to local
     const appDataDir = await adapter.getAppDataDir();
-    const localPath =
-      filePath.startsWith("/") || filePath.startsWith("file://")
-        ? filePath
-        : adapter.joinPath(appDataDir, filePath);
+    const localPath = isAbsoluteOrProtocolPath(filePath)
+      ? filePath
+      : adapter.joinPath(appDataDir, filePath);
 
-    const dir = localPath.substring(0, localPath.lastIndexOf("/"));
+    const dir = getDirName(localPath);
     if (dir) await adapter.ensureDir(dir);
     await adapter.writeFileBytes(localPath, data);
 

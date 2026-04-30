@@ -152,8 +152,8 @@ export const makeStyles = (colors: ThemeColors) =>
     metricsGrid: {
       flexDirection: "row",
       flexWrap: "wrap",
-      gap: 8,
       marginTop: 20,
+      marginHorizontal: -4,
     },
     metricTile: {
       backgroundColor: withOpacity(colors.muted, 0.12),

@@ -25,16 +25,8 @@ export async function triggerVectorizeBook(
   filePath: string,
   onProgress?: VectorizeStatusCallback,
 ): Promise<void> {
-  // Resolve relative paths (e.g., "books/{id}.epub") to absolute paths
-  let resolvedPath = filePath;
-  if (
-    !filePath.startsWith("/") &&
-    !filePath.startsWith("file://") &&
-    !filePath.startsWith("asset://") &&
-    !filePath.startsWith("http")
-  ) {
-    resolvedPath = await resolveDesktopDataPath(filePath);
-  }
+  // Resolve managed relative paths (e.g., "books/{id}.epub") to the active desktop library root.
+  const resolvedPath = await resolveDesktopDataPath(filePath);
 
   const vmState = useVectorModelStore.getState();
 
