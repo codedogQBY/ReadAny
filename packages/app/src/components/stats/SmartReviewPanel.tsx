@@ -12,11 +12,11 @@ import { useLibraryStore } from "@/stores/library-store";
 import { cn } from "@readany/core/utils";
 import {
   Brain,
-  Check,
-  ChevronRight,
+  // Check,
+  // ChevronRight,
   Clock,
-  Loader2,
-  RotateCcw,
+  // Loader2,
+  // RotateCcw,
   SkipForward,
   Sparkles,
 } from "lucide-react";
@@ -78,7 +78,9 @@ export function SmartReviewPanel() {
   useEffect(() => {
     refreshData();
     const unsubscribe = smartReviewSystem.subscribe(refreshData);
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+    };
   }, [refreshData]);
 
   const bookMap = useMemo(() => {

@@ -7,10 +7,10 @@
  * - 页面刷新后从 SQLite 恢复
  */
 
-import { getAllMiniReviews, insertMiniReview as dbInsertMiniReview, getMiniReview as dbGetMiniReview } from "@readany/core/db";
+import { getAllMiniReviews, insertMiniReview as dbInsertMiniReview /* , getMiniReview as dbGetMiniReview */ } from "@readany/core/db";
 import { useSettingsStore } from "@/stores/settings-store";
 import type { Book } from "@readany/core/types";
-import { generateId } from "@readany/core/utils/generate-id";
+// import { generateId } from "@readany/core/utils/generate-id";
 
 // 微评类型定义
 export type MiniReviewType = "hook" | "question" | "resonance" | "anecdote";

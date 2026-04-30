@@ -101,9 +101,9 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
           mode: "socratic",
           knowledgeScope: "book_summary",
         };
-        const bookTitle = book?.meta?.title || "这本书";
+        // const bookTitle = book?.meta?.title || "这本书";
         const mode = socraticSettings.mode || "socratic";
-        const scope = socraticSettings.knowledgeScope || "book_summary";
+        // const scope = socraticSettings.knowledgeScope || "book_summary";
         
         // Use socratic system prompt for preheating (hidden from user)
         const socraticSystemPrompt = getSystemPrompt();

@@ -1,4 +1,4 @@
-import { getDB, getDeviceId, insertTombstone, nextSyncVersion, nextUpdatedAt } from "./db-core";
+import { getDB, getDeviceId, insertTombstone, nextSyncVersion /* , nextUpdatedAt */ } from "./db-core";
 
 export interface MiniReviewRow {
   id: string;

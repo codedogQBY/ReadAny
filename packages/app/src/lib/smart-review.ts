@@ -13,7 +13,7 @@ import {
   getReviewItemStats as dbGetReviewItemStats,
   insertReviewItem as dbInsertReviewItem,
   updateReviewItem as dbUpdateReviewItem,
-  deleteReviewItem as dbDeleteReviewItem,
+  // deleteReviewItem as dbDeleteReviewItem,
 } from "@readany/core/db";
 import { useSettingsStore } from "@/stores/settings-store";
 

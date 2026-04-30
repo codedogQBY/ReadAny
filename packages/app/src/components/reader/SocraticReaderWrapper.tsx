@@ -116,11 +116,11 @@ export function SocraticReaderWrapper({ bookId }: SocraticReaderWrapperProps) {
     sessionStorage.setItem(`preheating-start-${bookId}`, "true");
   }, [bookId, markPreheatingDialogShown]);
 
-  const handleTriggerPreheating = useCallback(() => {
-    // 手动触发预热对话框
-    console.log("[SocraticReaderWrapper] handleTriggerPreheating called");
-    setShowPreheatingDialog(true);
-  }, []);
+  // const handleTriggerPreheating = useCallback(() => {
+  //   // 手动触发预热对话框
+  //   console.log("[SocraticReaderWrapper] handleTriggerPreheating called");
+  //   setShowPreheatingDialog(true);
+  // }, []);
 
   const handleSkipPreheating = useCallback(() => {
     console.log("[SocraticReaderWrapper] handleSkipPreheating called");

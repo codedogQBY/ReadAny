@@ -1041,17 +1041,17 @@ export function ReaderView({ bookId, tabId, initialShowChat }: ReaderViewProps) 
       // Update chapter info
       if (detail.tocItem?.label) {
         // Capture previous chapter BEFORE updating
-        const prevChapterTitle = useReaderStore.getState().tabs[tabId]?.chapterTitle;
-        const currentBookId = useReaderStore.getState().tabs[tabId]?.bookId;
+        // const prevChapterTitle = useReaderStore.getState().tabs[tabId]?.chapterTitle;
+        // const currentBookId = useReaderStore.getState().tabs[tabId]?.bookId;
 
         setChapter(tabId, detail.section?.current ?? 0, detail.tocItem.label, detail.tocItem.href);
 
         // Auto-create smart review item when moving to a new chapter
-        if (prevChapterTitle && prevChapterTitle !== detail.tocItem.label && currentBookId) {
-          smartReviewSystem.createReviewItem(currentBookId, `ch-${detail.section?.current ?? 0}`, prevChapterTitle).catch((err) => {
-            console.error("[ReaderView] Failed to create review item:", err);
-          });
-        }
+        // if (prevChapterTitle && prevChapterTitle !== detail.tocItem.label && currentBookId) {
+        //   smartReviewSystem.createReviewItem(currentBookId, `ch-${detail.section?.current ?? 0}`, prevChapterTitle).catch((err: any) => {
+        //     console.error("[ReaderView] Failed to create review item:", err);
+        //   });
+        // }
       }
 
       // Display true pages only when the renderer exposes them.

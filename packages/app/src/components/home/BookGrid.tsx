@@ -2,19 +2,19 @@
  * BookGrid — responsive grid layout with Readest-style spacing
  * Auto-generates mini reviews for books that lack them.
  */
-import { bookMiniReviewService } from "@/lib/book-mini-review";
+// import { bookMiniReviewService } from "@/lib/book-mini-review";
 import type { Book } from "@readany/core/types";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { BookCard } from "./BookCard";
 
-const BATCH_DELAY = 2000; // ms between each auto-generation request
-const MAX_CONCURRENT = 1; // generate one at a time to avoid rate limits
+// const BATCH_DELAY = 2000; // ms between each auto-generation request
+// const MAX_CONCURRENT = 1; // generate one at a time to avoid rate limits
 
 export function BookGrid({ books }: { books: Book[] }) {
-  const generatedRef = useRef<Set<string>>(new Set());
+  // const generatedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    let cancelled = false;
+    // let cancelled = false;
 
     async function autoGenerateReviews() {
       // 禁用自动生成功能，因为现在每次打开都会重新生成
@@ -27,7 +27,7 @@ export function BookGrid({ books }: { books: Book[] }) {
     }
 
     return () => {
-      cancelled = true;
+      // cancelled = true;
     };
   }, [books]);
 
