@@ -24,12 +24,17 @@ export function usePagination({ bookKey, viewRef, containerRef }: UsePaginationO
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lockTime = useRef(0);
 
+  const isRendererScrolled = useCallback(
+    () => Boolean(viewRef.current?.renderer?.scrolled),
+    [viewRef],
+  );
+
   const handleWheel = useCallback(
     (deltaY: number, deltaX?: number) => {
       const view = viewRef.current;
       if (!view) return;
 
-      if (view.renderer?.scrolled) return;
+      if (isRendererScrolled()) return;
 
       const absDY = Math.abs(deltaY);
       const absDX = Math.abs(deltaX || 0);
@@ -69,7 +74,7 @@ export function usePagination({ bookKey, viewRef, containerRef }: UsePaginationO
         wheelLocked.current = false;
       }, WHEEL_IDLE_MS);
     },
-    [viewRef],
+    [isRendererScrolled, viewRef],
   );
 
   useEffect(() => {
@@ -100,13 +105,14 @@ export function usePagination({ bookKey, viewRef, containerRef }: UsePaginationO
     if (!container) return;
 
     const onWheel = (e: WheelEvent) => {
+      if (isRendererScrolled()) return;
       e.preventDefault();
       handleWheel(e.deltaY, e.deltaX);
     };
 
     container.addEventListener("wheel", onWheel, { passive: false });
     return () => container.removeEventListener("wheel", onWheel);
-  }, [containerRef, handleWheel]);
+  }, [containerRef, handleWheel, isRendererScrolled]);
 
   return { handleWheel };
 }

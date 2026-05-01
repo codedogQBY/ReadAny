@@ -799,6 +799,15 @@ export class Paginator extends HTMLElement {
     return Math.round(this.viewSize / this.size);
   }
   scrollBy(dx, dy) {
+    if (this.scrolled) {
+      const delta = this.#vertical ? dx : dy;
+      const element = this.#container;
+      element[this.scrollProp] += delta;
+      const viewSize = this.viewSize;
+      if (viewSize > 0) this.#anchor = this.start / viewSize;
+      return;
+    }
+
     const delta = this.#vertical ? dy : dx;
     const element = this.#container;
     const { scrollProp } = this;

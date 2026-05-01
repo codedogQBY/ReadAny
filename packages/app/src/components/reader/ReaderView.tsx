@@ -189,6 +189,7 @@ function useAutoHideControls(
   delay = 2000,
   keepVisible = false,
   isDoublePage = false,
+  clickNavigationEnabled = true,
 ) {
   const [isVisible, setIsVisible] = useState(true);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -246,6 +247,18 @@ function useAutoHideControls(
         const leftNavEnd = viewStartX + viewWidth * (isDoublePage ? 0.25 : 0.375);
         const rightNavStart = viewStartX + viewWidth * (isDoublePage ? 0.75 : 0.625);
 
+        if (!clickNavigationEnabled) {
+          setIsVisible((prev) => {
+            if (prev) {
+              clearTimer();
+              return false;
+            }
+            showAndScheduleHide();
+            return true;
+          });
+          return;
+        }
+
         if (clickScreenX > leftNavEnd && clickScreenX < rightNavStart) {
           // Middle zone: toggle toolbar
           setIsVisible((prev) => {
@@ -272,7 +285,16 @@ function useAutoHideControls(
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [bookKey, clearTimer, containerRef, onNext, onPrev, showAndScheduleHide, isDoublePage]);
+  }, [
+    bookKey,
+    clearTimer,
+    clickNavigationEnabled,
+    containerRef,
+    onNext,
+    onPrev,
+    showAndScheduleHide,
+    isDoublePage,
+  ]);
 
   // Mouse enter/leave handlers for toolbar area
   const handleMouseEnter = useCallback(() => {
@@ -321,7 +343,6 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const appTab = useAppStore((s) => s.tabs.find((t) => t.id === tabId));
   const closeAppTab = useAppStore((s) => s.removeTab);
   const viewSettings = useSettingsStore((s) => s.readSettings);
-  const updateReadSettings = useSettingsStore((s) => s.updateReadSettings);
   const setProgress = useReaderStore((s) => s.setProgress);
   const setChapter = useReaderStore((s) => s.setChapter);
   const setSelectedText = useReaderStore((s) => s.setSelectedText);
@@ -804,6 +825,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     2000,
     keepControlsVisible,
     (viewSettings.paginatedLayout ?? "double") === "double",
+    viewSettings.viewMode !== "scroll",
   );
   const toolbarVisible = controlsVisible || isToolbarPinned;
   const readingHeaderTitle = (readerTab?.chapterTitle || book?.meta.title || "").trim();
@@ -859,12 +881,6 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       });
     }, 5000),
   ).current;
-
-  useEffect(() => {
-    if (viewSettings.viewMode === "scroll") {
-      updateReadSettings({ viewMode: "paginated" });
-    }
-  }, [viewSettings.viewMode, updateReadSettings]);
 
   // --- Load book on mount ---
   useEffect(() => {
