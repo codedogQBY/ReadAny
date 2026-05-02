@@ -12,6 +12,7 @@ import type {
   ChapterParagraph,
   ChapterTranslationResult,
 } from "@readany/core/translation/chapter-translator";
+import { splitTextIntoTTSSegmentRanges } from "@readany/core/reader";
 import type { ViewSettings } from "@readany/core/types";
 import { Overlayer } from "foliate-js/overlayer.js";
 import { marked } from "marked";
@@ -255,6 +256,7 @@ export interface FoliateViewerHandle {
   /** Get visible text on the current page for TTS */
   getVisibleText: () => string;
   getVisibleTTSSegments: (alignCfi?: string | null) => Promise<TTSSegmentDetail[]>;
+  getSelectionTTSSegments: (selection: BookSelection) => Promise<TTSSegmentDetail[]>;
   getTTSSegmentContext: (
     cfi: string,
     before?: number,
@@ -715,6 +717,159 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       [ensureDesktopTTS],
     );
 
+    const getSelectionTTSSegments = useCallback(
+      async (selection: BookSelection): Promise<TTSSegmentDetail[]> => {
+        const view = viewRef.current;
+        const range = selection.range;
+        const fallbackText = normalizeTTSSegmentText(selection.text);
+        const fallbackCfi = selection.cfi || "";
+        const fallback = () =>
+          fallbackText && fallbackCfi ? [{ text: fallbackText, cfi: fallbackCfi }] : [];
+        if (!view || !range || range.collapsed) return fallback();
+
+        await ensureDesktopTTS();
+
+        const doc =
+          range.startContainer.nodeType === Node.DOCUMENT_NODE
+            ? (range.startContainer as Document)
+            : range.startContainer.ownerDocument;
+        if (!doc) return fallback();
+        const contents = view.renderer?.getContents?.() ?? [];
+        const content = contents.find(
+          (item: { doc?: Document; index?: number }) => item.doc === doc,
+        );
+        const sectionIndex = selection.chapterIndex ?? content?.index ?? 0;
+        const lang =
+          doc.documentElement.lang ||
+          doc.documentElement.getAttribute("xml:lang") ||
+          doc.body.lang ||
+          navigator.language ||
+          "en";
+        const root =
+          range.commonAncestorContainer.nodeType === Node.TEXT_NODE
+            ? range.commonAncestorContainer.parentElement
+            : range.commonAncestorContainer;
+        if (!root) return fallback();
+
+        const positionedNodes: Array<{
+          node: Text;
+          start: number;
+          end: number;
+          nodeStart: number;
+        }> = [];
+        let selectionText = "";
+        const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+          acceptNode: (node) => {
+            if (!node.nodeValue?.trim()) return NodeFilter.FILTER_SKIP;
+            const parent = (node as Text).parentElement;
+            if (!parent) return NodeFilter.FILTER_ACCEPT;
+            const tag = parent.tagName.toLowerCase();
+            if (tag === "script" || tag === "style") return NodeFilter.FILTER_REJECT;
+            if (parent.closest(".readany-translation")) return NodeFilter.FILTER_REJECT;
+
+            const nodeRange = doc.createRange();
+            try {
+              nodeRange.selectNodeContents(node);
+              if (range.compareBoundaryPoints(Range.END_TO_START, nodeRange) <= 0) {
+                return NodeFilter.FILTER_REJECT;
+              }
+              if (range.compareBoundaryPoints(Range.START_TO_END, nodeRange) >= 0) {
+                return NodeFilter.FILTER_REJECT;
+              }
+              return NodeFilter.FILTER_ACCEPT;
+            } catch {
+              return NodeFilter.FILTER_REJECT;
+            } finally {
+              nodeRange.detach?.();
+            }
+          },
+        });
+
+        for (
+          let textNode = walker.nextNode() as Text | null;
+          textNode;
+          textNode = walker.nextNode() as Text | null
+        ) {
+          const sourceText = textNode.nodeValue || "";
+          const startOffset =
+            textNode === range.startContainer
+              ? Math.max(0, Math.min(sourceText.length, range.startOffset))
+              : 0;
+          const endOffset =
+            textNode === range.endContainer
+              ? Math.max(0, Math.min(sourceText.length, range.endOffset))
+              : sourceText.length;
+          if (endOffset <= startOffset) continue;
+
+          const text = sourceText.slice(startOffset, endOffset);
+          const start = selectionText.length;
+          selectionText += text;
+          positionedNodes.push({
+            node: textNode,
+            start,
+            end: selectionText.length,
+            nodeStart: startOffset,
+          });
+        }
+
+        if (!selectionText.trim() || positionedNodes.length === 0) return fallback();
+
+        const resolvePosition = (absoluteOffset: number, isEnd: boolean) => {
+          for (const item of positionedNodes) {
+            if (absoluteOffset < item.end || (isEnd && absoluteOffset <= item.end)) {
+              return {
+                node: item.node,
+                offset: Math.max(
+                  0,
+                  Math.min(
+                    item.node.nodeValue?.length ?? 0,
+                    item.nodeStart + absoluteOffset - item.start,
+                  ),
+                ),
+              };
+            }
+          }
+          const last = positionedNodes[positionedNodes.length - 1];
+          return { node: last.node, offset: last.node.nodeValue?.length ?? 0 };
+        };
+
+        const seen = new Set<string>();
+        const segments: TTSSegmentDetail[] = [];
+        for (const segment of splitTextIntoTTSSegmentRanges(selectionText, lang)) {
+          const startPos = resolvePosition(segment.start, false);
+          const endPos = resolvePosition(segment.end, true);
+          if (!startPos || !endPos) continue;
+
+          const segmentRange = doc.createRange();
+          try {
+            segmentRange.setStart(startPos.node, startPos.offset);
+            segmentRange.setEnd(endPos.node, endPos.offset);
+            const cfi = view.getCFI(sectionIndex, segmentRange);
+            const identity = getTTSSegmentIdentity(cfi, segment.text);
+            if (cfi && !seen.has(identity)) {
+              seen.add(identity);
+              segments.push({ text: segment.text, cfi });
+            }
+          } catch {
+            // skip segment if CFI resolution fails
+          } finally {
+            segmentRange.detach?.();
+          }
+        }
+
+        if (segments.length > 0) {
+          console.log("[FoliateViewer][TTS] selectionTTSSegments", {
+            count: segments.length,
+            firstText: segments[0]?.text || null,
+          });
+          return segments;
+        }
+
+        return fallback();
+      },
+      [ensureDesktopTTS],
+    );
+
     const getTTSSegmentContext = useCallback(
       async (
         cfi: string,
@@ -979,6 +1134,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           }
         },
         getVisibleTTSSegments,
+        getSelectionTTSSegments,
         getTTSSegmentContext,
         setTTSHighlight: async (cfi: string | null, color?: string) => {
           ttsHighlightStateRef.current = {
@@ -1198,7 +1354,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
               : undefined,
         }));
       },
-      [clearTTSHighlight, ensureDesktopTTS, getVisibleTTSSegments],
+      [clearTTSHighlight, ensureDesktopTTS, getSelectionTTSSegments, getVisibleTTSSegments],
     );
 
     // --- Section load handler ---
@@ -1760,12 +1916,23 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       if (!view) return null;
 
       const contents = view.renderer?.getContents?.();
-      if (!contents?.[0]?.doc) return null;
+      if (!contents?.length) return null;
 
-      const doc = contents[0].doc as Document;
-      const sel = doc.getSelection();
-      const range = getSelectionRange(sel);
-      if (!range) return null;
+      let doc: Document | null = null;
+      let sel: Selection | null = null;
+      let range: Range | null = null;
+      for (const content of contents) {
+        const contentDoc = content?.doc as Document | undefined;
+        const contentSelection = contentDoc?.getSelection();
+        const contentRange = getSelectionRange(contentSelection);
+        if (contentDoc && contentSelection && contentRange) {
+          doc = contentDoc;
+          sel = contentSelection;
+          range = contentRange;
+          break;
+        }
+      }
+      if (!doc || !sel || !range) return null;
       const text = (sel?.toString() || "").trim();
       if (!text) return null;
 
@@ -1773,7 +1940,10 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       let cfi: string | undefined;
       let chapterIndex: number | undefined;
       try {
-        const index = contents[0].index;
+        const rangeDoc = range.startContainer.ownerDocument;
+        const content =
+          contents.find((item: { doc?: Document }) => item.doc === rangeDoc) ?? contents[0];
+        const index = content.index;
         if (index !== undefined) {
           cfi = view.getCFI(index, range);
           chapterIndex = index;
