@@ -25,3 +25,7 @@ export type { SessionEvent, SessionDetector } from "./session-detector";
 // Annotation mutations
 export { createSelectionNoteMutation } from "./selection-note";
 export type { SelectionNoteMutation, SelectionNoteMutationInput } from "./selection-note";
+
+// TTS
+export { splitTextIntoTTSSegmentRanges } from "./tts-segments";
+export type { TTSTextSegmentRange } from "./tts-segments";
