@@ -28,7 +28,6 @@ vi.mock("../../services/platform", () => ({
 }));
 
 const { applyChanges } = await import("../simple-sync");
-const { applyRemoteDelta } = await import("../incremental-sync");
 
 describe("sync schema filtering", () => {
   beforeEach(() => {
@@ -44,12 +43,16 @@ describe("sync schema filtering", () => {
           { name: "id" },
           { name: "title" },
           { name: "updated_at" },
+          { name: "deleted_at" },
           { name: "sync_version" },
           { name: "last_modified_by" },
         ];
       }
 
-      if (sql.startsWith("SELECT id AS id, updated_at AS timestamp FROM books")) {
+      if (
+        sql.startsWith("SELECT id AS id, updated_at AS timestamp") &&
+        sql.includes("FROM books")
+      ) {
         return [];
       }
 
@@ -91,20 +94,34 @@ describe("sync schema filtering", () => {
     expect(params).toEqual(["book-1", "Test Book", 1000]);
   });
 
-  it("incremental sync ignores unknown remote columns", async () => {
-    const result = await applyRemoteDelta({
+  it("simple sync applies a tied-timestamp remote soft delete", async () => {
+    mockSelect.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("PRAGMA table_info(books)")) {
+        return [{ name: "id" }, { name: "title" }, { name: "updated_at" }, { name: "deleted_at" }];
+      }
+
+      if (
+        sql.startsWith("SELECT id AS id, updated_at AS timestamp") &&
+        sql.includes("FROM books")
+      ) {
+        return [{ id: "book-1", timestamp: 1000, deleted_at: null }];
+      }
+
+      return [];
+    });
+
+    const result = await applyChanges({
       deviceId: "device-remote",
-      fromTimestamp: 0,
-      toTimestamp: Date.now(),
+      timestamp: Date.now(),
+      since: 0,
       tables: {
         books: {
-          table: "books",
           records: [
             {
-              id: "book-2",
-              title: "Another Book",
-              updated_at: 2000,
-              reading_status: "finished",
+              id: "book-1",
+              title: "Deleted remotely",
+              updated_at: 1000,
+              deleted_at: 900,
             },
           ],
           deletedIds: [],
@@ -112,14 +129,54 @@ describe("sync schema filtering", () => {
       },
     });
 
-    expect(result.applied).toBe(1);
-    expect(result.conflicts).toBe(0);
+    expect(result).toEqual({ applied: 1, skipped: 0 });
 
     const insertCall = mockExecute.mock.calls.find((call) =>
       String(call[0]).includes("INSERT INTO books"),
     );
-    expect(insertCall).toBeTruthy();
-    expect(insertCall?.[0]).not.toContain("reading_status");
-    expect(insertCall?.[1]).toEqual(["book-2", "Another Book", 2000]);
+    expect(insertCall?.[0]).toContain("deleted_at");
+    expect(insertCall?.[1]).toEqual(["book-1", "Deleted remotely", 1000, 900]);
+  });
+
+  it("simple sync keeps a tied-timestamp local soft delete over a live remote row", async () => {
+    mockSelect.mockImplementation(async (sql: string) => {
+      if (sql.startsWith("PRAGMA table_info(books)")) {
+        return [{ name: "id" }, { name: "title" }, { name: "updated_at" }, { name: "deleted_at" }];
+      }
+
+      if (
+        sql.startsWith("SELECT id AS id, updated_at AS timestamp") &&
+        sql.includes("FROM books")
+      ) {
+        return [{ id: "book-1", timestamp: 1000, deleted_at: 900 }];
+      }
+
+      return [];
+    });
+
+    const result = await applyChanges({
+      deviceId: "device-remote",
+      timestamp: Date.now(),
+      since: 0,
+      tables: {
+        books: {
+          records: [
+            {
+              id: "book-1",
+              title: "Live remotely",
+              updated_at: 1000,
+              deleted_at: null,
+            },
+          ],
+          deletedIds: [],
+        },
+      },
+    });
+
+    expect(result).toEqual({ applied: 0, skipped: 1 });
+    expect(mockExecute).not.toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO books"),
+      expect.anything(),
+    );
   });
 });

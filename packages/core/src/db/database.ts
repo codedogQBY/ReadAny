@@ -23,7 +23,7 @@ export {
   getDeviceId,
   initDatabase,
   initLocalDatabase,
-  // Shared utilities (used by sync-engine, etc.)
+  // Shared utilities
   nextSyncVersion,
   nextUpdatedAt,
   insertTombstone,
@@ -43,6 +43,13 @@ export {
   setBookSyncStatus,
   deleteBook,
 } from "./book-queries";
+
+export {
+  getGroups,
+  insertGroup,
+  updateGroup,
+  deleteGroup,
+} from "./group-queries";
 
 export {
   getHighlights,
@@ -101,6 +108,7 @@ export {
 export {
   getSkills,
   insertSkill,
+  upsertSkill,
   updateSkill,
   deleteSkill,
 } from "./skill-queries";

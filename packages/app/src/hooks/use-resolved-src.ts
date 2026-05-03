@@ -1,10 +1,20 @@
 import { resolveFileSrc } from "@/stores/library-store";
+import { eventBus } from "@readany/core/utils/event-bus";
 import { useEffect, useState } from "react";
 
-/**
- * Hook to resolve book/cover paths (relative or absolute) to displayable asset:// URLs.
- * Handles both legacy absolute paths and new relative paths (e.g., "covers/{id}.jpg").
- */
+let globalSyncVersion = 0;
+
+export function useSyncVersion(): number {
+  const [version, setVersion] = useState(globalSyncVersion);
+  useEffect(() => {
+    return eventBus.on("sync:completed", () => {
+      globalSyncVersion++;
+      setVersion(globalSyncVersion);
+    });
+  }, []);
+  return version;
+}
+
 export function useResolvedSrc(path: string | undefined): string {
   const [resolved, setResolved] = useState("");
 
@@ -14,13 +24,11 @@ export function useResolvedSrc(path: string | undefined): string {
       return;
     }
 
-    // If already a displayable URL, use it directly
     if (path.startsWith("asset://") || path.startsWith("http")) {
       setResolved(path);
       return;
     }
 
-    // Resolve the path asynchronously
     resolveFileSrc(path)
       .then(setResolved)
       .catch((err) => {

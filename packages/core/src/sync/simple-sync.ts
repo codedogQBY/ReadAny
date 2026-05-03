@@ -15,9 +15,10 @@ import {
   getDB,
   getDeviceId as getLocalDeviceId,
 } from "../db/database";
-import { getPlatformService } from "../services/platform";
 import { runSerializedDbTask } from "../db/write-retry";
+import { getPlatformService } from "../services/platform";
 import type { ISyncBackend } from "./sync-backend";
+import type { SyncFilesOptions } from "./sync-files";
 
 interface SyncTableConfig {
   name: string;
@@ -26,23 +27,37 @@ interface SyncTableConfig {
   excludeColumns?: readonly string[];
 }
 
+interface ExistingRecordState {
+  timestamp: number;
+  deletedAt?: number | null;
+}
+
 export interface SimpleSyncOptions {
   receiveOnly?: boolean;
+  /** When true, bypass timestamp comparisons and force-apply all remote records */
+  forceApply?: boolean;
+  fileSyncOptions?: SyncFilesOptions;
 }
 
 /** Tables included in sync, with their primary key and timestamp column */
 const SYNC_TABLES: SyncTableConfig[] = [
+  { name: "book_groups", pk: "id", timestampCol: "updated_at" },
   // is_vectorized and vectorize_progress are local-only (chunks live in readany_local.db)
-  { name: "books",             pk: "id", timestampCol: "updated_at", excludeColumns: ["is_vectorized", "vectorize_progress"] },
-  { name: "highlights",        pk: "id", timestampCol: "updated_at" },
-  { name: "notes",             pk: "id", timestampCol: "updated_at" },
-  { name: "bookmarks",         pk: "id", timestampCol: "updated_at" },
-  { name: "threads",           pk: "id", timestampCol: "updated_at" },
-  { name: "messages",          pk: "id", timestampCol: "created_at" },
-  { name: "skills",            pk: "id", timestampCol: "updated_at" },
-  { name: "tags",              pk: "id", timestampCol: "updated_at" },
-  { name: "book_tags",         pk: "id", timestampCol: "updated_at" },
-  { name: "reading_sessions",  pk: "id", timestampCol: "updated_at" },
+  {
+    name: "books",
+    pk: "id",
+    timestampCol: "updated_at",
+    excludeColumns: ["is_vectorized", "vectorize_progress"],
+  },
+  { name: "highlights", pk: "id", timestampCol: "updated_at" },
+  { name: "notes", pk: "id", timestampCol: "updated_at" },
+  { name: "bookmarks", pk: "id", timestampCol: "updated_at" },
+  { name: "threads", pk: "id", timestampCol: "updated_at" },
+  { name: "messages", pk: "id", timestampCol: "created_at" },
+  { name: "skills", pk: "id", timestampCol: "updated_at" },
+  { name: "tags", pk: "id", timestampCol: "updated_at" },
+  { name: "book_tags", pk: "id", timestampCol: "updated_at" },
+  { name: "reading_sessions", pk: "id", timestampCol: "updated_at" },
 ];
 
 /** Remote directory for per-device sync files */
@@ -108,10 +123,7 @@ async function filterRecordToExistingColumns(
   );
 }
 
-async function withDatabaseLockRetry<T>(
-  operation: () => Promise<T>,
-  label: string,
-): Promise<T> {
+async function withDatabaseLockRetry<T>(operation: () => Promise<T>, label: string): Promise<T> {
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= DB_LOCK_MAX_RETRIES; attempt++) {
@@ -137,6 +149,7 @@ async function withDatabaseLockRetry<T>(
 export interface TableChangeset {
   records: Record<string, unknown>[];
   deletedIds: string[];
+  deletedTimestamps?: Record<string, number>;
 }
 
 export interface DeviceSyncPayload {
@@ -168,10 +181,9 @@ async function getLastSyncTimestamp(): Promise<number> {
 
 async function setLastSyncTimestamp(timestamp: number): Promise<void> {
   const db = await getDB();
-  await db.execute(
-    "INSERT OR REPLACE INTO sync_metadata (key, value) VALUES ('last_sync_at', ?)",
-    [String(timestamp),]
-  );
+  await db.execute("INSERT OR REPLACE INTO sync_metadata (key, value) VALUES ('last_sync_at', ?)", [
+    String(timestamp),
+  ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -194,7 +206,7 @@ export async function collectChanges(since: number): Promise<DeviceSyncPayload> 
     tables: {},
   };
 
-  for (const { name, timestampCol, excludeColumns } of SYNC_TABLES) {
+  for (const { name, pk, timestampCol, excludeColumns } of SYNC_TABLES) {
     const exclude = excludeColumns ?? [];
 
     // Build column list — SELECT * then strip excluded columns client-side,
@@ -218,18 +230,26 @@ export async function collectChanges(since: number): Promise<DeviceSyncPayload> 
     }
 
     let deletedIds: string[] = [];
+    const deletedTimestamps: Record<string, number> = {};
     try {
-      const tombstones = await db.select<{ id: string }>(
-        "SELECT id FROM sync_tombstones WHERE table_name = ? AND deleted_at > ?",
+      const tombstones = await db.select<{ id: string; deleted_at: number }>(
+        `SELECT id, deleted_at
+         FROM sync_tombstones
+         WHERE table_name = ?
+           AND deleted_at > ?
+           AND NOT EXISTS (SELECT 1 FROM ${name} WHERE ${pk} = sync_tombstones.id)`,
         [name, since],
       );
       deletedIds = tombstones.map((t) => t.id);
+      for (const t of tombstones) {
+        deletedTimestamps[t.id] = t.deleted_at;
+      }
     } catch {
       // sync_tombstones may not exist on older schema
     }
 
     if (records.length > 0 || deletedIds.length > 0) {
-      payload.tables[name] = { records, deletedIds };
+      payload.tables[name] = { records, deletedIds, deletedTimestamps };
     }
   }
 
@@ -242,85 +262,121 @@ export async function collectChanges(since: number): Promise<DeviceSyncPayload> 
 
 export async function applyChanges(
   payload: DeviceSyncPayload,
+  options: { forceApply?: boolean } = {},
 ): Promise<{ applied: number; skipped: number }> {
   return runSerializedDbTask(() =>
     withDatabaseLockRetry(async () => {
-    await ensureNoTransaction();
-    const db = await getDB();
-    if (shouldRunSyncCleanup()) {
-      await cleanupOrphanedSyncRows(db);
-    }
-    let applied = 0;
-    let skipped = 0;
+      await ensureNoTransaction();
+      const db = await getDB();
+      if (shouldRunSyncCleanup()) {
+        await cleanupOrphanedSyncRows(db);
+      }
+      let applied = 0;
+      let skipped = 0;
 
-    // Keep this transaction-free. On some adapters, explicit BEGIN/COMMIT can
-    // lose state across awaited calls and end with "cannot commit - no transaction is active".
-    for (const [tableName, tableData] of Object.entries(payload.tables)) {
-      const tableInfo = SYNC_TABLES.find((t) => t.name === tableName);
-      if (!tableInfo) continue;
+      // Keep this transaction-free. On some adapters, explicit BEGIN/COMMIT can
+      // lose state across awaited calls and end with "cannot commit - no transaction is active".
+      for (const tableInfo of SYNC_TABLES) {
+        const tableName = tableInfo.name;
+        const tableData = payload.tables[tableName];
+        if (!tableData) continue;
 
-      const { pk, timestampCol } = tableInfo;
-      const exclude = tableInfo.excludeColumns ?? [];
-      console.log(
-        `[SimpleSync] Applying table ${tableName}: ${tableData.records.length} record(s), ${tableData.deletedIds.length} deletion(s)`,
-      );
-      const existingTimestamps = await loadExistingTimestamps(
-        db,
-        tableName,
-        pk,
-        timestampCol,
-        tableData.records.map((record) => record[pk]).filter((value) => value !== undefined),
-      );
-      let processedRecords = 0;
+        const { pk, timestampCol } = tableInfo;
+        const exclude = tableInfo.excludeColumns ?? [];
+        console.log(
+          `[SimpleSync] Applying table ${tableName}: ${tableData.records.length} record(s), ${tableData.deletedIds.length} deletion(s)`,
+        );
+        const allIdsToCheck = [
+          ...tableData.records.map((record) => record[pk]).filter((value) => value !== undefined),
+          ...tableData.deletedIds,
+        ];
+        const existingRecords = await loadExistingRecordStates(
+          db,
+          tableName,
+          pk,
+          timestampCol,
+          allIdsToCheck,
+        );
+        const remoteRecordIds = new Set(
+          tableData.records
+            .map((record) => record[pk])
+            .filter((value) => value !== undefined)
+            .map(String),
+        );
+        let processedRecords = 0;
 
-      for (const record of tableData.records) {
-        const pkValue = record[pk];
-        const remoteTs = record[timestampCol] as number;
+        for (const record of tableData.records) {
+          const pkValue = record[pk];
+          const remoteTs = record[timestampCol] as number;
 
-        const safeRecord = exclude.length > 0
-          ? Object.fromEntries(Object.entries(record).filter(([k]) => !exclude.includes(k)))
-          : record;
+          const safeRecord =
+            exclude.length > 0
+              ? Object.fromEntries(Object.entries(record).filter(([k]) => !exclude.includes(k)))
+              : record;
 
-        const localTs = existingTimestamps.get(String(pkValue));
-        if (localTs !== undefined && remoteTs <= localTs) {
-          skipped++;
-        } else {
-          try {
-            await upsertRecord(db, tableName, safeRecord, pk);
-            applied++;
-            existingTimestamps.set(String(pkValue), remoteTs);
-          } catch (error) {
-            if (isForeignKeyConstraintError(error)) {
-              console.warn(
-                `[SimpleSync] Skipping orphaned ${tableName} record ${String(pkValue)}: ${error instanceof Error ? error.message : String(error)}`,
+          const localState = existingRecords.get(String(pkValue));
+          if (!options.forceApply && !shouldApplyRemoteRecord(record, timestampCol, localState)) {
+            skipped++;
+          } else {
+            try {
+              await upsertRecord(db, tableName, safeRecord, pk);
+              applied++;
+              existingRecords.set(String(pkValue), {
+                timestamp: remoteTs,
+                deletedAt: normalizeDeletedAt(record.deleted_at),
+              });
+            } catch (error) {
+              if (isForeignKeyConstraintError(error)) {
+                console.warn(
+                  `[SimpleSync] Skipping orphaned ${tableName} record ${String(pkValue)}: ${error instanceof Error ? error.message : String(error)}`,
+                );
+                skipped++;
+                continue;
+              }
+              throw error;
+            }
+          }
+
+          processedRecords++;
+          if (processedRecords % 100 === 0) {
+            console.log(
+              `[SimpleSync] Applying table ${tableName}: ${processedRecords}/${tableData.records.length} record(s) processed`,
+            );
+            await yieldToEventLoop();
+          }
+        }
+
+        for (const deletedId of tableData.deletedIds) {
+          if (remoteRecordIds.has(String(deletedId))) {
+            console.warn(
+              `[SimpleSync] Ignoring stale tombstone for live ${tableName}/${deletedId} from device ${payload.deviceId}`,
+            );
+            skipped++;
+            continue;
+          }
+
+          const deletedAt = tableData.deletedTimestamps?.[deletedId] ?? 0;
+          if (!options.forceApply && deletedAt > 0) {
+            const localTs = existingRecords.get(String(deletedId))?.timestamp;
+            if (localTs !== undefined && localTs > deletedAt) {
+              console.log(
+                `[SimpleSync] Skipping deletion of ${tableName}/${deletedId}: local record is newer (${localTs} > ${deletedAt})`,
               );
               skipped++;
               continue;
             }
-            throw error;
           }
+          await db.execute(`DELETE FROM ${tableName} WHERE ${pk} = ?`, [deletedId]);
+          applied++;
+          existingRecords.delete(String(deletedId));
         }
 
-        processedRecords++;
-        if (processedRecords % 100 === 0) {
-          console.log(
-            `[SimpleSync] Applying table ${tableName}: ${processedRecords}/${tableData.records.length} record(s) processed`,
-          );
-          await yieldToEventLoop();
-        }
+        console.log(
+          `[SimpleSync] Finished table ${tableName}: applied=${applied}, skipped=${skipped}`,
+        );
       }
 
-      for (const deletedId of tableData.deletedIds) {
-        await db.execute(`DELETE FROM ${tableName} WHERE ${pk} = ?`, [deletedId]);
-        applied++;
-      }
-
-      console.log(
-        `[SimpleSync] Finished table ${tableName}: applied=${applied}, skipped=${skipped}`,
-      );
-    }
-
-    return { applied, skipped };
+      return { applied, skipped };
     }, "apply remote changes"),
   );
 }
@@ -358,31 +414,70 @@ async function upsertRecord(
   );
 }
 
-async function loadExistingTimestamps(
+function normalizeDeletedAt(value: unknown): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  return typeof value === "number" ? value : Number(value) || null;
+}
+
+function shouldApplyRemoteRecord(
+  record: Record<string, unknown>,
+  timestampCol: string,
+  localState: ExistingRecordState | undefined,
+): boolean {
+  if (!localState) return true;
+
+  const remoteTs = record[timestampCol] as number;
+  if (remoteTs > localState.timestamp) return true;
+  if (remoteTs < localState.timestamp) return false;
+
+  // Preserved book deletes are represented as regular rows with deleted_at set.
+  // When timestamps tie, let the newer delete marker break the tie so devices
+  // cannot stay split between live and deleted copies of the same book.
+  if (!Object.prototype.hasOwnProperty.call(record, "deleted_at")) return false;
+
+  const remoteDeletedAt = normalizeDeletedAt(record.deleted_at);
+  const localDeletedAt = localState.deletedAt ?? null;
+  if (remoteDeletedAt === undefined || remoteDeletedAt === localDeletedAt) return false;
+
+  return (remoteDeletedAt ?? 0) > (localDeletedAt ?? 0);
+}
+
+async function loadExistingRecordStates(
   db: Awaited<ReturnType<typeof getDB>>,
   tableName: string,
   pk: string,
   timestampCol: string,
   ids: unknown[],
-): Promise<Map<string, number>> {
-  const timestamps = new Map<string, number>();
-  if (ids.length === 0) return timestamps;
+): Promise<Map<string, ExistingRecordState>> {
+  const states = new Map<string, ExistingRecordState>();
+  if (ids.length === 0) return states;
+
+  const columns = await getTableColumns(db, tableName);
+  const deletedAtSelect = columns.has("deleted_at") ? ", deleted_at AS deleted_at" : "";
 
   const chunkSize = 200;
   for (let offset = 0; offset < ids.length; offset += chunkSize) {
     const chunk = ids.slice(offset, offset + chunkSize);
     const placeholders = chunk.map(() => "?").join(", ");
-    const rows = await db.select<{ id: string; timestamp: number | null }>(
-      `SELECT ${pk} AS id, ${timestampCol} AS timestamp FROM ${tableName} WHERE ${pk} IN (${placeholders})`,
+    const rows = await db.select<{
+      id: string;
+      timestamp: number | null;
+      deleted_at?: number | null;
+    }>(
+      `SELECT ${pk} AS id, ${timestampCol} AS timestamp${deletedAtSelect} FROM ${tableName} WHERE ${pk} IN (${placeholders})`,
       chunk,
     );
 
     for (const row of rows) {
-      timestamps.set(String(row.id), row.timestamp ?? 0);
+      states.set(String(row.id), {
+        timestamp: row.timestamp ?? 0,
+        deletedAt: normalizeDeletedAt(row.deleted_at),
+      });
     }
   }
 
-  return timestamps;
+  return states;
 }
 
 // ---------------------------------------------------------------------------
@@ -411,11 +506,21 @@ async function listRemoteDeviceFiles(
 
 export async function runSimpleSync(
   backend: ISyncBackend,
-  onProgress?: (progress: { phase: "database" | "files"; operation: "upload" | "download"; message: string }) => void,
+  onProgress?: (progress: {
+    phase: "database" | "files";
+    operation: "upload" | "download";
+    message: string;
+  }) => void,
   options: SimpleSyncOptions = {},
-): Promise<{ success: boolean; changes: number; filesUploaded: number; filesDownloaded: number; error?: string }> {
+): Promise<{
+  success: boolean;
+  changes: number;
+  filesUploaded: number;
+  filesDownloaded: number;
+  error?: string;
+}> {
   try {
-    const { receiveOnly = false } = options;
+    const { receiveOnly = false, forceApply = false } = options;
     onProgress?.({
       phase: "database",
       operation: receiveOnly ? "download" : "upload",
@@ -458,8 +563,12 @@ export async function runSimpleSync(
           `[SimpleSync] Downloaded device ${deviceId}: ${Object.keys(payload.tables).length} table(s)`,
         );
 
-        onProgress?.({ phase: "database", operation: "download", message: `应用设备 ${deviceId.slice(0, 8)} 的变更...` });
-        const result = await applyChanges(payload);
+        onProgress?.({
+          phase: "database",
+          operation: "download",
+          message: `应用设备 ${deviceId.slice(0, 8)} 的变更...`,
+        });
+        const result = await applyChanges(payload, { forceApply });
         console.log(
           `[SimpleSync] Applied device ${deviceId}: applied=${result.applied}, skipped=${result.skipped}`,
         );
@@ -473,8 +582,18 @@ export async function runSimpleSync(
     }
 
     if (remoteSyncError) {
-      onProgress?.({ phase: "database", operation: "download", message: "同步中止：远端数据读取失败" });
-      return { success: false, changes: totalApplied, filesUploaded: 0, filesDownloaded: 0, error: remoteSyncError };
+      onProgress?.({
+        phase: "database",
+        operation: "download",
+        message: "同步中止：远端数据读取失败",
+      });
+      return {
+        success: false,
+        changes: totalApplied,
+        filesUploaded: 0,
+        filesDownloaded: 0,
+        error: remoteSyncError,
+      };
     }
 
     // 3. Collect and push local changes
@@ -490,19 +609,19 @@ export async function runSimpleSync(
       );
 
       try {
-        if (changeCount > 0) {
+        if (changeCount > 0 || totalApplied > 0) {
           onProgress?.({
             phase: "database",
             operation: "upload",
-            message: `上传 ${changeCount} 条变更...`,
+            message: `上传 ${changeCount + totalApplied} 条变更...`,
           });
           await backend.putJSON(deviceSyncPath(localDeviceId), snapshotPayload);
         } else {
           // Keep a full snapshot on the server so devices that sync later can still
           // bootstrap from this device even when there are no new local changes.
-          const existing = await backend.getJSON<DeviceSyncPayload>(
-            deviceSyncPath(localDeviceId),
-          ).catch(() => null);
+          const existing = await backend
+            .getJSON<DeviceSyncPayload>(deviceSyncPath(localDeviceId))
+            .catch(() => null);
           if (!existing || now - existing.timestamp > 5 * 60 * 1000) {
             await backend.putJSON(deviceSyncPath(localDeviceId), snapshotPayload);
           }
@@ -510,6 +629,16 @@ export async function runSimpleSync(
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         throw new Error(`上传本地变更失败，请检查网络连接或存储服务权限：${msg}`);
+      }
+    } else if (totalApplied > 0) {
+      // receiveOnly mode: still upload merged snapshot so other devices see the result
+      onProgress?.({ phase: "database", operation: "upload", message: "上传合并后的快照..." });
+      try {
+        const snapshotPayload = await collectChanges(0);
+        await backend.putJSON(deviceSyncPath(localDeviceId), snapshotPayload);
+        console.log("[SimpleSync] Uploaded merged snapshot after receive-only sync");
+      } catch (e) {
+        console.warn("[SimpleSync] Failed to upload merged snapshot (non-fatal):", e);
       }
     }
 
@@ -522,23 +651,30 @@ export async function runSimpleSync(
       message: "同步书籍和封面文件...",
     });
     try {
-      const { syncFiles } = await import("./sync-engine");
-      const fileResult = await syncFiles(backend, (progress) => {
-        onProgress?.({
-          phase: "files",
-          operation: progress.operation,
-          message: progress.message || "同步文件...",
-        });
-      }, receiveOnly
+      const { syncFiles } = await import("./sync-files");
+      const defaultFileOptions: SyncFilesOptions = receiveOnly
         ? {
             downloadRemoteBooks: true,
             disableUploads: true,
             disableRemoteDeletes: true,
           }
-        : undefined);
+        : {};
+      const fileResult = await syncFiles(
+        backend,
+        (progress) => {
+          onProgress?.({
+            phase: "files",
+            operation: progress.operation,
+            message: progress.message || "同步文件...",
+          });
+        },
+        { ...defaultFileOptions, ...options.fileSyncOptions },
+      );
       filesUploaded = fileResult.filesUploaded;
       filesDownloaded = fileResult.filesDownloaded;
-      console.log(`[SimpleSync] File sync: ${filesUploaded} uploaded, ${filesDownloaded} downloaded`);
+      console.log(
+        `[SimpleSync] File sync: ${filesUploaded} uploaded, ${filesDownloaded} downloaded`,
+      );
     } catch (e) {
       console.warn("[SimpleSync] File sync failed (non-fatal):", e);
       // Don't fail the whole sync if file sync fails

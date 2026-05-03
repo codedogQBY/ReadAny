@@ -67,8 +67,10 @@ export default function TTSSettingsScreen() {
   );
 
   useEffect(() => {
-    void getSystemVoiceOptionsAsync().then(setSystemVoices);
-  }, []);
+    if (config.engine === "system") {
+      void getSystemVoiceOptionsAsync().then(setSystemVoices);
+    }
+  }, [config.engine]);
 
   useEffect(() => stopTTSPreview, []);
 

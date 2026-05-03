@@ -26,6 +26,7 @@ interface TagManagementSheetProps {
   visible: boolean;
   book: Book | null;
   allTags: string[];
+  batchBookIds?: string[];
   onClose: () => void;
   onAddTag: (tag: string) => void;
   onAddTagToBook: (bookId: string, tag: string) => void;
@@ -38,6 +39,7 @@ export function TagManagementSheet({
   visible,
   book,
   allTags,
+  batchBookIds,
   onClose,
   onAddTag,
   onAddTagToBook,
@@ -54,13 +56,18 @@ export function TagManagementSheet({
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
 
+  const isBatch = batchBookIds && batchBookIds.length > 0;
+  const targetBookIds = isBatch ? batchBookIds : book ? [book.id] : [];
+
   const handleCreateAndAssignTag = useCallback(() => {
     const trimmed = newTagInput.trim();
-    if (!trimmed || !book) return;
+    if (!trimmed || targetBookIds.length === 0) return;
     onAddTag(trimmed);
-    onAddTagToBook(book.id, trimmed);
+    for (const id of targetBookIds) {
+      onAddTagToBook(id, trimmed);
+    }
     setNewTagInput("");
-  }, [newTagInput, book, onAddTag, onAddTagToBook]);
+  }, [newTagInput, targetBookIds, onAddTag, onAddTagToBook]);
 
   return (
     <Modal
@@ -75,8 +82,6 @@ export function TagManagementSheet({
           s.sheet,
           layout.isTablet && {
             width: "100%",
-            maxWidth: Math.min(layout.centeredContentWidth, 720),
-            alignSelf: "center",
           },
         ]}
       >
@@ -93,9 +98,15 @@ export function TagManagementSheet({
                   <TouchableOpacity
                     style={s.checkboxRow}
                     onPress={() => {
-                      if (!book) return;
-                      if (hasTag) onRemoveTagFromBook(book.id, tag);
-                      else onAddTagToBook(book.id, tag);
+                      if (targetBookIds.length === 0) return;
+                      if (isBatch) {
+                        for (const id of targetBookIds) {
+                          onAddTagToBook(id, tag);
+                        }
+                      } else if (book) {
+                        if (hasTag) onRemoveTagFromBook(book.id, tag);
+                        else onAddTagToBook(book.id, tag);
+                      }
                     }}
                   >
                     <View style={[s.checkbox, hasTag && s.checkboxActive]}>

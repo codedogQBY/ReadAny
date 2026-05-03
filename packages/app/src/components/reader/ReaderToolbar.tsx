@@ -1,3 +1,4 @@
+import { SyncButton } from "@/components/ui/SyncButton";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAnnotationStore } from "@/stores/annotation-store";
@@ -209,6 +210,7 @@ export function ReaderToolbar({
           onToggleTranslationVisible={onToggleTranslationVisible}
           onReset={onChapterTranslationReset}
         />
+        <SyncButton iconSize={14} className="h-7 w-7" />
         <Button
           variant="ghost"
           size="icon"

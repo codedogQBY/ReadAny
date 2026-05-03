@@ -36,7 +36,21 @@ export function createGetSkillsTool(): ToolDefinition {
         /* ignore */
       }
 
-      const allSkills = [...builtins, ...dbSkills.filter((s) => !s.builtIn && s.enabled)];
+      const mergedBuiltins = builtins
+        .map((builtin) => {
+          const dbSkill = dbSkills.find((s) => s.id === builtin.id);
+          return dbSkill
+            ? {
+                ...builtin,
+                description: dbSkill.description,
+                enabled: dbSkill.enabled,
+                prompt: dbSkill.prompt,
+                updatedAt: dbSkill.updatedAt,
+              }
+            : builtin;
+        })
+        .filter((s) => s.enabled);
+      const allSkills = [...mergedBuiltins, ...dbSkills.filter((s) => !s.builtIn && s.enabled)];
 
       // Fuzzy match by name or description
       const matched = allSkills.filter(

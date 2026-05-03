@@ -1,4 +1,4 @@
-import { ClockIcon, DatabaseIcon, Loader2Icon, MoreVerticalIcon } from "@/components/ui/Icon";
+import { CheckIcon, ClockIcon, DatabaseIcon, Loader2Icon, MoreVerticalIcon } from "@/components/ui/Icon";
 import { useColors } from "@/styles/theme";
 import { getPlatformService } from "@readany/core/services";
 /**
@@ -56,6 +56,10 @@ interface BookCardProps {
   isQueued?: boolean;
   vectorProgress?: { status: string; processedChunks: number; totalChunks: number } | null;
   cardWidth?: number;
+  isSelectionMode?: boolean;
+  isSelected?: boolean;
+  onSelect?: (book: Book) => void;
+  onLongPress?: (book: Book) => void;
 }
 
 export const BookCard = memo(function BookCard({
@@ -68,6 +72,10 @@ export const BookCard = memo(function BookCard({
   isQueued,
   vectorProgress,
   cardWidth = 96,
+  isSelectionMode = false,
+  isSelected = false,
+  onSelect,
+  onLongPress,
 }: BookCardProps) {
   const colors = useColors();
   const s = makeStyles(colors, cardWidth);
@@ -154,17 +162,57 @@ export const BookCard = memo(function BookCard({
       <TouchableOpacity
         style={s.container}
         onPress={() => {
+          if (isSelectionMode) {
+            onSelect?.(book);
+            return;
+          }
           if (showActions || Date.now() < suppressOpenUntilRef.current) return;
           onOpen(book);
         }}
         onLongPress={() => {
-          void openActions();
+          if (isSelectionMode) return;
+          if (onLongPress) {
+            onLongPress(book);
+          } else {
+            void openActions();
+          }
         }}
         delayLongPress={500}
         activeOpacity={0.7}
       >
         {/* Cover — 28:41 aspect ratio */}
         <View ref={coverRef} style={s.coverWrap}>
+          {/* Selection checkbox overlay */}
+          {isSelectionMode && (
+            <View style={{
+              position: "absolute",
+              top: 6,
+              left: 6,
+              zIndex: 20,
+              width: 24,
+              height: 24,
+              borderRadius: 12,
+              backgroundColor: isSelected ? colors.primary : "rgba(0,0,0,0.4)",
+              alignItems: "center",
+              justifyContent: "center",
+              borderWidth: isSelected ? 0 : 2,
+              borderColor: "#fff",
+            }}>
+              {isSelected && <CheckIcon size={16} color="#fff" />}
+            </View>
+          )}
+          {isSelectionMode && isSelected && (
+            <View style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 10,
+              backgroundColor: "rgba(0,0,0,0.15)",
+              borderRadius: 8,
+            }} />
+          )}
           {resolvedCoverUrl && !imageError ? (
             <>
               <Image

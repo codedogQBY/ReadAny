@@ -5,7 +5,6 @@
 
 import { getPlatformService } from "../services/platform";
 import { getSyncAdapter } from "./sync-adapter";
-import { SYNC_SCHEMA_VERSION, REMOTE_MANIFEST } from "./sync-types";
 import { type LANQRData, createLANQRData, generatePairCode } from "./lan-backend";
 import type { ISyncBackend, RemoteFile } from "./sync-backend";
 import { collectChanges, type DeviceSyncPayload } from "./simple-sync";
@@ -114,17 +113,6 @@ class LocalFsBackend implements ISyncBackend {
     }
 
     if (!(await adapter.fileExists(resolvedPath))) {
-      // Synthesize manifest if it's missing on the server device
-      if (path === REMOTE_MANIFEST) {
-        const manifest = {
-          lastModifiedAt: Date.now(),
-          uploadedBy: await adapter.getDeviceName(),
-          appVersion: await adapter.getAppVersion(),
-          schemaVersion: SYNC_SCHEMA_VERSION,
-        };
-        return new TextEncoder().encode(JSON.stringify(manifest));
-      }
-
       const err = new Error("File not found");
       (err as any).statusCode = 404;
       throw err;

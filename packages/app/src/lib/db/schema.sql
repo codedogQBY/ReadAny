@@ -15,12 +15,23 @@ CREATE TABLE IF NOT EXISTS books (
   subjects TEXT, -- JSON array
   total_pages INTEGER DEFAULT 0,
   total_chapters INTEGER DEFAULT 0,
+  group_id TEXT,
   progress REAL DEFAULT 0.0,
   current_cfi TEXT,
   is_vectorized INTEGER DEFAULT 0,
   vectorize_progress REAL DEFAULT 0.0,
   added_at INTEGER NOT NULL,
   last_opened_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS book_groups (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  sort_order INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL DEFAULT 0,
+  sync_version INTEGER DEFAULT 0,
+  last_modified_by TEXT
 );
 
 CREATE TABLE IF NOT EXISTS tags (
@@ -135,3 +146,4 @@ CREATE INDEX IF NOT EXISTS idx_threads_book ON threads(book_id);
 CREATE INDEX IF NOT EXISTS idx_reading_sessions_book ON reading_sessions(book_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_book ON chunks(book_id);
 CREATE INDEX IF NOT EXISTS idx_books_last_opened ON books(last_opened_at DESC);
+CREATE INDEX IF NOT EXISTS idx_books_group ON books(group_id);

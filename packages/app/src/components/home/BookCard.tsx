@@ -7,7 +7,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useResolvedSrc } from "@/hooks/use-resolved-src";
+import { GroupPickerPopover } from "@/components/home/GroupPickerPopover";
+import { useResolvedSrc, useSyncVersion } from "@/hooks/use-resolved-src";
 import { openDesktopBook } from "@/lib/library/open-book";
 /**
  * BookCard — Readest-inspired book card with realistic cover rendering
@@ -22,31 +23,46 @@ import {
   Check,
   ChevronRight,
   Database,
+  FolderInput,
+  FolderMinus,
   Hash,
   Loader2,
   MoreVertical,
   Plus,
   Trash2,
 } from "lucide-react";
-import { memo, useCallback, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 interface BookCardProps {
   book: Book;
+  isSelectionMode?: boolean;
+  isSelected?: boolean;
+  onSelect?: (bookId: string) => void;
 }
 
-export const BookCard = memo(function BookCard({ book }: BookCardProps) {
+export const BookCard = memo(function BookCard({
+  book,
+  isSelectionMode,
+  isSelected,
+  onSelect,
+}: BookCardProps) {
   const { t } = useTranslation();
   const removeBook = useLibraryStore((s) => s.removeBook);
   const closeAppTab = useAppStore((s) => s.removeTab);
   const closeReaderTab = useReaderStore((s) => s.removeTab);
   const allTags = useLibraryStore((s) => s.allTags);
+  const groups = useLibraryStore((s) => s.groups);
+  const addGroup = useLibraryStore((s) => s.addGroup);
+  const moveBookToGroup = useLibraryStore((s) => s.moveBookToGroup);
+  const removeBookFromGroup = useLibraryStore((s) => s.removeBookFromGroup);
   const addTagToBook = useLibraryStore((s) => s.addTagToBook);
   const removeTagFromBook = useLibraryStore((s) => s.removeTagFromBook);
   const addTag = useLibraryStore((s) => s.addTag);
   const hasVectorCapability = useVectorModelStore((s) => s.hasVectorCapability);
   const [showMenu, setShowMenu] = useState(false);
   const [showTagMenu, setShowTagMenu] = useState(false);
+  const [showGroupPicker, setShowGroupPicker] = useState(false);
   const [newTagInput, setNewTagInput] = useState("");
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -56,34 +72,45 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [preserveDataOnDelete, setPreserveDataOnDelete] = useState(true);
   const coverRef = useRef<HTMLDivElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const suppressOpenUntilRef = useRef(0);
   const progressPct = Math.round(book.progress * 100);
   const coverSrc = useResolvedSrc(book.meta.coverUrl);
+  const syncVersion = useSyncVersion();
+  const coverImageKey = coverSrc ? `${coverSrc}-${syncVersion}` : "";
+
+  useEffect(() => {
+    setImageError(false);
+    const image = imageRef.current;
+    if (coverImageKey && image?.complete) {
+      setImageLoaded(image.naturalWidth > 0);
+      setImageError(image.naturalWidth === 0);
+      return;
+    }
+    setImageLoaded(false);
+  }, [coverImageKey]);
 
   const handleOpen = async () => {
-    if (
-      showMenu ||
-      showDeleteDialog ||
-      Date.now() < suppressOpenUntilRef.current
-    ) {
+    if (isSelectionMode) {
+      onSelect?.(book.id);
+      return;
+    }
+    if (showMenu || showDeleteDialog || Date.now() < suppressOpenUntilRef.current) {
       return;
     }
     await openDesktopBook({ book, t });
   };
 
-  const handleDelete = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      suppressOpenUntilRef.current = Date.now() + 600;
-      setShowMenu(false);
-      setMenuPos(null);
-      setPreserveDataOnDelete(true);
-      setShowDeleteDialog(true);
-    },
-    [],
-  );
+  const handleDelete = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    suppressOpenUntilRef.current = Date.now() + 600;
+    setShowMenu(false);
+    setMenuPos(null);
+    setPreserveDataOnDelete(true);
+    setShowDeleteDialog(true);
+  }, []);
 
   const handleVectorize = useCallback(
     async (e: React.MouseEvent) => {
@@ -110,11 +137,22 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
         setVectorProgress(null);
       }
     },
-    [book.id, book.filePath, vectorizing],
+    [book.id, book.filePath, hasVectorCapability, vectorizing],
   );
 
-  const handleImageLoad = () => {
-    setImageLoaded(true);
+  const handleMoveGroup = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      suppressOpenUntilRef.current = Date.now() + 300;
+      setShowMenu(false);
+      setMenuPos(null);
+      setShowGroupPicker(true);
+    },
+    [],
+  );
+
+  const handleImageLoad = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    setImageLoaded(event.currentTarget.naturalWidth > 0);
     setImageError(false);
   };
 
@@ -123,7 +161,7 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
     setImageError(true);
   };
 
-  const hasCover = coverSrc && !imageError;
+  const hasVisibleCover = Boolean(coverSrc && imageLoaded && !imageError);
 
   // Vectorize progress percentage for display
   const vecPct = vectorProgress
@@ -136,19 +174,40 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
     <div
       className="group relative flex h-full cursor-pointer flex-col justify-end"
       onClick={handleOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          void handleOpen();
+        }
+      }}
     >
       {/* Cover area — 28:41 aspect ratio (Readest standard) */}
       <div
         ref={coverRef}
         className="book-cover-shadow relative flex aspect-[28/41] w-full items-end justify-center overflow-hidden rounded transition-all duration-200 group-hover:book-cover-shadow"
       >
+        {/* Selection checkbox overlay */}
+        {isSelectionMode && (
+          <div
+            className={`absolute left-1.5 top-1.5 z-20 flex h-5 w-5 items-center justify-center rounded-full border-2 ${
+              isSelected ? "border-primary bg-primary" : "border-white bg-black/40"
+            }`}
+          >
+            {isSelected && <Check className="h-3 w-3 text-white" />}
+          </div>
+        )}
+        {isSelectionMode && isSelected && (
+          <div className="absolute inset-0 z-10 rounded bg-black/15" />
+        )}
         {/* Actual cover image */}
         {coverSrc && (
           <img
+            ref={imageRef}
+            key={coverImageKey}
             src={coverSrc}
             alt={book.meta.title}
             className={`absolute inset-0 h-full w-full rounded object-cover transition-opacity duration-300 ${
-              imageLoaded && !imageError ? "opacity-100" : "opacity-0"
+              hasVisibleCover ? "opacity-100" : "opacity-0"
             }`}
             loading="lazy"
             onLoad={handleImageLoad}
@@ -157,10 +216,10 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
         )}
 
         {/* Book spine overlay — only when image loaded */}
-        {imageLoaded && !imageError && <div className="book-spine absolute inset-0 rounded" />}
+        {hasVisibleCover && <div className="book-spine absolute inset-0 rounded" />}
 
         {/* Fallback cover — serif title + author */}
-        {!hasCover && (
+        {!hasVisibleCover && (
           <div className="absolute inset-0 flex flex-col items-center rounded bg-gradient-to-b from-stone-100 to-stone-200 p-3">
             <div className="flex flex-1 items-center justify-center">
               <span className="line-clamp-3 text-center font-serif text-base font-medium leading-snug text-stone-500">
@@ -267,11 +326,20 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
               setShowTagMenu(false);
               setMenuPos(null);
             }}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Escape") {
+                setShowMenu(false);
+                setShowTagMenu(false);
+                setMenuPos(null);
+              }
+            }}
           />
           <div
             className="fixed z-50 min-w-36 rounded-lg border bg-popover p-1 shadow-lg"
             style={{ bottom: window.innerHeight - menuPos.y + 4, left: menuPos.x - 152 }}
             onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
           >
             {/* Vectorize button */}
             <button
@@ -299,6 +367,32 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
                 </>
               )}
             </button>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-foreground hover:bg-muted"
+              onClick={handleMoveGroup}
+            >
+              <FolderInput className="h-3.5 w-3.5" />
+              {book.groupId
+                ? t("library.changeGroup", "更换分组")
+                : t("library.moveToGroup", "移入分组")}
+            </button>
+            {book.groupId && (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-foreground hover:bg-muted"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  suppressOpenUntilRef.current = Date.now() + 300;
+                  setShowMenu(false);
+                  setMenuPos(null);
+                  removeBookFromGroup(book.id);
+                }}
+              >
+                <FolderMinus className="h-3.5 w-3.5" />
+                {t("library.removeFromGroup", "移出分组")}
+              </button>
+            )}
             {/* Tags submenu */}
             <div className="relative">
               <button
@@ -318,6 +412,7 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
                 <div
                   className="absolute right-full top-0 z-50 mr-1 min-w-36 max-h-52 overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg"
                   onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
                 >
                   {allTags.map((tag) => {
                     const hasTag = book.tags.includes(tag);
@@ -499,6 +594,25 @@ export const BookCard = memo(function BookCard({ book }: BookCardProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {showGroupPicker && (
+        <GroupPickerPopover
+          groups={groups}
+          currentGroupId={book.groupId}
+          onSelect={(groupId) => {
+            if (groupId) {
+              moveBookToGroup(book.id, groupId);
+            } else {
+              removeBookFromGroup(book.id);
+            }
+          }}
+          onCreateGroup={async (name) => {
+            const group = await addGroup(name);
+            if (group) moveBookToGroup(book.id, group.id);
+          }}
+          onClose={() => setShowGroupPicker(false)}
+        />
+      )}
     </div>
   );
 });

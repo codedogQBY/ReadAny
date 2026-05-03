@@ -186,6 +186,7 @@ export function LanSection({
       scannerHandledRef.current = true;
       setScannerLocked(true);
       setShowScanner(false);
+      try {
       const { parseLANQRData, createLANBackend } = require("@readany/core/sync/lan-backend");
       const qrData = parseLANQRData(data);
       if (qrData) {
@@ -227,6 +228,9 @@ export function LanSection({
         );
       } else {
         setLanError(t("settings.syncLANInvalidQR"));
+      }
+      } catch (e) {
+        setLanError(e instanceof Error ? e.message : String(e));
       }
     },
     [onSyncWithBackend, t],

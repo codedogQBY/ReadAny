@@ -45,8 +45,20 @@ const NAV_ITEMS: NavItem[] = [
 export function HomeSidebar() {
   const { t, i18n } = useTranslation();
   const { activeTabId, setActiveTab, addTab } = useAppStore();
-  const { filter, setFilter, allTags, activeTag, setActiveTag, addTag, removeTag, renameTag } =
-    useLibraryStore();
+  const {
+    filter,
+    setFilter,
+    allTags,
+    activeTag,
+    activeGroupId,
+    groups,
+    setActiveTag,
+    setActiveGroupId,
+    addTag,
+    removeTag,
+    renameTag,
+    removeGroup,
+  } = useLibraryStore();
   const setShowSettings = useAppStore((s) => s.setShowSettings);
   const [isSearchVisible, setIsSearchVisible] = useState(false);
   const [isLibraryExpanded, setIsLibraryExpanded] = useState(true);
@@ -90,7 +102,6 @@ export function HomeSidebar() {
             <input
               type="text"
               placeholder={`${t("common.search")}...`}
-              autoFocus
               className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
               value={filter.search}
               onChange={(e) => {
@@ -136,19 +147,20 @@ export function HomeSidebar() {
                       <Icon size={16} className="shrink-0" />
                       <span className="font-medium text-sm">{t(item.labelKey)}</span>
                     </div>
-                    <div
-                      className="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsLibraryExpanded(!isLibraryExpanded);
-                      }}
-                    >
-                      {isLibraryExpanded ? (
-                        <ChevronDown size={16} className="shrink-0" />
-                      ) : (
-                        <ChevronRight size={16} className="shrink-0" />
-                      )}
-                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    className="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsLibraryExpanded(!isLibraryExpanded);
+                    }}
+                  >
+                    {isLibraryExpanded ? (
+                      <ChevronDown size={16} className="shrink-0" />
+                    ) : (
+                      <ChevronRight size={16} className="shrink-0" />
+                    )}
                   </button>
                 </div>
               ) : (
@@ -167,17 +179,48 @@ export function HomeSidebar() {
                   <button
                     type="button"
                     className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors hover:bg-muted ${
-                      activeType === "home" && !activeTag
+                      activeType === "home" && !activeTag && !activeGroupId
                         ? "bg-muted text-foreground font-medium"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                     onClick={() => {
                       setActiveTag("");
+                      setActiveGroupId("");
                       handleNavClick("home");
                     }}
                   >
                     <span>{t("sidebar.allBooks")}</span>
                   </button>
+
+                  {/* Group chips — horizontal, like mobile */}
+                  {groups.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {groups.map((group) => (
+                        <button
+                          key={group.id}
+                          type="button"
+                          className={`rounded-full px-2.5 py-0.5 text-[11px] transition-colors ${
+                            activeGroupId === group.id
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+                          }`}
+                          onClick={() => {
+                            setActiveGroupId(group.id);
+                            handleNavClick("home");
+                          }}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            const action = window.confirm(
+                              `${group.name}\n\n确定删除此分组？书籍不会被删除。`,
+                            );
+                            if (action) void removeGroup(group.id);
+                          }}
+                        >
+                          {group.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Tag list */}
                   {(() => {
@@ -212,7 +255,6 @@ export function HomeSidebar() {
                                   type="text"
                                   className="w-full rounded-md border border-primary/40 bg-background px-2 py-1 text-xs outline-none"
                                   value={editingName}
-                                  autoFocus
                                   onChange={(e) => setEditingName(e.target.value)}
                                   onKeyDown={(e) => {
                                     if (e.key === "Enter") {
@@ -327,7 +369,6 @@ export function HomeSidebar() {
                         className="w-full rounded-md border border-primary/40 bg-background px-2 py-1 text-xs outline-none"
                         placeholder={t("sidebar.tagPlaceholder")}
                         value={newTagName}
-                        autoFocus
                         onChange={(e) => setNewTagName(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && newTagName.trim()) {

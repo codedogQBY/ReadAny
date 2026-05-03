@@ -1,7 +1,7 @@
 import type { IDatabase } from "../services/platform";
 import { getPlatformService } from "../services/platform";
-import { runSerializedDbTask } from "./write-retry";
 import { generateId } from "../utils/generate-id";
+import { runSerializedDbTask } from "./write-retry";
 
 // Lazy-loaded database instances
 let db: IDatabase | null = null;
@@ -111,6 +111,7 @@ export async function cleanupOrphanedSyncRows(databaseArg?: IDatabase): Promise<
     "DELETE FROM bookmarks WHERE book_id NOT IN (SELECT id FROM books)",
     "DELETE FROM reading_sessions WHERE book_id NOT IN (SELECT id FROM books)",
     "DELETE FROM book_tags WHERE book_id NOT IN (SELECT id FROM books) OR tag_id NOT IN (SELECT id FROM tags)",
+    "UPDATE books SET group_id = NULL WHERE group_id IS NOT NULL AND group_id NOT IN (SELECT id FROM book_groups)",
     "DELETE FROM messages WHERE thread_id NOT IN (SELECT id FROM threads)",
   ];
 
@@ -285,7 +286,11 @@ export async function nextSyncVersion(database: IDatabase, table: string): Promi
   return (rows[0]?.max_v || 0) + 1;
 }
 
-export async function nextUpdatedAt(database: IDatabase, table: string, id: string): Promise<number> {
+export async function nextUpdatedAt(
+  database: IDatabase,
+  table: string,
+  id: string,
+): Promise<number> {
   const now = Date.now();
 
   try {
@@ -301,7 +306,11 @@ export async function nextUpdatedAt(database: IDatabase, table: string, id: stri
 }
 
 /** Insert a tombstone record for sync deletion tracking */
-export async function insertTombstone(database: IDatabase, id: string, tableName: string): Promise<void> {
+export async function insertTombstone(
+  database: IDatabase,
+  id: string,
+  tableName: string,
+): Promise<void> {
   const deviceId = await getDeviceId();
   try {
     await database.execute(
@@ -341,6 +350,7 @@ export async function initDatabase(): Promise<void> {
       subjects TEXT,
       total_pages INTEGER DEFAULT 0,
       total_chapters INTEGER DEFAULT 0,
+      group_id TEXT,
       added_at INTEGER NOT NULL,
       last_opened_at INTEGER,
       deleted_at INTEGER,
@@ -349,6 +359,18 @@ export async function initDatabase(): Promise<void> {
       is_vectorized INTEGER DEFAULT 0,
       vectorize_progress REAL DEFAULT 0,
       tags TEXT DEFAULT '[]'
+    )
+  `);
+
+      await database.execute(`
+    CREATE TABLE IF NOT EXISTS book_groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL DEFAULT 0,
+      sync_version INTEGER DEFAULT 0,
+      last_modified_by TEXT
     )
   `);
 
@@ -470,14 +492,17 @@ export async function initDatabase(): Promise<void> {
   `);
 
       // Create indexes
-      await database.execute("CREATE INDEX IF NOT EXISTS idx_highlights_book ON highlights(book_id)");
+      await database.execute(
+        "CREATE INDEX IF NOT EXISTS idx_highlights_book ON highlights(book_id)",
+      );
       await database.execute("CREATE INDEX IF NOT EXISTS idx_notes_book ON notes(book_id)");
       await database.execute("CREATE INDEX IF NOT EXISTS idx_bookmarks_book ON bookmarks(book_id)");
-      await database.execute("CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id)");
+      await database.execute(
+        "CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id)",
+      );
       await database.execute(
         "CREATE INDEX IF NOT EXISTS idx_reading_sessions_book ON reading_sessions(book_id)",
       );
-
       // Migrations: add columns that may be missing from older schema versions
       try {
         await database.execute("ALTER TABLE books ADD COLUMN format TEXT NOT NULL DEFAULT 'epub'");
@@ -489,6 +514,12 @@ export async function initDatabase(): Promise<void> {
       } catch {
         // Column already exists, ignore
       }
+      try {
+        await database.execute("ALTER TABLE books ADD COLUMN group_id TEXT");
+      } catch {
+        // Column already exists, ignore
+      }
+      await database.execute("CREATE INDEX IF NOT EXISTS idx_books_group ON books(group_id)");
       try {
         await database.execute("ALTER TABLE messages ADD COLUMN reasoning TEXT");
       } catch {
@@ -502,7 +533,9 @@ export async function initDatabase(): Promise<void> {
       // --- Sync migrations ---
       // Migration 4: Add updated_at and file_hash to books
       try {
-        await database.execute("ALTER TABLE books ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0");
+        await database.execute(
+          "ALTER TABLE books ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0",
+        );
       } catch {
         // Column already exists
       }
@@ -552,6 +585,7 @@ export async function initDatabase(): Promise<void> {
         "bookmarks",
         "tags",
         "book_tags",
+        "book_groups",
         "reading_sessions",
         "threads",
         "messages",
@@ -637,7 +671,9 @@ export async function initDatabase(): Promise<void> {
         // Column already exists or table doesn't exist yet
       }
       try {
-        await database.execute("CREATE INDEX IF NOT EXISTS idx_books_deleted_at ON books(deleted_at)");
+        await database.execute(
+          "CREATE INDEX IF NOT EXISTS idx_books_deleted_at ON books(deleted_at)",
+        );
       } catch {
         // Older installs may fail to add the column on the first pass; don't block startup.
       }

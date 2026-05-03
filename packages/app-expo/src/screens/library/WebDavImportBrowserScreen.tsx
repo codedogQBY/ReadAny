@@ -74,7 +74,7 @@ function formatDate(timestamp: number): string {
 }
 
 function sanitizeFilename(name: string): string {
-  return name.replace(/[\\/:*?"<>|]/g, "_").trim() || `book-${Date.now()}`;
+  return name.replace(/[\\/:*?"<>|\[\]{}#%&]/g, "_").trim() || `book-${Date.now()}`;
 }
 
 function createTempImportFile(bytes: Uint8Array, originalName: string): { uri: string; name: string } {

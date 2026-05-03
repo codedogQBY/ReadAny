@@ -186,6 +186,14 @@ export async function syncFiles(
       } catch (e) {
         console.warn(`[Sync] Failed to mark book as remote: ${e}`);
       }
+    } else if (!localExists && !remoteExists) {
+      try {
+        await setBookSyncStatus(book.id, "remote");
+        const bookTitle = book.title || "未知书籍";
+        console.log(`[Sync] Marked "${bookTitle}" as remote (file missing on both sides)`);
+      } catch (e) {
+        console.warn(`[Sync] Failed to mark book as remote: ${e}`);
+      }
     }
   }
 

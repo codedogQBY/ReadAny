@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Switch } from "@/components/ui/switch";
+import { ConfigTransfer } from "./ConfigTransfer";
 import { useVectorModelStore } from "@/stores/vector-model-store";
 import { BUILTIN_EMBEDDING_MODELS } from "@readany/core/ai/builtin-embedding-models";
 import { clearModelCache, loadEmbeddingPipeline } from "@readany/core/ai/local-embedding-service";
@@ -574,6 +575,44 @@ export function VectorModelSettings() {
           {vectorModelMode === "builtin" ? <BuiltinModelsSection /> : <RemoteModelsSection />}
         </>
       )}
+
+      {/* Transfer */}
+      <section className="space-y-3">
+        <h3 className="text-sm font-medium text-foreground">
+          {t("settings.transferConfig", "配置迁移")}
+        </h3>
+        <ConfigTransfer
+          label={t("settings.vectorConfig", "向量化配置")}
+          getData={() => {
+            const state = useVectorModelStore.getState();
+            return {
+              vectorModels: state.vectorModels,
+              selectedVectorModelId: state.selectedVectorModelId,
+              vectorModelEnabled: state.vectorModelEnabled,
+              vectorModelMode: state.vectorModelMode,
+              selectedBuiltinModelId: state.selectedBuiltinModelId,
+            };
+          }}
+          applyData={(data) => {
+            const d = data as Record<string, unknown>;
+            const store = useVectorModelStore.getState();
+            if (Array.isArray(d.vectorModels)) {
+              // Clear existing and add imported models
+              for (const m of store.vectorModels) store.deleteVectorModel(m.id);
+              for (const m of d.vectorModels as import("@readany/core/types").VectorModelConfig[]) {
+                store.addVectorModel(m);
+              }
+            }
+            if (d.selectedVectorModelId) store.setSelectedVectorModelId(d.selectedVectorModelId as string);
+            if (typeof d.vectorModelEnabled === "boolean") store.setVectorModelEnabled(d.vectorModelEnabled);
+            if (d.vectorModelMode === "remote" || d.vectorModelMode === "builtin") store.setVectorModelMode(d.vectorModelMode);
+            if (d.selectedBuiltinModelId) store.setSelectedBuiltinModelId(d.selectedBuiltinModelId as string);
+          }}
+          validate={(d) =>
+            typeof d === "object" && d !== null && "vectorModels" in d
+          }
+        />
+      </section>
     </div>
   );
 }

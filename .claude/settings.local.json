@@ -45,7 +45,11 @@
       "WebFetch(domain:docs.expo.dev)",
       "WebFetch(domain:crates.io)",
       "WebFetch(domain:expo.dev)",
-      "WebFetch(domain:codepen.io)"
+      "WebFetch(domain:codepen.io)",
+      "Bash(xxd)",
+      "Bash(gh issue *)",
+      "Bash(npm install *)",
+      "Bash(awk '/async function openBook/,/^    \\\\}$/' /Users/tuntuntutu/Project/ReadAny/packages/app-expo/assets/reader/reader.template.html)"
     ]
   }
 }

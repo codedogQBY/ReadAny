@@ -217,8 +217,6 @@ export function WebDavConnectSheet({
             s.sheet,
             layout.isTablet && {
               width: "100%",
-              maxWidth: Math.min(layout.centeredContentWidth, 720),
-              alignSelf: "center",
             },
           ]}
           onPress={(event) => event.stopPropagation()}

@@ -40,6 +40,7 @@ import i18n from "@readany/core/i18n";
 import { setPlatformService } from "@readany/core/services";
 import { setSyncAdapter } from "@readany/core/sync";
 import { I18nextProvider } from "react-i18next";
+import { Audio } from "expo-av";
 import TrackPlayer, { Event as TrackEvent, Capability } from "react-native-track-player";
 
 import { FloatingTTSBubble } from "@/components/tts/FloatingTTSBubble";
@@ -87,6 +88,13 @@ export default function App() {
         console.log("[App] bootstrap: import expo/fetch");
         const { fetch: expoFetch } = await import("expo/fetch");
         setStreamingFetch(expoFetch as typeof globalThis.fetch);
+
+        console.log("[App] bootstrap: configure audio mode");
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: true,
+          shouldDuckAndroid: true,
+        });
 
         console.log("[App] bootstrap: init react-native-track-player");
         await TrackPlayer.setupPlayer();

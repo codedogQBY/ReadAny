@@ -1,17 +1,25 @@
-import { CheckIcon, DatabaseIcon, HashIcon, Trash2Icon } from "@/components/ui/Icon";
+import {
+  CheckIcon,
+  DatabaseIcon,
+  FolderInputIcon,
+  HashIcon,
+  Trash2Icon,
+} from "@/components/ui/Icon";
+import { GroupPickerSheet } from "@/components/library/GroupPickerSheet";
+import { useLibraryStore } from "@/stores/library-store";
 import { type ThemeColors, fontSize, fontWeight, radius, spacing, useColors } from "@/styles/theme";
 import type { Book } from "@readany/core/types";
 import { type ReactNode, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  type LayoutRectangle,
   Modal,
   Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   View,
-  type LayoutRectangle,
+  useWindowDimensions,
 } from "react-native";
 
 interface BookCardActionSheetProps {
@@ -39,8 +47,26 @@ export function BookCardActionSheet({
   const { t } = useTranslation();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [preserveDataOnDelete, setPreserveDataOnDelete] = useState(true);
+  const [showGroupPicker, setShowGroupPicker] = useState(false);
+  const groups = useLibraryStore((state) => state.groups);
+  const moveBookToGroup = useLibraryStore((state) => state.moveBookToGroup);
+  const removeBookFromGroup = useLibraryStore((state) => state.removeBookFromGroup);
+  const addGroup = useLibraryStore((state) => state.addGroup);
+
+  const handleMoveGroup = () => {
+    onClose();
+    setShowGroupPicker(true);
+  };
 
   const items = [
+    {
+      key: "group",
+      icon: <FolderInputIcon size={18} color={colors.foreground} />,
+      label: book.groupId
+        ? t("library.changeGroup", "更换分组")
+        : t("library.moveToGroup", "移入分组"),
+      onPress: handleMoveGroup,
+    },
     onManageTags
       ? {
           key: "tags",
@@ -89,7 +115,10 @@ export function BookCardActionSheet({
   const menuHeight = items.length * rowHeight + 12;
   const safePadding = 12;
   const fallbackX = Math.max(safePadding, screenWidth - menuWidth - safePadding);
-  const fallbackY = Math.max(80, Math.min(screenHeight / 2 - menuHeight / 2, screenHeight - menuHeight - 80));
+  const fallbackY = Math.max(
+    80,
+    Math.min(screenHeight / 2 - menuHeight / 2, screenHeight - menuHeight - 80),
+  );
 
   const menuLeft = anchor
     ? Math.min(
@@ -106,12 +135,7 @@ export function BookCardActionSheet({
 
   return (
     <>
-      <Modal
-        visible={visible}
-        transparent
-        animationType="fade"
-        onRequestClose={onClose}
-      >
+      <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
         <Pressable style={styles.overlay} onPress={onClose}>
           <Pressable
             style={[styles.menu, { left: menuLeft, top: menuTop, width: menuWidth }]}
@@ -193,6 +217,23 @@ export function BookCardActionSheet({
           </Pressable>
         </Pressable>
       </Modal>
+      <GroupPickerSheet
+        visible={showGroupPicker}
+        groups={groups}
+        currentGroupId={book.groupId}
+        onSelect={(groupId) => {
+          if (groupId) {
+            moveBookToGroup(book.id, groupId);
+          } else {
+            removeBookFromGroup(book.id);
+          }
+        }}
+        onCreateGroup={async (name) => {
+          const group = await addGroup(name);
+          if (group) moveBookToGroup(book.id, group.id);
+        }}
+        onClose={() => setShowGroupPicker(false)}
+      />
     </>
   );
 }

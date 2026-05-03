@@ -36,3 +36,4 @@ export {
   PROVIDER_CONFIGS,
 } from "./api";
 export type { ProviderConfig } from "./api";
+export { encodeConfig, decodeConfig } from "./config-transfer";

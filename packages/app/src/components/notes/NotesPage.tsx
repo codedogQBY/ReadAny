@@ -1,7 +1,8 @@
+import { SyncButton } from "@/components/ui/SyncButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MarkdownEditor } from "@/components/ui/markdown-editor";
-import { useResolvedSrc } from "@/hooks/use-resolved-src";
+import { useResolvedSrc, useSyncVersion } from "@/hooks/use-resolved-src";
 import type { HighlightWithBook } from "@/lib/db/database";
 import { openDesktopBook } from "@/lib/library/open-book";
 import { getBook as getBookRecord } from "@/lib/db/database";
@@ -46,12 +47,18 @@ interface CoverImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
 
 function CoverImage({ url, fallback, ...imgProps }: CoverImageProps) {
   const resolvedSrc = useResolvedSrc(url ?? undefined);
+  const syncVersion = useSyncVersion();
+  const [hasError, setHasError] = useState(false);
 
-  if (!resolvedSrc) {
+  useEffect(() => {
+    setHasError(false);
+  }, [resolvedSrc, syncVersion]);
+
+  if (!resolvedSrc || hasError) {
     return <>{fallback}</>;
   }
 
-  return <img src={resolvedSrc} {...imgProps} />;
+  return <img key={`${resolvedSrc}-${syncVersion}`} src={resolvedSrc} onError={() => setHasError(true)} {...imgProps} />;
 }
 
 export function NotesPage() {
@@ -306,7 +313,10 @@ export function NotesPage() {
         <div className="shrink-0 border-b border-border/40 px-4 py-3">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-base font-semibold">{t("notes.title")}</h1>
+              <div className="flex items-center gap-1">
+                <h1 className="text-base font-semibold">{t("notes.title")}</h1>
+                <SyncButton iconSize={14} />
+              </div>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {t("notes.stats", {
                   highlights: stats?.totalHighlights || 0,

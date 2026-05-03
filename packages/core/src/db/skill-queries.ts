@@ -1,5 +1,12 @@
 import type { Skill } from "../types";
-import { getDB, getDeviceId, nextSyncVersion, nextUpdatedAt, insertTombstone, parseJSON } from "./db-core";
+import {
+  getDB,
+  getDeviceId,
+  insertTombstone,
+  nextSyncVersion,
+  nextUpdatedAt,
+  parseJSON,
+} from "./db-core";
 
 export async function getSkills(): Promise<Skill[]> {
   const database = await getDB();
@@ -46,6 +53,42 @@ export async function insertSkill(skill: Skill): Promise<void> {
       skill.builtIn ? 1 : 0,
       skill.createdAt,
       skill.updatedAt,
+      syncVersion,
+      deviceId,
+    ],
+  );
+}
+
+export async function upsertSkill(skill: Skill): Promise<void> {
+  const database = await getDB();
+  const deviceId = await getDeviceId();
+  const syncVersion = await nextSyncVersion(database, "skills");
+  const updatedAt = Math.max(skill.updatedAt, await nextUpdatedAt(database, "skills", skill.id));
+  await database.execute(
+    `INSERT INTO skills (id, name, description, icon, enabled, parameters, prompt, built_in, created_at, updated_at, sync_version, last_modified_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       name = excluded.name,
+       description = excluded.description,
+       icon = excluded.icon,
+       enabled = excluded.enabled,
+       parameters = excluded.parameters,
+       prompt = excluded.prompt,
+       built_in = excluded.built_in,
+       updated_at = excluded.updated_at,
+       sync_version = excluded.sync_version,
+       last_modified_by = excluded.last_modified_by`,
+    [
+      skill.id,
+      skill.name,
+      skill.description,
+      skill.icon || null,
+      skill.enabled ? 1 : 0,
+      JSON.stringify(skill.parameters),
+      skill.prompt,
+      skill.builtIn ? 1 : 0,
+      skill.createdAt,
+      updatedAt,
       syncVersion,
       deviceId,
     ],

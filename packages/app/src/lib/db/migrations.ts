@@ -6,7 +6,7 @@ import { getDesktopDatabasePath } from "@/lib/storage/desktop-library-root";
 interface Migration {
   version: number;
   description: string;
-  up: string; // SQL statement
+  up: string | string[]; // single or multiple SQL statements
 }
 
 const migrations: Migration[] = [
@@ -19,6 +19,23 @@ const migrations: Migration[] = [
     version: 2,
     description: "Add format column to books",
     up: "ALTER TABLE books ADD COLUMN format TEXT NOT NULL DEFAULT 'epub'",
+  },
+  {
+    version: 3,
+    description: "Add book groups",
+    up: [
+      `CREATE TABLE IF NOT EXISTS book_groups (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        sort_order INTEGER DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL DEFAULT 0,
+        sync_version INTEGER DEFAULT 0,
+        last_modified_by TEXT
+      )`,
+      "ALTER TABLE books ADD COLUMN group_id TEXT",
+      "CREATE INDEX IF NOT EXISTS idx_books_group ON books(group_id)",
+    ],
   },
 ];
 
@@ -42,10 +59,13 @@ export async function runMigrations(): Promise<void> {
   // Run pending migrations in order
   for (const migration of migrations) {
     if (migration.version > currentVersion && migration.up) {
-      try {
-        await db.execute(migration.up);
-      } catch {
-        // Migration SQL may fail if already applied (e.g., column already exists)
+      const statements = Array.isArray(migration.up) ? migration.up : [migration.up];
+      for (const sql of statements) {
+        try {
+          await db.execute(sql);
+        } catch {
+          // Migration SQL may fail if already applied (e.g., column already exists)
+        }
       }
       await db.execute(
         "INSERT OR REPLACE INTO schema_migrations (version, description, applied_at) VALUES (?, ?, ?)",

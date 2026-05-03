@@ -178,8 +178,11 @@ export function generatePairCode(): string {
  */
 export function parseLANQRData(data: string): LANQRData | null {
   try {
+    if (!data || typeof data !== "string" || !data.trim().startsWith("{")) {
+      return null;
+    }
     const parsed = JSON.parse(data);
-    if (parsed.type === "readany-lan-sync" && parsed.v === 1) {
+    if (parsed && typeof parsed === "object" && parsed.type === "readany-lan-sync" && parsed.v === 1) {
       return parsed as LANQRData;
     }
     return null;

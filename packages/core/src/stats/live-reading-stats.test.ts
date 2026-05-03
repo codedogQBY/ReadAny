@@ -1,10 +1,10 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReadingSession } from "../types/reading";
-import type { DailyStats, OverallStats } from "./reading-stats";
 import {
   mergeCurrentSessionIntoDailyStats,
   mergeCurrentSessionIntoOverallStats,
 } from "./live-reading-stats";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import type { DailyStats, OverallStats } from "./reading-stats";
 
 describe("mergeCurrentSessionIntoDailyStats", () => {
   it("returns original stats when there is no active session", () => {
@@ -29,7 +29,7 @@ describe("mergeCurrentSessionIntoDailyStats", () => {
     };
 
     expect(mergeCurrentSessionIntoDailyStats(dailyStats, session)).toEqual([
-      { date: "2026-04-03", totalTime: 50, pagesRead: 18, sessionsCount: 3 },
+      { date: "2026-04-03", totalTime: 50, pagesRead: 18, charactersRead: 0, sessionsCount: 3 },
     ]);
   });
 
@@ -49,7 +49,7 @@ describe("mergeCurrentSessionIntoDailyStats", () => {
 
     expect(mergeCurrentSessionIntoDailyStats(dailyStats, session)).toEqual([
       { date: "2026-04-01", totalTime: 20, pagesRead: 10, sessionsCount: 2 },
-      { date: "2026-04-02", totalTime: 15, pagesRead: 4, sessionsCount: 1 },
+      { date: "2026-04-02", totalTime: 15, pagesRead: 4, charactersRead: 0, sessionsCount: 1 },
       { date: "2026-04-03", totalTime: 40, pagesRead: 15, sessionsCount: 1 },
     ]);
   });
@@ -103,9 +103,11 @@ describe("mergeCurrentSessionIntoOverallStats", () => {
     expect(mergeCurrentSessionIntoOverallStats(overall, dailyStats, session)).toEqual({
       totalBooks: 3,
       totalReadingTime: 150,
+      totalCharactersRead: 0,
       totalSessions: 6,
       totalReadingDays: 3,
       avgDailyTime: 50,
+      avgCharactersPerMinute: 0,
       longestStreak: 3,
       currentStreak: 3,
     });
@@ -140,9 +142,11 @@ describe("mergeCurrentSessionIntoOverallStats", () => {
     expect(mergeCurrentSessionIntoOverallStats(overall, dailyStats, session)).toEqual({
       totalBooks: 1,
       totalReadingTime: 105,
+      totalCharactersRead: 0,
       totalSessions: 4,
       totalReadingDays: 3,
       avgDailyTime: 35,
+      avgCharactersPerMinute: 0,
       longestStreak: 2,
       currentStreak: 0,
     });

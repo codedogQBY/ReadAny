@@ -1,7 +1,14 @@
 import type { Book } from "../types";
-import { getDB, getDeviceId, nextSyncVersion, nextUpdatedAt, insertTombstone, parseJSON } from "./db-core";
-import { deleteThreadsByBookId } from "./thread-queries";
 import { deleteChunks } from "./chunk-queries";
+import {
+  getDB,
+  getDeviceId,
+  insertTombstone,
+  nextSyncVersion,
+  nextUpdatedAt,
+  parseJSON,
+} from "./db-core";
+import { deleteThreadsByBookId } from "./thread-queries";
 
 interface BookRow {
   id: string;
@@ -18,6 +25,7 @@ interface BookRow {
   subjects: string | null;
   total_pages: number;
   total_chapters: number;
+  group_id: string | null;
   added_at: number;
   last_opened_at: number | null;
   updated_at: number;
@@ -49,6 +57,7 @@ function rowToBook(row: BookRow): Book {
       totalPages: row.total_pages || undefined,
       totalChapters: row.total_chapters || undefined,
     },
+    groupId: row.group_id || undefined,
     addedAt: row.added_at,
     lastOpenedAt: row.last_opened_at || undefined,
     updatedAt: row.updated_at || row.added_at,
@@ -156,8 +165,8 @@ export async function insertBook(book: Book): Promise<void> {
   const syncVersion = await nextSyncVersion(database, "books");
   const now = Date.now();
   await database.execute(
-    `INSERT INTO books (id, file_path, format, title, author, publisher, language, isbn, description, cover_url, publish_date, subjects, total_pages, total_chapters, added_at, last_opened_at, updated_at, deleted_at, progress, current_cfi, is_vectorized, vectorize_progress, tags, file_hash, sync_status, sync_version, last_modified_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO books (id, file_path, format, title, author, publisher, language, isbn, description, cover_url, publish_date, subjects, total_pages, total_chapters, group_id, added_at, last_opened_at, updated_at, deleted_at, progress, current_cfi, is_vectorized, vectorize_progress, tags, file_hash, sync_status, sync_version, last_modified_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       book.id,
       book.filePath,
@@ -173,6 +182,7 @@ export async function insertBook(book: Book): Promise<void> {
       book.meta.subjects ? JSON.stringify(book.meta.subjects) : null,
       book.meta.totalPages || 0,
       book.meta.totalChapters || 0,
+      book.groupId || null,
       book.addedAt,
       book.lastOpenedAt || null,
       now,
@@ -258,6 +268,10 @@ export async function updateBook(id: string, updates: Partial<Book>): Promise<vo
   if (updates.tags !== undefined) {
     sets.push("tags = ?");
     values.push(JSON.stringify(updates.tags));
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, "groupId")) {
+    sets.push("group_id = ?");
+    values.push(updates.groupId || null);
   }
   if (updates.fileHash !== undefined) {
     sets.push("file_hash = ?");

@@ -6,6 +6,7 @@ import {
   XIcon,
 } from "@/components/ui/Icon";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
+import { ConfigTransfer } from "../../components/settings/ConfigTransfer";
 import { useVectorModelStore } from "@/stores/vector-model-store";
 import { type ThemeColors, fontSize, fontWeight, radius, useColors, withOpacity } from "@/styles/theme";
 import { useNavigation } from "@react-navigation/native";
@@ -82,6 +83,39 @@ export default function VectorModelSettingsScreen() {
             </View>
 
             {vectorModelEnabled && <RemoteModelsSection />}
+
+            {/* Transfer */}
+            <View style={{ marginTop: 16 }}>
+              <Text style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: colors.foreground, marginBottom: 8 }}>
+                {t("settings.transferConfig", "配置迁移")}
+              </Text>
+              <ConfigTransfer
+                label={t("settings.vectorConfig", "向量化配置")}
+                getData={() => {
+                  const state = useVectorModelStore.getState();
+                  return {
+                    vectorModels: state.vectorModels,
+                    selectedVectorModelId: state.selectedVectorModelId,
+                    vectorModelEnabled: state.vectorModelEnabled,
+                    vectorModelMode: state.vectorModelMode,
+                    selectedBuiltinModelId: state.selectedBuiltinModelId,
+                  };
+                }}
+                applyData={(data) => {
+                  const d = data as Record<string, unknown>;
+                  const store = useVectorModelStore.getState();
+                  if (Array.isArray(d.vectorModels)) {
+                    for (const m of store.vectorModels) store.deleteVectorModel(m.id);
+                    for (const m of d.vectorModels as VectorModelConfig[]) store.addVectorModel(m);
+                  }
+                  if (d.selectedVectorModelId) store.setSelectedVectorModelId(d.selectedVectorModelId as string);
+                  if (typeof d.vectorModelEnabled === "boolean") store.setVectorModelEnabled(d.vectorModelEnabled);
+                  if (d.vectorModelMode === "remote" || d.vectorModelMode === "builtin") store.setVectorModelMode(d.vectorModelMode);
+                  if (d.selectedBuiltinModelId) store.setSelectedBuiltinModelId(d.selectedBuiltinModelId as string);
+                }}
+                validate={(d) => typeof d === "object" && d !== null && "vectorModels" in d}
+              />
+            </View>
 
             <View style={{ height: 24 }} />
           </View>

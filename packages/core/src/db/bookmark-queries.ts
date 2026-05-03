@@ -1,5 +1,5 @@
 import type { Bookmark } from "../types";
-import { getDB, getDeviceId, nextSyncVersion, insertTombstone } from "./db-core";
+import { getDB, getDeviceId, insertTombstone, nextSyncVersion } from "./db-core";
 
 export async function getBookmarks(bookId: string): Promise<Bookmark[]> {
   const database = await getDB();
@@ -25,8 +25,9 @@ export async function insertBookmark(bookmark: Bookmark): Promise<void> {
   const database = await getDB();
   const deviceId = await getDeviceId();
   const syncVersion = await nextSyncVersion(database, "bookmarks");
+  const updatedAt = Math.max(Date.now(), bookmark.createdAt);
   await database.execute(
-    "INSERT INTO bookmarks (id, book_id, cfi, label, chapter_title, created_at, sync_version, last_modified_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO bookmarks (id, book_id, cfi, label, chapter_title, created_at, updated_at, sync_version, last_modified_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
       bookmark.id,
       bookmark.bookId,
@@ -34,6 +35,7 @@ export async function insertBookmark(bookmark: Bookmark): Promise<void> {
       bookmark.label || null,
       bookmark.chapterTitle || null,
       bookmark.createdAt,
+      updatedAt,
       syncVersion,
       deviceId,
     ],

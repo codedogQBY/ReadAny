@@ -24,14 +24,6 @@ export interface SyncResult {
   error?: string;
 }
 
-/** Manifest stored alongside the DB on WebDAV */
-export interface RemoteSyncManifest {
-  lastModifiedAt: number;
-  uploadedBy: string;
-  appVersion: string;
-  schemaVersion: number;
-}
-
 /** WebDAV resource from PROPFIND */
 export interface DavResource {
   href: string;
@@ -58,19 +50,5 @@ export type SyncProgressCallback = (progress: SyncProgress) => void;
 /** Remote directory structure constants */
 export const REMOTE_ROOT = "/readany";
 export const REMOTE_DATA = "/readany/data";
-export const REMOTE_DB_FILE = "/readany/data/readany.db";
-export const REMOTE_MANIFEST = "/readany/data/manifest.json";
-export const REMOTE_DELTA_FILE = "/readany/data/delta_latest.json";
 export const REMOTE_FILES = "/readany/data/file";
 export const REMOTE_COVERS = "/readany/data/cover";
-
-/** Sync metadata keys stored in sync_metadata table */
-export const SYNC_META_KEYS = {
-  LAST_SYNC_AT: "last_sync_at",
-  LAST_SYNC_DB_HASH: "last_sync_db_hash",
-  LAST_REMOTE_MODIFIED_AT: "last_remote_modified_at",
-  DEVICE_ID: "device_id",
-} as const;
-
-/** Current schema version for sync compatibility */
-export const SYNC_SCHEMA_VERSION = 1;

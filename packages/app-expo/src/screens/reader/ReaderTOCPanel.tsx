@@ -73,8 +73,6 @@ export function ReaderTOCPanel({
           { maxHeight: SCREEN_HEIGHT * 0.7, paddingBottom: insets.bottom || 16 },
           layout.isTablet && {
             width: "100%",
-            maxWidth: Math.min(layout.centeredContentWidth, 760),
-            alignSelf: "center",
           },
         ]}
       >

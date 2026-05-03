@@ -1,7 +1,7 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IPlatformService } from "../services/platform";
 import type { ISyncBackend, SyncConfig } from "../sync/sync-backend";
 import type { SyncResult } from "../sync/sync-types";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockPlatformService = vi.hoisted(() => ({
   platformType: "desktop" as const,
@@ -34,7 +34,7 @@ const factoryMocks = vi.hoisted(() => ({
 
 const syncMocks = vi.hoisted(() => ({
   runSimpleSync: vi.fn(),
-  runSync: vi.fn(),
+  syncFiles: vi.fn(),
 }));
 
 const libraryEventMocks = vi.hoisted(() => ({
@@ -55,7 +55,7 @@ vi.mock("../services/platform", () => ({
 
 vi.mock("../sync/sync-backend-factory", () => factoryMocks);
 vi.mock("../sync/simple-sync", () => syncMocks);
-vi.mock("../sync/sync-engine", () => syncMocks);
+vi.mock("../sync/sync-files", () => syncMocks);
 vi.mock("../events/library-events", () => libraryEventMocks);
 vi.mock("./reading-session-store", () => readingSessionMocks);
 
@@ -119,12 +119,9 @@ describe("useSyncStore", () => {
       filesUploaded: 2,
       filesDownloaded: 1,
     });
-    syncMocks.runSync.mockResolvedValue({
-      success: true,
-      direction: "upload",
-      filesUploaded: 3,
+    syncMocks.syncFiles.mockResolvedValue({
+      filesUploaded: 0,
       filesDownloaded: 0,
-      durationMs: 0,
     });
   });
 
@@ -183,7 +180,7 @@ describe("useSyncStore", () => {
       ([key]) => key === "sync_config",
     );
     expect(savedConfigCall).toBeTruthy();
-    expect(JSON.parse(savedConfigCall![1] as string)).toEqual({
+    expect(JSON.parse(savedConfigCall?.[1] as string)).toEqual({
       ...baseConfig,
       allowInsecure: true,
     });
@@ -209,7 +206,7 @@ describe("useSyncStore", () => {
       ([key]) => key === "sync_config",
     );
     expect(savedConfigCall).toBeTruthy();
-    expect(JSON.parse(savedConfigCall![1] as string)).toMatchObject({
+    expect(JSON.parse(savedConfigCall?.[1] as string)).toMatchObject({
       type: "webdav",
       url: "https://dav.example.com/root",
       username: "alice",
@@ -234,7 +231,7 @@ describe("useSyncStore", () => {
       ([key]) => key === "sync_config",
     );
     expect(savedConfigCall).toBeTruthy();
-    expect(JSON.parse(savedConfigCall![1] as string)).toMatchObject({
+    expect(JSON.parse(savedConfigCall?.[1] as string)).toMatchObject({
       type: "webdav",
       url: "https://dav.example.com/root",
       username: "alice",
@@ -319,12 +316,9 @@ describe("useSyncStore", () => {
       .getState()
       .syncWithBackend(mockLanBackend as unknown as ISyncBackend);
 
-    expect(syncMocks.runSimpleSync).toHaveBeenCalledWith(
-      mockLanBackend,
-      expect.any(Function),
-      { receiveOnly: true },
-    );
-    expect(syncMocks.runSync).not.toHaveBeenCalled();
+    expect(syncMocks.runSimpleSync).toHaveBeenCalledWith(mockLanBackend, expect.any(Function), {
+      receiveOnly: true,
+    });
     expect(result).toMatchObject({
       success: true,
       direction: "download",
@@ -341,6 +335,43 @@ describe("useSyncStore", () => {
       "sync:completed",
       expect.objectContaining({ timestamp: expect.any(Number) }),
     );
+  });
+
+  it("forceFullSync download keeps file transfer receive-only", async () => {
+    useSyncStore.setState({
+      config: baseConfig,
+      isConfigured: true,
+      backendType: "webdav",
+    });
+    mockPlatformService.kvGetItem.mockImplementation(async (key: string) =>
+      key === "sync_webdav_password" ? "secret" : null,
+    );
+    syncMocks.runSimpleSync.mockResolvedValue({
+      success: true,
+      changes: 2,
+      filesUploaded: 0,
+      filesDownloaded: 3,
+    });
+
+    const result = await useSyncStore.getState().forceFullSync("download");
+
+    expect(syncMocks.runSimpleSync).toHaveBeenCalledWith(mockBackend, expect.any(Function), {
+      receiveOnly: true,
+      forceApply: true,
+      fileSyncOptions: {
+        forceDownloadAll: true,
+        downloadRemoteBooks: true,
+        disableUploads: true,
+        disableRemoteDeletes: true,
+      },
+    });
+    expect(syncMocks.syncFiles).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      success: true,
+      direction: "download",
+      filesUploaded: 0,
+      filesDownloaded: 3,
+    });
   });
 
   it("syncNow returns a connection error when backend test fails", async () => {
@@ -392,9 +423,7 @@ describe("useSyncStore", () => {
       error: "WebDAV 认证失败，请检查用户名和应用密码是否正确。",
     });
     expect(useSyncStore.getState().status).toBe("error");
-    expect(useSyncStore.getState().error).toBe(
-      "WebDAV 认证失败，请检查用户名和应用密码是否正确。",
-    );
+    expect(useSyncStore.getState().error).toBe("WebDAV 认证失败，请检查用户名和应用密码是否正确。");
   });
 
   it("returns the same promise when sync is already in progress", async () => {

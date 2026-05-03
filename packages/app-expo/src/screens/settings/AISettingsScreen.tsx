@@ -17,7 +17,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MinusIcon, PlusIcon } from "../../components/ui/Icon";
 import { useColors } from "../../styles/theme";
-import { spacing } from "../../styles/theme";
+import { fontSize, fontWeight, spacing } from "../../styles/theme";
+import { ConfigTransfer } from "../../components/settings/ConfigTransfer";
 import { SettingsHeader } from "./SettingsHeader";
 import { EndpointEditor } from "./ai/EndpointEditor";
 import { makeStyles } from "./ai/ai-settings-styles";
@@ -235,6 +236,28 @@ export default function AISettingsScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
+            </View>
+
+            {/* Transfer */}
+            <View style={{ marginTop: spacing.lg, gap: spacing.sm }}>
+              <Text style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: colors.foreground }}>
+                {t("settings.transferConfig", "配置迁移")}
+              </Text>
+              <ConfigTransfer
+                label={t("settings.aiConfig", "AI 配置")}
+                getData={() => aiConfig}
+                applyData={(data) => {
+                  const d = data as Record<string, unknown>;
+                  if (d && typeof d === "object") {
+                    useSettingsStore.setState((s) => ({
+                      aiConfig: { ...s.aiConfig, ...(d as Partial<typeof s.aiConfig>) },
+                    }));
+                  }
+                }}
+                validate={(d) =>
+                  typeof d === "object" && d !== null && "endpoints" in d && Array.isArray((d as Record<string, unknown>).endpoints)
+                }
+              />
             </View>
           </View>
         </ScrollView>

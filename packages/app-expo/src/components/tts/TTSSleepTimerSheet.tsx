@@ -212,8 +212,6 @@ export function TTSSleepTimerSheet({ visible, onClose }: TTSSleepTimerSheetProps
             s.sheet,
             layout.isTablet && {
               width: "100%",
-              maxWidth: Math.min(layout.centeredContentWidth, 680),
-              alignSelf: "center",
             },
           ]}
           onPress={(event) => event.stopPropagation()}

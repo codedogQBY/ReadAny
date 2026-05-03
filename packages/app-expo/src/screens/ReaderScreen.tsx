@@ -17,6 +17,7 @@ import {
   XIcon,
 } from "@/components/ui/Icon";
 import { useReaderBridge } from "@/hooks/use-reader-bridge";
+import { startFileServer, stopFileServer } from "@/lib/reader/local-file-server";
 import type { RelocateEvent, SelectionEvent, VisibleTTSSegment } from "@/hooks/use-reader-bridge";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import {
@@ -100,17 +101,6 @@ const BOOK_FORMAT_MIME_TYPES: Partial<Record<string, string>> = {
   txt: "text/plain",
 };
 
-/** Convert Uint8Array to base64 string for WebView transport */
-function _bytesToBase64(bytes: Uint8Array): string {
-  const chunkSize = 0x8000;
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return btoa(binary);
-}
-
 function normalizeBookIdentityText(value?: string): string {
   return (value || "").toLowerCase().replace(/[\s\p{P}\p{S}_-]+/gu, "");
 }
@@ -166,6 +156,7 @@ import { useReaderSearch } from "./reader/useReaderSearch";
 import { useReaderSystemInfo } from "./reader/useReaderSystemInfo";
 import { useReaderTTS } from "./reader/useReaderTTS";
 import { useVolumeButtonPaging } from "./reader/useVolumeButtonPaging";
+import { SyncButton } from "@/components/ui/SyncButton";
 
 const READER_HTML_ASSET = Asset.fromModule(require("../../assets/reader/reader.html"));
 
@@ -337,6 +328,7 @@ export function ReaderScreen({ route, navigation }: Props) {
   const progressRef = useRef(0);
   const locationHistoryRef = useRef<string[]>([]);
   const lastNavigatedCfiRef = useRef<string | undefined>(undefined);
+  const fileServerRef = useRef<string | null>(null);
   const sessionProgressRef = useRef<{
     mode: "location" | "page" | "characters";
     current: number;
@@ -994,6 +986,10 @@ export function ReaderScreen({ route, navigation }: Props) {
   // Save progress immediately on unmount
   useEffect(() => {
     return () => {
+      if (fileServerRef.current) {
+        stopFileServer();
+        fileServerRef.current = null;
+      }
       if (lastCfiRef.current) {
         const db = require("@readany/core/db/database");
         runWithDbRetry(
@@ -1005,6 +1001,8 @@ export function ReaderScreen({ route, navigation }: Props) {
           { attempts: 10, initialDelayMs: 150 },
         ).catch((err: Error) => console.error("Failed to save progress on unmount:", err));
       }
+      const { useSyncStore } = require("@readany/core/stores/sync-store");
+      useSyncStore.getState().syncNow?.();
     };
   }, [bookId]);
 
@@ -1022,16 +1020,23 @@ export function ReaderScreen({ route, navigation }: Props) {
         const appData = await platform.getAppDataDir();
         const absPath = await platform.joinPath(appData, book.filePath);
         const lastLocation = book.currentCfi || undefined;
+        const fileName = book.filePath.split("/").pop() || "book.epub";
+        const mimeType = BOOK_FORMAT_MIME_TYPES[book.format] || "application/octet-stream";
 
-        // iOS WKWebView blocks fetch("file://...") across different directories.
-        // Use base64 transport to bypass this security restriction.
-        const fileBytes = await platform.readFile(absPath);
-        const base64 = _bytesToBase64(fileBytes);
+        // Start a local HTTP server so the WebView can fetch the file directly.
+        // This avoids loading the entire file into RN memory + base64 encoding (33% overhead)
+        // and the massive JSON serialization through injectJavaScript.
+        const serverUrl = await startFileServer(appData);
+        fileServerRef.current = serverUrl;
+        const encodedPath = book.filePath
+          .split("/")
+          .map((s) => encodeURIComponent(s))
+          .join("/");
 
         bridge.openBook({
-          base64,
-          fileName: book.filePath.split("/").pop() || "book.epub",
-          mimeType: BOOK_FORMAT_MIME_TYPES[book.format] || "application/octet-stream",
+          uri: `${serverUrl}/${encodedPath}`,
+          fileName,
+          mimeType,
           lastLocation,
           pageMargin: readSettings.pageMargin,
           paginatedLayout: readSettings.paginatedLayout,
@@ -1436,7 +1441,8 @@ export function ReaderScreen({ route, navigation }: Props) {
                   {currentChapter || bookTitle}
                 </Text>
               </View>
-              <View style={[s.topToolbarSideSlot, s.topToolbarMetaWrap]}>
+              <View style={[s.topToolbarSideSlot, s.topToolbarMetaWrap, { flexDirection: "row", alignItems: "center", gap: 6 }]}>
+                <SyncButton size={16} color={colors.foreground} />
                 <Text style={s.topToolbarMetaText}>
                   {currentPage > 0 && totalPages > 0
                     ? `${currentPage}/${totalPages}`

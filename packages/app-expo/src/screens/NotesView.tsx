@@ -1,4 +1,5 @@
 import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
+import { SyncButton } from "@/components/ui/SyncButton";
 import {
   BookOpenIcon,
   ChevronLeftIcon,
@@ -516,7 +517,10 @@ export function NotesView({
     <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={edges}>
       <View style={s.header}>
         <View style={s.headerRow}>
-          <Text style={s.headerTitle}>{t("notes.title", "笔记")}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Text style={s.headerTitle}>{t("notes.title", "笔记")}</Text>
+            <SyncButton size={18} color={colors.mutedForeground} />
+          </View>
           {bookNotebooks.length > 0 && (
             <TouchableOpacity
               style={s.searchToggle}

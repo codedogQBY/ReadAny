@@ -72,8 +72,6 @@ export function ReaderNoteViewModal({
             { paddingBottom: insets.bottom || 16 },
             layout.isTablet && {
               width: "100%",
-              maxWidth: Math.min(layout.centeredContentWidth, 760),
-              alignSelf: "center",
             },
           ]}
         >

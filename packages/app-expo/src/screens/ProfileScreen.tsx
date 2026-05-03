@@ -1,3 +1,4 @@
+import { SyncButton } from "@/components/ui/SyncButton";
 import {
   BarChart3Icon,
   BookOpenIcon,
@@ -445,6 +446,7 @@ export function ProfileScreen() {
     <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={["top"]}>
       <View style={s.header}>
         <Text style={s.headerTitle}>{t("profile.title", "我的")}</Text>
+        <SyncButton size={20} color={colors.mutedForeground} />
       </View>
 
       <ScrollView
@@ -539,6 +541,9 @@ const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
     header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
       paddingHorizontal: 16,
       paddingTop: 12,
       paddingBottom: 12,

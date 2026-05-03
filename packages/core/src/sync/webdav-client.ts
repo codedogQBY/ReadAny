@@ -20,7 +20,8 @@ export function sanitizeWebDavRemoteRoot(remoteRoot: string): string {
     .replace(/[\u0000-\u001F\u007F]/g, "")
     .trim()
     .replace(/^\/+|\/+$/g, "")
-    .replace(/\/{2,}/g, "/");
+    .replace(/\/{2,}/g, "/")
+    .toLowerCase();
   return normalized;
 }
 

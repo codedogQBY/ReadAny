@@ -3,7 +3,7 @@ import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { type ThemeColors, fontSize, fontWeight, radius, useColors } from "@/styles/theme";
 import { useNavigation } from "@react-navigation/native";
 import { builtinSkills } from "@readany/core/ai/skills/builtin-skills";
-import { deleteSkill, getSkills, insertSkill, updateSkill } from "@readany/core/db";
+import { deleteSkill, getSkills, insertSkill, upsertSkill } from "@readany/core/db";
 import type { Skill } from "@readany/core/types";
 /**
  * SkillsScreen — matching Tauri mobile SkillsPage exactly.
@@ -58,7 +58,15 @@ export default function SkillsScreen() {
       const dbSkills = await getSkills();
       const mergedSkills = builtinSkills.map((builtin) => {
         const dbSkill = dbSkills.find((s) => s.id === builtin.id);
-        return dbSkill ? { ...builtin, enabled: dbSkill.enabled } : builtin;
+        return dbSkill
+          ? {
+              ...builtin,
+              description: dbSkill.description,
+              enabled: dbSkill.enabled,
+              prompt: dbSkill.prompt,
+              updatedAt: dbSkill.updatedAt,
+            }
+          : builtin;
       });
       const customSkills = dbSkills.filter((s) => !s.builtIn);
       setSkills([...mergedSkills, ...customSkills]);
@@ -73,14 +81,21 @@ export default function SkillsScreen() {
     loadSkills();
   }, [loadSkills]);
 
-  const handleToggle = useCallback(async (skillId: string, enabled: boolean) => {
-    try {
-      await updateSkill(skillId, { enabled });
-      setSkills((prev) => prev.map((s) => (s.id === skillId ? { ...s, enabled } : s)));
-    } catch (err) {
-      console.error("Failed to toggle skill:", err);
-    }
-  }, []);
+  const handleToggle = useCallback(
+    async (skillId: string, enabled: boolean) => {
+      const skill = skills.find((s) => s.id === skillId);
+      if (!skill) return;
+
+      const updatedSkill = { ...skill, enabled, updatedAt: Date.now() };
+      try {
+        await upsertSkill(updatedSkill);
+        setSkills((prev) => prev.map((s) => (s.id === skillId ? updatedSkill : s)));
+      } catch (err) {
+        console.error("Failed to toggle skill:", err);
+      }
+    },
+    [skills],
+  );
 
   const handleCreateSkill = useCallback(() => {
     setEditingSkill(null);
@@ -123,22 +138,16 @@ export default function SkillsScreen() {
     if (!formName.trim()) return;
     try {
       if (editingSkill) {
-        await updateSkill(editingSkill.id, {
-          name: formName.trim(),
+        const updatedSkill = {
+          ...editingSkill,
+          name: editingSkill.builtIn ? editingSkill.name : formName.trim(),
           description: formDescription.trim(),
           prompt: formPrompt.trim(),
-        });
+          updatedAt: Date.now(),
+        };
+        await upsertSkill(updatedSkill);
         setSkills((prev) =>
-          prev.map((s) =>
-            s.id === editingSkill.id
-              ? {
-                  ...s,
-                  name: formName.trim(),
-                  description: formDescription.trim(),
-                  prompt: formPrompt.trim(),
-                }
-              : s,
-          ),
+          prev.map((s) => (s.id === editingSkill.id ? { ...s, ...updatedSkill } : s)),
         );
       } else {
         const newSkill: Skill = {
@@ -312,11 +321,12 @@ export default function SkillsScreen() {
           <ScrollView style={s.editorContent}>
             <Text style={s.fieldLabel}>{t("skills.name", "名称")} *</Text>
             <TextInput
-              style={s.fieldInput}
+              style={[s.fieldInput, editingSkill?.builtIn && s.fieldInputDisabled]}
               value={formName}
               onChangeText={setFormName}
               placeholder={t("skills.namePlaceholder", "技能名称")}
               placeholderTextColor={colors.mutedForeground}
+              editable={!editingSkill?.builtIn}
             />
 
             <Text style={s.fieldLabel}>{t("skills.description", "描述")}</Text>
@@ -456,8 +466,6 @@ const makeStyles = (colors: ThemeColors) =>
     },
     editorSheetTablet: {
       width: "100%",
-      maxWidth: 720,
-      alignSelf: "center",
       borderRadius: 20,
       marginBottom: 28,
     },
@@ -492,6 +500,7 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: fontSize.sm,
       color: colors.foreground,
     },
+    fieldInputDisabled: { opacity: 0.6 },
     fieldTextarea: { height: 120, paddingVertical: 8, textAlignVertical: "top" },
     editorActions: {
       flexDirection: "row",

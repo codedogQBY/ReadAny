@@ -1,5 +1,5 @@
-import type { Bookmark } from "../../types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Bookmark } from "../../types";
 
 const mockExecute = vi.fn();
 const mockSelect = vi.fn();
@@ -14,11 +14,7 @@ const coreMocks = vi.hoisted(() => ({
 
 vi.mock("../db-core", () => coreMocks);
 
-const {
-  getBookmarks,
-  insertBookmark,
-  deleteBookmark,
-} = await import("../bookmark-queries");
+const { getBookmarks, insertBookmark, deleteBookmark } = await import("../bookmark-queries");
 
 const sampleBookmark: Bookmark = {
   id: "bm-1",
@@ -93,8 +89,9 @@ describe("bookmark-queries", () => {
   });
 
   describe("insertBookmark", () => {
-    it("inserts bookmark with sync tracking", async () => {
+    it("inserts bookmark with updated_at sync tracking", async () => {
       mockExecute.mockResolvedValue(undefined);
+      vi.spyOn(Date, "now").mockReturnValue(1500);
 
       await insertBookmark(sampleBookmark);
       expect(mockExecute).toHaveBeenCalledTimes(1);
@@ -103,10 +100,13 @@ describe("bookmark-queries", () => {
 
       const [sql, params] = mockExecute.mock.calls[0];
       expect(sql).toContain("INSERT INTO bookmarks");
+      expect(sql).toContain("updated_at");
       expect(params[0]).toBe("bm-1");
       expect(params[1]).toBe("book-1");
       expect(params[2]).toBe("epubcfi(/6/2!/4/2/10)");
       expect(params[3]).toBe("Important part");
+      expect(params[5]).toBe(1000);
+      expect(params[6]).toBe(1500);
     });
   });
 

@@ -13,7 +13,7 @@ import {
 } from "@readany/core";
 import { debouncedSave, loadFromFS } from "@readany/core/stores/persist";
 import { useVectorModelStore } from "@readany/core/stores/vector-model-store";
-import type { Book, LibraryFilter, SortField, SortOrder } from "@readany/core/types";
+import type { Book, BookGroup, LibraryFilter, SortField, SortOrder } from "@readany/core/types";
 import { create } from "zustand";
 
 interface EpubMeta {
@@ -29,7 +29,9 @@ interface EpubMeta {
  * Memory usage for a 70MB EPUB: ~1-2MB (metadata + cover image only).
  */
 export async function extractEpubMetadata(blob: Blob): Promise<EpubMeta> {
-  const { configure, ZipReader, BlobReader, TextWriter, BlobWriter } = await import("@zip.js/zip.js");
+  const { configure, ZipReader, BlobReader, TextWriter, BlobWriter } = await import(
+    "@zip.js/zip.js"
+  );
   configure({ useWebWorkers: false });
 
   const reader = new ZipReader(new BlobReader(blob));
@@ -271,6 +273,53 @@ async function saveCoverToAppData(bookId: string, coverBlob: Blob): Promise<stri
   return relativePath;
 }
 
+export async function repairMissingCovers(): Promise<number> {
+  const { exists, readFile } = await import("@tauri-apps/plugin-fs");
+  const { convertFileSrc } = await import("@tauri-apps/api/core");
+
+  const books = useLibraryStore.getState().books;
+  let repaired = 0;
+
+  for (const book of books) {
+    const coverUrl = book.meta.coverUrl;
+    if (!coverUrl || !isDesktopManagedRelativePath(coverUrl)) continue;
+
+    const coverAbsPath = await resolveAppPath(coverUrl);
+    if (await exists(coverAbsPath)) continue;
+
+    if (!book.filePath || !isDesktopManagedRelativePath(book.filePath)) continue;
+    const bookAbsPath = await resolveAppPath(book.filePath);
+    if (!(await exists(bookAbsPath))) continue;
+
+    try {
+      let coverBlob: Blob | null = null;
+
+      if (book.format === "epub" || book.filePath.endsWith(".epub")) {
+        const epubBytes = await readFile(bookAbsPath);
+        const blob = new Blob([epubBytes]);
+        const meta = await extractEpubMetadata(blob);
+        coverBlob = meta.coverBlob;
+      } else if (book.format === "pdf") {
+        const pdfUrl = convertFileSrc(bookAbsPath);
+        coverBlob = await generatePdfCover(pdfUrl);
+      }
+
+      if (coverBlob) {
+        await saveCoverToAppData(book.id, coverBlob);
+        repaired++;
+        console.log(`[repairMissingCovers] Extracted cover for "${book.meta.title}"`);
+      }
+    } catch (err) {
+      console.warn(`[repairMissingCovers] Failed for "${book.meta.title}":`, err);
+    }
+  }
+
+  if (repaired > 0) {
+    console.log(`[repairMissingCovers] Repaired ${repaired} cover(s)`);
+  }
+  return repaired;
+}
+
 export type LibraryViewMode = "grid" | "list";
 export interface RemoveBookOptions {
   preserveData?: boolean;
@@ -278,18 +327,25 @@ export interface RemoveBookOptions {
 
 export interface LibraryState {
   books: Book[];
+  groups: BookGroup[];
   filter: LibraryFilter;
   viewMode: LibraryViewMode;
+  isGroupView: boolean;
   isImporting: boolean;
   isLoaded: boolean;
   /** All unique tags across all books */
   allTags: string[];
   /** Currently selected tag for filtering (empty = all books) */
   activeTag: string;
+  /** Currently selected group for detail view/filtering (empty = no group) */
+  activeGroupId: string;
 
   // Actions
   loadBooks: (deletedTags?: string[]) => Promise<void>;
+  loadGroups: () => Promise<void>;
   setBooks: (books: Book[]) => void;
+  setGroupView: (enabled: boolean) => void;
+  setActiveGroupId: (groupId: string) => void;
   addBook: (book: Book) => void;
   removeBook: (bookId: string, options?: RemoveBookOptions) => Promise<void>;
   updateBook: (bookId: string, updates: Partial<Book>) => void;
@@ -313,14 +369,17 @@ export interface LibraryState {
   addTag: (tag: string) => void;
   removeTag: (tag: string) => void;
   renameTag: (oldName: string, newName: string) => void;
+  addGroup: (name: string) => Promise<BookGroup | null>;
+  renameGroup: (groupId: string, name: string) => void;
+  removeGroup: (groupId: string) => Promise<void>;
+  moveBookToGroup: (bookId: string, groupId?: string) => void;
+  moveBooksToGroup: (bookIds: string[], groupId?: string) => void;
+  removeBookFromGroup: (bookId: string) => void;
   addTagToBook: (bookId: string, tag: string) => void;
   removeTagFromBook: (bookId: string, tag: string) => void;
 }
 
-async function restoreDeletedDesktopBook(
-  bookId: string,
-  filePath: string,
-): Promise<Book | null> {
+async function restoreDeletedDesktopBook(bookId: string, filePath: string): Promise<Book | null> {
   await db.initDatabase();
   const originalBook = await db.getBook(bookId, { includeDeleted: true });
   if (!originalBook) return null;
@@ -411,10 +470,13 @@ async function restoreDeletedDesktopBook(
       const meta = bookDoc.metadata;
       if (meta) {
         const rawTitle =
-          typeof meta.title === "string" ? meta.title : meta.title ? Object.values(meta.title)[0] : "";
+          typeof meta.title === "string"
+            ? meta.title
+            : meta.title
+              ? Object.values(meta.title)[0]
+              : "";
         if (rawTitle) title = rawTitle;
-        const rawAuthor =
-          typeof meta.author === "string" ? meta.author : meta.author?.name || "";
+        const rawAuthor = typeof meta.author === "string" ? meta.author : meta.author?.name || "";
         if (rawAuthor) author = rawAuthor;
       }
       try {
@@ -531,11 +593,14 @@ async function inspectDeletedDesktopBookCandidate(
     const meta = bookDoc.metadata;
     if (meta) {
       const rawTitle =
-        typeof meta.title === "string" ? meta.title : meta.title ? Object.values(meta.title)[0] : "";
+        typeof meta.title === "string"
+          ? meta.title
+          : meta.title
+            ? Object.values(meta.title)[0]
+            : "";
       if (rawTitle) title = rawTitle;
 
-      const rawAuthor =
-        typeof meta.author === "string" ? meta.author : meta.author?.name || "";
+      const rawAuthor = typeof meta.author === "string" ? meta.author : meta.author?.name || "";
       if (rawAuthor) author = rawAuthor;
     }
   } catch {
@@ -547,6 +612,7 @@ async function inspectDeletedDesktopBookCandidate(
 
 export const useLibraryStore = create<LibraryState>((set, get) => ({
   books: [],
+  groups: [],
   filter: {
     search: "",
     tags: [],
@@ -554,10 +620,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     sortOrder: "desc",
   },
   viewMode: "grid",
+  isGroupView: true,
   isImporting: false,
   isLoaded: false,
   allTags: [],
   activeTag: "",
+  activeGroupId: "",
 
   loadBooks: async (deletedTags?: string[]) => {
     const computeTags = (books: Book[]) => {
@@ -569,8 +637,14 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     // 1) Fast path: restore from FS cache so UI shows books instantly
     try {
       const cached = await loadFromFS<Book[]>("library-books");
+      const cachedGroups = await loadFromFS<BookGroup[]>("library-groups");
       if (cached && cached.length > 0) {
-        set({ books: cached, isLoaded: true, allTags: computeTags(cached) });
+        set({
+          books: cached,
+          groups: cachedGroups ?? get().groups,
+          isLoaded: true,
+          allTags: computeTags(cached),
+        });
       }
     } catch {
       // cache miss is fine
@@ -579,7 +653,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     // 2) Full path: init DB and load from SQLite (source of truth for books)
     try {
       await db.initDatabase();
-      const books = await db.getBooks();
+      const [books, groups] = await Promise.all([db.getBooks(), db.getGroups()]);
       const dbTags = computeTags(books);
 
       // Load saved tags from FS (may include empty tags not assigned to any book)
@@ -600,9 +674,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       const emptyTags = savedTags.filter((t) => !dbTagSet.has(t) && !deletedSet.has(t));
       const allTags = [...dbTags, ...emptyTags].sort();
 
-      set({ books, isLoaded: true, allTags });
+      set({ books, groups, isLoaded: true, allTags });
       // Update the cache for next launch
       debouncedSave("library-books", books);
+      debouncedSave("library-groups", groups);
       debouncedSave("library-tags", allTags);
     } catch (err) {
       console.error("Failed to load books from database:", err);
@@ -610,7 +685,31 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     }
   },
 
+  loadGroups: async () => {
+    try {
+      await db.initDatabase();
+      const groups = await db.getGroups();
+      set({ groups });
+      debouncedSave("library-groups", groups);
+    } catch (err) {
+      console.error("Failed to load groups from database:", err);
+    }
+  },
+
   setBooks: (books) => set({ books }),
+
+  setGroupView: (enabled) =>
+    set((state) => ({
+      isGroupView: enabled,
+      activeGroupId: enabled ? state.activeGroupId : "",
+    })),
+
+  setActiveGroupId: (groupId) =>
+    set({
+      activeGroupId: groupId,
+      activeTag: "",
+      isGroupView: Boolean(groupId) || get().isGroupView,
+    }),
 
   addBook: (book) => {
     set((state) => ({ books: [...state.books, book] }));
@@ -635,24 +734,32 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     // Clean up files from app data dir (only for relative paths)
     if (book) {
       try {
-        const { remove } = await import("@tauri-apps/plugin-fs");
+        const { exists, remove } = await import("@tauri-apps/plugin-fs");
 
         // Delete book file if it's a relative path (in app data dir)
         if (book.filePath && isDesktopManagedRelativePath(book.filePath)) {
           try {
             const bookAbsPath = await resolveAppPath(book.filePath);
-            await remove(bookAbsPath);
-            console.log("[removeBook] Deleted book file:", book.filePath);
+            if (await exists(bookAbsPath)) {
+              await remove(bookAbsPath);
+              console.log("[removeBook] Deleted book file:", book.filePath);
+            }
           } catch (err) {
             console.warn("[removeBook] Failed to delete book file:", err);
           }
         }
 
-        if (!preserveData && book.meta.coverUrl && isDesktopManagedRelativePath(book.meta.coverUrl)) {
+        if (
+          !preserveData &&
+          book.meta.coverUrl &&
+          isDesktopManagedRelativePath(book.meta.coverUrl)
+        ) {
           try {
             const coverAbsPath = await resolveAppPath(book.meta.coverUrl);
-            await remove(coverAbsPath);
-            console.log("[removeBook] Deleted cover file:", book.meta.coverUrl);
+            if (await exists(coverAbsPath)) {
+              await remove(coverAbsPath);
+              console.log("[removeBook] Deleted cover file:", book.meta.coverUrl);
+            }
           } catch (err) {
             console.warn("[removeBook] Failed to delete cover file:", err);
           }
@@ -691,7 +798,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       const { DocumentLoader } = await import("@/lib/reader/document-loader");
 
       for (const filePath of filePaths) {
-        const fileName = decodeURIComponent(filePath.replace(/\\/g, "/").split("/").pop() || "book");
+        const fileName = decodeURIComponent(
+          filePath.replace(/\\/g, "/").split("/").pop() || "book",
+        );
         try {
           const ext = filePath.split(".").pop()?.toLowerCase() || "epub";
           const formatMap: Record<string, Book["format"]> = {
@@ -707,8 +816,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             txt: "txt",
           };
           const format: Book["format"] = formatMap[ext] || "epub";
-          let title =
-            fileName.replace(/\.\w+$/i, "") || "Untitled";
+          let title = fileName.replace(/\.\w+$/i, "") || "Untitled";
           let author = "";
           let coverUrl: string | undefined;
           let fileHash: string | undefined;
@@ -743,9 +851,13 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             const { TxtToEpubConverter } = await import("@readany/core/utils/txt-to-epub");
             const { readFile } = await import("@tauri-apps/plugin-fs");
             const rawBytes = await readFile(filePath);
-            const txtFile = new File([rawBytes], filePath.replace(/\\/g, "/").split("/").pop() || "book.txt", {
-              type: "text/plain",
-            });
+            const txtFile = new File(
+              [rawBytes],
+              filePath.replace(/\\/g, "/").split("/").pop() || "book.txt",
+              {
+                type: "text/plain",
+              },
+            );
             const converter = new TxtToEpubConverter();
             const result = await converter.convert({ file: txtFile });
             title = result.bookTitle;
@@ -800,10 +912,14 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
               try {
                 const pdfjsLib = await import("pdfjs-dist");
                 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-                const pdfDoc = await pdfjsLib.getDocument({ url: pdfUrl, useWorkerFetch: false, isEvalSupported: false }).promise;
+                const pdfDoc = await pdfjsLib.getDocument({
+                  url: pdfUrl,
+                  useWorkerFetch: false,
+                  isEvalSupported: false,
+                }).promise;
                 const metadata = await pdfDoc.getMetadata();
                 const pdfTitle = (metadata?.info as Record<string, unknown>)?.Title as string;
-                if (pdfTitle && pdfTitle.trim()) title = pdfTitle.trim();
+                if (pdfTitle?.trim()) title = pdfTitle.trim();
                 pdfDoc.destroy();
               } catch {
                 // PDF metadata extraction is best effort
@@ -858,6 +974,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
               author,
               coverUrl: coverUrl || deletedMatch?.meta.coverUrl,
             },
+            groupId: deletedMatch?.groupId,
             progress: deletedMatch?.progress ?? 0,
             currentCfi: deletedMatch?.currentCfi,
             isVectorized: false,
@@ -885,9 +1002,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
               fileHash: book.fileHash,
               syncStatus: "local",
               lastOpenedAt: Date.now(),
-            }).catch((err) =>
-              console.error("Failed to restore deleted book from database:", err),
-            );
+            }).catch((err) => console.error("Failed to restore deleted book from database:", err));
             debouncedSave("library-books", get().books);
           } else {
             get().addBook(book);
@@ -896,7 +1011,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           if (fileHash) {
             duplicateIndex.byHash.set(fileHash, book);
           }
-          
+
           // Auto-vectorize if enabled
           const vmState = useVectorModelStore.getState();
           if (vmState.vectorModelEnabled && vmState.hasVectorCapability()) {
@@ -960,7 +1075,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   // ── Tag management ──
 
-  setActiveTag: (tag) => set({ activeTag: tag }),
+  setActiveTag: (tag) => set({ activeTag: tag, activeGroupId: "" }),
 
   addTag: (tag) => {
     const trimmed = tag.trim();
@@ -971,6 +1086,89 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       debouncedSave("library-tags", allTags);
       return { allTags };
     });
+  },
+
+  addGroup: async (name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    const existing = get().groups.find((group) => group.name === trimmed);
+    if (existing) return existing;
+
+    try {
+      await db.initDatabase();
+      const group = await db.insertGroup({
+        name: trimmed,
+        sortOrder: get().groups.length,
+      });
+      const groups = [...get().groups, group].sort((a, b) => a.sortOrder - b.sortOrder);
+      set({ groups });
+      debouncedSave("library-groups", groups);
+      return group;
+    } catch (err) {
+      console.error("Failed to create group:", err);
+      return null;
+    }
+  },
+
+  renameGroup: (groupId, name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    set((state) => {
+      const groups = state.groups.map((group) =>
+        group.id === groupId ? { ...group, name: trimmed, updatedAt: Date.now() } : group,
+      );
+      debouncedSave("library-groups", groups);
+      return { groups };
+    });
+    db.updateGroup(groupId, { name: trimmed }).catch((err) =>
+      console.error("Failed to rename group:", err),
+    );
+  },
+
+  removeGroup: async (groupId) => {
+    set((state) => {
+      const groups = state.groups.filter((group) => group.id !== groupId);
+      const books = state.books.map((book) =>
+        book.groupId === groupId ? { ...book, groupId: undefined } : book,
+      );
+      debouncedSave("library-groups", groups);
+      debouncedSave("library-books", books);
+      return {
+        groups,
+        books,
+        activeGroupId: state.activeGroupId === groupId ? "" : state.activeGroupId,
+        isGroupView: state.activeGroupId === groupId ? true : state.isGroupView,
+      };
+    });
+    try {
+      await db.deleteGroup(groupId);
+    } catch (err) {
+      console.error("Failed to delete group:", err);
+    }
+  },
+
+  moveBookToGroup: (bookId, groupId) => {
+    get().moveBooksToGroup([bookId], groupId);
+  },
+
+  moveBooksToGroup: (bookIds, groupId) => {
+    const targetIds = new Set(bookIds);
+    set((state) => {
+      const books = state.books.map((book) =>
+        targetIds.has(book.id) ? { ...book, groupId } : book,
+      );
+      debouncedSave("library-books", books);
+      return { books };
+    });
+    for (const bookId of bookIds) {
+      db.updateBook(bookId, { groupId }).catch((err) =>
+        console.error("Failed to move book to group:", err),
+      );
+    }
+  },
+
+  removeBookFromGroup: (bookId) => {
+    get().moveBookToGroup(bookId, undefined);
   },
 
   removeTag: (tag) => {

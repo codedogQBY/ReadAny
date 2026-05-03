@@ -16,10 +16,8 @@ import {
 } from "../sync/sync-backend";
 import type { ISyncBackend } from "../sync/sync-backend";
 import { createSyncBackend, getSecretKeyForBackend } from "../sync/sync-backend-factory";
-import { REMOTE_MANIFEST } from "../sync/sync-types";
 import { sanitizeWebDavRemoteRoot, sanitizeWebDavUrl } from "../sync/webdav-client";
 import type {
-  RemoteSyncManifest,
   SyncDirection,
   SyncProgress,
   SyncResult,
@@ -43,11 +41,6 @@ function runWithSyncLock(task: () => Promise<SyncResult | null>): Promise<SyncRe
   });
 
   return activeSyncPromise;
-}
-
-function statusFromProgress(progress: SyncProgress): SyncStatusType {
-  if (progress.phase === "files") return "syncing-files";
-  return progress.operation === "upload" ? "uploading" : "downloading";
 }
 
 async function flushPendingReadingSession(): Promise<void> {
@@ -670,28 +663,51 @@ export const useSyncStore = create<SyncState>((set, get) => ({
           return result;
         }
 
-        const { runSync } = await import("../sync/sync-engine");
-        const remoteManifest =
-          direction === "download"
-            ? await backend.getJSON<RemoteSyncManifest>(REMOTE_MANIFEST).catch(() => null)
-            : null;
+        const { runSimpleSync } = await import("../sync/simple-sync");
 
-        const result = await runSync(
+        set({ status: "syncing-files", error: null, progress: null });
+
+        const receiveOnly = direction === "download";
+        const startTime = Date.now();
+        const simpleResult = await runSimpleSync(
           backend,
-          direction,
           (progress) => {
             set({
-              status: statusFromProgress(progress),
-              progress,
+              status: "syncing-files",
+              progress: {
+                phase: progress.phase,
+                operation: progress.operation,
+                completedFiles: 0,
+                totalFiles: 1,
+                message: progress.message,
+              },
             });
           },
-          remoteManifest,
-          undefined,
-          false,
-          direction === "upload"
-            ? { forceUploadAll: true }
-            : { forceDownloadAll: true, downloadRemoteBooks: true },
+          {
+            receiveOnly,
+            forceApply: receiveOnly,
+            fileSyncOptions:
+              direction === "upload"
+                ? { forceUploadAll: true }
+                : {
+                    forceDownloadAll: true,
+                    downloadRemoteBooks: true,
+                    disableUploads: true,
+                    disableRemoteDeletes: true,
+                  },
+          },
         );
+
+        const result: SyncResult = {
+          success: simpleResult.success,
+          direction,
+          filesUploaded: simpleResult.filesUploaded,
+          filesDownloaded: simpleResult.filesDownloaded,
+          durationMs: Date.now() - startTime,
+          error: simpleResult.error,
+        };
+
+        notifyLibraryStateChanged();
 
         if (result.success) {
           const syncedAt = Date.now();
@@ -703,7 +719,6 @@ export const useSyncStore = create<SyncState>((set, get) => ({
             progress: null,
             pendingDirection: null,
           });
-          notifyLibraryStateChanged();
           notifySyncCompleted(syncedAt);
           await persistSyncRuntimeState({
             lastSyncAt: syncedAt,

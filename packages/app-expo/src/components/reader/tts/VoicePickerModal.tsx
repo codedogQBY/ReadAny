@@ -77,8 +77,6 @@ export function VoicePickerModal({
             s.voicePickerSheet,
             layout.isTablet && {
               width: "100%",
-              maxWidth: Math.min(layout.centeredContentWidth, 760),
-              alignSelf: "center",
             },
           ]}
         >

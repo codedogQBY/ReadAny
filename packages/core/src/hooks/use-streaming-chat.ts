@@ -77,7 +77,15 @@ export function useStreamingChat(options?: StreamingChatOptions) {
       const mergedBuiltins = builtins
         .map((builtin) => {
           const dbSkill = dbSkills.find((s) => s.id === builtin.id);
-          return dbSkill ? { ...builtin, enabled: dbSkill.enabled } : builtin;
+          return dbSkill
+            ? {
+                ...builtin,
+                description: dbSkill.description,
+                enabled: dbSkill.enabled,
+                prompt: dbSkill.prompt,
+                updatedAt: dbSkill.updatedAt,
+              }
+            : builtin;
         })
         .filter((s) => s.enabled);
 

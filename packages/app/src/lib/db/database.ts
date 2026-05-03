@@ -12,6 +12,10 @@ export {
   insertBook,
   updateBook,
   deleteBook,
+  getGroups,
+  insertGroup,
+  updateGroup,
+  deleteGroup,
   getHighlights,
   getAllHighlights,
   getAllHighlightsWithBooks,
@@ -44,6 +48,7 @@ export {
   deleteChunks,
   getSkills,
   insertSkill,
+  upsertSkill,
   updateSkill,
   deleteSkill,
 } from "@readany/core/db/database";

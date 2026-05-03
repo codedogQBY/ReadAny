@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { getSkills, updateSkill } from "@/lib/db/database";
+import { getSkills, upsertSkill } from "@/lib/db/database";
 import { builtinSkills } from "@readany/core/ai/skills/builtin-skills";
 import type { Skill } from "@readany/core/types";
 import {
@@ -50,7 +50,15 @@ export function SkillManager() {
       // Merge built-in skills with database skills
       const mergedSkills = builtinSkills.map((builtin) => {
         const dbSkill = dbSkills.find((s) => s.id === builtin.id);
-        return dbSkill ? { ...builtin, enabled: dbSkill.enabled } : builtin;
+        return dbSkill
+          ? {
+              ...builtin,
+              description: dbSkill.description,
+              enabled: dbSkill.enabled,
+              prompt: dbSkill.prompt,
+              updatedAt: dbSkill.updatedAt,
+            }
+          : builtin;
       });
 
       // Add custom skills from database
@@ -67,9 +75,13 @@ export function SkillManager() {
   }
 
   async function toggleSkill(skillId: string, enabled: boolean) {
+    const skill = skills.find((s) => s.id === skillId);
+    if (!skill) return;
+
+    const updatedSkill = { ...skill, enabled, updatedAt: Date.now() };
     try {
-      await updateSkill(skillId, { enabled });
-      setSkills((prev) => prev.map((s) => (s.id === skillId ? { ...s, enabled } : s)));
+      await upsertSkill(updatedSkill);
+      setSkills((prev) => prev.map((s) => (s.id === skillId ? updatedSkill : s)));
     } catch (error) {
       console.error("Failed to update skill:", error);
     }

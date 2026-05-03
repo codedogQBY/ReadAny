@@ -9,6 +9,7 @@ import { Cloud, Database, Download, Upload, Wifi } from "lucide-react";
  */
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ConfigTransfer } from "./ConfigTransfer";
 import { LANSyncDialog } from "./LANSyncDialog";
 
 type BackendType = "webdav" | "s3" | "lan";
@@ -804,6 +805,44 @@ export function SyncSettings() {
           )}
         </section>
       )}
+
+      {/* Transfer sync config */}
+      <section className="space-y-3 border-t pt-4">
+        <h3 className="text-sm font-medium text-foreground">
+          {t("settings.transferConfig", "配置迁移")}
+        </h3>
+        <ConfigTransfer
+          label={t("settings.syncConfig", "同步配置")}
+          getData={() => {
+            const base = { backendType, config };
+            if (backendType === "webdav") {
+              return { ...base, password: webdavPassword };
+            }
+            if (backendType === "s3") {
+              return { ...base, secretAccessKey: s3SecretAccessKey };
+            }
+            return base;
+          }}
+          applyData={(data) => {
+            const d = data as Record<string, unknown>;
+            if (d.backendType === "webdav" && d.config) {
+              const cfg = d.config as Record<string, unknown>;
+              saveWebDavConfig(
+                cfg.url as string,
+                cfg.username as string,
+                (d.password as string) || "",
+                cfg.allowInsecure as boolean,
+                cfg.remoteRoot as string,
+              );
+            } else if (d.backendType === "s3" && d.config) {
+              saveS3Config(d.config as never, (d.secretAccessKey as string) || "");
+            }
+          }}
+          validate={(d) =>
+            typeof d === "object" && d !== null && "backendType" in d
+          }
+        />
+      </section>
 
       {/* LAN Sync Dialog */}
       <LANSyncDialog

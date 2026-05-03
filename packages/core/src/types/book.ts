@@ -21,6 +21,7 @@ export interface Book {
   filePath: string;
   format: BookFormat;
   meta: BookMeta;
+  groupId?: string;
   addedAt: number;
   lastOpenedAt?: number;
   updatedAt: number;
@@ -32,6 +33,14 @@ export interface Book {
   tags: string[];
   fileHash?: string;
   syncStatus: "local" | "remote" | "downloading"; // File availability status
+}
+
+export interface BookGroup {
+  id: string;
+  name: string;
+  sortOrder: number;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export type ViewMode = "paginated" | "scroll";

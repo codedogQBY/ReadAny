@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { deleteSkill, getSkills, insertSkill, updateSkill } from "@/lib/db/database";
+import { Switch } from "@/components/ui/switch";
+import { deleteSkill, getSkills, insertSkill, upsertSkill } from "@/lib/db/database";
 import { builtinSkills } from "@readany/core/ai/skills/builtin-skills";
 import type { Skill } from "@readany/core/types";
 import { Pencil, Plus, Trash2 } from "lucide-react";
@@ -24,7 +25,15 @@ export default function SkillsPage() {
       const dbSkills = await getSkills();
       const mergedSkills = builtinSkills.map((builtin) => {
         const dbSkill = dbSkills.find((s) => s.id === builtin.id);
-        return dbSkill ? { ...builtin, enabled: dbSkill.enabled } : builtin;
+        return dbSkill
+          ? {
+              ...builtin,
+              description: dbSkill.description,
+              enabled: dbSkill.enabled,
+              prompt: dbSkill.prompt,
+              updatedAt: dbSkill.updatedAt,
+            }
+          : builtin;
       });
       const customSkills = dbSkills.filter((s) => !s.builtIn);
       setSkills([...mergedSkills, ...customSkills]);
@@ -36,9 +45,13 @@ export default function SkillsPage() {
   }
 
   async function toggleSkill(skillId: string, enabled: boolean) {
+    const skill = skills.find((s) => s.id === skillId);
+    if (!skill) return;
+
+    const updatedSkill = { ...skill, enabled, updatedAt: Date.now() };
     try {
-      await updateSkill(skillId, { enabled });
-      setSkills((prev) => prev.map((s) => (s.id === skillId ? { ...s, enabled } : s)));
+      await upsertSkill(updatedSkill);
+      setSkills((prev) => prev.map((s) => (s.id === skillId ? updatedSkill : s)));
     } catch (error) {
       console.error("Failed to update skill:", error);
     }
@@ -48,11 +61,7 @@ export default function SkillsPage() {
     try {
       const exists = skills.some((s) => s.id === skill.id);
       if (exists) {
-        await updateSkill(skill.id, {
-          name: skill.name,
-          description: skill.description,
-          prompt: skill.prompt,
-        });
+        await upsertSkill(skill);
         setSkills((prev) => prev.map((s) => (s.id === skill.id ? { ...s, ...skill } : s)));
       } else {
         await insertSkill(skill);
@@ -167,23 +176,13 @@ function SkillItem({ skill, onToggle, onEdit, onDelete }: SkillItemProps) {
   return (
     <div className="group relative select-auto rounded-xl bg-muted p-3 shadow-around">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <span className="flex-1 text-lg font-medium">{skill.name}</span>
+        <span className="min-w-0 flex-1 truncate text-lg font-medium">{skill.name}</span>
         <div className="flex items-center gap-2">
-          {!skill.builtIn && (
-            <button
-              type="button"
-              onClick={() => onToggle(skill.id, !skill.enabled)}
-              className={`relative h-5 w-9 rounded-full transition-colors ${
-                skill.enabled ? "bg-neutral-900" : "bg-neutral-300"
-              }`}
-            >
-              <span
-                className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                  skill.enabled ? "translate-x-4" : "translate-x-0"
-                }`}
-              />
-            </button>
-          )}
+          <Switch
+            checked={skill.enabled}
+            aria-label={`${skill.name} ${skill.enabled ? t("settings.enabled") : t("settings.disabled")}`}
+            onCheckedChange={(checked) => onToggle(skill.id, checked)}
+          />
           <Button variant="ghost" size="icon" className="size-7" onClick={() => onEdit(skill)}>
             <Pencil className="size-3.5" />
           </Button>

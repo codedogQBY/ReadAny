@@ -28,6 +28,11 @@ export {
   updateBook,
   setBookSyncStatus,
   deleteBook,
+  // Group queries
+  getGroups,
+  insertGroup,
+  updateGroup,
+  deleteGroup,
   // Highlight queries
   getHighlights,
   getAllHighlights,
@@ -70,6 +75,7 @@ export {
   // Skill queries
   getSkills,
   insertSkill,
+  upsertSkill,
   updateSkill,
   deleteSkill,
 } from "./database";

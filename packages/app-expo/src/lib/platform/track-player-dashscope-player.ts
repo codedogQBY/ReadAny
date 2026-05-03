@@ -337,9 +337,14 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
   private async _removeSilenceTracks(): Promise<void> {
     if (this._silenceTrackIds.size === 0) return;
     try {
-      const ids = Array.from(this._silenceTrackIds);
+      const ids = new Set(this._silenceTrackIds);
       this._silenceTrackIds.clear();
-      await TrackPlayer.remove(ids).catch(() => {});
+      const queue = await TrackPlayer.getQueue();
+      const indexes = queue
+        .map((track, index) => (ids.has(String(track.id)) ? index : -1))
+        .filter((index) => index >= 0)
+        .sort((a, b) => b - a);
+      if (indexes.length > 0) await TrackPlayer.remove(indexes).catch(() => {});
     } catch {}
   }
 

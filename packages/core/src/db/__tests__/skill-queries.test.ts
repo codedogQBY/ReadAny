@@ -1,5 +1,5 @@
-import type { Skill } from "../../types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Skill, SkillParameter } from "../../types";
 
 const mockExecute = vi.fn();
 const mockSelect = vi.fn();
@@ -13,18 +13,19 @@ const coreMocks = vi.hoisted(() => ({
   insertTombstone: vi.fn(),
   parseJSON: vi.fn((str: string | null | undefined, fallback: unknown) => {
     if (!str) return fallback;
-    try { return JSON.parse(str); } catch { return fallback; }
+    try {
+      return JSON.parse(str);
+    } catch {
+      return fallback;
+    }
   }),
 }));
 
 vi.mock("../db-core", () => coreMocks);
 
-const {
-  getSkills,
-  insertSkill,
-  updateSkill,
-  deleteSkill,
-} = await import("../skill-queries");
+const { getSkills, insertSkill, upsertSkill, updateSkill, deleteSkill } = await import(
+  "../skill-queries"
+);
 
 const sampleSkill: Skill = {
   id: "skill-1",
@@ -32,7 +33,9 @@ const sampleSkill: Skill = {
   description: "Summarizes book content",
   icon: "📝",
   enabled: true,
-  parameters: [{ name: "length", type: "string", description: "Summary length" }] as any,
+  parameters: [
+    { name: "length", type: "string", description: "Summary length", required: false },
+  ] satisfies SkillParameter[],
   prompt: "Summarize the following text: {{text}}",
   builtIn: false,
   createdAt: 1000,
@@ -131,6 +134,34 @@ describe("skill-queries", () => {
     });
   });
 
+  describe("upsertSkill", () => {
+    it("inserts or updates skill with sync tracking", async () => {
+      mockExecute.mockResolvedValue(undefined);
+
+      await upsertSkill({ ...sampleSkill, enabled: false, updatedAt: 3000 });
+      expect(coreMocks.getDeviceId).toHaveBeenCalled();
+      expect(coreMocks.nextSyncVersion).toHaveBeenCalledWith(mockDb, "skills");
+      expect(coreMocks.nextUpdatedAt).toHaveBeenCalledWith(mockDb, "skills", "skill-1");
+
+      const [sql, params] = mockExecute.mock.calls[0];
+      expect(sql).toContain("INSERT INTO skills");
+      expect(sql).toContain("ON CONFLICT(id) DO UPDATE SET");
+      expect(params[0]).toBe("skill-1");
+      expect(params[4]).toBe(0);
+      expect(params[9]).toBe(3000);
+      expect(params[11]).toBe("device-1");
+    });
+
+    it("keeps updated_at monotonic when current row is newer", async () => {
+      mockExecute.mockResolvedValue(undefined);
+      coreMocks.nextUpdatedAt.mockResolvedValue(4000);
+
+      await upsertSkill({ ...sampleSkill, updatedAt: 3000 });
+      const [, params] = mockExecute.mock.calls[0];
+      expect(params[9]).toBe(4000);
+    });
+  });
+
   describe("updateSkill", () => {
     it("updates name with sync tracking", async () => {
       mockExecute.mockResolvedValue(undefined);
@@ -154,7 +185,9 @@ describe("skill-queries", () => {
     it("serializes parameters update as JSON", async () => {
       mockExecute.mockResolvedValue(undefined);
 
-      const newParams = [{ name: "style", type: "string" }] as any;
+      const newParams: SkillParameter[] = [
+        { name: "style", type: "string", description: "Writing style", required: false },
+      ];
       await updateSkill("skill-1", { parameters: newParams });
       const [sql, params] = mockExecute.mock.calls[0];
       expect(sql).toContain("parameters = ?");
