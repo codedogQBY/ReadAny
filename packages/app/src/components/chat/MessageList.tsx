@@ -103,8 +103,8 @@ export function MessageList({
     isStreaming && !!lastMsg && lastMsg.role === "assistant" && lastMsg.parts.length > 0;
 
   return (
-    <div ref={containerRef} className="relative flex h-full flex-col overflow-y-auto py-4">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4">
+    <div ref={containerRef} className="relative flex h-full select-text flex-col overflow-y-auto py-4">
+      <div className="mx-auto flex w-full max-w-3xl select-text flex-col gap-4 px-4">
         {messages.map((msg, idx) => (
           <MessageBubble
             key={msg.id}
@@ -193,8 +193,8 @@ function MessageBubble({ message, onCitationClick, isStreaming, currentStep }: M
     const hasQuotes = quoteParts.length > 0;
 
     return (
-      <div className="group mt-6 flex max-w-full flex-col first:mt-0">
-        <div className="max-w-[85%] self-end rounded-2xl bg-muted px-3 py-2 text-sm leading-relaxed">
+      <div className="group mt-6 flex max-w-full select-text flex-col first:mt-0">
+        <div className="max-w-[85%] select-text self-end rounded-2xl bg-muted px-3 py-2 text-sm leading-relaxed">
           {hasQuotes && (
             <div className="mb-2 flex flex-col gap-1.5">
               {quoteParts.map((q) => (
@@ -203,7 +203,7 @@ function MessageBubble({ message, onCitationClick, isStreaming, currentStep }: M
             </div>
           )}
           {textParts.length > 0 && (
-            <div className="whitespace-pre-wrap">
+            <div className="select-text whitespace-pre-wrap">
               {textParts.map((part) => {
                 if (part.type === "text") {
                   return <span key={part.id}>{part.text}</span>;
@@ -242,7 +242,7 @@ function MessageBubble({ message, onCitationClick, isStreaming, currentStep }: M
     !isLastPartActiveToolCall;
 
   return (
-    <div className="group flex w-full flex-col gap-1">
+    <div className="group flex w-full select-text flex-col gap-1">
       {message.parts.map((part) => (
         <PartRenderer
           key={part.id}
