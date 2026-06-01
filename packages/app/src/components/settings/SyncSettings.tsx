@@ -63,6 +63,7 @@ export function SyncSettings() {
   const [s3Endpoint, setS3Endpoint] = useState("");
   const [s3Region, setS3Region] = useState("auto");
   const [s3Bucket, setS3Bucket] = useState("");
+  const [s3RemoteRoot, setS3RemoteRoot] = useState("readany");
   const [s3AccessKeyId, setS3AccessKeyId] = useState("");
   const [s3SecretAccessKey, setS3SecretAccessKey] = useState("");
   const [s3PathStyle, setS3PathStyle] = useState(false);
@@ -103,6 +104,7 @@ export function SyncSettings() {
         setS3Endpoint(config.endpoint);
         setS3Region(config.region);
         setS3Bucket(config.bucket);
+        setS3RemoteRoot(config.remoteRoot ?? "readany");
         setS3AccessKeyId(config.accessKeyId);
         setS3PathStyle(config.pathStyle ?? false);
         setSyncIntervalInput(String(config.syncIntervalMins ?? 30));
@@ -183,6 +185,7 @@ export function SyncSettings() {
           endpoint: s3Endpoint,
           region: s3Region,
           bucket: s3Bucket,
+          remoteRoot: s3RemoteRoot,
           accessKeyId: s3AccessKeyId,
           pathStyle: s3PathStyle,
         },
@@ -202,6 +205,7 @@ export function SyncSettings() {
     s3Endpoint,
     s3Region,
     s3Bucket,
+    s3RemoteRoot,
     s3AccessKeyId,
     s3SecretAccessKey,
     s3PathStyle,
@@ -217,6 +221,7 @@ export function SyncSettings() {
           endpoint: s3Endpoint,
           region: s3Region,
           bucket: s3Bucket,
+          remoteRoot: s3RemoteRoot,
           accessKeyId: s3AccessKeyId,
           pathStyle: s3PathStyle,
         },
@@ -225,7 +230,16 @@ export function SyncSettings() {
     } finally {
       setSaving(false);
     }
-  }, [s3Endpoint, s3Region, s3Bucket, s3AccessKeyId, s3SecretAccessKey, s3PathStyle, saveS3Config]);
+  }, [
+    s3Endpoint,
+    s3Region,
+    s3Bucket,
+    s3RemoteRoot,
+    s3AccessKeyId,
+    s3SecretAccessKey,
+    s3PathStyle,
+    saveS3Config,
+  ]);
 
   const handleSync = useCallback(async () => {
     const result = await syncNow();
@@ -257,6 +271,7 @@ export function SyncSettings() {
       setS3Endpoint("");
       setS3Region("auto");
       setS3Bucket("");
+      setS3RemoteRoot("readany");
       setS3AccessKeyId("");
       setS3SecretAccessKey("");
     }
@@ -545,6 +560,21 @@ export function SyncSettings() {
             placeholder="my-bucket"
             className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:border-primary"
           />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm text-foreground">
+            {t("settings.syncS3RemoteRoot", t("settings.syncRemoteRoot"))}
+          </label>
+          <input
+            type="text"
+            value={s3RemoteRoot}
+            onChange={(e) => setS3RemoteRoot(e.target.value)}
+            placeholder={t("settings.syncRemoteRootPlaceholder")}
+            className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:border-primary"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t("settings.syncS3RemoteRootDesc", t("settings.syncRemoteRootDesc"))}
+          </p>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>

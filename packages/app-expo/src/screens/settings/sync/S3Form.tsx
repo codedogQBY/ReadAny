@@ -8,8 +8,10 @@ interface S3FormProps {
   s3Endpoint: string;
   s3Region: string;
   s3Bucket: string;
+  s3RemoteRoot: string;
   s3AccessKeyId: string;
   s3SecretAccessKey: string;
+  s3PathStyle: boolean;
   testing: boolean;
   testResult: "success" | "error" | null;
   testError: string;
@@ -17,8 +19,10 @@ interface S3FormProps {
   onChangeEndpoint: (v: string) => void;
   onChangeRegion: (v: string) => void;
   onChangeBucket: (v: string) => void;
+  onChangeRemoteRoot: (v: string) => void;
   onChangeAccessKeyId: (v: string) => void;
   onChangeSecretAccessKey: (v: string) => void;
+  onTogglePathStyle: () => void;
   onTest: () => void;
   onSave: () => void;
 }
@@ -27,8 +31,10 @@ export function S3Form({
   s3Endpoint,
   s3Region,
   s3Bucket,
+  s3RemoteRoot,
   s3AccessKeyId,
   s3SecretAccessKey,
+  s3PathStyle,
   testing,
   testResult,
   testError,
@@ -36,8 +42,10 @@ export function S3Form({
   onChangeEndpoint,
   onChangeRegion,
   onChangeBucket,
+  onChangeRemoteRoot,
   onChangeAccessKeyId,
   onChangeSecretAccessKey,
+  onTogglePathStyle,
   onTest,
   onSave,
 }: S3FormProps) {
@@ -58,7 +66,9 @@ export function S3Form({
             placeholder="https://s3.amazonaws.com"
             placeholderTextColor={colors.mutedForeground}
             autoCapitalize="none"
+            autoCorrect={false}
             keyboardType="url"
+            returnKeyType="next"
           />
         </View>
 
@@ -71,6 +81,8 @@ export function S3Form({
             placeholder="us-east-1"
             placeholderTextColor={colors.mutedForeground}
             autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="next"
           />
         </View>
 
@@ -83,7 +95,28 @@ export function S3Form({
             placeholder="my-bucket"
             placeholderTextColor={colors.mutedForeground}
             autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="next"
           />
+        </View>
+
+        <View style={styles.fieldGroup}>
+          <Text style={styles.fieldLabel}>
+            {t("settings.syncS3RemoteRoot", t("settings.syncRemoteRoot"))}
+          </Text>
+          <TextInput
+            style={styles.input}
+            value={s3RemoteRoot}
+            onChangeText={onChangeRemoteRoot}
+            placeholder={t("settings.syncRemoteRootPlaceholder")}
+            placeholderTextColor={colors.mutedForeground}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="next"
+          />
+          <Text style={[styles.autoSyncDesc, { marginTop: 6 }]}>
+            {t("settings.syncS3RemoteRootDesc", t("settings.syncRemoteRootDesc"))}
+          </Text>
         </View>
 
         <View style={styles.fieldGroup}>
@@ -95,6 +128,8 @@ export function S3Form({
             placeholder="AKIAIOSFODNN7EXAMPLE"
             placeholderTextColor={colors.mutedForeground}
             autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="next"
           />
         </View>
 
@@ -106,15 +141,27 @@ export function S3Form({
             onChangeText={onChangeSecretAccessKey}
             placeholder={t("settings.syncS3SecretAccessKey")}
             placeholderTextColor={colors.mutedForeground}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="done"
           />
+        </View>
+
+        <View style={styles.autoSyncRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.autoSyncLabel}>{t("settings.syncS3PathStyle")}</Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.toggle, s3PathStyle && styles.toggleActive]}
+            onPress={onTogglePathStyle}
+          >
+            <View style={[styles.toggleThumb, s3PathStyle && styles.toggleThumbActive]} />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.btnRow}>
           <TouchableOpacity
-            style={[
-              styles.outlineBtn,
-              (!s3Endpoint || !s3Bucket || testing) && styles.btnDisabled,
-            ]}
+            style={[styles.outlineBtn, (!s3Endpoint || !s3Bucket || testing) && styles.btnDisabled]}
             onPress={onTest}
             disabled={testing || !s3Endpoint || !s3Bucket}
             activeOpacity={0.7}
@@ -140,9 +187,7 @@ export function S3Form({
           <Text style={styles.successText}>{t("settings.syncTestSuccess")}</Text>
         )}
         {testResult === "error" && (
-          <Text style={styles.errorText}>
-            {t("settings.syncTestFailed", { error: testError })}
-          </Text>
+          <Text style={styles.errorText}>{t("settings.syncTestFailed", { error: testError })}</Text>
         )}
       </View>
     </View>

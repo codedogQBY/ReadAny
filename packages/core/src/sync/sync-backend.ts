@@ -104,6 +104,7 @@ export interface S3Config {
   region: string;
   bucket: string;
   accessKeyId: string;
+  remoteRoot?: string;
   pathStyle?: boolean;
   autoSync: boolean;
   syncIntervalMins: number;
@@ -128,6 +129,7 @@ export const DEFAULT_SYNC_CONFIG = {
 } as const;
 
 export const DEFAULT_WEBDAV_REMOTE_ROOT = "readany";
+export const DEFAULT_S3_REMOTE_ROOT = "readany";
 
 /** Secret keys for each backend type */
 export const SYNC_SECRET_KEYS = {

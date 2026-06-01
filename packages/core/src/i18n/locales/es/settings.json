@@ -309,6 +309,8 @@
     "syncS3Endpoint": "Endpoint del servicio",
     "syncS3Region": "Región",
     "syncS3Bucket": "Bucket",
+    "syncS3RemoteRoot": "Carpeta de sincronización",
+    "syncS3RemoteRootDesc": "Elige el prefijo de carpeta dentro de este bucket. Se admiten rutas anidadas, por ejemplo apps/readany.",
     "syncS3AccessKeyId": "Access Key ID",
     "syncS3SecretAccessKey": "Secret Access Key",
     "syncS3PathStyle": "Usar URL con estilo de ruta",

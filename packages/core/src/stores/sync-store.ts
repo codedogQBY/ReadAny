@@ -7,8 +7,10 @@
 import { create } from "zustand";
 import { emitLibraryChanged } from "../events/library-events";
 import { getPlatformService } from "../services/platform";
+import { sanitizeS3RemoteRoot } from "../sync/s3-paths";
 import type { S3Config, SyncConfig, WebDavConfig } from "../sync/sync-backend";
 import {
+  DEFAULT_S3_REMOTE_ROOT,
   DEFAULT_SYNC_CONFIG,
   DEFAULT_WEBDAV_REMOTE_ROOT,
   SYNC_CONFIG_KEY,
@@ -176,6 +178,13 @@ function normalizeSyncConfig(config: SyncConfig): SyncConfig {
         DEFAULT_WEBDAV_REMOTE_ROOT,
     };
   }
+  if (config.type === "s3") {
+    return {
+      ...config,
+      remoteRoot:
+        sanitizeS3RemoteRoot(config.remoteRoot ?? DEFAULT_S3_REMOTE_ROOT) || DEFAULT_S3_REMOTE_ROOT,
+    };
+  }
   return config;
 }
 
@@ -299,6 +308,10 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     const config: S3Config = {
       ...s3Config,
       type: "s3",
+      remoteRoot:
+        sanitizeS3RemoteRoot(
+          s3Config.remoteRoot ?? (existing as S3Config)?.remoteRoot ?? DEFAULT_S3_REMOTE_ROOT,
+        ) || DEFAULT_S3_REMOTE_ROOT,
       autoSync: (existing as S3Config)?.autoSync ?? DEFAULT_SYNC_CONFIG.autoSync,
       syncIntervalMins:
         (existing as S3Config)?.syncIntervalMins ?? DEFAULT_SYNC_CONFIG.syncIntervalMins,
@@ -316,6 +329,9 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       const config: S3Config = {
         ...s3Config,
         type: "s3",
+        remoteRoot:
+          sanitizeS3RemoteRoot(s3Config.remoteRoot ?? DEFAULT_S3_REMOTE_ROOT) ||
+          DEFAULT_S3_REMOTE_ROOT,
         autoSync: false,
         syncIntervalMins: 30,
         wifiOnly: false,

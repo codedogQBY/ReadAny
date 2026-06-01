@@ -316,6 +316,8 @@
     "syncS3Endpoint": "Service Endpoint",
     "syncS3Region": "Region",
     "syncS3Bucket": "Bucket",
+    "syncS3RemoteRoot": "Sync Folder",
+    "syncS3RemoteRootDesc": "Choose the folder prefix inside this bucket. Nested paths are supported, for example apps/readany.",
     "syncS3AccessKeyId": "Access Key ID",
     "syncS3SecretAccessKey": "Secret Access Key",
     "syncS3PathStyle": "Use path-style URL",

@@ -309,6 +309,8 @@
     "syncS3Endpoint": "Point de terminaison du service",
     "syncS3Region": "Région",
     "syncS3Bucket": "Bucket",
+    "syncS3RemoteRoot": "Dossier de synchronisation",
+    "syncS3RemoteRootDesc": "Choisissez le préfixe de dossier dans ce bucket. Les chemins imbriqués sont pris en charge, par exemple apps/readany.",
     "syncS3AccessKeyId": "Clé d'accès (Access Key ID)",
     "syncS3SecretAccessKey": "Clé secrète (Secret Access Key)",
     "syncS3PathStyle": "Utiliser une URL de style chemin",

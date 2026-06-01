@@ -312,6 +312,8 @@
     "syncS3Endpoint": "服务端点",
     "syncS3Region": "区域",
     "syncS3Bucket": "存储桶",
+    "syncS3RemoteRoot": "同步目录",
+    "syncS3RemoteRootDesc": "选择这个存储桶内的同步目录前缀，支持多级路径，例如 apps/readany。",
     "syncS3AccessKeyId": "Access Key ID",
     "syncS3SecretAccessKey": "Secret Access Key",
     "syncS3PathStyle": "使用路径样式 URL",

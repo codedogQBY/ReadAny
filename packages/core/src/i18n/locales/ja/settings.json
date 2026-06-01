@@ -309,6 +309,8 @@
     "syncS3Endpoint": "サービスエンドポイント",
     "syncS3Region": "リージョン",
     "syncS3Bucket": "バケット",
+    "syncS3RemoteRoot": "同期フォルダ",
+    "syncS3RemoteRootDesc": "このバケット内のフォルダプレフィックスを選択します。apps/readany のような階層パスにも対応しています。",
     "syncS3AccessKeyId": "アクセスキーID",
     "syncS3SecretAccessKey": "シークレットアクセスキー",
     "syncS3PathStyle": "パススタイルURLを使用",

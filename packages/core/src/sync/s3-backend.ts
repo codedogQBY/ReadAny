@@ -16,7 +16,13 @@ import {
 import { HttpResponse } from "@smithy/protocol-http";
 import { buildQueryString } from "@smithy/querystring-builder";
 import { getPlatformService } from "../services/platform";
-import type { ISyncBackend, RemoteFile, S3Config } from "./sync-backend";
+import { normalizeS3Key, s3KeyToLogicalPath, sanitizeS3RemoteRoot } from "./s3-paths";
+import {
+  DEFAULT_S3_REMOTE_ROOT,
+  type ISyncBackend,
+  type RemoteFile,
+  type S3Config,
+} from "./sync-backend";
 
 type SmithyHttpRequest = {
   protocol: string;
@@ -62,7 +68,10 @@ class PlatformFetchHttpHandler {
     const response = await platform.fetch(url, {
       method: request.method,
       headers: request.headers,
-      body: request.method === "GET" || request.method === "HEAD" ? undefined : (request.body ?? undefined),
+      body:
+        request.method === "GET" || request.method === "HEAD"
+          ? undefined
+          : (request.body ?? undefined),
     });
 
     const transformedHeaders: Record<string, string> = {};
@@ -121,9 +130,15 @@ export class S3Backend implements ISyncBackend {
   readonly type = "s3" as const;
   private client: S3Client;
   private config: S3Config;
+  private remoteRoot: string;
 
   constructor(config: S3Config, secretAccessKey: string) {
-    this.config = config;
+    this.remoteRoot =
+      sanitizeS3RemoteRoot(config.remoteRoot ?? DEFAULT_S3_REMOTE_ROOT) || DEFAULT_S3_REMOTE_ROOT;
+    this.config = {
+      ...config,
+      remoteRoot: this.remoteRoot,
+    };
     let requestHandler: PlatformFetchHttpHandler | undefined;
     try {
       const platform = getPlatformService();
@@ -161,6 +176,7 @@ export class S3Backend implements ISyncBackend {
         new ListObjectsV2Command({
           Bucket: this.config.bucket,
           MaxKeys: 1,
+          Prefix: `${this.remoteRoot}/`,
         }),
       );
       return true;
@@ -195,7 +211,7 @@ export class S3Backend implements ISyncBackend {
         new ListObjectsV2Command({
           Bucket: this.config.bucket,
           MaxKeys: 1,
-          Prefix: "readany/",
+          Prefix: `${this.remoteRoot}/`,
         }),
       );
     } catch (e) {
@@ -260,7 +276,8 @@ export class S3Backend implements ISyncBackend {
 
   async listDir(path: string): Promise<RemoteFile[]> {
     let prefix = this.normalizePath(path);
-    if (!prefix.endsWith("/")) prefix = prefix + "/";
+    if (!prefix.endsWith("/")) prefix = `${prefix}/`;
+    const logicalPrefix = this.toLogicalPath(prefix);
     const files: RemoteFile[] = [];
     let continuationToken: string | undefined;
 
@@ -280,7 +297,7 @@ export class S3Backend implements ISyncBackend {
         const name = cp.Prefix.replace(/\/$/, "").split("/").pop() || cp.Prefix;
         files.push({
           name,
-          path: cp.Prefix,
+          path: this.toLogicalPath(cp.Prefix),
           size: 0,
           lastModified: 0,
           isDirectory: true,
@@ -294,7 +311,7 @@ export class S3Backend implements ISyncBackend {
         if (!name || name.includes("/")) continue; // safety against deeper entries
         files.push({
           name,
-          path: object.Key,
+          path: `${logicalPrefix.replace(/\/$/, "")}/${name}`,
           size: object.Size ?? 0,
           lastModified: object.LastModified?.getTime() ?? 0,
           isDirectory: false,
@@ -362,15 +379,14 @@ export class S3Backend implements ISyncBackend {
 
   /**
    * Normalize path for S3 key.
-   * Removes leading slash and ensures consistent format.
+   * Maps ReadAny logical paths (/readany/...) into the configured S3 prefix.
    */
   private normalizePath(path: string): string {
-    // Remove leading slash and "readany" prefix if present
-    let normalized = path.replace(/^\//, "");
-    if (!normalized.startsWith("readany/")) {
-      normalized = `readany/${normalized}`;
-    }
-    return normalized;
+    return normalizeS3Key(this.remoteRoot, path);
+  }
+
+  private toLogicalPath(key: string): string {
+    return s3KeyToLogicalPath(this.remoteRoot, key);
   }
 }
 
