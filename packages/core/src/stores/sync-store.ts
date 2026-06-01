@@ -158,7 +158,10 @@ export interface SyncState {
     useIncremental?: boolean,
   ) => Promise<SyncResult | null>;
   /** New simplified sync (JSON-based, no full db file sync) */
-  syncSimple: (backend: ISyncBackend) => Promise<SyncResult | null>;
+  syncSimple: (
+    backend: ISyncBackend,
+    resolvedDirection?: "upload" | "download",
+  ) => Promise<SyncResult | null>;
   forceFullSync: (direction: "upload" | "download") => Promise<SyncResult | null>;
   setAutoSync: (enabled: boolean) => Promise<void>;
   setSyncIntervalMins: (minutes: number) => Promise<void>;
@@ -345,7 +348,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     }
   },
 
-  syncNow: async (_resolvedDirection, _useIncremental) => {
+  syncNow: async (resolvedDirection, _useIncremental) => {
     const currentState = get();
     if (currentState.status !== "idle" && currentState.status !== "error") {
       return activeSyncPromise;
@@ -412,7 +415,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
         set({ error: null });
 
-        const result = await get().syncSimple(backend);
+        const result = await get().syncSimple(backend, resolvedDirection);
         if (!result) {
           set({ status: "idle", progress: null, pendingDirection: null });
         } else {
@@ -444,7 +447,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     });
   },
 
-  syncWithBackend: async (backend, _resolvedDirection, _useIncremental = true) => {
+  syncWithBackend: async (backend, resolvedDirection, _useIncremental = true) => {
     const state = get();
     if (state.status !== "idle" && state.status !== "error") {
       return activeSyncPromise;
@@ -454,7 +457,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       try {
         await flushPendingReadingSession();
         set({ status: "checking", error: null, pendingDirection: null });
-        const result = await get().syncSimple(backend);
+        const result = await get().syncSimple(backend, resolvedDirection);
         if (!result) {
           set({ status: "idle", progress: null, pendingDirection: null });
         } else {
@@ -486,7 +489,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     });
   },
 
-  syncSimple: async (backend: ISyncBackend) => {
+  syncSimple: async (backend: ISyncBackend, resolvedDirection?: "upload" | "download") => {
     const state = get();
     // syncSimple is usually entered right after a successful connection check,
     // so allow both "idle" and "checking" as valid entry states.
@@ -497,13 +500,30 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     try {
       const { runSimpleSync } = await import("../sync/simple-sync");
 
-      const receiveOnly = backend.type === "lan";
+      const receiveOnly = backend.type === "lan" || resolvedDirection === "download";
+      const uploadOnly = resolvedDirection === "upload";
       const result = await runSimpleSync(
         backend,
         (progress) => {
           set({ progress });
         },
-        receiveOnly ? { receiveOnly: true } : undefined,
+        receiveOnly
+          ? {
+              receiveOnly: true,
+              forceApply: true,
+              fileSyncOptions: {
+                downloadRemoteBooks: true,
+                disableUploads: true,
+                disableRemoteDeletes: true,
+              },
+            }
+          : uploadOnly
+            ? {
+                fileSyncOptions: {
+                  forceUploadAll: true,
+                },
+              }
+            : undefined,
       );
 
       if (result.success) {

@@ -491,13 +491,21 @@ async function listRemoteDeviceFiles(
 ): Promise<{ deviceId: string; path: string }[]> {
   try {
     const files = await backend.listDir(SYNC_DIR);
-    return files
+    const deviceFiles = files
       .filter((f) => !f.isDirectory && f.name.startsWith("device-") && f.name.endsWith(".json"))
       .map((f) => ({
         deviceId: f.name.replace(/^device-/, "").replace(/\.json$/, ""),
         path: f.path || `${SYNC_DIR}/${f.name}`,
       }));
-  } catch {
+
+    console.log(
+      `[SimpleSync] Remote sync dir listed ${files.length} item(s), ${deviceFiles.length} device snapshot candidate(s)`,
+    );
+    return deviceFiles;
+  } catch (error) {
+    console.warn(
+      `[SimpleSync] Failed to list remote device snapshots: ${error instanceof Error ? error.message : String(error)}`,
+    );
     return [];
   }
 }

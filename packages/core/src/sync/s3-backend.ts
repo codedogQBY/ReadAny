@@ -38,6 +38,25 @@ type SmithyHttpRequest = {
   body?: BodyInit | null;
 };
 
+function toTimestampMs(value: unknown): number {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
+function toContentSize(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
 /**
  * Desktop-only request handler that routes AWS SDK traffic through the platform
  * fetch implementation. In Tauri this uses plugin-http, which avoids webview
@@ -278,6 +297,28 @@ export class S3Backend implements ISyncBackend {
     let prefix = this.normalizePath(path);
     if (!prefix.endsWith("/")) prefix = `${prefix}/`;
     const logicalPrefix = this.toLogicalPath(prefix);
+    console.log(`[S3Backend] LIST ${path} -> prefix "${prefix}"`);
+
+    const files = await this.listObjectsAtPrefix(prefix, logicalPrefix, "/");
+    if (files.length > 0) {
+      console.log(`[S3Backend] LIST ${path} found ${files.length} item(s)`);
+      return files;
+    }
+
+    const flatFiles = await this.listObjectsAtPrefix(prefix, logicalPrefix);
+    if (flatFiles.length > 0) {
+      console.log(`[S3Backend] LIST ${path} flat fallback found ${flatFiles.length} item(s)`);
+    } else {
+      console.log(`[S3Backend] LIST ${path} found 0 item(s)`);
+    }
+    return flatFiles;
+  }
+
+  private async listObjectsAtPrefix(
+    prefix: string,
+    logicalPrefix: string,
+    delimiter?: string,
+  ): Promise<RemoteFile[]> {
     const files: RemoteFile[] = [];
     let continuationToken: string | undefined;
 
@@ -286,7 +327,7 @@ export class S3Backend implements ISyncBackend {
         new ListObjectsV2Command({
           Bucket: this.config.bucket,
           Prefix: prefix,
-          Delimiter: "/",
+          Delimiter: delimiter,
           ContinuationToken: continuationToken,
         }),
       );
@@ -312,8 +353,8 @@ export class S3Backend implements ISyncBackend {
         files.push({
           name,
           path: `${logicalPrefix.replace(/\/$/, "")}/${name}`,
-          size: object.Size ?? 0,
-          lastModified: object.LastModified?.getTime() ?? 0,
+          size: toContentSize(object.Size),
+          lastModified: toTimestampMs(object.LastModified),
           isDirectory: false,
         });
       }
