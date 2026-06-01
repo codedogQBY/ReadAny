@@ -166,4 +166,35 @@ describe("s3-backend path helpers", () => {
     expect((send.mock.calls[4]?.[0] as ListObjectsV2Command).input.Prefix).toBe("apps/readany/");
     expect((send.mock.calls[4]?.[0] as ListObjectsV2Command).input.Delimiter).toBeUndefined();
   });
+
+  it("continues S3 list fallbacks after a provider-specific list error", async () => {
+    const backend = createBackend();
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({ Contents: [] })
+      .mockResolvedValueOnce({ Contents: [] })
+      .mockRejectedValueOnce(new Error("The specified key does not exist"))
+      .mockRejectedValueOnce(new Error("The specified key does not exist"))
+      .mockResolvedValueOnce({
+        Contents: [
+          { Key: "apps/readany/data/file-manifest.json", Size: 100 },
+          { Key: "apps/readany/sync/device-remote.json", Size: 13 },
+        ],
+      });
+    Object.assign(backend as unknown as { client: { send: typeof send } }, { client: { send } });
+
+    await expect(backend.listDir("/readany/sync")).resolves.toEqual([
+      {
+        name: "device-remote.json",
+        path: "/readany/sync/device-remote.json",
+        size: 13,
+        lastModified: 0,
+        isDirectory: false,
+      },
+    ]);
+
+    expect(send).toHaveBeenCalledTimes(5);
+    expect((send.mock.calls[4]?.[0] as ListObjectsV2Command).input.Prefix).toBe("apps/readany/");
+    expect((send.mock.calls[4]?.[0] as ListObjectsV2Command).input.Delimiter).toBeUndefined();
+  });
 });

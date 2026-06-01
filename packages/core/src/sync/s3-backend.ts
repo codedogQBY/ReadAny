@@ -308,7 +308,8 @@ export class S3Backend implements ISyncBackend {
     console.log(`[S3Backend] LIST ${path} -> prefix "${prefix}"`);
 
     for (const mode of ["v2-delimiter", "v2-flat", "v1-delimiter", "v1-flat"] as const) {
-      const files = await this.listObjectsAtPrefix(prefix, {
+      const files = await this.tryListObjectsAtPrefix(path, prefix, {
+        label: mode,
         version: mode.startsWith("v1") ? "v1" : "v2",
         delimiter: mode.endsWith("delimiter") ? "/" : undefined,
       });
@@ -321,7 +322,8 @@ export class S3Backend implements ISyncBackend {
     const parentPrefix = this.getParentPrefix(prefix);
     if (parentPrefix && parentPrefix !== prefix) {
       for (const version of ["v2", "v1"] as const) {
-        const parentFiles = await this.listObjectsAtPrefix(parentPrefix, {
+        const parentFiles = await this.tryListObjectsAtPrefix(path, parentPrefix, {
+          label: `${version} parent-prefix fallback`,
           version,
           childPrefix: prefix,
         });
@@ -336,6 +338,29 @@ export class S3Backend implements ISyncBackend {
 
     console.log(`[S3Backend] LIST ${path} found 0 item(s)`);
     return [];
+  }
+
+  private async tryListObjectsAtPrefix(
+    path: string,
+    prefix: string,
+    options: {
+      label: string;
+      version: "v1" | "v2";
+      delimiter?: string;
+      childPrefix?: string;
+    },
+  ): Promise<RemoteFile[]> {
+    const { label, ...listOptions } = options;
+    try {
+      return await this.listObjectsAtPrefix(prefix, listOptions);
+    } catch (error) {
+      console.warn(
+        `[S3Backend] LIST ${path} ${label} failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return [];
+    }
   }
 
   private async listObjectsAtPrefix(
