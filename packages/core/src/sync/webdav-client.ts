@@ -3,21 +3,28 @@
  * WebDAV is HTTP with custom methods (PROPFIND, MKCOL, PUT, GET, DELETE).
  */
 
+// React Native/Metro cannot resolve the Node `node:buffer` protocol import.
+// biome-ignore lint/style/useNodejsImportProtocol: Expo needs the buffer polyfill package name.
 import { Buffer } from "buffer";
 import i18n from "../i18n";
 import { getPlatformService } from "../services/platform";
 import type { DavResource } from "./sync-types";
 
+function stripControlChars(value: string): string {
+  return Array.from(value)
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return (code >= 0x20 && code !== 0x7f) || code > 0x7f;
+    })
+    .join("");
+}
+
 export function sanitizeWebDavUrl(url: string): string {
-  return url
-    .replace(/[\u0000-\u001F\u007F]/g, "")
-    .trim()
-    .replace(/\/+$/, "");
+  return stripControlChars(url).trim().replace(/\/+$/, "");
 }
 
 export function sanitizeWebDavRemoteRoot(remoteRoot: string): string {
-  const normalized = remoteRoot
-    .replace(/[\u0000-\u001F\u007F]/g, "")
+  const normalized = stripControlChars(remoteRoot)
     .trim()
     .replace(/^\/+|\/+$/g, "")
     .replace(/\/{2,}/g, "/")
@@ -27,6 +34,7 @@ export function sanitizeWebDavRemoteRoot(remoteRoot: string): string {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const TRANSFER_TIMEOUT_MS = 300_000;
+const DIRECTORY_PROBE_TIMEOUT_MS = 5_000;
 
 /**
  * Retry policy for transient HTTP failures (401-after-auth, 429, 5xx).
@@ -78,6 +86,11 @@ export class WebDavError extends Error {
 
 function summarizeStatus(status: number, statusText?: string): string {
   return [status, statusText?.trim()].filter(Boolean).join(" ");
+}
+
+function toCollectionPath(path: string): string {
+  if (path === "/") return "/";
+  return path.endsWith("/") ? path : `${path}/`;
 }
 
 function createHttpWebDavError(
@@ -389,7 +402,17 @@ export class WebDavClient {
 
   /** Create a directory (MKCOL) */
   async mkcol(path: string): Promise<void> {
-    const resp = await this.request("MKCOL", path);
+    const collectionPath = toCollectionPath(path);
+    let resp: Response;
+    try {
+      resp = await this.request("MKCOL", collectionPath);
+    } catch (e) {
+      if (await this.propfindExists(collectionPath, { timeoutMs: DIRECTORY_PROBE_TIMEOUT_MS })) {
+        console.warn(`[WebDAV] MKCOL ${path} failed but directory exists; continuing`);
+        return;
+      }
+      throw e;
+    }
     const status = resp.status;
     if (resp.ok || status === 201) {
       return;
@@ -406,6 +429,13 @@ export class WebDavClient {
     let current = "";
     for (const segment of segments) {
       current += `/${segment}`;
+      if (
+        await this.propfindExists(toCollectionPath(current), {
+          timeoutMs: DIRECTORY_PROBE_TIMEOUT_MS,
+        })
+      ) {
+        continue;
+      }
       try {
         await this.mkcol(current);
       } catch (e: unknown) {
@@ -617,12 +647,13 @@ export class WebDavClient {
   }
 
   /** PROPFIND Depth 0 to check if a resource exists */
-  private async propfindExists(path: string): Promise<boolean> {
+  private async propfindExists(path: string, options?: { timeoutMs?: number }): Promise<boolean> {
     try {
       const resp = await this.request("PROPFIND", path, {
         headers: { Depth: "0" },
         body: '<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:prop><D:resourcetype/></D:prop></D:propfind>',
         contentType: "application/xml",
+        timeoutMs: options?.timeoutMs,
       });
       return resp.ok || resp.status === 207;
     } catch {
@@ -649,12 +680,13 @@ export class WebDavClient {
 
   /** Safely list directory, create if not exists */
   async safeReadDir(path: string): Promise<DavResource[]> {
+    const collectionPath = toCollectionPath(path);
     try {
-      return await this.propfind(path);
+      return await this.propfind(collectionPath);
     } catch (e: unknown) {
       const err = e as { message?: string };
       if (err.message?.includes("404")) {
-        await this.ensureDirectory(path);
+        await this.ensureDirectory(collectionPath);
         return [];
       }
       throw e;
