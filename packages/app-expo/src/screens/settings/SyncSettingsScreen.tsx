@@ -66,6 +66,7 @@ export default function SyncSettingsScreen() {
     progress,
     pendingDirection,
     loadConfig,
+    loadBackendConfig,
     testWebDavConnection,
     saveWebDavConfig,
     testS3Connection,
@@ -156,6 +157,43 @@ export default function SyncSettingsScreen() {
       }
     }
   }, [config]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const platform = getPlatformService();
+
+    if (selectedBackend === "webdav") {
+      loadBackendConfig("webdav").then((savedConfig) => {
+        if (cancelled || savedConfig?.type !== "webdav") return;
+        setUrl(savedConfig.url);
+        setUsername(savedConfig.username);
+        setRemoteRoot(savedConfig.remoteRoot ?? "readany");
+        setAllowInsecure(savedConfig.allowInsecure ?? false);
+        setSyncIntervalInput(String(savedConfig.syncIntervalMins ?? 30));
+        platform.kvGetItem(SYNC_SECRET_KEYS.webdav).then((pw) => {
+          if (!cancelled && pw) setPassword(pw);
+        });
+      });
+    } else if (selectedBackend === "s3") {
+      loadBackendConfig("s3").then((savedConfig) => {
+        if (cancelled || savedConfig?.type !== "s3") return;
+        setS3Endpoint(savedConfig.endpoint);
+        setS3Region(savedConfig.region);
+        setS3Bucket(savedConfig.bucket);
+        setS3RemoteRoot(savedConfig.remoteRoot ?? "readany");
+        setS3AccessKeyId(savedConfig.accessKeyId);
+        setS3PathStyle(savedConfig.pathStyle ?? false);
+        setSyncIntervalInput(String(savedConfig.syncIntervalMins ?? 30));
+        platform.kvGetItem(SYNC_SECRET_KEYS.s3).then((key) => {
+          if (!cancelled && key) setS3SecretAccessKey(key);
+        });
+      });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedBackend, loadBackendConfig]);
 
   const handleTest = useCallback(async () => {
     setTesting(true);

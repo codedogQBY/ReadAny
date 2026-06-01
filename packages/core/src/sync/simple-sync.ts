@@ -63,10 +63,23 @@ const SYNC_TABLES: SyncTableConfig[] = [
 
 /** Remote directory for per-device sync files */
 const SYNC_DIR = "/readany/sync";
+const SYNC_INDEX_PATH = `${SYNC_DIR}/index.json`;
 
 /** Build the remote path for a device's changeset file */
 function deviceSyncPath(deviceId: string): string {
   return `${SYNC_DIR}/device-${deviceId}.json`;
+}
+
+interface DeviceSyncIndex {
+  version: 1;
+  updatedAt: number;
+  devices: Record<
+    string,
+    {
+      path: string;
+      timestamp: number;
+    }
+  >;
 }
 
 const DB_LOCK_MAX_RETRIES = 6;
@@ -486,9 +499,36 @@ async function loadExistingRecordStates(
 // Remote file helpers
 // ---------------------------------------------------------------------------
 
+async function loadDeviceSyncIndex(backend: ISyncBackend): Promise<DeviceSyncIndex | null> {
+  try {
+    const index = await backend.getJSON<DeviceSyncIndex>(SYNC_INDEX_PATH);
+    if (!index || index.version !== 1 || !index.devices || typeof index.devices !== "object") {
+      return null;
+    }
+    return index;
+  } catch (error) {
+    console.warn(
+      `[SimpleSync] Failed to load remote device index: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return null;
+  }
+}
+
 async function listRemoteDeviceFiles(
   backend: ISyncBackend,
 ): Promise<{ deviceId: string; path: string }[]> {
+  const deviceFilesById = new Map<string, { deviceId: string; path: string }>();
+  const index = await loadDeviceSyncIndex(backend);
+  if (index) {
+    for (const [deviceId, entry] of Object.entries(index.devices)) {
+      if (!entry?.path) continue;
+      deviceFilesById.set(deviceId, { deviceId, path: entry.path });
+    }
+    console.log(
+      `[SimpleSync] Remote device index listed ${deviceFilesById.size} device snapshot candidate(s)`,
+    );
+  }
+
   try {
     const files = await backend.listDir(SYNC_DIR);
     const deviceFiles = files
@@ -497,16 +537,50 @@ async function listRemoteDeviceFiles(
         deviceId: f.name.replace(/^device-/, "").replace(/\.json$/, ""),
         path: f.path || `${SYNC_DIR}/${f.name}`,
       }));
+    for (const file of deviceFiles) {
+      deviceFilesById.set(file.deviceId, file);
+    }
 
     console.log(
       `[SimpleSync] Remote sync dir listed ${files.length} item(s), ${deviceFiles.length} device snapshot candidate(s)`,
     );
-    return deviceFiles;
   } catch (error) {
     console.warn(
       `[SimpleSync] Failed to list remote device snapshots: ${error instanceof Error ? error.message : String(error)}`,
     );
-    return [];
+  }
+
+  return [...deviceFilesById.values()];
+}
+
+async function saveDeviceSnapshot(
+  backend: ISyncBackend,
+  deviceId: string,
+  payload: DeviceSyncPayload,
+): Promise<void> {
+  const path = deviceSyncPath(deviceId);
+  await backend.putJSON(path, payload);
+  try {
+    const existingIndex = await loadDeviceSyncIndex(backend);
+    const nextIndex: DeviceSyncIndex = {
+      version: 1,
+      updatedAt: Date.now(),
+      devices: {
+        ...(existingIndex?.devices ?? {}),
+        [deviceId]: {
+          path,
+          timestamp: payload.timestamp,
+        },
+      },
+    };
+    await backend.putJSON(SYNC_INDEX_PATH, nextIndex);
+    console.log(
+      `[SimpleSync] Updated remote device index with ${Object.keys(nextIndex.devices).length} device(s)`,
+    );
+  } catch (error) {
+    console.warn(
+      `[SimpleSync] Failed to update remote device index (non-fatal): ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -647,7 +721,7 @@ export async function runSimpleSync(
             totalFiles: 0,
             message: `上传 ${changeCount + totalApplied} 条变更...`,
           });
-          await backend.putJSON(deviceSyncPath(localDeviceId), await getSnapshotPayload());
+          await saveDeviceSnapshot(backend, localDeviceId, await getSnapshotPayload());
         } else {
           // Keep a full snapshot on the server so devices that sync later can still
           // bootstrap from this device even when there are no new local changes.
@@ -655,7 +729,7 @@ export async function runSimpleSync(
             .getJSON<DeviceSyncPayload>(deviceSyncPath(localDeviceId))
             .catch(() => null);
           if (!existing || now - existing.timestamp > 5 * 60 * 1000) {
-            await backend.putJSON(deviceSyncPath(localDeviceId), await getSnapshotPayload());
+            await saveDeviceSnapshot(backend, localDeviceId, await getSnapshotPayload());
           }
         }
       } catch (e) {
@@ -673,7 +747,7 @@ export async function runSimpleSync(
       });
       try {
         const snapshotPayload = await collectChanges(0);
-        await backend.putJSON(deviceSyncPath(localDeviceId), snapshotPayload);
+        await saveDeviceSnapshot(backend, localDeviceId, snapshotPayload);
         console.log("[SimpleSync] Uploaded merged snapshot after receive-only sync");
       } catch (e) {
         console.warn("[SimpleSync] Failed to upload merged snapshot (non-fatal):", e);

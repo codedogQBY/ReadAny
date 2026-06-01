@@ -247,6 +247,56 @@ describe("useSyncStore", () => {
     });
   });
 
+  it("keeps WebDAV and S3 configs in separate persisted slots", async () => {
+    const storage = new Map<string, string>();
+    mockPlatformService.kvGetItem.mockImplementation(
+      async (key: string) => storage.get(key) ?? null,
+    );
+    mockPlatformService.kvSetItem.mockImplementation(async (key: string, value: string) => {
+      storage.set(key, value);
+    });
+
+    await useSyncStore
+      .getState()
+      .saveWebDavConfig("https://dav.example.com/root", "alice", "webdav-secret", true, "dav-root");
+    await useSyncStore.getState().saveS3Config(
+      {
+        endpoint: "https://s3.example.com",
+        region: "auto",
+        bucket: "readany",
+        remoteRoot: "s3-root",
+        accessKeyId: "access-key",
+        pathStyle: true,
+      },
+      "s3-secret",
+    );
+
+    expect(JSON.parse(storage.get("sync_webdav_config") ?? "{}")).toMatchObject({
+      type: "webdav",
+      url: "https://dav.example.com/root",
+      username: "alice",
+      remoteRoot: "dav-root",
+      allowInsecure: true,
+    });
+    expect(JSON.parse(storage.get("sync_s3_config") ?? "{}")).toMatchObject({
+      type: "s3",
+      endpoint: "https://s3.example.com",
+      bucket: "readany",
+      remoteRoot: "s3-root",
+      accessKeyId: "access-key",
+      pathStyle: true,
+    });
+    expect(storage.get("sync_active_backend")).toBe("s3");
+
+    const savedWebDav = await useSyncStore.getState().loadBackendConfig("webdav");
+    expect(savedWebDav).toMatchObject({
+      type: "webdav",
+      url: "https://dav.example.com/root",
+      username: "alice",
+      remoteRoot: "dav-root",
+    });
+  });
+
   it("sanitizes persisted WebDAV URL when loading config", async () => {
     mockPlatformService.kvGetItem.mockImplementation(async (key: string) => {
       if (key === "sync_config") {

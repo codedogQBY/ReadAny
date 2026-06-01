@@ -139,3 +139,12 @@ export const SYNC_SECRET_KEYS = {
 
 /** Configuration storage key */
 export const SYNC_CONFIG_KEY = "sync_config";
+
+/** Active backend storage key. Backend configs are persisted separately so switching providers keeps prior settings. */
+export const SYNC_ACTIVE_BACKEND_KEY = "sync_active_backend";
+
+/** Per-backend configuration storage keys. */
+export const SYNC_BACKEND_CONFIG_KEYS = {
+  webdav: "sync_webdav_config",
+  s3: "sync_s3_config",
+} as const;

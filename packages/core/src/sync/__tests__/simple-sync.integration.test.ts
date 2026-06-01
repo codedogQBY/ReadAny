@@ -612,6 +612,55 @@ describe("simple sync convergence", () => {
     expect(deviceB.get("books", "book-1")).toBeTruthy();
   });
 
+  it("downloads remote snapshots from the device index when directory listing is empty", async () => {
+    class EmptyListBackend extends MemoryBackend {
+      async listDir(): Promise<RemoteFile[]> {
+        return [];
+      }
+    }
+
+    const backend = new EmptyListBackend();
+    const deviceB = new FakeSyncDb();
+
+    backend.jsonFiles.set("/readany/sync/index.json", {
+      version: 1,
+      updatedAt: 1000,
+      devices: {
+        "device-a": {
+          path: "/readany/sync/device-a.json",
+          timestamp: 1000,
+        },
+      },
+    });
+    backend.jsonFiles.set("/readany/sync/device-a.json", {
+      deviceId: "device-a",
+      timestamp: 1000,
+      since: 0,
+      tables: {
+        books: {
+          records: [bookRow({ updated_at: 1000 })],
+          deletedIds: [],
+        },
+      },
+    });
+
+    now = 3000;
+    const result = await syncDevice("device-b", deviceB, backend);
+
+    expect(result.success).toBe(true);
+    expect(deviceB.get("books", "book-1")).toBeTruthy();
+    expect(backend.jsonFiles.get("/readany/sync/index.json")).toMatchObject({
+      devices: {
+        "device-a": {
+          path: "/readany/sync/device-a.json",
+        },
+        "device-b": {
+          path: "/readany/sync/device-device-b.json",
+        },
+      },
+    });
+  });
+
   it("skips unreadable remote device snapshots and continues syncing", async () => {
     const backend = new MemoryBackend();
     const local = new FakeSyncDb();

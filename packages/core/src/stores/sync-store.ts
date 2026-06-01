@@ -13,6 +13,8 @@ import {
   DEFAULT_S3_REMOTE_ROOT,
   DEFAULT_SYNC_CONFIG,
   DEFAULT_WEBDAV_REMOTE_ROOT,
+  SYNC_ACTIVE_BACKEND_KEY,
+  SYNC_BACKEND_CONFIG_KEYS,
   SYNC_CONFIG_KEY,
   SYNC_SECRET_KEYS,
 } from "../sync/sync-backend";
@@ -113,6 +115,7 @@ export interface SyncState {
 
   // Actions
   loadConfig: () => Promise<void>;
+  loadBackendConfig: (type: "webdav" | "s3") => Promise<SyncConfig | null>;
 
   // WebDAV actions
   saveWebDavConfig: (
@@ -191,6 +194,94 @@ function normalizeSyncConfig(config: SyncConfig): SyncConfig {
   return config;
 }
 
+function isPersistableBackendType(value: unknown): value is "webdav" | "s3" {
+  return value === "webdav" || value === "s3";
+}
+
+function withDefaultSyncConfig(config: SyncConfig): SyncConfig {
+  return config.type === "webdav" || config.type === "s3"
+    ? ({ ...DEFAULT_SYNC_CONFIG, ...config } as SyncConfig)
+    : config;
+}
+
+async function loadStoredBackendConfig(type: "webdav" | "s3"): Promise<SyncConfig | null> {
+  const platform = getPlatformService();
+  const raw = await platform.kvGetItem(SYNC_BACKEND_CONFIG_KEYS[type]);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as SyncConfig;
+    if (parsed.type !== type) return null;
+    return withDefaultSyncConfig(normalizeSyncConfig(parsed));
+  } catch (error) {
+    console.warn(`[SyncStore] Ignoring invalid stored ${type} config:`, error);
+    return null;
+  }
+}
+
+async function persistBackendConfig(config: WebDavConfig | S3Config): Promise<void> {
+  const platform = getPlatformService();
+  const normalizedConfig = normalizeSyncConfig(config) as WebDavConfig | S3Config;
+  const serialized = JSON.stringify(normalizedConfig);
+  await platform.kvSetItem(SYNC_BACKEND_CONFIG_KEYS[normalizedConfig.type], serialized);
+  await platform.kvSetItem(SYNC_ACTIVE_BACKEND_KEY, normalizedConfig.type);
+  // Keep the legacy key as an active-config mirror for older builds and migration.
+  await platform.kvSetItem(SYNC_CONFIG_KEY, serialized);
+}
+
+async function migrateLegacySyncConfig(): Promise<{
+  activeType: "webdav" | "s3" | null;
+  activeConfig: SyncConfig | null;
+}> {
+  const platform = getPlatformService();
+  const activeTypeRaw = await platform.kvGetItem(SYNC_ACTIVE_BACKEND_KEY);
+  const legacyConfigStr = await platform.kvGetItem(SYNC_CONFIG_KEY);
+  console.log(
+    `[SyncStore] loadConfig: activeBackend = ${activeTypeRaw ?? "none"}, legacyConfig = ${
+      legacyConfigStr ? "found" : "not found"
+    }`,
+  );
+
+  let legacyConfig: SyncConfig | null = null;
+  if (legacyConfigStr) {
+    legacyConfig = withDefaultSyncConfig(
+      normalizeSyncConfig(JSON.parse(legacyConfigStr) as SyncConfig),
+    );
+    if (legacyConfig.type === "webdav" || legacyConfig.type === "s3") {
+      const backendKey = SYNC_BACKEND_CONFIG_KEYS[legacyConfig.type];
+      const existingBackendConfig = await platform.kvGetItem(backendKey);
+      if (!existingBackendConfig) {
+        await platform.kvSetItem(backendKey, JSON.stringify(legacyConfig));
+      }
+      if (!isPersistableBackendType(activeTypeRaw)) {
+        await platform.kvSetItem(SYNC_ACTIVE_BACKEND_KEY, legacyConfig.type);
+      }
+    }
+  }
+
+  const activeType = isPersistableBackendType(activeTypeRaw)
+    ? activeTypeRaw
+    : legacyConfig?.type === "webdav" || legacyConfig?.type === "s3"
+      ? legacyConfig.type
+      : null;
+  if (!activeType) return { activeType: null, activeConfig: null };
+
+  const activeConfig =
+    (await loadStoredBackendConfig(activeType)) ??
+    (legacyConfig?.type === activeType ? legacyConfig : null);
+  return { activeType, activeConfig };
+}
+
+async function persistCurrentConfigUpdate(config: SyncConfig): Promise<void> {
+  if (config.type !== "webdav" && config.type !== "s3") return;
+  await persistBackendConfig(config);
+}
+
+async function getExistingBackendConfig(type: "webdav" | "s3"): Promise<SyncConfig | null> {
+  const current = useSyncStore.getState().config;
+  if (current?.type === type) return current;
+  return loadStoredBackendConfig(type);
+}
+
 export const useSyncStore = create<SyncState>((set, get) => ({
   config: null,
   isConfigured: false,
@@ -204,19 +295,11 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
   loadConfig: async () => {
     try {
-      const platform = getPlatformService();
-      const configStr = await platform.kvGetItem(SYNC_CONFIG_KEY);
-      console.log(`[SyncStore] loadConfig: configStr = ${configStr ? "found" : "not found"}`);
-      if (configStr) {
-        const parsedConfig = JSON.parse(configStr) as SyncConfig;
-        const normalizedConfig = normalizeSyncConfig(parsedConfig);
-        if (JSON.stringify(parsedConfig) !== JSON.stringify(normalizedConfig)) {
-          await platform.kvSetItem(SYNC_CONFIG_KEY, JSON.stringify(normalizedConfig));
-        }
-        const config =
-          normalizedConfig.type === "webdav" || normalizedConfig.type === "s3"
-            ? ({ ...DEFAULT_SYNC_CONFIG, ...normalizedConfig } as SyncConfig)
-            : normalizedConfig;
+      const { activeConfig } = await migrateLegacySyncConfig();
+      if (activeConfig) {
+        const config = activeConfig;
+        await persistCurrentConfigUpdate(config);
+        const platform = getPlatformService();
         const secretKey = config.type !== "lan" ? getSecretKeyForBackend(config.type) : null;
         const secret = secretKey ? await platform.kvGetItem(secretKey) : null;
         console.log(`[SyncStore] loadConfig: secret = ${secret ? "found" : "not found"}`);
@@ -253,9 +336,18 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     }
   },
 
+  loadBackendConfig: async (type) => {
+    try {
+      return await loadStoredBackendConfig(type);
+    } catch (error) {
+      console.warn(`[SyncStore] Failed to load ${type} config:`, error);
+      return null;
+    }
+  },
+
   saveWebDavConfig: async (url, username, password, allowInsecure, remoteRoot) => {
     const platform = getPlatformService();
-    const existing = get().config;
+    const existing = await getExistingBackendConfig("webdav");
     const config: WebDavConfig = {
       type: "webdav",
       url: sanitizeWebDavUrl(url),
@@ -273,7 +365,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         (existing as WebDavConfig)?.notifyOnComplete ?? DEFAULT_SYNC_CONFIG.notifyOnComplete,
     };
     console.log("[SyncStore] saveWebDavConfig: saving config...");
-    await platform.kvSetItem(SYNC_CONFIG_KEY, JSON.stringify(config));
+    await persistBackendConfig(config);
     await platform.kvSetItem(SYNC_SECRET_KEYS.webdav, password);
 
     // Verify save
@@ -307,7 +399,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
   saveS3Config: async (s3Config, secretAccessKey) => {
     const platform = getPlatformService();
-    const existing = get().config;
+    const existing = await getExistingBackendConfig("s3");
     const config: S3Config = {
       ...s3Config,
       type: "s3",
@@ -322,7 +414,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       notifyOnComplete:
         (existing as S3Config)?.notifyOnComplete ?? DEFAULT_SYNC_CONFIG.notifyOnComplete,
     };
-    await platform.kvSetItem(SYNC_CONFIG_KEY, JSON.stringify(config));
+    await persistBackendConfig(config);
     await platform.kvSetItem(SYNC_SECRET_KEYS.s3, secretAccessKey);
     set({ config, isConfigured: true, backendType: "s3" });
   },
@@ -811,8 +903,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     const state = get();
     if (!state.config) return;
     const config = { ...state.config, autoSync: enabled };
-    const platform = getPlatformService();
-    await platform.kvSetItem(SYNC_CONFIG_KEY, JSON.stringify(config));
+    await persistCurrentConfigUpdate(config);
     set({ config });
   },
 
@@ -825,8 +916,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       Math.min(720, Math.round(minutes || DEFAULT_SYNC_CONFIG.syncIntervalMins)),
     );
     const config = { ...state.config, syncIntervalMins: clampedMinutes };
-    const platform = getPlatformService();
-    await platform.kvSetItem(SYNC_CONFIG_KEY, JSON.stringify(config));
+    await persistCurrentConfigUpdate(config);
     set({ config });
   },
 
@@ -834,8 +924,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     const state = get();
     if (!state.config) return;
     const config = { ...state.config, wifiOnly: enabled };
-    const platform = getPlatformService();
-    await platform.kvSetItem(SYNC_CONFIG_KEY, JSON.stringify(config));
+    await persistCurrentConfigUpdate(config);
     set({ config });
   },
 
@@ -843,14 +932,16 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     const state = get();
     if (!state.config) return;
     const config = { ...state.config, notifyOnComplete: enabled };
-    const platform = getPlatformService();
-    await platform.kvSetItem(SYNC_CONFIG_KEY, JSON.stringify(config));
+    await persistCurrentConfigUpdate(config);
     set({ config });
   },
 
   resetSync: async () => {
     const platform = getPlatformService();
     await platform.kvRemoveItem(SYNC_CONFIG_KEY);
+    await platform.kvRemoveItem(SYNC_ACTIVE_BACKEND_KEY);
+    await platform.kvRemoveItem(SYNC_BACKEND_CONFIG_KEYS.webdav);
+    await platform.kvRemoveItem(SYNC_BACKEND_CONFIG_KEYS.s3);
     await platform.kvRemoveItem(SYNC_SECRET_KEYS.webdav);
     await platform.kvRemoveItem(SYNC_SECRET_KEYS.s3);
     await platform.kvRemoveItem(SYNC_RUNTIME_STATE_KEY);
