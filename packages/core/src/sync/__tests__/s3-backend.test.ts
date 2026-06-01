@@ -1,4 +1,4 @@
-import type { ListObjectsV2Command } from "@aws-sdk/client-s3";
+import type { ListObjectsCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { describe, expect, it, vi } from "vitest";
 
 import { S3Backend } from "../s3-backend";
@@ -108,5 +108,62 @@ describe("s3-backend path helpers", () => {
     expect(send).toHaveBeenCalledTimes(2);
     expect((send.mock.calls[0]?.[0] as ListObjectsV2Command).input.Delimiter).toBe("/");
     expect((send.mock.calls[1]?.[0] as ListObjectsV2Command).input.Delimiter).toBeUndefined();
+  });
+
+  it("falls back to ListObjects v1 when ListObjectsV2 returns empty", async () => {
+    const backend = createBackend();
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({ Contents: [] })
+      .mockResolvedValueOnce({ Contents: [] })
+      .mockResolvedValueOnce({
+        Contents: [{ Key: "apps/readany/sync/device-remote.json", Size: 9 }],
+      });
+    Object.assign(backend as unknown as { client: { send: typeof send } }, { client: { send } });
+
+    await expect(backend.listDir("/readany/sync")).resolves.toEqual([
+      {
+        name: "device-remote.json",
+        path: "/readany/sync/device-remote.json",
+        size: 9,
+        lastModified: 0,
+        isDirectory: false,
+      },
+    ]);
+
+    expect(send).toHaveBeenCalledTimes(3);
+    expect((send.mock.calls[2]?.[0] as ListObjectsCommand).input.Prefix).toBe("apps/readany/sync/");
+    expect((send.mock.calls[2]?.[0] as ListObjectsCommand).input.Delimiter).toBe("/");
+  });
+
+  it("can recover files by scanning the parent prefix", async () => {
+    const backend = createBackend();
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({ Contents: [] })
+      .mockResolvedValueOnce({ Contents: [] })
+      .mockResolvedValueOnce({ Contents: [] })
+      .mockResolvedValueOnce({ Contents: [] })
+      .mockResolvedValueOnce({
+        Contents: [
+          { Key: "apps/readany/data/file-manifest.json", Size: 100 },
+          { Key: "apps/readany/sync/device-remote.json", Size: 11 },
+        ],
+      });
+    Object.assign(backend as unknown as { client: { send: typeof send } }, { client: { send } });
+
+    await expect(backend.listDir("/readany/sync")).resolves.toEqual([
+      {
+        name: "device-remote.json",
+        path: "/readany/sync/device-remote.json",
+        size: 11,
+        lastModified: 0,
+        isDirectory: false,
+      },
+    ]);
+
+    expect(send).toHaveBeenCalledTimes(5);
+    expect((send.mock.calls[4]?.[0] as ListObjectsV2Command).input.Prefix).toBe("apps/readany/");
+    expect((send.mock.calls[4]?.[0] as ListObjectsV2Command).input.Delimiter).toBeUndefined();
   });
 });

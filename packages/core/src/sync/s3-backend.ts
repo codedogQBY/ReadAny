@@ -9,6 +9,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsCommand,
   ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
@@ -56,6 +57,14 @@ function toContentSize(value: unknown): number {
   }
   return 0;
 }
+
+type S3ListResponse = {
+  CommonPrefixes?: Array<{ Prefix?: string }>;
+  Contents?: Array<{ Key?: string; Size?: unknown; LastModified?: unknown }>;
+  IsTruncated?: boolean;
+  NextContinuationToken?: string;
+  NextMarker?: string;
+};
 
 /**
  * Desktop-only request handler that routes AWS SDK traffic through the platform
@@ -296,45 +305,84 @@ export class S3Backend implements ISyncBackend {
   async listDir(path: string): Promise<RemoteFile[]> {
     let prefix = this.normalizePath(path);
     if (!prefix.endsWith("/")) prefix = `${prefix}/`;
-    const logicalPrefix = this.toLogicalPath(prefix);
     console.log(`[S3Backend] LIST ${path} -> prefix "${prefix}"`);
 
-    const files = await this.listObjectsAtPrefix(prefix, logicalPrefix, "/");
-    if (files.length > 0) {
-      console.log(`[S3Backend] LIST ${path} found ${files.length} item(s)`);
-      return files;
+    for (const mode of ["v2-delimiter", "v2-flat", "v1-delimiter", "v1-flat"] as const) {
+      const files = await this.listObjectsAtPrefix(prefix, {
+        version: mode.startsWith("v1") ? "v1" : "v2",
+        delimiter: mode.endsWith("delimiter") ? "/" : undefined,
+      });
+      if (files.length > 0) {
+        console.log(`[S3Backend] LIST ${path} ${mode} found ${files.length} item(s)`);
+        return files;
+      }
     }
 
-    const flatFiles = await this.listObjectsAtPrefix(prefix, logicalPrefix);
-    if (flatFiles.length > 0) {
-      console.log(`[S3Backend] LIST ${path} flat fallback found ${flatFiles.length} item(s)`);
-    } else {
-      console.log(`[S3Backend] LIST ${path} found 0 item(s)`);
+    const parentPrefix = this.getParentPrefix(prefix);
+    if (parentPrefix && parentPrefix !== prefix) {
+      for (const version of ["v2", "v1"] as const) {
+        const parentFiles = await this.listObjectsAtPrefix(parentPrefix, {
+          version,
+          childPrefix: prefix,
+        });
+        if (parentFiles.length > 0) {
+          console.log(
+            `[S3Backend] LIST ${path} ${version} parent-prefix fallback found ${parentFiles.length} item(s)`,
+          );
+          return parentFiles;
+        }
+      }
     }
-    return flatFiles;
+
+    console.log(`[S3Backend] LIST ${path} found 0 item(s)`);
+    return [];
   }
 
   private async listObjectsAtPrefix(
     prefix: string,
-    logicalPrefix: string,
-    delimiter?: string,
+    options: {
+      version: "v1" | "v2";
+      delimiter?: string;
+      childPrefix?: string;
+    },
   ): Promise<RemoteFile[]> {
     const files: RemoteFile[] = [];
     let continuationToken: string | undefined;
+    let marker: string | undefined;
+    let isTruncated = false;
+    const targetPrefix = options.childPrefix ?? prefix;
+    const targetLogicalPrefix = this.toLogicalPath(targetPrefix);
 
     do {
-      const response = await this.client.send(
-        new ListObjectsV2Command({
-          Bucket: this.config.bucket,
-          Prefix: prefix,
-          Delimiter: delimiter,
-          ContinuationToken: continuationToken,
-        }),
+      const response =
+        options.version === "v2"
+          ? ((await this.client.send(
+              new ListObjectsV2Command({
+                Bucket: this.config.bucket,
+                Prefix: prefix,
+                Delimiter: options.delimiter,
+                ContinuationToken: continuationToken,
+              }),
+            )) as S3ListResponse)
+          : ((await this.client.send(
+              new ListObjectsCommand({
+                Bucket: this.config.bucket,
+                Prefix: prefix,
+                Delimiter: options.delimiter,
+                Marker: marker,
+              }),
+            )) as S3ListResponse);
+
+      const contentCount = response.Contents?.length ?? 0;
+      const prefixCount = response.CommonPrefixes?.length ?? 0;
+      console.log(
+        `[S3Backend] LIST ${options.version} prefix "${prefix}" delimiter "${options.delimiter ?? ""}" returned ${contentCount} object(s), ${prefixCount} prefix(es)`,
       );
 
       // Subdirectories at this level (S3 has no true folders; CommonPrefixes simulates them).
       for (const cp of response.CommonPrefixes ?? []) {
         if (!cp.Prefix) continue;
+        if (options.childPrefix && !cp.Prefix.startsWith(options.childPrefix)) continue;
         const name = cp.Prefix.replace(/\/$/, "").split("/").pop() || cp.Prefix;
         files.push({
           name,
@@ -347,12 +395,13 @@ export class S3Backend implements ISyncBackend {
 
       for (const object of response.Contents ?? []) {
         if (!object.Key) continue;
-        if (object.Key === prefix) continue; // placeholder marker for the dir itself
-        const name = object.Key.substring(prefix.length);
+        if (!object.Key.startsWith(targetPrefix)) continue;
+        if (object.Key === targetPrefix) continue; // placeholder marker for the dir itself
+        const name = object.Key.substring(targetPrefix.length);
         if (!name || name.includes("/")) continue; // safety against deeper entries
         files.push({
           name,
-          path: `${logicalPrefix.replace(/\/$/, "")}/${name}`,
+          path: `${targetLogicalPrefix.replace(/\/$/, "")}/${name}`,
           size: toContentSize(object.Size),
           lastModified: toTimestampMs(object.LastModified),
           isDirectory: false,
@@ -360,9 +409,21 @@ export class S3Backend implements ISyncBackend {
       }
 
       continuationToken = response.NextContinuationToken;
-    } while (continuationToken);
+      isTruncated = response.IsTruncated ?? false;
+      const contents = response.Contents ?? [];
+      marker = response.NextMarker ?? contents[contents.length - 1]?.Key;
+    } while (
+      options.version === "v2" ? Boolean(continuationToken) : Boolean(isTruncated && marker)
+    );
 
     return files;
+  }
+
+  private getParentPrefix(prefix: string): string | null {
+    const trimmed = prefix.replace(/\/+$/, "");
+    const slashIndex = trimmed.lastIndexOf("/");
+    if (slashIndex <= 0) return null;
+    return `${trimmed.slice(0, slashIndex + 1)}`;
   }
 
   async delete(path: string): Promise<void> {
