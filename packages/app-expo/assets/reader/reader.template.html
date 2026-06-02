@@ -626,6 +626,70 @@
       }
     }
 
+    // User annotation registry: per-doc WeakMap of cfi -> { range }
+    const docAnnotationRegistries = new WeakMap();
+
+    function isUserTapAnnotation(annotation) {
+      const value = annotation?.value;
+      if (!annotation || !value) return false;
+      return !annotation.flash &&
+        annotation.type !== 'tts-highlight' &&
+        !value.startsWith('flash-') &&
+        !value.startsWith('foliate-search:') &&
+        !value.startsWith(TTS_ANNOTATION_PREFIX);
+    }
+
+    function registerAnnotationRange(doc, cfi, range) {
+      let registry = docAnnotationRegistries.get(doc);
+      if (!registry) {
+        registry = new Map();
+        docAnnotationRegistries.set(doc, registry);
+      }
+      registry.set(cfi, { range });
+    }
+
+    function unregisterAnnotationRange(doc, cfi) {
+      const registry = docAnnotationRegistries.get(doc);
+      if (registry) registry.delete(cfi);
+    }
+
+    function isPointInAnnotationRange(doc, x, y) {
+      const registry = docAnnotationRegistries.get(doc);
+      if (!registry || registry.size === 0) return null;
+      const pad = 8;
+      for (const [cfi, entry] of registry) {
+        try {
+          for (const rect of entry.range.getClientRects()) {
+            if (x >= rect.left - pad && x <= rect.right + pad &&
+                y >= rect.top - pad && y <= rect.bottom + pad + 4) {
+              return { cfi, range: entry.range };
+            }
+          }
+        } catch {
+          registry.delete(cfi);
+        }
+      }
+      return null;
+    }
+
+    function postShowAnnotation(value, range) {
+      const doc = range?.startContainer?.ownerDocument;
+      if (!value || !range || !doc) return;
+      armNoteTapGuard(doc, 900);
+      const rect = range.getBoundingClientRect();
+      const iframe = doc.defaultView?.frameElement;
+      const iframeRect = iframe ? iframe.getBoundingClientRect() : { left: 0, top: 0 };
+      postToRN('show-annotation', {
+        value,
+        position: {
+          x: iframeRect.left + rect.left + rect.width / 2,
+          y: iframeRect.top + rect.top - 8,
+          selectionTop: iframeRect.top + rect.top,
+          selectionBottom: iframeRect.top + rect.bottom,
+        },
+      });
+    }
+
     // Note tooltip registry: per-doc WeakMap of cfi -> { range, note }
     const docNoteRegistries = new WeakMap();
 
@@ -1085,11 +1149,17 @@
             draw(Overlayer.squiggly, { color: '#000000', width: 1.5 });
             // Register for long-press tooltip
             if (doc && range && annotation.value) {
+              registerAnnotationRange(doc, annotation.value, range);
               registerNoteRange(doc, annotation.value, range, annotation.note);
               console.log('[draw-annotation] registered note range for:', annotation.value);
             }
           } else {
             draw(Overlayer.highlight, { color: colorMap[color] || colorMap.yellow });
+            if (doc && range && isUserTapAnnotation(annotation)) {
+              registerAnnotationRange(doc, annotation.value, range);
+            } else if (doc && annotation.value) {
+              unregisterAnnotationRange(doc, annotation.value);
+            }
             // Remove stale tooltip registration if note was removed
             if (doc && annotation.value) {
               unregisterNoteRange(doc, annotation.value);
@@ -1097,24 +1167,17 @@
           }
         });
 
-        el.addEventListener('delete-annotation', () => { /* no-op */ });
+        el.addEventListener('delete-annotation', (e) => {
+          const { value, doc } = e.detail || {};
+          if (!value || !doc) return;
+          unregisterAnnotationRange(doc, value);
+          unregisterNoteRange(doc, value);
+        });
 
         el.addEventListener('show-annotation', (e) => {
           const { value, index, range } = e.detail;
           if (!value || !range) return;
-          armNoteTapGuard(range.startContainer.ownerDocument, 900);
-          const rect = range.getBoundingClientRect();
-          const iframe = range.startContainer.ownerDocument?.defaultView?.frameElement;
-          const iframeRect = iframe ? iframe.getBoundingClientRect() : { left: 0, top: 0 };
-          postToRN('show-annotation', {
-            value,
-            position: {
-              x: iframeRect.left + rect.left + rect.width / 2,
-              y: iframeRect.top + rect.top - 8,
-              selectionTop: iframeRect.top + rect.top,
-              selectionBottom: iframeRect.top + rect.bottom,
-            },
-          });
+          postShowAnnotation(value, range);
         });
 
         container.appendChild(el);
@@ -1498,6 +1561,7 @@ a { color: ${primary} !important; }
         }
         const touch = e.touches[0];
         const hitNote = isPointInNoteRange(doc, touch.clientX, touch.clientY);
+        const hitAnnotation = hitNote || isPointInAnnotationRange(doc, touch.clientX, touch.clientY);
         tapState = {
           startedAt: Date.now(),
           startX: touch.clientX,
@@ -1505,8 +1569,9 @@ a { color: ${primary} !important; }
           moved: false,
           target: e.target,
           noteRangeHit: !!hitNote,
+          annotationRangeHit: hitAnnotation,
         };
-        if (hitNote) armNoteTapGuard(doc);
+        if (hitAnnotation) armNoteTapGuard(doc);
       }, { passive: true });
 
       doc.addEventListener('touchmove', (e) => {
@@ -1546,13 +1611,21 @@ a { color: ${primary} !important; }
         tapState = null;
         if (!state || state.moved || e.changedTouches.length !== 1) return;
         if (Date.now() - state.startedAt > MAX_TAP_MS) return;
+        const touch = e.changedTouches[0];
+        const hitAnnotation = state.annotationRangeHit || isPointInAnnotationRange(doc, touch.clientX, touch.clientY);
+        if (hitAnnotation) {
+          e.preventDefault();
+          e.stopPropagation();
+          postShowAnnotation(hitAnnotation.cfi, hitAnnotation.range);
+          return;
+        }
+
         if (state.noteRangeHit || isNoteTapGuardActive(doc)) {
           e.preventDefault();
           e.stopPropagation();
           return;
         }
 
-        const touch = e.changedTouches[0];
         const target = e.target || state.target;
         if (target && target.closest && target.closest('a[href], audio, video, button, input, select, textarea')) return;
 
