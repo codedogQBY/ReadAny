@@ -125,6 +125,20 @@ export function SelectionPopover({
               )}
             </button>
           ))}
+          {annotated && (
+            <>
+              <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
+              <button
+                type="button"
+                className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                title={t("notebook.deleteHighlight")}
+                aria-label={t("notebook.deleteHighlight")}
+                onClick={onRemoveHighlight}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
         </div>
       )}
 

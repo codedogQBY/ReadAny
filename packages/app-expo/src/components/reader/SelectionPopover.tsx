@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/Icon";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import type { SelectionEvent } from "@/hooks/use-reader-bridge";
-import { radius, spacing, useColors } from "@/styles/theme";
+import { radius, spacing, useColors, withOpacity } from "@/styles/theme";
 import type { ThemeColors } from "@/styles/theme";
 import { HIGHLIGHT_COLORS, HIGHLIGHT_COLOR_HEX } from "@readany/core/types";
 import type { HighlightColor } from "@readany/core/types";
@@ -38,6 +38,11 @@ const SCREEN_HEIGHT = Dimensions.get("window").height;
 const POPOVER_MARGIN = 8;
 const POPOVER_PADDING = 4;
 const BUTTON_SIZE = 36;
+const COLOR_DOT_SIZE = 28;
+const COLOR_REMOVE_BUTTON_SIZE = 28;
+const COLOR_ROW_GAP = 6;
+const COLOR_ROW_PADDING_X = 8;
+const COLOR_ROW_DIVIDER_WIDTH = 1;
 const GAP = 2;
 const SAFE_TOP = 14;
 const SAFE_BOTTOM = 20;
@@ -79,6 +84,7 @@ export function SelectionPopover({
   const [noteContent, setNoteContent] = useState(existingHighlight?.note || "");
   const existingHighlightNote = existingHighlight?.note || "";
   const hasExistingHighlight = !!existingHighlight;
+  const canRemoveHighlight = hasExistingHighlight && !!onRemoveHighlight;
   const activeHighlightColor = existingHighlight?.color ?? defaultColor;
   const previousSelectionCfiRef = useRef(selection.cfi);
 
@@ -94,15 +100,19 @@ export function SelectionPopover({
   }, [selection.cfi, hasExistingHighlight]);
 
   const buttonCount =
-    4 +
-    (onNote ? 1 : 0) +
-    (onTranslate ? 1 : 0) +
-    (onSpeak ? 1 : 0) +
-    (hasExistingHighlight && onRemoveHighlight ? 1 : 0);
+    4 + (onNote ? 1 : 0) + (onTranslate ? 1 : 0) + (onSpeak ? 1 : 0) + (canRemoveHighlight ? 1 : 0);
+  const colorRowItemCount = HIGHLIGHT_COLORS.length + (canRemoveHighlight ? 2 : 0);
+  const colorRowWidth = showColors
+    ? HIGHLIGHT_COLORS.length * COLOR_DOT_SIZE +
+      (canRemoveHighlight ? COLOR_ROW_DIVIDER_WIDTH + COLOR_REMOVE_BUTTON_SIZE : 0) +
+      Math.max(0, colorRowItemCount - 1) * COLOR_ROW_GAP +
+      COLOR_ROW_PADDING_X * 2
+    : 0;
+  const actionRowWidth = buttonCount * (BUTTON_SIZE + GAP) + POPOVER_PADDING * 2;
   const colorRowHeight = showColors ? 40 : 0;
   const popoverHeight = 44 + colorRowHeight + POPOVER_PADDING * 2 + GAP;
   const popoverWidth = Math.min(
-    buttonCount * (BUTTON_SIZE + GAP) + POPOVER_PADDING * 2,
+    Math.max(actionRowWidth, colorRowWidth + POPOVER_PADDING * 2),
     SCREEN_WIDTH - POPOVER_MARGIN * 2,
   );
 
@@ -203,6 +213,19 @@ export function SelectionPopover({
                 onPress={() => onHighlight(color)}
               />
             ))}
+            {canRemoveHighlight && (
+              <>
+                <View style={s.colorRowDivider} />
+                <TouchableOpacity
+                  style={s.colorRemoveBtn}
+                  onPress={handleRemove}
+                  accessibilityRole="button"
+                  accessibilityLabel={t("notebook.deleteHighlight", "删除高亮")}
+                >
+                  <Trash2Icon size={16} color={colors.destructive} />
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         )}
 
@@ -240,7 +263,7 @@ export function SelectionPopover({
             </TouchableOpacity>
           )}
 
-          {existingHighlight && onRemoveHighlight && (
+          {canRemoveHighlight && (
             <TouchableOpacity style={s.iconBtn} onPress={handleRemove}>
               <Trash2Icon size={18} color={colors.destructive} />
             </TouchableOpacity>
@@ -319,19 +342,33 @@ const makeStyles = (colors: ThemeColors) =>
     colorRow: {
       flexDirection: "row",
       justifyContent: "center",
+      alignItems: "center",
       gap: 6,
       paddingVertical: 6,
       paddingHorizontal: 8,
       marginBottom: GAP,
     },
     colorDot: {
-      width: 28,
-      height: 28,
-      borderRadius: 14,
+      width: COLOR_DOT_SIZE,
+      height: COLOR_DOT_SIZE,
+      borderRadius: COLOR_DOT_SIZE / 2,
     },
     colorDotActive: {
       borderWidth: 2,
       borderColor: colors.primary,
+    },
+    colorRowDivider: {
+      width: COLOR_ROW_DIVIDER_WIDTH,
+      height: 20,
+      backgroundColor: colors.border,
+    },
+    colorRemoveBtn: {
+      width: COLOR_REMOVE_BUTTON_SIZE,
+      height: COLOR_REMOVE_BUTTON_SIZE,
+      borderRadius: radius.lg,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: withOpacity(colors.destructive, 0.08),
     },
     actionRow: {
       flexDirection: "row",
