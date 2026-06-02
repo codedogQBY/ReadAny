@@ -99,8 +99,7 @@ export function SelectionPopover({
     }
   }, [selection.cfi, hasExistingHighlight]);
 
-  const buttonCount =
-    4 + (onNote ? 1 : 0) + (onTranslate ? 1 : 0) + (onSpeak ? 1 : 0) + (canRemoveHighlight ? 1 : 0);
+  const buttonCount = 4 + (onNote ? 1 : 0) + (onTranslate ? 1 : 0) + (onSpeak ? 1 : 0);
   const colorRowItemCount = HIGHLIGHT_COLORS.length + (canRemoveHighlight ? 2 : 0);
   const colorRowWidth = showColors
     ? HIGHLIGHT_COLORS.length * COLOR_DOT_SIZE +
@@ -260,12 +259,6 @@ export function SelectionPopover({
           {onSpeak && (
             <TouchableOpacity style={s.iconBtn} onPress={handleSpeak}>
               <Volume2Icon size={18} color={colors.foreground} />
-            </TouchableOpacity>
-          )}
-
-          {canRemoveHighlight && (
-            <TouchableOpacity style={s.iconBtn} onPress={handleRemove}>
-              <Trash2Icon size={18} color={colors.destructive} />
             </TouchableOpacity>
           )}
         </View>
