@@ -14,7 +14,7 @@ import {
 /**
  * SelectionPopover — popover on text selection with highlight colors
  */
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 interface SelectionPopoverProps {
@@ -33,6 +33,8 @@ interface SelectionPopoverProps {
   onSpeak: () => void;
   onClose: () => void;
 }
+
+const POPOVER_MARGIN = 8;
 
 export function SelectionPopover({
   position,
@@ -53,6 +55,9 @@ export function SelectionPopover({
   const { t } = useTranslation();
   const [showColors, setShowColors] = useState(!isPdf);
   const [selectedColor, setSelectedColor] = useState<HighlightColor>(currentColor || defaultColor);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [clampedPosition, setClampedPosition] = useState(position);
 
   const handleHighlightClick = () => {
     // PDF doesn't support highlighting
@@ -90,8 +95,34 @@ export function SelectionPopover({
     { icon: Headphones, label: t("tts.speakSelection"), onClick: onSpeak },
   ];
 
+  useLayoutEffect(() => {
+    const overlay = overlayRef.current;
+    const popover = popoverRef.current;
+    if (!overlay || !popover) {
+      setClampedPosition(position);
+      return;
+    }
+
+    const maxX = Math.max(
+      POPOVER_MARGIN,
+      overlay.clientWidth - popover.offsetWidth - POPOVER_MARGIN,
+    );
+    const maxY = Math.max(
+      POPOVER_MARGIN,
+      overlay.clientHeight - popover.offsetHeight - POPOVER_MARGIN,
+    );
+    const nextPosition = {
+      x: Math.min(Math.max(position.x, POPOVER_MARGIN), maxX),
+      y: Math.min(Math.max(position.y, POPOVER_MARGIN), maxY),
+    };
+
+    setClampedPosition((current) =>
+      current.x === nextPosition.x && current.y === nextPosition.y ? current : nextPosition,
+    );
+  });
+
   return (
-    <div className="absolute inset-0 z-50">
+    <div ref={overlayRef} className="absolute inset-0 z-50">
       <button
         type="button"
         aria-label={t("common.close")}
@@ -99,8 +130,9 @@ export function SelectionPopover({
         onClick={onClose}
       />
       <div
-        className="absolute flex flex-col items-center gap-1"
-        style={{ left: position.x, top: position.y }}
+        ref={popoverRef}
+        className="absolute z-10 flex flex-col items-center gap-1"
+        style={{ left: clampedPosition.x, top: clampedPosition.y }}
       >
         {/* Color picker row */}
         {showColors && !isPdf && (
