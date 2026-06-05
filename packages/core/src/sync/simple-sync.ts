@@ -55,6 +55,7 @@ const SYNC_TABLES: SyncTableConfig[] = [
   { name: "bookmarks", pk: "id", timestampCol: "updated_at" },
   { name: "threads", pk: "id", timestampCol: "updated_at" },
   { name: "messages", pk: "id", timestampCol: "created_at" },
+  { name: "book_memories", pk: "book_id", timestampCol: "updated_at" },
   { name: "skills", pk: "id", timestampCol: "updated_at" },
   { name: "tags", pk: "id", timestampCol: "updated_at" },
   { name: "book_tags", pk: "id", timestampCol: "updated_at" },

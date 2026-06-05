@@ -92,7 +92,12 @@
     "searchAllNotes": "搜索所有笔记",
     "getReadingStats": "获取阅读统计",
     "getSkills": "查询技能",
-    "mindmap": "生成思维导图"
+    "mindmap": "生成思维导图",
+    "readBookMemory": "读取本书记忆",
+    "searchBook": "搜索书籍全文",
+    "listData": "读取书库数据",
+    "WebSearch": "搜索网页",
+    "WebFetch": "读取网页"
   },
   "mindmap": {
     "title": "思维导图",

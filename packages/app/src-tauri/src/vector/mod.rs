@@ -4,6 +4,7 @@ use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,7 +61,7 @@ impl VectorDB {
             )));
         }
 
-        conn.execute("PRAGMA busy_timeout=5000", [])?;
+        conn.busy_timeout(Duration::from_millis(5000))?;
         let _: String = conn.query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))?;
 
         conn.execute(

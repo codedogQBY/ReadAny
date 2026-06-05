@@ -91,6 +91,12 @@ export {
 } from "./message-queries";
 
 export {
+  getBookMemory,
+  upsertBookMemory,
+  updateBookMemoryAfterExchange,
+} from "./book-memory-queries";
+
+export {
   getAllReadingSessions,
   getReadingSessions,
   getReadingSessionsByDateRange,

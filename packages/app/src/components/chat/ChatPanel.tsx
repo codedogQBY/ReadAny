@@ -1,10 +1,8 @@
-import { ConfigGuideDialog, type ConfigGuideType } from "@/components/shared/ConfigGuideDialog";
 /**
  * ChatPanel — book-scoped sidebar chat panel.
  */
 import { useStreamingChat } from "@/hooks/use-streaming-chat";
 import { useChatStore } from "@/stores/chat-store";
-import { useSettingsStore } from "@/stores/settings-store";
 import { getPlatformService } from "@readany/core/services";
 import type { Book, CitationPart } from "@readany/core/types";
 import {
@@ -17,7 +15,6 @@ import {
   getMonthLabel,
   groupThreadsByTime,
   mergeMessagesWithStreaming,
-  providerRequiresApiKey,
 } from "@readany/core/utils";
 import {
   ClipboardCopy,
@@ -74,7 +71,6 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
   const [showThreadList, setShowThreadList] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [attachedQuotes, setAttachedQuotes] = useState<AttachedQuote[]>([]);
-  const [configGuide, setConfigGuide] = useState<ConfigGuideType>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
@@ -104,14 +100,6 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
 
   const handleSend = useCallback(
     (content: string, deepThinking = false, spoilerFree = false, quotes?: AttachedQuote[]) => {
-      const { aiConfig } = useSettingsStore.getState();
-      const endpoint = aiConfig.endpoints.find((e) => e.id === aiConfig.activeEndpointId);
-      const needsKey = endpoint ? providerRequiresApiKey(endpoint.provider) : true;
-      if (!endpoint || (needsKey && !endpoint.apiKey) || !aiConfig.activeModel) {
-        setConfigGuide("ai");
-        return;
-      }
-
       sendMessage(content, bookId, deepThinking, spoilerFree, quotes);
       setAttachedQuotes([]);
     },
@@ -339,14 +327,19 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
                   const olderByMonth = new Map<string, typeof bookThreads>();
                   for (const thread of grouped.older) {
                     const monthLabel = getMonthLabel(thread.updatedAt);
-                    if (!olderByMonth.has(monthLabel)) {
-                      olderByMonth.set(monthLabel, []);
+                    let monthThreads = olderByMonth.get(monthLabel);
+                    if (!monthThreads) {
+                      monthThreads = [];
+                      olderByMonth.set(monthLabel, monthThreads);
                     }
-                    olderByMonth.get(monthLabel)!.push(thread);
+                    monthThreads.push(thread);
                   }
                   const sortedMonths = [...olderByMonth.keys()].sort((a, b) => b.localeCompare(a));
                   for (const month of sortedMonths) {
-                    sections.push({ key: month, label: month, threads: olderByMonth.get(month)! });
+                    const monthThreads = olderByMonth.get(month);
+                    if (monthThreads) {
+                      sections.push({ key: month, label: month, threads: monthThreads });
+                    }
                   }
 
                   return sections.map(({ key, label, threads }) => {
@@ -370,9 +363,12 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
                                   ? "bg-primary/10 text-primary"
                                   : "text-neutral-600 hover:bg-muted"
                               }`}
-                              onClick={() => handleSelectThread(thread.id)}
                             >
-                              <div className="min-w-0 flex-1">
+                              <button
+                                type="button"
+                                onClick={() => handleSelectThread(thread.id)}
+                                className="min-w-0 flex-1 text-left"
+                              >
                                 <div className="flex items-center gap-1.5">
                                   <span className="truncate text-xs font-medium">
                                     {thread.title || t("chat.newChat")}
@@ -386,7 +382,7 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
                                     {preview}
                                   </p>
                                 )}
-                              </div>
+                              </button>
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -458,8 +454,6 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
           onRemoveQuote={handleRemoveQuote}
         />
       </div>
-
-      <ConfigGuideDialog type={configGuide} onClose={() => setConfigGuide(null)} />
     </div>
   );
 }
