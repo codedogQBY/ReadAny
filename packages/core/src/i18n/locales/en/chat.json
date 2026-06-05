@@ -92,7 +92,12 @@
     "searchAllNotes": "Searching all notes",
     "getReadingStats": "Getting reading stats",
     "getSkills": "Querying skills",
-    "mindmap": "Generating mindmap"
+    "mindmap": "Generating mindmap",
+    "readBookMemory": "Reading book memory",
+    "searchBook": "Searching book content",
+    "listData": "Reading library data",
+    "WebSearch": "Searching the web",
+    "WebFetch": "Fetching web page"
   },
   "mindmap": {
     "title": "Mindmap",

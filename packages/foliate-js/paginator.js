@@ -1,5 +1,13 @@
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const cssDataToString = async (data) => {
+  if (typeof data === "string") return data;
+  if (data instanceof Blob) return data.text();
+  if (data instanceof ArrayBuffer) return new TextDecoder().decode(data);
+  if (ArrayBuffer.isView(data)) return new TextDecoder().decode(data);
+  return String(data ?? "");
+};
+
 const debounce = (f, wait, immediate) => {
   let timeout;
   return (...args) => {
@@ -660,8 +668,8 @@ export class Paginator extends HTMLElement {
       if (detail.type !== "text/css") return;
       const w = innerWidth;
       const h = innerHeight;
-      detail.data = Promise.resolve(detail.data).then((data) =>
-        data
+      detail.data = Promise.resolve(detail.data).then(async (data) =>
+        (await cssDataToString(data))
           // unprefix as most of the props are (only) supported unprefixed
           .replace(/(?<=[{\s;])-epub-/gi, "")
           // replace vw and vh as they cause problems with layout

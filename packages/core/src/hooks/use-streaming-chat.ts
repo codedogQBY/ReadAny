@@ -1,8 +1,9 @@
 import { useCallback, useRef, useState } from "react";
+import { getReadingContextSnapshot } from "../ai/reading-context-service";
 import { getBuiltinSkills } from "../ai/skills/builtin-skills";
 import { StreamingChat, createMessageId } from "../ai/streaming";
 import { getAvailableTools } from "../ai/tools";
-import { getSkills as getDbSkills } from "../db/database";
+import { getSkills as getDbSkills, updateBookMemoryAfterExchange } from "../db/database";
 import i18n from "../i18n";
 import { useChatStore } from "../stores/chat-store";
 import { useSettingsStore } from "../stores/settings-store";
@@ -146,10 +147,10 @@ export function useStreamingChat(options?: StreamingChatOptions) {
 
         let aiPrompt = content.trim();
         if (quotes && quotes.length > 0) {
-          const quotesText = quotes.map((q) => `> ${q.text.slice(0, 300)}`).join("\n\n");
+          const quotesText = quotes.map((q) => `> ${q.text}`).join("\n\n");
           aiPrompt = content.trim()
-            ? `关于以下文本：\n${quotesText}\n\n${content.trim()}`
-            : `关于以下文本：\n${quotesText}\n\n请帮我分析这段文本。`;
+            ? `\u5173\u4e8e\u4ee5\u4e0b\u6587\u672c\uff1a\n${quotesText}\n\n${content.trim()}`
+            : `\u5173\u4e8e\u4ee5\u4e0b\u6587\u672c\uff1a\n${quotesText}\n\n\u8bf7\u5e2e\u6211\u5206\u6790\u8fd9\u6bb5\u6587\u672c\u3002`;
         }
 
         const userMessageId = createMessageId();
@@ -313,6 +314,12 @@ export function useStreamingChat(options?: StreamingChatOptions) {
               currentStep: "idle",
             });
             setStreaming(false);
+            void persistBookMemory({
+              bookId,
+              userInput: aiPrompt,
+              assistantText: textContent,
+              quotes,
+            });
           },
           onError: async (err) => {
             setError(err);
@@ -600,4 +607,26 @@ export function useStreamingChat(options?: StreamingChatOptions) {
     sendMessage,
     stopStream,
   };
+}
+
+async function persistBookMemory(options: {
+  bookId?: string;
+  userInput: string;
+  assistantText: string;
+  quotes?: AttachedQuote[];
+}): Promise<void> {
+  if (!options.bookId) return;
+  try {
+    const readingContext = getReadingContextSnapshot();
+    await updateBookMemoryAfterExchange(options.bookId, {
+      userInput: options.userInput,
+      assistantText: options.assistantText,
+      selectedQuotes: options.quotes,
+      chapterTitle: readingContext?.currentChapter.title,
+      chapterIndex: readingContext?.currentChapter.index,
+      positionPercent: readingContext?.currentPosition.percentage,
+    });
+  } catch (err) {
+    console.warn("[book-memory] Failed to persist book memory:", err);
+  }
 }

@@ -1,8 +1,10 @@
+mod claude_code;
 mod db;
 mod storage;
 mod sync;
 mod vector;
 
+use claude_code::ClaudeCodeState;
 use std::sync::Mutex;
 use tauri::Manager;
 use vector::VectorDBState;
@@ -28,7 +30,11 @@ pub fn run() {
         .manage(VectorDBState {
             db: Mutex::new(None),
         })
+        .manage(ClaudeCodeState::default())
         .invoke_handler(tauri::generate_handler![
+            claude_code::claude_code_check,
+            claude_code::claude_code_chat,
+            claude_code::claude_code_abort,
             sync::commands::sync_vacuum_into,
             sync::commands::sync_integrity_check,
             sync::commands::sync_hash_file,

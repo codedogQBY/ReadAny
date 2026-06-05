@@ -7,6 +7,9 @@
  * All Tauri imports are dynamic so the module graph stays clean in SSR/test contexts.
  */
 import type {
+  ClaudeCodeChatHandlers,
+  ClaudeCodeChatRequest,
+  ExtractedBookChapter,
   FetchOptions,
   FilePickerOptions,
   IDatabase,
@@ -15,9 +18,15 @@ import type {
   UpdateInfo,
   WebSocketOptions,
 } from "@readany/core/services";
+import { extractBookChapters } from "../rag/book-extractor";
+import { resolveDesktopDataPath } from "../storage/desktop-library-root";
 
 const TAURI_LAN_RUNTIME_ERROR =
   "Tauri desktop runtime is required to use the LAN sender. Open the desktop app instead of the browser dev server.";
+const TAURI_CLAUDE_CODE_RUNTIME_ERROR =
+  "Tauri desktop runtime is required to use Claude Code local chat. Open the desktop app instead of the browser dev server.";
+const CLAUDE_CODE_EVENT = "claude-code-chat-event";
+const extractedBookCache = new Map<string, Promise<ExtractedBookChapter[]>>();
 
 function isTauriRuntimeAvailable(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -26,6 +35,12 @@ function isTauriRuntimeAvailable(): boolean {
 function ensureTauriRuntimeForLAN(): void {
   if (!isTauriRuntimeAvailable()) {
     throw new Error(TAURI_LAN_RUNTIME_ERROR);
+  }
+}
+
+function ensureTauriRuntimeForClaudeCode(): void {
+  if (!isTauriRuntimeAvailable()) {
+    throw new Error(TAURI_CLAUDE_CODE_RUNTIME_ERROR);
   }
 }
 
@@ -263,6 +278,80 @@ export class TauriPlatformService implements IPlatformService {
         });
       },
     };
+  }
+
+  // ---- Claude Code ----
+
+  async runClaudeCodeChat(
+    request: ClaudeCodeChatRequest,
+    handlers: ClaudeCodeChatHandlers,
+  ): Promise<void> {
+    ensureTauriRuntimeForClaudeCode();
+    const { invoke } = await import("@tauri-apps/api/core");
+    const { listen } = await import("@tauri-apps/api/event");
+
+    if (handlers.signal?.aborted) {
+      await this.abortClaudeCodeChat(request.requestId);
+      return;
+    }
+
+    const unlisten = await listen<{
+      requestId: string;
+      kind: "stdout" | "stderr" | "exit";
+      line?: string;
+      content?: string;
+      code?: number;
+      error?: string;
+    }>(CLAUDE_CODE_EVENT, (event) => {
+      const payload = event.payload;
+      if (!payload || payload.requestId !== request.requestId) return;
+      if (payload.kind === "stdout" && payload.line !== undefined) {
+        handlers.onStdoutLine(payload.line);
+      } else if (payload.kind === "stderr" && payload.content !== undefined) {
+        handlers.onStderr?.(payload.content);
+      }
+    });
+
+    const abortHandler = () => {
+      void this.abortClaudeCodeChat(request.requestId);
+    };
+    handlers.signal?.addEventListener("abort", abortHandler, { once: true });
+
+    try {
+      await invoke("claude_code_chat", { request });
+    } finally {
+      handlers.signal?.removeEventListener("abort", abortHandler);
+      unlisten();
+    }
+  }
+
+  async abortClaudeCodeChat(requestId: string): Promise<void> {
+    ensureTauriRuntimeForClaudeCode();
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("claude_code_abort", { requestId });
+  }
+
+  async checkClaudeCode(): Promise<{ available: boolean; version?: string; error?: string }> {
+    ensureTauriRuntimeForClaudeCode();
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke("claude_code_check");
+  }
+
+  async extractBookChapter(
+    filePath: string,
+    chapterIndex: number,
+  ): Promise<ExtractedBookChapter | null> {
+    const resolvedPath = await resolveDesktopDataPath(filePath);
+    let extraction = extractedBookCache.get(resolvedPath);
+    if (!extraction) {
+      extraction = extractBookChapters(resolvedPath);
+      extractedBookCache.set(resolvedPath, extraction);
+    }
+
+    const chapters = await extraction;
+    return (
+      chapters.find((chapter) => chapter.index === chapterIndex) ?? chapters[chapterIndex] ?? null
+    );
   }
 
   // ---- App info ----

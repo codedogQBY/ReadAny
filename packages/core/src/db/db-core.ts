@@ -110,6 +110,7 @@ export async function cleanupOrphanedSyncRows(databaseArg?: IDatabase): Promise<
     "DELETE FROM notes WHERE book_id NOT IN (SELECT id FROM books)",
     "DELETE FROM bookmarks WHERE book_id NOT IN (SELECT id FROM books)",
     "DELETE FROM reading_sessions WHERE book_id NOT IN (SELECT id FROM books)",
+    "DELETE FROM book_memories WHERE book_id NOT IN (SELECT id FROM books)",
     "DELETE FROM book_tags WHERE book_id NOT IN (SELECT id FROM books) OR tag_id NOT IN (SELECT id FROM tags)",
     "UPDATE books SET group_id = NULL WHERE group_id IS NOT NULL AND group_id NOT IN (SELECT id FROM book_groups)",
     "DELETE FROM messages WHERE thread_id NOT IN (SELECT id FROM threads)",
@@ -462,6 +463,26 @@ export async function initDatabase(): Promise<void> {
   `);
 
       await database.execute(`
+    CREATE TABLE IF NOT EXISTS book_memories (
+      book_id TEXT PRIMARY KEY,
+      summary TEXT NOT NULL DEFAULT '',
+      focus TEXT NOT NULL DEFAULT '[]',
+      open_questions TEXT NOT NULL DEFAULT '[]',
+      recent_questions TEXT NOT NULL DEFAULT '[]',
+      last_chapter_title TEXT,
+      last_chapter_index INTEGER,
+      last_position_percent REAL,
+      total_messages INTEGER NOT NULL DEFAULT 0,
+      last_compacted_at INTEGER NOT NULL DEFAULT 0,
+      compacted_message_count INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0,
+      sync_version INTEGER DEFAULT 0,
+      last_modified_by TEXT,
+      FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+    )
+  `);
+
+      await database.execute(`
     CREATE TABLE IF NOT EXISTS skills (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -499,6 +520,9 @@ export async function initDatabase(): Promise<void> {
       await database.execute("CREATE INDEX IF NOT EXISTS idx_bookmarks_book ON bookmarks(book_id)");
       await database.execute(
         "CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id)",
+      );
+      await database.execute(
+        "CREATE INDEX IF NOT EXISTS idx_book_memories_updated ON book_memories(updated_at)",
       );
       await database.execute(
         "CREATE INDEX IF NOT EXISTS idx_reading_sessions_book ON reading_sessions(book_id)",
@@ -589,6 +613,7 @@ export async function initDatabase(): Promise<void> {
         "reading_sessions",
         "threads",
         "messages",
+        "book_memories",
         "skills",
       ];
       for (const table of syncTables) {

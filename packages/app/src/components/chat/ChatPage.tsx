@@ -1,11 +1,9 @@
-import { ConfigGuideDialog, type ConfigGuideType } from "@/components/shared/ConfigGuideDialog";
 /**
  * ChatPage — standalone full-page chat for general conversations.
  */
 import { useStreamingChat } from "@/hooks/use-streaming-chat";
 import { useChatReaderStore } from "@/stores/chat-reader-store";
 import { useChatStore } from "@/stores/chat-store";
-import { useSettingsStore } from "@/stores/settings-store";
 import { getPlatformService } from "@readany/core/services";
 import type { CitationPart } from "@readany/core/types";
 import {
@@ -18,7 +16,6 @@ import {
   getMonthLabel,
   groupThreadsByTime,
   mergeMessagesWithStreaming,
-  providerRequiresApiKey,
 } from "@readany/core/utils";
 import {
   BookOpen,
@@ -60,7 +57,9 @@ function ThreadsSidebar({
     <div
       className={`absolute inset-0 z-50 ${open ? "pointer-events-auto" : "pointer-events-none"}`}
     >
-      <div
+      <button
+        type="button"
+        aria-label="Close history"
         className={`absolute inset-0 transition-opacity duration-300 ${open ? "bg-black/5 opacity-100" : "opacity-0"}`}
         onClick={onClose}
       />
@@ -91,14 +90,19 @@ function ThreadsSidebar({
             const olderByMonth = new Map<string, typeof generalThreads>();
             for (const thread of grouped.older) {
               const monthLabel = getMonthLabel(thread.updatedAt);
-              if (!olderByMonth.has(monthLabel)) {
-                olderByMonth.set(monthLabel, []);
+              let monthThreads = olderByMonth.get(monthLabel);
+              if (!monthThreads) {
+                monthThreads = [];
+                olderByMonth.set(monthLabel, monthThreads);
               }
-              olderByMonth.get(monthLabel)!.push(thread);
+              monthThreads.push(thread);
             }
             const sortedMonths = [...olderByMonth.keys()].sort((a, b) => b.localeCompare(a));
             for (const month of sortedMonths) {
-              sections.push({ key: month, label: month, threads: olderByMonth.get(month)! });
+              const monthThreads = olderByMonth.get(month);
+              if (monthThreads) {
+                sections.push({ key: month, label: month, threads: monthThreads });
+              }
             }
 
             return sections.map(({ key, label, threads }) => {
@@ -117,13 +121,16 @@ function ThreadsSidebar({
                     return (
                       <div
                         key={thread.id}
-                        onClick={() => {
-                          onSelect(thread.id);
-                          onClose();
-                        }}
                         className={`group flex cursor-pointer items-start gap-2 rounded-lg px-3 py-2.5 transition-colors ${thread.id === activeThreadId ? "bg-primary/10 text-primary" : "text-foreground hover:bg-muted"}`}
                       >
-                        <div className="min-w-0 flex-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onSelect(thread.id);
+                            onClose();
+                          }}
+                          className="min-w-0 flex-1 text-left"
+                        >
                           <div className="flex items-center gap-1.5">
                             <span className="truncate text-sm font-medium">
                               {thread.title || t("chat.newChat")}
@@ -137,7 +144,7 @@ function ThreadsSidebar({
                               {preview}
                             </p>
                           )}
-                        </div>
+                        </button>
                         <button
                           type="button"
                           onClick={(e) => {
@@ -185,14 +192,15 @@ function EmptyState({ onSuggestionClick }: { onSuggestionClick: (text: string) =
             </h2>
             <div className="grid grid-cols-2 gap-3">
               {SUGGESTIONS.map(({ key, icon: Icon }) => (
-                <div
+                <button
+                  type="button"
                   key={key}
                   onClick={() => onSuggestionClick(t(key))}
-                  className="flex cursor-pointer flex-col items-start gap-3 rounded-xl bg-muted/70 p-4 transition-colors hover:bg-muted"
+                  className="flex cursor-pointer flex-col items-start gap-3 rounded-xl bg-muted/70 p-4 text-left transition-colors hover:bg-muted"
                 >
                   <Icon className="size-5 text-muted-foreground" />
                   <span className="text-sm text-foreground">{t(key)}</span>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -219,7 +227,6 @@ export function ChatPage() {
 
   const [showThreads, setShowThreads] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
-  const [configGuide, setConfigGuide] = useState<ConfigGuideType>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -245,14 +252,6 @@ export function ChatPage() {
 
   const handleSend = useCallback(
     async (content: string, deepThinking = false, spoilerFree = false) => {
-      const { aiConfig } = useSettingsStore.getState();
-      const endpoint = aiConfig.endpoints.find((e) => e.id === aiConfig.activeEndpointId);
-      const needsKey = endpoint ? providerRequiresApiKey(endpoint.provider) : true;
-      if (!endpoint || (needsKey && !endpoint.apiKey) || !aiConfig.activeModel) {
-        setConfigGuide("ai");
-        return;
-      }
-
       // /chats page should only use general threads (no bookId)
       if (!activeThreadId) {
         await createThread(undefined, content.slice(0, 50));
@@ -417,8 +416,6 @@ export function ChatPage() {
           <ChatInput onSend={handleSend} onStop={stopStream} isStreaming={isStreaming} />
         </div>
       </div>
-
-      <ConfigGuideDialog type={configGuide} onClose={() => setConfigGuide(null)} />
     </div>
   );
 }

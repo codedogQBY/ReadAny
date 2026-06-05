@@ -211,6 +211,11 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
   searchAllNotes: "toolLabels.searchAllNotes",
   getReadingStats: "toolLabels.getReadingStats",
   getSkills: "toolLabels.getSkills",
+  readBookMemory: "toolLabels.readBookMemory",
+  searchBook: "toolLabels.searchBook",
+  listData: "toolLabels.listData",
+  WebSearch: "toolLabels.WebSearch",
+  WebFetch: "toolLabels.WebFetch",
   mindmap: "toolLabels.mindmap",
 };
 
@@ -285,7 +290,7 @@ function ToolCallPartView({ part }: { part: ToolCallPart }) {
                         <span className="text-muted-foreground">{key}:</span>{" "}
                         <span className="text-foreground">
                           {typeof value === "string" && value.length > 100
-                            ? value.slice(0, 100) + "..."
+                            ? `${value.slice(0, 100)}...`
                             : String(value)}
                         </span>
                       </div>
@@ -302,7 +307,7 @@ function ToolCallPartView({ part }: { part: ToolCallPart }) {
                   <div className="max-h-48 overflow-auto rounded border border-border bg-background p-2 font-mono text-xs">
                     <pre className="whitespace-pre-wrap text-foreground">
                       {typeof part.result === "string" && part.result.length > 500
-                        ? part.result.slice(0, 500) + "..."
+                        ? `${part.result.slice(0, 500)}...`
                         : JSON.stringify(part.result, null, 2)}
                     </pre>
                   </div>

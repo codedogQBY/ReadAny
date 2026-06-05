@@ -1,13 +1,13 @@
+import i18n from "i18next";
 /**
- * AI Streaming service — handles streaming chat completions
- * Uses LangGraph reading agent for unified model support with tool calling.
- * Supports OpenAI-compatible, Anthropic Claude, and Google Gemini providers.
+ * AI Streaming service - preserves the public chat API while routing desktop
+ * reading chat through the local Claude Code adapter.
  */
 import type { AIConfig, Book, SemanticContext, Skill, Thread } from "../types";
-import { streamReadingAgent } from "./agents/reading-agent";
+import type { AgentStreamEvent } from "./agents/reading-agent";
+import { streamClaudeCodeAgent } from "./claude-code";
 import { processMessages } from "./message-pipeline";
 import type { ToolDefinition } from "./tools/tool-types";
-import i18n from "i18next";
 
 export interface StreamingOptions {
   thread: Thread;
@@ -82,16 +82,14 @@ export class StreamingChat {
       const toolCalls: Array<{ name: string; args: Record<string, unknown>; result?: unknown }> =
         [];
 
-      const stream = streamReadingAgent(
+      const stream = streamClaudeCodeAgent(
         {
-          aiConfig: options.aiConfig,
+          thread: options.thread,
           book: options.book,
           semanticContext: options.semanticContext,
-          enabledSkills: options.enabledSkills,
           isVectorized: options.isVectorized,
           deepThinking: options.deepThinking,
           spoilerFree: options.spoilerFree,
-          getAvailableTools: options.getAvailableTools,
           signal,
         },
         userInput,
@@ -100,12 +98,12 @@ export class StreamingChat {
 
       // Helper to race iterator next() against abort signal
       const raceNext = async (
-        iterator: AsyncIterator<unknown>,
-      ): Promise<IteratorResult<unknown>> => {
+        iterator: AsyncIterator<AgentStreamEvent>,
+      ): Promise<IteratorResult<AgentStreamEvent>> => {
         if (signal.aborted) {
           return { done: true, value: undefined };
         }
-        const abortPromise = new Promise<IteratorResult<unknown>>((resolve) => {
+        const abortPromise = new Promise<IteratorResult<AgentStreamEvent>>((resolve) => {
           const onAbort = () => {
             signal.removeEventListener("abort", onAbort);
             resolve({ done: true, value: undefined });
@@ -119,7 +117,7 @@ export class StreamingChat {
       let eventResult = await raceNext(iterator);
 
       while (!eventResult.done) {
-        const event = eventResult.value as any;
+        const event = eventResult.value;
 
         if (signal.aborted) {
           options.onAbort?.(fullText, toolCalls.length > 0 ? toolCalls : undefined);
@@ -137,13 +135,14 @@ export class StreamingChat {
             toolCalls.push({ name: event.name, args: event.args });
             break;
 
-          case "tool_result":
+          case "tool_result": {
             options.onToolResult?.(event.name, event.result);
             const existingTc = [...toolCalls]
               .reverse()
               .find((tc) => tc.name === event.name && !tc.result);
             if (existingTc) existingTc.result = event.result;
             break;
+          }
 
           case "reasoning":
             options.onReasoning?.(event.content, event.stepType);

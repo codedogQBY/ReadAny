@@ -61,6 +61,10 @@ export {
   // Message queries
   getMessages,
   insertMessage,
+  // Book memory queries
+  getBookMemory,
+  upsertBookMemory,
+  updateBookMemoryAfterExchange,
   // Reading session queries
   getAllReadingSessions,
   getReadingSessions,

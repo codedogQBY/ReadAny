@@ -50,6 +50,32 @@ export interface IWebSocket {
   onError(handler: (error: unknown) => void): void;
 }
 
+export interface ClaudeCodeChatRequest {
+  requestId: string;
+  prompt: string;
+  systemPrompt: string;
+  effort?: "low" | "medium" | "high" | "xhigh" | "max";
+  model?: string;
+  tools?: string[];
+  disallowedTools?: string[];
+}
+
+export interface ClaudeCodeChatHandlers {
+  signal?: AbortSignal;
+  onStdoutLine: (line: string) => void;
+  onStderr?: (content: string) => void;
+}
+
+export interface ExtractedBookChapter {
+  index: number;
+  title: string;
+  content: string;
+  segments?: Array<{
+    text: string;
+    cfi: string;
+  }>;
+}
+
 export interface IPlatformService {
   // ---- Platform info ----
   readonly platformType: "desktop" | "mobile" | "web";
@@ -86,6 +112,15 @@ export interface IPlatformService {
   // ---- Network (for scenarios requiring custom headers) ----
   fetch(url: string, options?: FetchOptions): Promise<Response>;
   createWebSocket(url: string, options?: WebSocketOptions): Promise<IWebSocket>;
+
+  // ---- Claude Code (desktop only) ----
+  runClaudeCodeChat?(
+    request: ClaudeCodeChatRequest,
+    handlers: ClaudeCodeChatHandlers,
+  ): Promise<void>;
+  abortClaudeCodeChat?(requestId: string): Promise<void>;
+  checkClaudeCode?(): Promise<{ available: boolean; version?: string; error?: string }>;
+  extractBookChapter?(filePath: string, chapterIndex: number): Promise<ExtractedBookChapter | null>;
 
   // ---- App info ----
   getAppVersion(): Promise<string>;
