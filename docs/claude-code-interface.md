@@ -218,7 +218,29 @@ Book references are resolved in this order:
 2. Direct `getBook(reference)` lookup.
 3. Exact title match.
 4. Unique partial title match.
-5. Fallback to the original reference.
+
+## Sync behavior
+
+Claude Code conversations are stored through the same ReadAny chat tables as the
+original AI panel:
+
+- `threads`
+- `messages`
+
+Per-book reading memory is stored in:
+
+- `book_memories`
+
+Full-section translation output is stored as first-class SQL data in:
+
+- `chapter_translations`
+
+These tables are part of the normal WebDAV/S3/LAN sync snapshot, so Claude Code
+chat history, per-book memory, and completed full-section translations sync the
+same way as built-in reading data. Paragraph-level translation KV cache remains
+a local compatibility and speed layer; when legacy cached chapter translations
+are restored, ReadAny migrates them into `chapter_translations` so future syncs
+use the durable record.
 
 After operations execute, ReadAny emits visible tool cards, appends the results
 to a continuation prompt, and calls Claude Code again. The agent can run up to

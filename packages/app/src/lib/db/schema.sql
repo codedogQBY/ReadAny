@@ -97,6 +97,24 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS chapter_translations (
+  id TEXT PRIMARY KEY,
+  book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  section_index INTEGER NOT NULL,
+  source_lang TEXT NOT NULL,
+  target_lang TEXT NOT NULL,
+  provider TEXT NOT NULL DEFAULT '',
+  model TEXT,
+  source_hash TEXT NOT NULL,
+  paragraphs TEXT NOT NULL DEFAULT '[]',
+  original_visible INTEGER NOT NULL DEFAULT 1,
+  translation_visible INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  sync_version INTEGER DEFAULT 0,
+  last_modified_by TEXT
+);
+
 CREATE TABLE IF NOT EXISTS reading_sessions (
   id TEXT PRIMARY KEY,
   book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
@@ -144,6 +162,7 @@ CREATE INDEX IF NOT EXISTS idx_bookmarks_book ON bookmarks(book_id);
 CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id);
 CREATE INDEX IF NOT EXISTS idx_threads_book ON threads(book_id);
 CREATE INDEX IF NOT EXISTS idx_reading_sessions_book ON reading_sessions(book_id);
+CREATE INDEX IF NOT EXISTS idx_chapter_translations_book ON chapter_translations(book_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_book ON chunks(book_id);
 CREATE INDEX IF NOT EXISTS idx_books_last_opened ON books(last_opened_at DESC);
 CREATE INDEX IF NOT EXISTS idx_books_group ON books(group_id);

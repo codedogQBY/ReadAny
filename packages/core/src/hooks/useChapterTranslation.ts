@@ -8,6 +8,12 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  computeChapterSourceHash,
+  getChapterTranslation,
+  updateChapterTranslationVisibility,
+  upsertChapterTranslation,
+} from "../db";
 import { useSettingsStore } from "../stores/settings-store";
 import { getFromCache } from "../translation/cache";
 import {
@@ -84,11 +90,13 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
   const getCurrentCfiRef = useRef(getCurrentCfi);
   const goToCfiRef = useRef(goToCfi);
   const visibilityRef = useRef({ originalVisible: true, translationVisible: true });
+  const activeTargetLangRef = useRef<string | undefined>(translationConfigOverride?.targetLang);
 
   const translationConfigFromStore = useSettingsStore((s) => s.translationConfig);
   const aiConfigFromStore = useSettingsStore((s) => s.aiConfig);
   const translationConfig = translationConfigOverride || translationConfigFromStore;
   const aiConfig = aiConfigOverride || aiConfigFromStore;
+  activeTargetLangRef.current ??= translationConfig.targetLang;
 
   getParagraphsRef.current = getParagraphs;
   injectTranslationsRef.current = injectTranslations;
@@ -135,6 +143,26 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
           setState({ status: "error", message: "No text to translate" });
           return;
         }
+        const sourceHash = computeSourceHashFromParagraphs(paragraphs);
+        activeTargetLangRef.current = config.targetLang;
+
+        const persisted = await getChapterTranslation(
+          bookId,
+          sectionIndex,
+          "AUTO",
+          config.targetLang,
+          sourceHash,
+        );
+        if (persisted) {
+          const visibility = {
+            originalVisible: persisted.originalVisible,
+            translationVisible: persisted.translationVisible,
+          };
+          visibilityRef.current = visibility;
+          await injectTranslations(persisted.paragraphs, visibility);
+          setState({ status: "complete", ...visibility });
+          return;
+        }
 
         const abortController = new AbortController();
         abortRef.current = abortController;
@@ -145,7 +173,7 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
           progress: { totalChars, translatedChars: 0 },
         });
 
-        await translateChapter({
+        const results = await translateChapter({
           paragraphs,
           sourceLang: "AUTO",
           targetLang: config.targetLang,
@@ -159,10 +187,25 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
           signal: abortController.signal,
         });
 
-        // Mark chapter fully cached
-        markChapterFullyCached(bookId, sectionIndex, config.targetLang).catch((err) =>
-          console.warn("[Translation] Failed to mark chapter cached:", err),
-        );
+        if (!abortController.signal.aborted) {
+          const orderedResults = orderResultsByParagraphs(paragraphs, results);
+          await upsertChapterTranslation({
+            bookId,
+            sectionIndex,
+            sourceLang: "AUTO",
+            targetLang: config.targetLang,
+            provider: config.provider.id,
+            model: config.provider.model,
+            sourceHash,
+            paragraphs: orderedResults,
+            ...visibilityRef.current,
+          });
+
+          // Keep the old marker for compatibility with legacy paragraph cache.
+          markChapterFullyCached(bookId, sectionIndex, config.targetLang).catch((err) =>
+            console.warn("[Translation] Failed to mark chapter cached:", err),
+          );
+        }
 
         setState({ status: "complete", ...visibilityRef.current });
       } catch (err) {
@@ -213,9 +256,16 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
       };
       // Persist visibility preference
       updateChapterTranslationSettings(bookId, sectionIndex, visibilityRef.current).catch(() => {});
+      updateChapterTranslationVisibility(
+        bookId,
+        sectionIndex,
+        "AUTO",
+        activeTargetLangRef.current || translationConfig.targetLang,
+        visibilityRef.current,
+      ).catch(() => {});
       return { ...prev, ...visibilityRef.current };
     });
-  }, [applyVisibility, bookId, sectionIndex]);
+  }, [applyVisibility, bookId, sectionIndex, translationConfig.targetLang]);
 
   // ---- Toggle Translation Visibility ----------------------------------------
   const toggleTranslationVisible = useCallback(() => {
@@ -230,9 +280,16 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
       };
       // Persist visibility preference
       updateChapterTranslationSettings(bookId, sectionIndex, visibilityRef.current).catch(() => {});
+      updateChapterTranslationVisibility(
+        bookId,
+        sectionIndex,
+        "AUTO",
+        activeTargetLangRef.current || translationConfig.targetLang,
+        visibilityRef.current,
+      ).catch(() => {});
       return { ...prev, ...visibilityRef.current };
     });
-  }, [applyVisibility, bookId, sectionIndex]);
+  }, [applyVisibility, bookId, sectionIndex, translationConfig.targetLang]);
 
   // ---- Reset (e.g. on chapter change) ---------------------------------------
   const reset = useCallback(async () => {
@@ -251,6 +308,38 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
     let cancelled = false;
     async function restoreCachedTranslations() {
       try {
+        const paragraphs = await getParagraphsRef.current();
+        if (cancelled || !paragraphs || paragraphs.length === 0) return;
+        const sourceHash = computeSourceHashFromParagraphs(paragraphs);
+
+        const persisted = await getChapterTranslation(
+          bookId,
+          sectionIndex,
+          "AUTO",
+          translationConfig.targetLang,
+          sourceHash,
+        );
+        if (persisted && !cancelled) {
+          const visibility = {
+            originalVisible: persisted.originalVisible,
+            translationVisible: persisted.translationVisible,
+          };
+          visibilityRef.current = visibility;
+          activeTargetLangRef.current = persisted.targetLang;
+
+          const cfiBeforeInject = getCurrentCfiRef.current?.();
+          await injectTranslationsRef.current(persisted.paragraphs, visibility);
+          if (cancelled) return;
+
+          if (cfiBeforeInject && goToCfiRef.current) {
+            await goToCfiRef.current(cfiBeforeInject);
+          }
+          if (cancelled) return;
+
+          setState({ status: "complete", ...visibility });
+          return;
+        }
+
         const cached = await isChapterFullyCached(
           bookId,
           sectionIndex,
@@ -266,8 +355,6 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
         };
         visibilityRef.current = visibility;
 
-        const paragraphs = await getParagraphsRef.current();
-        if (cancelled) return;
         const providerId = translationConfig.provider.id;
         const results: ChapterTranslationResult[] = [];
 
@@ -293,6 +380,19 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
           const visibility = visibilityRef.current;
 
           await injectTranslationsRef.current(results, visibility);
+          if (cancelled) return;
+
+          await upsertChapterTranslation({
+            bookId,
+            sectionIndex,
+            sourceLang: "AUTO",
+            targetLang: translationConfig.targetLang,
+            provider: providerId,
+            model: translationConfig.provider.model,
+            sourceHash,
+            paragraphs: orderResultsByParagraphs(paragraphs, results),
+            ...visibility,
+          });
           if (cancelled) return;
 
           // Restore position after translation content changes layout.
@@ -323,6 +423,7 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
     sectionIndex,
     translationConfig.targetLang,
     translationConfig.provider.id,
+    translationConfig.provider.model,
   ]);
 
   return {
@@ -333,4 +434,23 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
     toggleTranslationVisible,
     reset,
   };
+}
+
+function computeSourceHashFromParagraphs(paragraphs: ChapterParagraph[]): string {
+  return computeChapterSourceHash(
+    paragraphs.map((paragraph) => ({
+      paragraphId: paragraph.id,
+      originalText: paragraph.text,
+    })),
+  );
+}
+
+function orderResultsByParagraphs(
+  paragraphs: ChapterParagraph[],
+  results: ChapterTranslationResult[],
+): ChapterTranslationResult[] {
+  const byId = new Map(results.map((result) => [result.paragraphId, result]));
+  return paragraphs
+    .map((paragraph) => byId.get(paragraph.id))
+    .filter((result): result is ChapterTranslationResult => !!result);
 }

@@ -65,6 +65,12 @@ export {
   getBookMemory,
   upsertBookMemory,
   updateBookMemoryAfterExchange,
+  buildChapterTranslationId,
+  computeChapterSourceHash,
+  deleteChapterTranslationsForSection,
+  getChapterTranslation,
+  updateChapterTranslationVisibility,
+  upsertChapterTranslation,
   // Reading session queries
   getAllReadingSessions,
   getReadingSessions,
@@ -85,3 +91,8 @@ export {
 } from "./database";
 
 export type { HighlightWithBook } from "./database";
+export type {
+  ChapterTranslationParagraphRecord,
+  ChapterTranslationRecord,
+  UpsertChapterTranslationInput,
+} from "./database";

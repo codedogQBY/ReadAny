@@ -76,6 +76,21 @@ const TABLE_COLUMNS: Record<string, string[]> = {
   bookmarks: ["id", "book_id", "cfi", "label", "chapter_title", "created_at", "updated_at"],
   threads: ["id", "book_id", "title", "created_at", "updated_at"],
   messages: ["id", "thread_id", "role", "content", "created_at"],
+  chapter_translations: [
+    "id",
+    "book_id",
+    "section_index",
+    "source_lang",
+    "target_lang",
+    "provider",
+    "model",
+    "source_hash",
+    "paragraphs",
+    "original_visible",
+    "translation_visible",
+    "created_at",
+    "updated_at",
+  ],
   skills: ["id", "name", "description", "created_at", "updated_at"],
   tags: ["id", "name", "updated_at"],
   book_tags: ["id", "book_id", "tag_id", "updated_at"],
@@ -248,7 +263,14 @@ class FakeSyncDb {
 
   private assertForeignKeys(table: string, row: Row): void {
     if (
-      ["highlights", "notes", "bookmarks", "book_tags", "reading_sessions"].includes(table) &&
+      [
+        "highlights",
+        "notes",
+        "bookmarks",
+        "book_tags",
+        "reading_sessions",
+        "chapter_translations",
+      ].includes(table) &&
       row.book_id &&
       !this.tables.get("books")?.has(String(row.book_id))
     ) {
@@ -388,6 +410,27 @@ async function syncDevice(
   dbMocks.currentDeviceId = deviceId;
   dbMocks.currentDb = db;
   return runSimpleSync(backend);
+}
+
+function chapterTranslationRow(overrides: Row = {}): Row {
+  return {
+    id: "book-1:0:AUTO:zh-CN",
+    book_id: "book-1",
+    section_index: 0,
+    source_lang: "AUTO",
+    target_lang: "zh-CN",
+    provider: "ai",
+    model: "deepseek-v4-pro[1m]",
+    source_hash: "hash-1",
+    paragraphs: JSON.stringify([
+      { paragraphId: "p1", originalText: "Hello", translatedText: "你好" },
+    ]),
+    original_visible: 1,
+    translation_visible: 1,
+    created_at: 1000,
+    updated_at: 1000,
+    ...overrides,
+  };
 }
 
 describe("simple sync convergence", () => {
@@ -563,4 +606,24 @@ describe("simple sync convergence", () => {
       ).tables,
     ).toHaveProperty("books");
   });
+
+  it("syncs persisted chapter translations as first-class records", async () => {
+    const backend = new MemoryBackend();
+    const deviceA = new FakeSyncDb();
+    const deviceB = new FakeSyncDb();
+
+    deviceA.insert("books", bookRow());
+    deviceA.insert("chapter_translations", chapterTranslationRow());
+
+    now = 1100;
+    await syncDevice("device-a", deviceA, backend);
+
+    now = 1200;
+    await syncDevice("device-b", deviceB, backend);
+
+    expect(deviceB.get("chapter_translations", "book-1:0:AUTO:zh-CN")).toEqual(
+      chapterTranslationRow(),
+    );
+  });
+
 });

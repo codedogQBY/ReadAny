@@ -107,6 +107,31 @@ const migrations: Migration[] = [
       "ALTER TABLE feedback ADD COLUMN comment_count INTEGER NOT NULL DEFAULT 0",
     ],
   },
+  {
+    version: 12,
+    description: "Persist full chapter translations",
+    up: [
+      `CREATE TABLE IF NOT EXISTS chapter_translations (
+        id TEXT PRIMARY KEY,
+        book_id TEXT NOT NULL,
+        section_index INTEGER NOT NULL,
+        source_lang TEXT NOT NULL,
+        target_lang TEXT NOT NULL,
+        provider TEXT NOT NULL DEFAULT '',
+        model TEXT,
+        source_hash TEXT NOT NULL,
+        paragraphs TEXT NOT NULL DEFAULT '[]',
+        original_visible INTEGER NOT NULL DEFAULT 1,
+        translation_visible INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        sync_version INTEGER DEFAULT 0,
+        last_modified_by TEXT,
+        FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+      )`,
+      "CREATE INDEX IF NOT EXISTS idx_chapter_translations_book ON chapter_translations(book_id)",
+    ],
+  },
 ];
 
 /** Run pending migrations */

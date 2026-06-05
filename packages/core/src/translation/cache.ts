@@ -45,11 +45,9 @@ export async function getFromCache(
     const cached = await platform.kvGetItem(key);
     if (cached) {
       const { translation, timestamp } = JSON.parse(cached);
-      // Cache expires after 7 days
-      if (Date.now() - timestamp < 7 * 24 * 60 * 60 * 1000) {
+      if (typeof timestamp === "number") {
         return translation;
       }
-      await platform.kvRemoveItem(key);
     }
   } catch (err) {
     console.warn("[Translation] Cache read error:", err);

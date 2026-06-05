@@ -97,6 +97,20 @@ export {
 } from "./book-memory-queries";
 
 export {
+  buildChapterTranslationId,
+  computeChapterSourceHash,
+  deleteChapterTranslationsForSection,
+  getChapterTranslation,
+  updateChapterTranslationVisibility,
+  upsertChapterTranslation,
+} from "./chapter-translation-queries";
+export type {
+  ChapterTranslationParagraphRecord,
+  ChapterTranslationRecord,
+  UpsertChapterTranslationInput,
+} from "./chapter-translation-queries";
+
+export {
   getAllReadingSessions,
   getReadingSessions,
   getReadingSessionsByDateRange,
