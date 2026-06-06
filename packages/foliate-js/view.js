@@ -647,7 +647,9 @@ export class View extends HTMLElement {
     this.#searchIndicatorConfig = { type, options };
   }
   async initTTS(granularity = "word", highlight, filterFunc) {
-    const current = this.renderer.getContents()[0];
+    const contents = this.renderer.getContents();
+    const primaryIndex = this.renderer.primaryIndex;
+    const current = contents.find((content) => content.index === primaryIndex) ?? contents[0];
     const doc = current?.doc;
     const index = current?.index ?? 0;
     if (!doc) return;

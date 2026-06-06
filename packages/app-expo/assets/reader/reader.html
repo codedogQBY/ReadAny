@@ -348,11 +348,23 @@
       return contents.find((content) => content.doc === doc) || null;
     }
 
+    function getPrimaryRendererContent() {
+      const contents = getRendererContents();
+      if (!contents.length) return null;
+      const primaryIndex = view && view.renderer ? view.renderer.primaryIndex : null;
+      return (
+        contents.find((content) => content.doc && content.index === primaryIndex) ||
+        contents.find((content) => content.doc && content.index === currentSectionIndex) ||
+        contents.find((content) => content.doc) ||
+        null
+      );
+    }
+
     function getRendererContentForCfi(cfi) {
       const contents = getRendererContents();
       if (!contents.length) return null;
       if (!cfi || !view || !view.resolveCFI) {
-        return contents.find((content) => content.overlayer) || contents[0] || null;
+        return getPrimaryRendererContent() || contents.find((content) => content.overlayer) || contents[0] || null;
       }
 
       try {
@@ -373,7 +385,7 @@
         console.log('[ttsHighlight] failed to resolve content for cfi:', e);
       }
 
-      return contents.find((content) => content.overlayer) || contents[0] || null;
+      return getPrimaryRendererContent() || contents.find((content) => content.overlayer) || contents[0] || null;
     }
 
     function getAllTTSOverlayerContexts() {
@@ -390,6 +402,8 @@
     }
 
     function getCurrentTTSOverlayerContext() {
+      const primary = getPrimaryRendererContent();
+      if (primary && primary.overlayer) return primary;
       return getAllTTSOverlayerContexts()[0] || null;
     }
 
@@ -2713,13 +2727,102 @@ a { color: ${primary} !important; }
       return null;
     }
 
-    function isRectVisibleInReader(rect, renderer, win) {
+    function getPaginatedVisibleRangeCandidates(renderer) {
+      const start = Number(renderer && renderer.start || 0);
+      const end = Number(renderer && renderer.end || 0);
+      const size = Number(renderer && renderer.size || 0);
+      const candidates = [];
+
+      if (Number.isFinite(start) && Number.isFinite(size) && size > 0) {
+        candidates.push({ left: start - size, right: start, source: 'legacy-offset' });
+        candidates.push({ left: start, right: start + size, source: 'size-fallback' });
+      }
+
+      if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+        candidates.push({ left: start, right: end, source: 'renderer' });
+      }
+
+      return candidates.filter((candidate, index, list) => {
+        return candidate.right > candidate.left &&
+          list.findIndex((item) => item.left === candidate.left && item.right === candidate.right) === index;
+      });
+    }
+
+    function rectIntersectsPaginatedRange(rect, range) {
+      return rect.right > range.left && rect.left < range.right;
+    }
+
+    function scorePaginatedVisibleRange(doc, range) {
+      if (!doc || !doc.body) return 0;
+      const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
+        acceptNode: function (node) {
+          if (isInsideRubyAnnotation(node)) return NodeFilter.FILTER_REJECT;
+          if (isTTSFootnoteMarker(node.nodeValue || '')) return NodeFilter.FILTER_REJECT;
+          if (shouldSkipTTSNode(node.parentElement)) return NodeFilter.FILTER_REJECT;
+          return node.nodeValue && normalizeTTSText(node.nodeValue)
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_SKIP;
+        },
+      });
+      let score = 0;
+      let visited = 0;
+      let textNode = walker.nextNode();
+      while (textNode && visited < 500) {
+        visited += 1;
+        const text = normalizeTTSText(textNode.nodeValue || '');
+        if (text) {
+          try {
+            const textRange = doc.createRange();
+            textRange.selectNodeContents(textNode);
+            const rects = Array.from(textRange.getClientRects ? textRange.getClientRects() : []);
+            if (rects.some((rect) => rect.width > 0 && rect.height > 0 && rectIntersectsPaginatedRange(rect, range))) {
+              score += Math.min(text.length, 120);
+            }
+          } catch {}
+        }
+        textNode = walker.nextNode();
+      }
+      return score;
+    }
+
+    function pickPaginatedVisibleRange(doc, renderer) {
+      const candidates = getPaginatedVisibleRangeCandidates(renderer);
+      if (candidates.length <= 1) return candidates[0] || null;
+
+      const legacyRange = candidates.find((range) => range.source === 'legacy-offset') || null;
+      if (legacyRange && scorePaginatedVisibleRange(doc, legacyRange) > 0) return legacyRange;
+
+      const rendererRange = candidates.find((range) => range.source === 'renderer') || null;
+      if (rendererRange && scorePaginatedVisibleRange(doc, rendererRange) > 0) return rendererRange;
+
+      const fallbackRange = candidates.find((range) => range.source === 'size-fallback') || null;
+      if (fallbackRange && scorePaginatedVisibleRange(doc, fallbackRange) > 0) return fallbackRange;
+
+      return legacyRange || rendererRange || fallbackRange || candidates[0] || null;
+    }
+
+    let ttsVisibleRangeByDoc = new WeakMap();
+
+    function getVisibleRangeForTTSDoc(doc, renderer) {
+      if (!doc) return null;
+      if (ttsVisibleRangeByDoc.has(doc)) return ttsVisibleRangeByDoc.get(doc) || null;
+      const range = pickPaginatedVisibleRange(doc, renderer);
+      ttsVisibleRangeByDoc.set(doc, range);
+      return range;
+    }
+
+    function getRangeDocument(range) {
+      const container = range && range.commonAncestorContainer;
+      if (!container) return null;
+      return container.nodeType === Node.DOCUMENT_NODE ? container : container.ownerDocument;
+    }
+
+    function isRectVisibleInReader(rect, renderer, win, doc) {
       if (!rect || rect.width <= 0 || rect.height <= 0) return false;
       const isPaginated = !renderer.scrolled;
       if (isPaginated && renderer.size > 0) {
-        const visibleLeft = renderer.start - renderer.size;
-        const visibleRight = renderer.start;
-        return rect.right > visibleLeft && rect.left < visibleRight;
+        const visibleRange = getVisibleRangeForTTSDoc(doc, renderer);
+        return visibleRange ? rectIntersectsPaginatedRange(rect, visibleRange) : false;
       }
       return rect.right > 0 && rect.left < win.innerWidth && rect.bottom > 0 && rect.top < win.innerHeight;
     }
@@ -2728,10 +2831,11 @@ a { color: ${primary} !important; }
       if (!range || !renderer || !win) return false;
       try {
         const rects = Array.from(range.getClientRects ? range.getClientRects() : []);
+        const doc = getRangeDocument(range);
         if (!rects.length) {
-          return isRectVisibleInReader(range.getBoundingClientRect(), renderer, win);
+          return isRectVisibleInReader(range.getBoundingClientRect(), renderer, win, doc);
         }
-        return rects.some((rect) => isRectVisibleInReader(rect, renderer, win));
+        return rects.some((rect) => isRectVisibleInReader(rect, renderer, win, doc));
       } catch (e) {
         console.log('[visibleTTSSegments] failed to inspect range rects:', e);
         return false;
@@ -2742,10 +2846,11 @@ a { color: ${primary} !important; }
       if (!range || !renderer || !win) return false;
       try {
         const rects = Array.from(range.getClientRects ? range.getClientRects() : []);
+        const doc = getRangeDocument(range);
         if (!rects.length) {
-          return isRectVisibleInReader(range.getBoundingClientRect(), renderer, win);
+          return isRectVisibleInReader(range.getBoundingClientRect(), renderer, win, doc);
         }
-        return isRectVisibleInReader(rects[0], renderer, win);
+        return isRectVisibleInReader(rects[0], renderer, win, doc);
       } catch (e) {
         console.log('[visibleTTSSegments] failed to inspect range start rect:', e);
         return false;
@@ -2765,7 +2870,7 @@ a { color: ${primary} !important; }
           range.selectNodeContents(block);
           return isRangeVisibleInReader(range, renderer, win);
         } catch (e) {
-          return isRectVisibleInReader(block.getBoundingClientRect(), renderer, win);
+          return isRectVisibleInReader(block.getBoundingClientRect(), renderer, win, doc);
         }
       });
     }
@@ -3191,9 +3296,13 @@ a { color: ${primary} !important; }
         const renderer = view && view.renderer;
         const contents = getRendererContents();
         if (!renderer || !contents.length) return [];
+        ttsVisibleRangeByDoc = new WeakMap();
+        const primaryContent = getPrimaryRendererContent();
+        const scanContents = renderer.scrolled && primaryContent ? [primaryContent] : contents;
         const segments = [];
         const stats = {
           contentsCount: contents.length,
+          scannedContentsCount: scanContents.length,
           visibleBlockCount: 0,
           rawSentenceCount: 0,
           skippedTooShort: 0,
@@ -3210,8 +3319,8 @@ a { color: ${primary} !important; }
         // Must be declared here (outer scope) so it's accessible after both loops close.
         let firstVisibleRange = null;
 
-        for (var contentIndex = 0; contentIndex < contents.length; contentIndex++) {
-          const current = contents[contentIndex];
+        for (var contentIndex = 0; contentIndex < scanContents.length; contentIndex++) {
+          const current = scanContents[contentIndex];
           if (!current || !current.doc) continue;
           const doc = current.doc;
           const win = doc.defaultView;
@@ -3289,7 +3398,7 @@ a { color: ${primary} !important; }
               const range = doc.createRange();
               range.setStart(startPos.node, startPos.offset);
               range.setEnd(endPos.node, endPos.offset);
-              if (!isRangeVisibleInReader(range, renderer, win)) {
+              if (!isRangeStartVisibleInReader(range, renderer, win)) {
                 stats.skippedNotVisible++;
                 stats.skippedNotStartVisible++;
                 continue;
@@ -4608,7 +4717,7 @@ ${hE}
                         0% { opacity: 1; }
                         100% { opacity: 0; }
                     }
-                `,y.head.appendChild(A)}a&&o>0&&setTimeout(()=>{m.classList.add("foliate-arrow-fadeout"),setTimeout(()=>{m.parentNode&&m.parentNode.removeChild(m)},1e3)},o)}return h.append(m),h}static copyImage([t],e={}){let{src:s}=e,i=he("image"),{left:n,top:a,height:o,width:c}=t;return i.setAttribute("href",s),i.setAttribute("x",n),i.setAttribute("y",a),i.setAttribute("height",o),i.setAttribute("width",c),i}};ki=new WeakMap,Ri=new WeakMap;var J_=l=>{let t=0,e=s=>{if(s.id=t++,s.subitems)for(let i of s.subitems)e(i)};for(let s of l)e(s);return l},wy=l=>l.flatMap(t=>t.subitems?.length?[t,wy(t.subitems)].flat():t),lh=class{async init({toc:t,ids:e,splitHref:s,getFragment:i}){J_(t);let n=wy(t),a=new Map;for(let[c,h]of n.entries()){let[d,u]=await s(h?.href)??[],f={fragment:u,item:h};a.has(d)?a.get(d).items.push(f):a.set(d,{prev:n[c-1],items:[f]})}let o=new Map;for(let[c,h]of e.entries())a.has(h)?o.set(h,a.get(h)):o.set(h,o.get(e[c-1]));this.ids=e,this.map=o,this.getFragment=i}getProgress(t,e){if(!this.ids)return;let s=this.ids[t],i=this.map.get(s);if(!i)return null;let{prev:n,items:a}=i;if(!a)return n;if(!e||a.length===1&&!a[0].fragment)return a[0].item;let o=e.startContainer.getRootNode();for(let[c,{fragment:h}]of a.entries()){let d=this.getFragment(o,h);if(d&&e.comparePoint(d,0)>0)return a[c-1]?.item??n}return a[a.length-1].item}},_f,yy,Af=class{constructor(t,e,s){v(this,_f);this.sizes=t.map(i=>i.linear!="no"&&i.size>0?i.size:0),this.sizePerLoc=e,this.sizePerTimeUnit=s,this.sizeTotal=this.sizes.reduce((i,n)=>i+n,0),this.sectionFractions=w(this,_f,yy).call(this)}getProgress(t,e,s=0){let{sizes:i,sizePerLoc:n,sizePerTimeUnit:a,sizeTotal:o}=this,c=i[t]??0,d=i.slice(0,t).reduce((m,g)=>m+g,0)+e*c,u=d+s*c,f=o-d,p=(1-e)*c;return{fraction:u/o,section:{current:t,total:i.length},location:{current:Math.floor(d/n),next:Math.floor(u/n),total:Math.ceil(o/n)},time:{section:p/a,total:f/a}}}getSection(t){if(t<=0)return[0,0];if(t>=1)return[this.sizes.length-1,1];t=t+Number.EPSILON;let{sizeTotal:e}=this,s=this.sectionFractions.findIndex(n=>n>t)-1;if(s<0)return[0,0];for(;!this.sizes[s];)s++;let i=(t-this.sectionFractions[s])/(this.sizes[s]/e);return[s,i]}};_f=new WeakSet,yy=function(){let{sizeTotal:t}=this,e=[0],s=0;for(let i of this.sizes)e.push((s+=i)/t);return e};var Q_=(l,t)=>{let e=[];for(let s=t.currentNode;s;s=t.nextNode()){let i=l.comparePoint(s,0);if(i===0)e.push(s);else if(i>0)break}return e},tx=(l,t)=>{let e=[];for(let s=t.nextNode();s;s=t.nextNode())e.push(s);return e},ex=NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT|NodeFilter.SHOW_CDATA_SECTION,sx=l=>{if(l.nodeType===1){let t=l.tagName.toLowerCase();return t==="script"||t==="style"||t==="rt"||t==="rp"?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_SKIP}return NodeFilter.FILTER_ACCEPT},rm=function*(l,t,e){let s=l.commonAncestorContainer??l.body??l,i=document.createTreeWalker(s,ex,{acceptNode:e||sx}),a=(l.commonAncestorContainer?Q_:tx)(l,i),o=a.map(h=>h.nodeValue),c=(h,d,u,f)=>{let p=document.createRange();return p.setStart(a[h],d),p.setEnd(a[u],f),p};for(let h of t(o,c))yield h};var pf="foliate-search:",D_="foliate-tts:",yC=async l=>{let t=new Uint8Array(await l.slice(0,4).arrayBuffer());return t[0]===80&&t[1]===75&&t[2]===3&&t[3]===4},vC=async l=>{let t=new Uint8Array(await l.slice(0,5).arrayBuffer());return t[0]===37&&t[1]===80&&t[2]===68&&t[3]===70&&t[4]===45},AC=({name:l,type:t})=>t==="application/vnd.comicbook+zip"||l.endsWith(".cbz"),_C=({name:l,type:t})=>t==="application/x-fictionbook+xml"||l.endsWith(".fb2"),xC=({name:l,type:t})=>t==="application/x-zip-compressed-fb2"||l.endsWith(".fb2.zip")||l.endsWith(".fbz"),SC=async l=>{let{configure:t,ZipReader:e,BlobReader:s,TextWriter:i,BlobWriter:n}=await Promise.resolve().then(()=>(Rm(),yv));t({useWebWorkers:!1});let o=await new e(new s(l)).getEntries(),c=new Map(o.map(p=>[p.filename,p])),h=p=>(m,...g)=>c.has(m)?p(c.get(m),...g):null,d=h(p=>p.getData(new i)),u=h((p,m)=>p.getData(new n(m)));return{entries:o,loadText:d,loadBlob:u,getSize:p=>c.get(p)?.uncompressedSize??0}},N_=async l=>l.isFile?l:(await Promise.all(Array.from(await new Promise((t,e)=>l.createReader().readEntries(s=>t(s),s=>e(s))),N_))).flat(),EC=async l=>{let t=await N_(l),e=await Promise.all(t.map(d=>new Promise((u,f)=>d.file(p=>u([p,d.fullPath]),p=>f(p))))),s=new Map(e.map(([d,u])=>[u.replace(`${l.fullPath}/`,""),d])),i=new TextDecoder,n=d=>d?i.decode(d):null,a=d=>s.get(d)?.arrayBuffer()??null;return{loadText:async d=>n(await a(d)),loadBlob:d=>s.get(d),getSize:d=>s.get(d)?.size??0}},ey=class extends Error{},sy=class extends Error{},iy=class extends Error{},CC=async l=>{let t=await fetch(l);if(!t.ok)throw new ey(`${t.status} ${t.statusText}`,{cause:t});return new File([await t.blob()],new URL(t.url).pathname)},ay=async l=>{typeof l=="string"&&(l=await CC(l));let t;if(l.isDirectory){let e=await EC(l),{EPUB:s}=await Promise.resolve().then(()=>(Uf(),Bm));t=await new s(e).init()}else if(l.size)if(await yC(l)){let e=await SC(l);if(AC(l)){let{makeComicBook:s}=await Promise.resolve().then(()=>(Cv(),Ev));t=s(e,l)}else if(xC(l)){let{makeFB2:s}=await Promise.resolve().then(()=>(Um(),Hm)),{entries:i}=e,n=i.find(o=>o.filename.endsWith(".fb2")),a=await e.loadBlob((n??i[0]).filename);t=await s(a)}else{let{EPUB:s}=await Promise.resolve().then(()=>(Uf(),Bm));t=await new s(e).init()}}else if(await vC(l)){let{makePDF:e}=await Promise.resolve().then(()=>(Aw(),L1));t=await e(l)}else{let{isMOBI:e,MOBI:s}=await Promise.resolve().then(()=>(U1(),H1));if(await e(l)){let i=await Promise.resolve().then(()=>(Z1(),K1));t=await new s({unzlib:i.unzlibSync}).open(l)}else if(_C(l)){let{makeFB2:i}=await Promise.resolve().then(()=>(Um(),Hm));t=await i(l)}}else throw new sy("File not found");if(!t)throw new iy("File type not supported");return t},ih,al,mf,Js,oy=class oy{constructor(t,e,s={}){v(this,ih);v(this,al);v(this,mf);v(this,Js);b(this,al,t),b(this,mf,e),b(this,Js,s),r(this,Js).hidden&&this.hide(),r(this,al).addEventListener("mousemove",({screenX:i,screenY:n})=>{i===r(this,Js).x&&n===r(this,Js).y||(r(this,Js).x=i,r(this,Js).y=n,this.show(),r(this,ih)&&clearTimeout(r(this,ih)),e()&&b(this,ih,setTimeout(this.hide.bind(this),1e3)))},!1)}cloneFor(t){return new oy(t,r(this,mf),r(this,Js))}hide(){r(this,al).style.cursor="none",r(this,Js).hidden=!0}show(){r(this,al).style.removeProperty("cursor"),r(this,Js).hidden=!1}};ih=new WeakMap,al=new WeakMap,mf=new WeakMap,Js=new WeakMap;var ny=oy,Qs,as,ry=class extends EventTarget{constructor(){super(...arguments);v(this,Qs,[]);v(this,as,-1)}pushState(e){let s=r(this,Qs)[r(this,as)];s===e||s?.fraction&&s.fraction===e.fraction||(r(this,Qs)[++Nt(this,as)._]=e,r(this,Qs).length=r(this,as)+1,this.dispatchEvent(new Event("index-change")))}replaceState(e){let s=r(this,as);r(this,Qs)[s]=e}back(){let e=r(this,as);if(e<=0)return;let s={state:r(this,Qs)[e-1]};b(this,as,e-1),this.dispatchEvent(new CustomEvent("popstate",{detail:s})),this.dispatchEvent(new Event("index-change"))}forward(){let e=r(this,as);if(e>=r(this,Qs).length-1)return;let s={state:r(this,Qs)[e+1]};b(this,as,e+1),this.dispatchEvent(new CustomEvent("popstate",{detail:s})),this.dispatchEvent(new Event("index-change"))}get canGoBack(){return r(this,as)>0}get canGoForward(){return r(this,as)<r(this,Qs).length-1}clear(){b(this,Qs,[]),b(this,as,-1)}};Qs=new WeakMap,as=new WeakMap;var TC=l=>{if(!l)return{};try{let t=Intl.getCanonicalLocales(l)[0],e=new Intl.Locale(t),s=["zh","ja","kr"].includes(e.language),i=(e.getTextInfo?.()??e.textInfo)?.direction;return{canonical:t,locale:e,isCJK:s,direction:i}}catch(t){return console.warn(t),{}}},qg,cr,Ti,wa,hr,on,Yg,_t,an,F_,O_,B_,Xg,z_,$_,H_,gf=class extends HTMLElement{constructor(){super();v(this,_t);v(this,qg,this.attachShadow({mode:"closed"}));v(this,cr);v(this,Ti);v(this,wa);v(this,hr,new Map);v(this,on,{type:"outline",options:{}});v(this,Yg,new ny(this,()=>this.hasAttribute("autohide-cursor")));H(this,"isFixedLayout",!1);H(this,"lastLocation");H(this,"history",new ry);this.history.addEventListener("popstate",({detail:e})=>{let s=this.resolveNavigation(e.state);this.renderer.goTo(s)})}async open(e){if((typeof e=="string"||typeof e.arrayBuffer=="function"||e.isDirectory)&&(e=await ay(e)),this.book=e,this.language=TC(e.metadata?.language),e.splitTOCHref&&e.getTOCFragment){let s=e.sections.map(a=>a.id);b(this,cr,new Af(e.sections,1500,1600));let i=e.splitTOCHref.bind(e),n=e.getTOCFragment.bind(e);b(this,Ti,new lh),await r(this,Ti).init({toc:e.toc??[],ids:s,splitHref:i,getFragment:n}),b(this,wa,new lh),await r(this,wa).init({toc:e.pageList??[],ids:s,splitHref:i,getFragment:n})}if(this.isFixedLayout=this.book.rendition?.layout==="pre-paginated",this.isFixedLayout?(await Promise.resolve().then(()=>(e_(),t_)),this.renderer=document.createElement("foliate-fxl")):(await Promise.resolve().then(()=>(v_(),y_)),this.renderer=document.createElement("foliate-paginator")),this.renderer.setAttribute("exportparts","head,foot,filter"),this.renderer.addEventListener("load",s=>w(this,_t,O_).call(this,s.detail)),this.renderer.addEventListener("relocate",s=>w(this,_t,F_).call(this,s.detail)),this.renderer.addEventListener("create-overlayer",s=>s.detail.attach(w(this,_t,z_).call(this,s.detail))),this.renderer.open(e),r(this,qg).append(this.renderer),e.sections.some(s=>s.mediaOverlay)){let s=e.media.activeClass,i=e.media.playbackActiveClass;this.mediaOverlay=e.getMediaOverlay();let n;this.mediaOverlay.addEventListener("highlight",a=>{let o=this.resolveNavigation(a.detail.text);this.renderer.goTo(o).then(()=>{let{doc:c}=this.renderer.getContents().find(d=>d.index=o.index),h=o.anchor(c);h.classList.add(s),i&&h.ownerDocument.documentElement.classList.add(i),n=new WeakRef(h)})}),this.mediaOverlay.addEventListener("unhighlight",()=>{let a=n?.deref();a&&(a.classList.remove(s),i&&a.ownerDocument.documentElement.classList.remove(i))})}}close(){this.renderer?.destroy(),this.renderer?.remove(),b(this,cr,null),b(this,Ti,null),b(this,wa,null),b(this,hr,new Map),this.lastLocation=null,this.history.clear(),this.tts=null,this.mediaOverlay=null}goToTextStart(){return this.goTo(this.book.landmarks?.find(e=>e.type.includes("bodymatter")||e.type.includes("text"))?.href??this.book.sections.findIndex(e=>e.linear!=="no"))}async init({lastLocation:e,showTextStart:s}){let i=e?this.resolveNavigation(e):null;i?(await this.renderer.goTo(i),this.history.pushState(e)):s?await this.goToTextStart():(this.history.pushState(0),await this.next())}async addAnnotation(e,s){let{value:i,indicatorType:n="outline",indicatorOptions:a={}}=e;if(i.startsWith(pf)){let f=i.replace(pf,""),{index:p,anchor:m}=await this.resolveNavigation(f),g=w(this,_t,Xg).call(this,p);if(g){let{overlayer:y,doc:A}=g;if(s){y.remove(i),y.remove(`${i}::underline`),y.remove(`${i}::tooltip`);return}let _=A?m(A):m,x;n==="arrow"?x=dr.arrow:x=dr.outline,y.add(i,_,x,a)}return}let o=i.startsWith(D_)?i.replace(D_,""):i,{index:c,anchor:h}=await this.resolveNavigation(o),d=w(this,_t,Xg).call(this,c);if(d){let{overlayer:f,doc:p}=d;if(f.remove(i),f.remove(`${i}::underline`),f.remove(`${i}::tooltip`),s&&w(this,_t,an).call(this,"delete-annotation",{value:i,doc:p}),!s){let m=p?h(p):h,g=(y,A,_)=>{let x=_?`${i}::${_}`:i;f.add(x,m,y,A)};w(this,_t,an).call(this,"draw-annotation",{draw:g,annotation:e,doc:p,range:m})}}let u=r(this,Ti).getProgress(c)?.label??"";return{index:c,label:u}}deleteAnnotation(e){return this.addAnnotation(e,!0)}async showAnnotation(e){let{value:s}=e,i=await this.goTo(s);if(i){let{index:n,anchor:a}=i,{doc:o}=w(this,_t,Xg).call(this,n),c=a(o);w(this,_t,an).call(this,"show-annotation",{value:s,index:n,range:c})}}getCFI(e,s){let i=this.book.sections[e].cfi??ah.fromIndex(e);return s?em(i,im(s)):i}resolveCFI(e){if(this.book.resolveCFI)return this.book.resolveCFI(e);let s=ei(e);return{index:ah.toIndex((s.parent??s).shift()),anchor:a=>rh(a,s)}}resolveNavigation(e){try{if(typeof e=="number")return{index:e};if(typeof e.fraction=="number"){let[s,i]=r(this,cr).getSection(e.fraction);return{index:s,anchor:i}}return ol.test(e)?this.resolveCFI(e):this.book.resolveHref(e)}catch(s){console.error(s),console.error(`Could not resolve target ${e}`)}}async goTo(e){e=decodeURIComponent(e);let s=this.resolveNavigation(e);try{return await this.renderer.goTo(s),this.history.pushState(e),s}catch(i){console.error(i),console.error(`Could not go to ${e}`)}}async goToFraction(e){let[s,i]=r(this,cr).getSection(e);await this.renderer.goTo({index:s,anchor:i}),this.history.pushState({fraction:e})}async select(e){try{let s=await this.resolveNavigation(e);await this.renderer.goTo({...s,select:!0}),this.history.pushState(e)}catch(s){console.error(s),console.error(`Could not go to ${e}`)}}deselect(){for(let{doc:e}of this.renderer.getContents())e.defaultView.getSelection().removeAllRanges()}getSectionFractions(){return(r(this,cr)?.sectionFractions??[]).map(e=>e+Number.EPSILON)}getProgressOf(e,s){let i=r(this,Ti)?.getProgress(e,s),n=r(this,wa)?.getProgress(e,s);return{tocItem:i,pageItem:n}}async getTOCItemOf(e){try{let{index:s,anchor:i}=await this.resolveNavigation(e),n=await this.book.sections[s].createDocument(),a=i(n),o=a instanceof Range,c=o?a:n.createRange();return o||c.selectNodeContents(a),r(this,Ti).getProgress(s,c)}catch(s){console.error(s),console.error(`Could not get ${e}`)}}async prev(e){await this.renderer.prev(e)}async next(e){await this.renderer.next(e)}goLeft(){return this.book.dir==="rtl"?this.next():this.prev()}goRight(){return this.book.dir==="rtl"?this.prev():this.next()}async*search(e){this.clearSearch();let{searchMatcher:s}=await Promise.resolve().then(()=>(E_(),S_)),{query:i,index:n}=e,a=s(rm,{defaultLocale:this.language,...e}),o=n!=null?w(this,_t,$_).call(this,a,i,n):w(this,_t,H_).call(this,a,i),c=[];r(this,hr).set(n,c);for await(let h of o)if(h.subitems){let d=h.subitems.map(({cfi:u})=>({value:pf+u}));r(this,hr).set(h.index,d);for(let u of d){let f={...u,indicatorType:r(this,on).type,indicatorOptions:r(this,on).options};this.addAnnotation(f)}yield{label:r(this,Ti).getProgress(h.index)?.label??"",subitems:h.subitems}}else{if(h.cfi){let d={value:pf+h.cfi};c.push(d);let u={...d,indicatorType:r(this,on).type,indicatorOptions:r(this,on).options};this.addAnnotation(u)}yield h}yield"done"}clearSearch(){for(let e of r(this,hr).values())for(let s of e)this.deleteAnnotation(s);r(this,hr).clear()}setSearchIndicator(e="outline",s={}){b(this,on,{type:e,options:s})}async initTTS(e="word",s,i){let n=this.renderer.getContents()[0],a=n?.doc,o=n?.index??0;if(!a)return;if(this.tts&&this.tts.doc===a){s&&(this.tts.highlight=s);return}let{TTS:c}=await Promise.resolve().then(()=>(I_(),M_));this.tts=new c(a,rm,i||null,s||(h=>this.renderer.scrollToAnchor(h,!0)),h=>this.getCFI(o,h),e)}startMediaOverlay(){let{index:e}=this.renderer.getContents()[0];return this.mediaOverlay.start(e)}};qg=new WeakMap,cr=new WeakMap,Ti=new WeakMap,wa=new WeakMap,hr=new WeakMap,on=new WeakMap,Yg=new WeakMap,_t=new WeakSet,an=function(e,s,i){return this.dispatchEvent(new CustomEvent(e,{detail:s,cancelable:i}))},F_=function({reason:e,range:s,index:i,fraction:n,size:a}){let o=r(this,cr)?.getProgress(i,n,a)??{},c=r(this,Ti)?.getProgress(i,s),h=r(this,wa)?.getProgress(i,s),d=this.getCFI(i,s);this.lastLocation={...o,tocItem:c,pageItem:h,cfi:d,range:s},(e==="snap"||e==="page"||e==="scroll")&&this.history.replaceState(d),w(this,_t,an).call(this,"relocate",this.lastLocation)},O_=function({doc:e,index:s}){var i,n;(i=e.documentElement).lang||(i.lang=this.language.canonical??""),this.language.isCJK||(n=e.documentElement).dir||(n.dir=this.language.direction??""),w(this,_t,B_).call(this,e,s),r(this,Yg).cloneFor(e.documentElement),w(this,_t,an).call(this,"load",{doc:e,index:s})},B_=function(e,s){let{book:i}=this,n=i.sections[s];e.addEventListener("click",a=>{let o=a.target.closest("a[href]");if(!o)return;a.preventDefault();let c=o.getAttribute("href"),h=n?.resolveHref?.(c)??c;i?.isExternal?.(h)?Promise.resolve(w(this,_t,an).call(this,"external-link",{a:o,href:h},!0)).then(d=>d?globalThis.open(h,"_blank"):null).catch(d=>console.error(d)):Promise.resolve(w(this,_t,an).call(this,"link",{a:o,href:h},!0)).then(d=>d?this.goTo(h):null).catch(d=>console.error(d))})},Xg=function(e){return this.renderer.getContents().find(s=>s.index===e&&s.overlayer)},z_=function({doc:e,index:s}){let i=new dr;e.addEventListener("click",a=>{let[o,c]=i.hitTest(a);o&&!o.startsWith(pf)&&w(this,_t,an).call(this,"show-annotation",{value:o,index:s,range:c})},!1);let n=r(this,hr).get(s);if(n)for(let a of n){let o={...a,indicatorType:r(this,on).type,indicatorOptions:r(this,on).options};this.addAnnotation(o)}return w(this,_t,an).call(this,"create-overlay",{index:s}),i},$_=async function*(e,s,i){let n=await this.book.sections[i].createDocument();for(let{range:a,excerpt:o}of e(n,s))yield{cfi:this.getCFI(i,a),excerpt:o}},H_=async function*(e,s){let{sections:i}=this.book;for(let[n,{createDocument:a}]of i.entries()){if(!a)continue;let o=await a(),c=Array.from(e(o,s),({range:d,excerpt:u})=>({cfi:this.getCFI(n,d),excerpt:u}));yield{progress:(n+1)/i.length},c.length&&(yield{index:n,subitems:c})}};customElements.get("foliate-view")||customElements.define("foliate-view",gf);vf();Rm();Uf();Aw();window.makeBook=ay;window.Overlayer=dr;window.CFI=oh;window._zipJs={configure:Nf,ZipReader:bh,BlobReader:fl,TextWriter:mh,BlobWriter:pl};window._EPUB=yh;window._makePDFFromURL=vw;customElements.get("foliate-view")||customElements.define("foliate-view",gf);window.ReactNativeWebView&&window.ReactNativeWebView.postMessage(JSON.stringify({type:"foliate-loaded"}));})();
+                `,y.head.appendChild(A)}a&&o>0&&setTimeout(()=>{m.classList.add("foliate-arrow-fadeout"),setTimeout(()=>{m.parentNode&&m.parentNode.removeChild(m)},1e3)},o)}return h.append(m),h}static copyImage([t],e={}){let{src:s}=e,i=he("image"),{left:n,top:a,height:o,width:c}=t;return i.setAttribute("href",s),i.setAttribute("x",n),i.setAttribute("y",a),i.setAttribute("height",o),i.setAttribute("width",c),i}};ki=new WeakMap,Ri=new WeakMap;var J_=l=>{let t=0,e=s=>{if(s.id=t++,s.subitems)for(let i of s.subitems)e(i)};for(let s of l)e(s);return l},wy=l=>l.flatMap(t=>t.subitems?.length?[t,wy(t.subitems)].flat():t),lh=class{async init({toc:t,ids:e,splitHref:s,getFragment:i}){J_(t);let n=wy(t),a=new Map;for(let[c,h]of n.entries()){let[d,u]=await s(h?.href)??[],f={fragment:u,item:h};a.has(d)?a.get(d).items.push(f):a.set(d,{prev:n[c-1],items:[f]})}let o=new Map;for(let[c,h]of e.entries())a.has(h)?o.set(h,a.get(h)):o.set(h,o.get(e[c-1]));this.ids=e,this.map=o,this.getFragment=i}getProgress(t,e){if(!this.ids)return;let s=this.ids[t],i=this.map.get(s);if(!i)return null;let{prev:n,items:a}=i;if(!a)return n;if(!e||a.length===1&&!a[0].fragment)return a[0].item;let o=e.startContainer.getRootNode();for(let[c,{fragment:h}]of a.entries()){let d=this.getFragment(o,h);if(d&&e.comparePoint(d,0)>0)return a[c-1]?.item??n}return a[a.length-1].item}},_f,yy,Af=class{constructor(t,e,s){v(this,_f);this.sizes=t.map(i=>i.linear!="no"&&i.size>0?i.size:0),this.sizePerLoc=e,this.sizePerTimeUnit=s,this.sizeTotal=this.sizes.reduce((i,n)=>i+n,0),this.sectionFractions=w(this,_f,yy).call(this)}getProgress(t,e,s=0){let{sizes:i,sizePerLoc:n,sizePerTimeUnit:a,sizeTotal:o}=this,c=i[t]??0,d=i.slice(0,t).reduce((m,g)=>m+g,0)+e*c,u=d+s*c,f=o-d,p=(1-e)*c;return{fraction:u/o,section:{current:t,total:i.length},location:{current:Math.floor(d/n),next:Math.floor(u/n),total:Math.ceil(o/n)},time:{section:p/a,total:f/a}}}getSection(t){if(t<=0)return[0,0];if(t>=1)return[this.sizes.length-1,1];t=t+Number.EPSILON;let{sizeTotal:e}=this,s=this.sectionFractions.findIndex(n=>n>t)-1;if(s<0)return[0,0];for(;!this.sizes[s];)s++;let i=(t-this.sectionFractions[s])/(this.sizes[s]/e);return[s,i]}};_f=new WeakSet,yy=function(){let{sizeTotal:t}=this,e=[0],s=0;for(let i of this.sizes)e.push((s+=i)/t);return e};var Q_=(l,t)=>{let e=[];for(let s=t.currentNode;s;s=t.nextNode()){let i=l.comparePoint(s,0);if(i===0)e.push(s);else if(i>0)break}return e},tx=(l,t)=>{let e=[];for(let s=t.nextNode();s;s=t.nextNode())e.push(s);return e},ex=NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT|NodeFilter.SHOW_CDATA_SECTION,sx=l=>{if(l.nodeType===1){let t=l.tagName.toLowerCase();return t==="script"||t==="style"||t==="rt"||t==="rp"?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_SKIP}return NodeFilter.FILTER_ACCEPT},rm=function*(l,t,e){let s=l.commonAncestorContainer??l.body??l,i=document.createTreeWalker(s,ex,{acceptNode:e||sx}),a=(l.commonAncestorContainer?Q_:tx)(l,i),o=a.map(h=>h.nodeValue),c=(h,d,u,f)=>{let p=document.createRange();return p.setStart(a[h],d),p.setEnd(a[u],f),p};for(let h of t(o,c))yield h};var pf="foliate-search:",D_="foliate-tts:",yC=async l=>{let t=new Uint8Array(await l.slice(0,4).arrayBuffer());return t[0]===80&&t[1]===75&&t[2]===3&&t[3]===4},vC=async l=>{let t=new Uint8Array(await l.slice(0,5).arrayBuffer());return t[0]===37&&t[1]===80&&t[2]===68&&t[3]===70&&t[4]===45},AC=({name:l,type:t})=>t==="application/vnd.comicbook+zip"||l.endsWith(".cbz"),_C=({name:l,type:t})=>t==="application/x-fictionbook+xml"||l.endsWith(".fb2"),xC=({name:l,type:t})=>t==="application/x-zip-compressed-fb2"||l.endsWith(".fb2.zip")||l.endsWith(".fbz"),SC=async l=>{let{configure:t,ZipReader:e,BlobReader:s,TextWriter:i,BlobWriter:n}=await Promise.resolve().then(()=>(Rm(),yv));t({useWebWorkers:!1});let o=await new e(new s(l)).getEntries(),c=new Map(o.map(p=>[p.filename,p])),h=p=>(m,...g)=>c.has(m)?p(c.get(m),...g):null,d=h(p=>p.getData(new i)),u=h((p,m)=>p.getData(new n(m)));return{entries:o,loadText:d,loadBlob:u,getSize:p=>c.get(p)?.uncompressedSize??0}},N_=async l=>l.isFile?l:(await Promise.all(Array.from(await new Promise((t,e)=>l.createReader().readEntries(s=>t(s),s=>e(s))),N_))).flat(),EC=async l=>{let t=await N_(l),e=await Promise.all(t.map(d=>new Promise((u,f)=>d.file(p=>u([p,d.fullPath]),p=>f(p))))),s=new Map(e.map(([d,u])=>[u.replace(`${l.fullPath}/`,""),d])),i=new TextDecoder,n=d=>d?i.decode(d):null,a=d=>s.get(d)?.arrayBuffer()??null;return{loadText:async d=>n(await a(d)),loadBlob:d=>s.get(d),getSize:d=>s.get(d)?.size??0}},ey=class extends Error{},sy=class extends Error{},iy=class extends Error{},CC=async l=>{let t=await fetch(l);if(!t.ok)throw new ey(`${t.status} ${t.statusText}`,{cause:t});return new File([await t.blob()],new URL(t.url).pathname)},ay=async l=>{typeof l=="string"&&(l=await CC(l));let t;if(l.isDirectory){let e=await EC(l),{EPUB:s}=await Promise.resolve().then(()=>(Uf(),Bm));t=await new s(e).init()}else if(l.size)if(await yC(l)){let e=await SC(l);if(AC(l)){let{makeComicBook:s}=await Promise.resolve().then(()=>(Cv(),Ev));t=s(e,l)}else if(xC(l)){let{makeFB2:s}=await Promise.resolve().then(()=>(Um(),Hm)),{entries:i}=e,n=i.find(o=>o.filename.endsWith(".fb2")),a=await e.loadBlob((n??i[0]).filename);t=await s(a)}else{let{EPUB:s}=await Promise.resolve().then(()=>(Uf(),Bm));t=await new s(e).init()}}else if(await vC(l)){let{makePDF:e}=await Promise.resolve().then(()=>(Aw(),L1));t=await e(l)}else{let{isMOBI:e,MOBI:s}=await Promise.resolve().then(()=>(U1(),H1));if(await e(l)){let i=await Promise.resolve().then(()=>(Z1(),K1));t=await new s({unzlib:i.unzlibSync}).open(l)}else if(_C(l)){let{makeFB2:i}=await Promise.resolve().then(()=>(Um(),Hm));t=await i(l)}}else throw new sy("File not found");if(!t)throw new iy("File type not supported");return t},ih,al,mf,Js,oy=class oy{constructor(t,e,s={}){v(this,ih);v(this,al);v(this,mf);v(this,Js);b(this,al,t),b(this,mf,e),b(this,Js,s),r(this,Js).hidden&&this.hide(),r(this,al).addEventListener("mousemove",({screenX:i,screenY:n})=>{i===r(this,Js).x&&n===r(this,Js).y||(r(this,Js).x=i,r(this,Js).y=n,this.show(),r(this,ih)&&clearTimeout(r(this,ih)),e()&&b(this,ih,setTimeout(this.hide.bind(this),1e3)))},!1)}cloneFor(t){return new oy(t,r(this,mf),r(this,Js))}hide(){r(this,al).style.cursor="none",r(this,Js).hidden=!0}show(){r(this,al).style.removeProperty("cursor"),r(this,Js).hidden=!1}};ih=new WeakMap,al=new WeakMap,mf=new WeakMap,Js=new WeakMap;var ny=oy,Qs,as,ry=class extends EventTarget{constructor(){super(...arguments);v(this,Qs,[]);v(this,as,-1)}pushState(e){let s=r(this,Qs)[r(this,as)];s===e||s?.fraction&&s.fraction===e.fraction||(r(this,Qs)[++Nt(this,as)._]=e,r(this,Qs).length=r(this,as)+1,this.dispatchEvent(new Event("index-change")))}replaceState(e){let s=r(this,as);r(this,Qs)[s]=e}back(){let e=r(this,as);if(e<=0)return;let s={state:r(this,Qs)[e-1]};b(this,as,e-1),this.dispatchEvent(new CustomEvent("popstate",{detail:s})),this.dispatchEvent(new Event("index-change"))}forward(){let e=r(this,as);if(e>=r(this,Qs).length-1)return;let s={state:r(this,Qs)[e+1]};b(this,as,e+1),this.dispatchEvent(new CustomEvent("popstate",{detail:s})),this.dispatchEvent(new Event("index-change"))}get canGoBack(){return r(this,as)>0}get canGoForward(){return r(this,as)<r(this,Qs).length-1}clear(){b(this,Qs,[]),b(this,as,-1)}};Qs=new WeakMap,as=new WeakMap;var TC=l=>{if(!l)return{};try{let t=Intl.getCanonicalLocales(l)[0],e=new Intl.Locale(t),s=["zh","ja","kr"].includes(e.language),i=(e.getTextInfo?.()??e.textInfo)?.direction;return{canonical:t,locale:e,isCJK:s,direction:i}}catch(t){return console.warn(t),{}}},qg,cr,Ti,wa,hr,on,Yg,_t,an,F_,O_,B_,Xg,z_,$_,H_,gf=class extends HTMLElement{constructor(){super();v(this,_t);v(this,qg,this.attachShadow({mode:"closed"}));v(this,cr);v(this,Ti);v(this,wa);v(this,hr,new Map);v(this,on,{type:"outline",options:{}});v(this,Yg,new ny(this,()=>this.hasAttribute("autohide-cursor")));H(this,"isFixedLayout",!1);H(this,"lastLocation");H(this,"history",new ry);this.history.addEventListener("popstate",({detail:e})=>{let s=this.resolveNavigation(e.state);this.renderer.goTo(s)})}async open(e){if((typeof e=="string"||typeof e.arrayBuffer=="function"||e.isDirectory)&&(e=await ay(e)),this.book=e,this.language=TC(e.metadata?.language),e.splitTOCHref&&e.getTOCFragment){let s=e.sections.map(a=>a.id);b(this,cr,new Af(e.sections,1500,1600));let i=e.splitTOCHref.bind(e),n=e.getTOCFragment.bind(e);b(this,Ti,new lh),await r(this,Ti).init({toc:e.toc??[],ids:s,splitHref:i,getFragment:n}),b(this,wa,new lh),await r(this,wa).init({toc:e.pageList??[],ids:s,splitHref:i,getFragment:n})}if(this.isFixedLayout=this.book.rendition?.layout==="pre-paginated",this.isFixedLayout?(await Promise.resolve().then(()=>(e_(),t_)),this.renderer=document.createElement("foliate-fxl")):(await Promise.resolve().then(()=>(v_(),y_)),this.renderer=document.createElement("foliate-paginator")),this.renderer.setAttribute("exportparts","head,foot,filter"),this.renderer.addEventListener("load",s=>w(this,_t,O_).call(this,s.detail)),this.renderer.addEventListener("relocate",s=>w(this,_t,F_).call(this,s.detail)),this.renderer.addEventListener("create-overlayer",s=>s.detail.attach(w(this,_t,z_).call(this,s.detail))),this.renderer.open(e),r(this,qg).append(this.renderer),e.sections.some(s=>s.mediaOverlay)){let s=e.media.activeClass,i=e.media.playbackActiveClass;this.mediaOverlay=e.getMediaOverlay();let n;this.mediaOverlay.addEventListener("highlight",a=>{let o=this.resolveNavigation(a.detail.text);this.renderer.goTo(o).then(()=>{let{doc:c}=this.renderer.getContents().find(d=>d.index=o.index),h=o.anchor(c);h.classList.add(s),i&&h.ownerDocument.documentElement.classList.add(i),n=new WeakRef(h)})}),this.mediaOverlay.addEventListener("unhighlight",()=>{let a=n?.deref();a&&(a.classList.remove(s),i&&a.ownerDocument.documentElement.classList.remove(i))})}}close(){this.renderer?.destroy(),this.renderer?.remove(),b(this,cr,null),b(this,Ti,null),b(this,wa,null),b(this,hr,new Map),this.lastLocation=null,this.history.clear(),this.tts=null,this.mediaOverlay=null}goToTextStart(){return this.goTo(this.book.landmarks?.find(e=>e.type.includes("bodymatter")||e.type.includes("text"))?.href??this.book.sections.findIndex(e=>e.linear!=="no"))}async init({lastLocation:e,showTextStart:s}){let i=e?this.resolveNavigation(e):null;i?(await this.renderer.goTo(i),this.history.pushState(e)):s?await this.goToTextStart():(this.history.pushState(0),await this.next())}async addAnnotation(e,s){let{value:i,indicatorType:n="outline",indicatorOptions:a={}}=e;if(i.startsWith(pf)){let f=i.replace(pf,""),{index:p,anchor:m}=await this.resolveNavigation(f),g=w(this,_t,Xg).call(this,p);if(g){let{overlayer:y,doc:A}=g;if(s){y.remove(i),y.remove(`${i}::underline`),y.remove(`${i}::tooltip`);return}let _=A?m(A):m,x;n==="arrow"?x=dr.arrow:x=dr.outline,y.add(i,_,x,a)}return}let o=i.startsWith(D_)?i.replace(D_,""):i,{index:c,anchor:h}=await this.resolveNavigation(o),d=w(this,_t,Xg).call(this,c);if(d){let{overlayer:f,doc:p}=d;if(f.remove(i),f.remove(`${i}::underline`),f.remove(`${i}::tooltip`),s&&w(this,_t,an).call(this,"delete-annotation",{value:i,doc:p}),!s){let m=p?h(p):h,g=(y,A,_)=>{let x=_?`${i}::${_}`:i;f.add(x,m,y,A)};w(this,_t,an).call(this,"draw-annotation",{draw:g,annotation:e,doc:p,range:m})}}let u=r(this,Ti).getProgress(c)?.label??"";return{index:c,label:u}}deleteAnnotation(e){return this.addAnnotation(e,!0)}async showAnnotation(e){let{value:s}=e,i=await this.goTo(s);if(i){let{index:n,anchor:a}=i,{doc:o}=w(this,_t,Xg).call(this,n),c=a(o);w(this,_t,an).call(this,"show-annotation",{value:s,index:n,range:c})}}getCFI(e,s){let i=this.book.sections[e].cfi??ah.fromIndex(e);return s?em(i,im(s)):i}resolveCFI(e){if(this.book.resolveCFI)return this.book.resolveCFI(e);let s=ei(e);return{index:ah.toIndex((s.parent??s).shift()),anchor:a=>rh(a,s)}}resolveNavigation(e){try{if(typeof e=="number")return{index:e};if(typeof e.fraction=="number"){let[s,i]=r(this,cr).getSection(e.fraction);return{index:s,anchor:i}}return ol.test(e)?this.resolveCFI(e):this.book.resolveHref(e)}catch(s){console.error(s),console.error(`Could not resolve target ${e}`)}}async goTo(e){e=decodeURIComponent(e);let s=this.resolveNavigation(e);try{return await this.renderer.goTo(s),this.history.pushState(e),s}catch(i){console.error(i),console.error(`Could not go to ${e}`)}}async goToFraction(e){let[s,i]=r(this,cr).getSection(e);await this.renderer.goTo({index:s,anchor:i}),this.history.pushState({fraction:e})}async select(e){try{let s=await this.resolveNavigation(e);await this.renderer.goTo({...s,select:!0}),this.history.pushState(e)}catch(s){console.error(s),console.error(`Could not go to ${e}`)}}deselect(){for(let{doc:e}of this.renderer.getContents())e.defaultView.getSelection().removeAllRanges()}getSectionFractions(){return(r(this,cr)?.sectionFractions??[]).map(e=>e+Number.EPSILON)}getProgressOf(e,s){let i=r(this,Ti)?.getProgress(e,s),n=r(this,wa)?.getProgress(e,s);return{tocItem:i,pageItem:n}}async getTOCItemOf(e){try{let{index:s,anchor:i}=await this.resolveNavigation(e),n=await this.book.sections[s].createDocument(),a=i(n),o=a instanceof Range,c=o?a:n.createRange();return o||c.selectNodeContents(a),r(this,Ti).getProgress(s,c)}catch(s){console.error(s),console.error(`Could not get ${e}`)}}async prev(e){await this.renderer.prev(e)}async next(e){await this.renderer.next(e)}goLeft(){return this.book.dir==="rtl"?this.next():this.prev()}goRight(){return this.book.dir==="rtl"?this.prev():this.next()}async*search(e){this.clearSearch();let{searchMatcher:s}=await Promise.resolve().then(()=>(E_(),S_)),{query:i,index:n}=e,a=s(rm,{defaultLocale:this.language,...e}),o=n!=null?w(this,_t,$_).call(this,a,i,n):w(this,_t,H_).call(this,a,i),c=[];r(this,hr).set(n,c);for await(let h of o)if(h.subitems){let d=h.subitems.map(({cfi:u})=>({value:pf+u}));r(this,hr).set(h.index,d);for(let u of d){let f={...u,indicatorType:r(this,on).type,indicatorOptions:r(this,on).options};this.addAnnotation(f)}yield{label:r(this,Ti).getProgress(h.index)?.label??"",subitems:h.subitems}}else{if(h.cfi){let d={value:pf+h.cfi};c.push(d);let u={...d,indicatorType:r(this,on).type,indicatorOptions:r(this,on).options};this.addAnnotation(u)}yield h}yield"done"}clearSearch(){for(let e of r(this,hr).values())for(let s of e)this.deleteAnnotation(s);r(this,hr).clear()}setSearchIndicator(e="outline",s={}){b(this,on,{type:e,options:s})}async initTTS(e="word",s,i){let n=this.renderer.getContents(),a=this.renderer.primaryIndex,o=n.find(u=>u.index===a)??n[0],c=o?.doc,h=o?.index??0;if(!c)return;if(this.tts&&this.tts.doc===c){s&&(this.tts.highlight=s);return}let{TTS:d}=await Promise.resolve().then(()=>(I_(),M_));this.tts=new d(c,rm,i||null,s||(u=>this.renderer.scrollToAnchor(u,!0)),u=>this.getCFI(h,u),e)}startMediaOverlay(){let{index:e}=this.renderer.getContents()[0];return this.mediaOverlay.start(e)}};qg=new WeakMap,cr=new WeakMap,Ti=new WeakMap,wa=new WeakMap,hr=new WeakMap,on=new WeakMap,Yg=new WeakMap,_t=new WeakSet,an=function(e,s,i){return this.dispatchEvent(new CustomEvent(e,{detail:s,cancelable:i}))},F_=function({reason:e,range:s,index:i,fraction:n,size:a}){let o=r(this,cr)?.getProgress(i,n,a)??{},c=r(this,Ti)?.getProgress(i,s),h=r(this,wa)?.getProgress(i,s),d=this.getCFI(i,s);this.lastLocation={...o,tocItem:c,pageItem:h,cfi:d,range:s},(e==="snap"||e==="page"||e==="scroll")&&this.history.replaceState(d),w(this,_t,an).call(this,"relocate",this.lastLocation)},O_=function({doc:e,index:s}){var i,n;(i=e.documentElement).lang||(i.lang=this.language.canonical??""),this.language.isCJK||(n=e.documentElement).dir||(n.dir=this.language.direction??""),w(this,_t,B_).call(this,e,s),r(this,Yg).cloneFor(e.documentElement),w(this,_t,an).call(this,"load",{doc:e,index:s})},B_=function(e,s){let{book:i}=this,n=i.sections[s];e.addEventListener("click",a=>{let o=a.target.closest("a[href]");if(!o)return;a.preventDefault();let c=o.getAttribute("href"),h=n?.resolveHref?.(c)??c;i?.isExternal?.(h)?Promise.resolve(w(this,_t,an).call(this,"external-link",{a:o,href:h},!0)).then(d=>d?globalThis.open(h,"_blank"):null).catch(d=>console.error(d)):Promise.resolve(w(this,_t,an).call(this,"link",{a:o,href:h},!0)).then(d=>d?this.goTo(h):null).catch(d=>console.error(d))})},Xg=function(e){return this.renderer.getContents().find(s=>s.index===e&&s.overlayer)},z_=function({doc:e,index:s}){let i=new dr;e.addEventListener("click",a=>{let[o,c]=i.hitTest(a);o&&!o.startsWith(pf)&&w(this,_t,an).call(this,"show-annotation",{value:o,index:s,range:c})},!1);let n=r(this,hr).get(s);if(n)for(let a of n){let o={...a,indicatorType:r(this,on).type,indicatorOptions:r(this,on).options};this.addAnnotation(o)}return w(this,_t,an).call(this,"create-overlay",{index:s}),i},$_=async function*(e,s,i){let n=await this.book.sections[i].createDocument();for(let{range:a,excerpt:o}of e(n,s))yield{cfi:this.getCFI(i,a),excerpt:o}},H_=async function*(e,s){let{sections:i}=this.book;for(let[n,{createDocument:a}]of i.entries()){if(!a)continue;let o=await a(),c=Array.from(e(o,s),({range:d,excerpt:u})=>({cfi:this.getCFI(n,d),excerpt:u}));yield{progress:(n+1)/i.length},c.length&&(yield{index:n,subitems:c})}};customElements.get("foliate-view")||customElements.define("foliate-view",gf);vf();Rm();Uf();Aw();window.makeBook=ay;window.Overlayer=dr;window.CFI=oh;window._zipJs={configure:Nf,ZipReader:bh,BlobReader:fl,TextWriter:mh,BlobWriter:pl};window._EPUB=yh;window._makePDFFromURL=vw;customElements.get("foliate-view")||customElements.define("foliate-view",gf);window.ReactNativeWebView&&window.ReactNativeWebView.postMessage(JSON.stringify({type:"foliate-loaded"}));})();
 
 </script>
 

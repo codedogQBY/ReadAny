@@ -236,6 +236,19 @@ type PaginatedVisibleRange = {
   source: "renderer" | "legacy-offset" | "size-fallback";
 };
 
+type RendererContent = {
+  doc?: Document | null;
+  index?: number | null;
+  overlayer?: {
+    add: (key: string, range: Range, draw: unknown, options?: unknown) => void;
+    remove: (key: string) => void;
+  } | null;
+};
+
+function getRendererContents(view: FoliateView | null): RendererContent[] {
+  return (view?.renderer?.getContents?.() ?? []) as RendererContent[];
+}
+
 function getPaginatedVisibleRangeCandidates(renderer: {
   start?: unknown;
   end?: unknown;
@@ -801,11 +814,29 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
 
     const ensureDesktopTTS = useCallback(async () => {
       const view = viewRef.current;
-      const current = view?.renderer?.getContents?.()?.[0];
+      const getPrimaryContent = () => {
+        const contents = getRendererContents(view);
+        const primaryIndex = view?.renderer?.primaryIndex;
+        return (
+          contents.find((content) => content?.doc && content.index === primaryIndex) ??
+          contents.find((content) => content?.doc) ??
+          null
+        );
+      };
+      const current = getPrimaryContent();
       if (!view || !current?.doc) return null;
 
       await view.initTTS("sentence", (range) => {
-        const active = view.renderer?.getContents?.()?.[0];
+        const contents = getRendererContents(view);
+        const sourceDoc =
+          range.commonAncestorContainer.nodeType === Node.DOCUMENT_NODE
+            ? (range.commonAncestorContainer as Document)
+            : range.commonAncestorContainer.ownerDocument;
+        const active =
+          contents.find((content) => content?.doc === sourceDoc) ??
+          contents.find((content) => content?.doc && content.index === view.renderer?.primaryIndex) ??
+          contents.find((content) => content?.doc) ??
+          null;
         if (!active?.doc || active.index == null || !active.overlayer) return null;
 
         let cfi: string | null = null;
@@ -818,24 +849,35 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         // Use overlayer directly for the TTS engine's internal highlight callback
         // (this runs synchronously during TTS engine cursor movement)
         let renderRange: Range = range;
+        let renderTarget = active;
         if (cfi) {
           try {
             const resolved = view.resolveCFI(cfi);
-            const anchoredRange = resolved?.anchor?.(active.doc);
+            const target =
+              resolved?.index != null
+                ? contents.find((content) => content?.doc && content.index === resolved.index)
+                : active;
+            if (target?.overlayer) renderTarget = target;
+            const anchoredRange = resolved?.anchor?.((target ?? active).doc);
             if (anchoredRange) renderRange = anchoredRange;
           } catch {
             renderRange = range;
           }
         }
 
-        try {
-          active.overlayer.remove("readany-tts-engine-hl");
-        } catch {
-          // no-op
+        for (const content of contents) {
+          if (!content?.overlayer) continue;
+          try {
+            content.overlayer.remove("readany-tts-engine-hl");
+          } catch {
+            // no-op
+          }
         }
 
         try {
-          active.overlayer.add("readany-tts-engine-hl", renderRange, Overlayer.highlight, {
+          const overlayer = renderTarget.overlayer;
+          if (!overlayer) return cfi;
+          overlayer.add("readany-tts-engine-hl", renderRange, Overlayer.highlight, {
             color: ttsHighlightStateRef.current.color || "rgba(96, 165, 250, 0.35)",
           });
         } catch {
@@ -852,8 +894,13 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       async (alignCfi?: string | null): Promise<TTSSegmentDetail[]> => {
         const view = viewRef.current;
         const renderer = view?.renderer;
-        const contents = renderer?.getContents?.() ?? [];
+        const contents = getRendererContents(view);
         if (!view || !renderer || !contents.length) return [];
+        const primaryContent =
+          contents.find((content) => content?.doc && content.index === renderer.primaryIndex) ??
+          contents.find((content) => content?.doc) ??
+          null;
+        const scanContents = renderer.scrolled && primaryContent ? [primaryContent] : contents;
 
         await ensureDesktopTTS();
 
@@ -872,7 +919,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
             const visibleRange = doc ? getVisibleRangeForDoc(doc) : null;
             return visibleRange ? rectIntersectsPaginatedRange(rect, visibleRange) : false;
           }
-          const win = doc?.defaultView ?? (contents[0]?.doc as Document | undefined)?.defaultView;
+          const win = doc?.defaultView ?? (primaryContent?.doc as Document | undefined)?.defaultView;
           if (!win) return false;
           return (
             rect.right > 0 &&
@@ -904,9 +951,9 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         const blockSelector =
           "p, h1, h2, h3, h4, h5, h6, li, blockquote, dd, dt, figcaption, pre, td, th";
         const lang =
-          (contents[0]?.doc as Document | undefined)?.documentElement.lang ||
-          (contents[0]?.doc as Document | undefined)?.documentElement.getAttribute("xml:lang") ||
-          (contents[0]?.doc as Document | undefined)?.body.lang ||
+          (primaryContent?.doc as Document | undefined)?.documentElement.lang ||
+          (primaryContent?.doc as Document | undefined)?.documentElement.getAttribute("xml:lang") ||
+          (primaryContent?.doc as Document | undefined)?.body.lang ||
           navigator.language ||
           "en";
         const SegmenterCtor = (
@@ -925,7 +972,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
 
         const segments: TTSSegmentDetail[] = [];
         const seenVisibleIdentities = new Set<string>();
-        for (const current of contents) {
+        for (const current of scanContents) {
           const doc = current?.doc as Document | undefined;
           const sectionIndex = current?.index ?? 0;
           if (!doc) continue;

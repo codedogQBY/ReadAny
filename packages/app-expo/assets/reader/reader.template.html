@@ -348,11 +348,23 @@
       return contents.find((content) => content.doc === doc) || null;
     }
 
+    function getPrimaryRendererContent() {
+      const contents = getRendererContents();
+      if (!contents.length) return null;
+      const primaryIndex = view && view.renderer ? view.renderer.primaryIndex : null;
+      return (
+        contents.find((content) => content.doc && content.index === primaryIndex) ||
+        contents.find((content) => content.doc && content.index === currentSectionIndex) ||
+        contents.find((content) => content.doc) ||
+        null
+      );
+    }
+
     function getRendererContentForCfi(cfi) {
       const contents = getRendererContents();
       if (!contents.length) return null;
       if (!cfi || !view || !view.resolveCFI) {
-        return contents.find((content) => content.overlayer) || contents[0] || null;
+        return getPrimaryRendererContent() || contents.find((content) => content.overlayer) || contents[0] || null;
       }
 
       try {
@@ -373,7 +385,7 @@
         console.log('[ttsHighlight] failed to resolve content for cfi:', e);
       }
 
-      return contents.find((content) => content.overlayer) || contents[0] || null;
+      return getPrimaryRendererContent() || contents.find((content) => content.overlayer) || contents[0] || null;
     }
 
     function getAllTTSOverlayerContexts() {
@@ -390,6 +402,8 @@
     }
 
     function getCurrentTTSOverlayerContext() {
+      const primary = getPrimaryRendererContent();
+      if (primary && primary.overlayer) return primary;
       return getAllTTSOverlayerContexts()[0] || null;
     }
 
@@ -2713,13 +2727,102 @@ a { color: ${primary} !important; }
       return null;
     }
 
-    function isRectVisibleInReader(rect, renderer, win) {
+    function getPaginatedVisibleRangeCandidates(renderer) {
+      const start = Number(renderer && renderer.start || 0);
+      const end = Number(renderer && renderer.end || 0);
+      const size = Number(renderer && renderer.size || 0);
+      const candidates = [];
+
+      if (Number.isFinite(start) && Number.isFinite(size) && size > 0) {
+        candidates.push({ left: start - size, right: start, source: 'legacy-offset' });
+        candidates.push({ left: start, right: start + size, source: 'size-fallback' });
+      }
+
+      if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+        candidates.push({ left: start, right: end, source: 'renderer' });
+      }
+
+      return candidates.filter((candidate, index, list) => {
+        return candidate.right > candidate.left &&
+          list.findIndex((item) => item.left === candidate.left && item.right === candidate.right) === index;
+      });
+    }
+
+    function rectIntersectsPaginatedRange(rect, range) {
+      return rect.right > range.left && rect.left < range.right;
+    }
+
+    function scorePaginatedVisibleRange(doc, range) {
+      if (!doc || !doc.body) return 0;
+      const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
+        acceptNode: function (node) {
+          if (isInsideRubyAnnotation(node)) return NodeFilter.FILTER_REJECT;
+          if (isTTSFootnoteMarker(node.nodeValue || '')) return NodeFilter.FILTER_REJECT;
+          if (shouldSkipTTSNode(node.parentElement)) return NodeFilter.FILTER_REJECT;
+          return node.nodeValue && normalizeTTSText(node.nodeValue)
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_SKIP;
+        },
+      });
+      let score = 0;
+      let visited = 0;
+      let textNode = walker.nextNode();
+      while (textNode && visited < 500) {
+        visited += 1;
+        const text = normalizeTTSText(textNode.nodeValue || '');
+        if (text) {
+          try {
+            const textRange = doc.createRange();
+            textRange.selectNodeContents(textNode);
+            const rects = Array.from(textRange.getClientRects ? textRange.getClientRects() : []);
+            if (rects.some((rect) => rect.width > 0 && rect.height > 0 && rectIntersectsPaginatedRange(rect, range))) {
+              score += Math.min(text.length, 120);
+            }
+          } catch {}
+        }
+        textNode = walker.nextNode();
+      }
+      return score;
+    }
+
+    function pickPaginatedVisibleRange(doc, renderer) {
+      const candidates = getPaginatedVisibleRangeCandidates(renderer);
+      if (candidates.length <= 1) return candidates[0] || null;
+
+      const legacyRange = candidates.find((range) => range.source === 'legacy-offset') || null;
+      if (legacyRange && scorePaginatedVisibleRange(doc, legacyRange) > 0) return legacyRange;
+
+      const rendererRange = candidates.find((range) => range.source === 'renderer') || null;
+      if (rendererRange && scorePaginatedVisibleRange(doc, rendererRange) > 0) return rendererRange;
+
+      const fallbackRange = candidates.find((range) => range.source === 'size-fallback') || null;
+      if (fallbackRange && scorePaginatedVisibleRange(doc, fallbackRange) > 0) return fallbackRange;
+
+      return legacyRange || rendererRange || fallbackRange || candidates[0] || null;
+    }
+
+    let ttsVisibleRangeByDoc = new WeakMap();
+
+    function getVisibleRangeForTTSDoc(doc, renderer) {
+      if (!doc) return null;
+      if (ttsVisibleRangeByDoc.has(doc)) return ttsVisibleRangeByDoc.get(doc) || null;
+      const range = pickPaginatedVisibleRange(doc, renderer);
+      ttsVisibleRangeByDoc.set(doc, range);
+      return range;
+    }
+
+    function getRangeDocument(range) {
+      const container = range && range.commonAncestorContainer;
+      if (!container) return null;
+      return container.nodeType === Node.DOCUMENT_NODE ? container : container.ownerDocument;
+    }
+
+    function isRectVisibleInReader(rect, renderer, win, doc) {
       if (!rect || rect.width <= 0 || rect.height <= 0) return false;
       const isPaginated = !renderer.scrolled;
       if (isPaginated && renderer.size > 0) {
-        const visibleLeft = renderer.start - renderer.size;
-        const visibleRight = renderer.start;
-        return rect.right > visibleLeft && rect.left < visibleRight;
+        const visibleRange = getVisibleRangeForTTSDoc(doc, renderer);
+        return visibleRange ? rectIntersectsPaginatedRange(rect, visibleRange) : false;
       }
       return rect.right > 0 && rect.left < win.innerWidth && rect.bottom > 0 && rect.top < win.innerHeight;
     }
@@ -2728,10 +2831,11 @@ a { color: ${primary} !important; }
       if (!range || !renderer || !win) return false;
       try {
         const rects = Array.from(range.getClientRects ? range.getClientRects() : []);
+        const doc = getRangeDocument(range);
         if (!rects.length) {
-          return isRectVisibleInReader(range.getBoundingClientRect(), renderer, win);
+          return isRectVisibleInReader(range.getBoundingClientRect(), renderer, win, doc);
         }
-        return rects.some((rect) => isRectVisibleInReader(rect, renderer, win));
+        return rects.some((rect) => isRectVisibleInReader(rect, renderer, win, doc));
       } catch (e) {
         console.log('[visibleTTSSegments] failed to inspect range rects:', e);
         return false;
@@ -2742,10 +2846,11 @@ a { color: ${primary} !important; }
       if (!range || !renderer || !win) return false;
       try {
         const rects = Array.from(range.getClientRects ? range.getClientRects() : []);
+        const doc = getRangeDocument(range);
         if (!rects.length) {
-          return isRectVisibleInReader(range.getBoundingClientRect(), renderer, win);
+          return isRectVisibleInReader(range.getBoundingClientRect(), renderer, win, doc);
         }
-        return isRectVisibleInReader(rects[0], renderer, win);
+        return isRectVisibleInReader(rects[0], renderer, win, doc);
       } catch (e) {
         console.log('[visibleTTSSegments] failed to inspect range start rect:', e);
         return false;
@@ -2765,7 +2870,7 @@ a { color: ${primary} !important; }
           range.selectNodeContents(block);
           return isRangeVisibleInReader(range, renderer, win);
         } catch (e) {
-          return isRectVisibleInReader(block.getBoundingClientRect(), renderer, win);
+          return isRectVisibleInReader(block.getBoundingClientRect(), renderer, win, doc);
         }
       });
     }
@@ -3191,9 +3296,13 @@ a { color: ${primary} !important; }
         const renderer = view && view.renderer;
         const contents = getRendererContents();
         if (!renderer || !contents.length) return [];
+        ttsVisibleRangeByDoc = new WeakMap();
+        const primaryContent = getPrimaryRendererContent();
+        const scanContents = renderer.scrolled && primaryContent ? [primaryContent] : contents;
         const segments = [];
         const stats = {
           contentsCount: contents.length,
+          scannedContentsCount: scanContents.length,
           visibleBlockCount: 0,
           rawSentenceCount: 0,
           skippedTooShort: 0,
@@ -3210,8 +3319,8 @@ a { color: ${primary} !important; }
         // Must be declared here (outer scope) so it's accessible after both loops close.
         let firstVisibleRange = null;
 
-        for (var contentIndex = 0; contentIndex < contents.length; contentIndex++) {
-          const current = contents[contentIndex];
+        for (var contentIndex = 0; contentIndex < scanContents.length; contentIndex++) {
+          const current = scanContents[contentIndex];
           if (!current || !current.doc) continue;
           const doc = current.doc;
           const win = doc.defaultView;
@@ -3289,7 +3398,7 @@ a { color: ${primary} !important; }
               const range = doc.createRange();
               range.setStart(startPos.node, startPos.offset);
               range.setEnd(endPos.node, endPos.offset);
-              if (!isRangeVisibleInReader(range, renderer, win)) {
+              if (!isRangeStartVisibleInReader(range, renderer, win)) {
                 stats.skippedNotVisible++;
                 stats.skippedNotStartVisible++;
                 continue;
