@@ -36,6 +36,7 @@ vi.mock("../sync-files", () => syncFileMocks);
 const { applyChanges, collectChanges, runSimpleSync } = await import("../simple-sync");
 
 const TABLE_COLUMNS: Record<string, string[]> = {
+  book_groups: ["id", "name", "sort_order", "created_at", "updated_at"],
   books: [
     "id",
     "file_path",
@@ -184,6 +185,18 @@ class FakeSyncDb {
         .map(({ id, deleted_at }) => ({ id, deleted_at })) as T[];
     }
 
+    if (
+      normalized.startsWith(
+        "SELECT id, deleted_at FROM sync_tombstones WHERE table_name = ? AND id IN",
+      )
+    ) {
+      const [tableName, ...ids] = params.map(String);
+      const idSet = new Set(ids);
+      return [...this.tombstones.values()]
+        .filter((row) => row.table_name === tableName && idSet.has(row.id))
+        .map(({ id, deleted_at }) => ({ id, deleted_at })) as T[];
+    }
+
     const stateMatch = normalized.match(
       /^SELECT (\w+) AS id, (\w+) AS timestamp(, deleted_at AS deleted_at)? FROM (\w+) WHERE (\w+) IN \(/,
     );
@@ -211,6 +224,16 @@ class FakeSyncDb {
       normalized === "INSERT OR REPLACE INTO sync_metadata (key, value) VALUES ('last_sync_at', ?)"
     ) {
       this.syncMetadata.set("last_sync_at", String(params[0]));
+      return;
+    }
+
+    if (normalized.startsWith("INSERT INTO sync_tombstones")) {
+      const [id, tableName, deletedAt] = params;
+      this.tombstones.set(`${String(tableName)}:${String(id)}`, {
+        id: String(id),
+        table_name: String(tableName),
+        deleted_at: Number(deletedAt),
+      });
       return;
     }
 
@@ -380,6 +403,17 @@ function bookRow(overrides: Row = {}): Row {
   };
 }
 
+function groupRow(overrides: Row = {}): Row {
+  return {
+    id: "group-test",
+    name: "测试分组",
+    sort_order: 0,
+    created_at: 1000,
+    updated_at: 1000,
+    ...overrides,
+  };
+}
+
 function highlightRow(overrides: Row = {}): Row {
   return {
     id: "hl-1",
@@ -545,6 +579,42 @@ describe("simple sync convergence", () => {
 
     expect(payload.tables.books?.records).toHaveLength(1);
     expect(payload.tables.books?.deletedIds).toEqual([]);
+  });
+
+  it("keeps a remote group tombstone from being resurrected by an older device snapshot", async () => {
+    const target = new FakeSyncDb();
+    dbMocks.currentDb = target;
+    dbMocks.currentDeviceId = "device-local";
+
+    const deleted = await applyChanges({
+      deviceId: "device-a",
+      timestamp: 3000,
+      since: 0,
+      tables: {
+        book_groups: {
+          records: [],
+          deletedIds: ["group-test"],
+          deletedTimestamps: { "group-test": 3000 },
+        },
+      },
+    });
+
+    const staleRecord = await applyChanges({
+      deviceId: "device-b",
+      timestamp: 2000,
+      since: 0,
+      tables: {
+        book_groups: {
+          records: [groupRow({ updated_at: 2000 })],
+          deletedIds: [],
+        },
+      },
+    });
+
+    expect(deleted).toEqual({ applied: 1, skipped: 0 });
+    expect(staleRecord).toEqual({ applied: 0, skipped: 1 });
+    expect(target.get("book_groups", "group-test")).toBeUndefined();
+    expect(target.tombstones.get("book_groups:group-test")?.deleted_at).toBe(3000);
   });
 
   it("uploads a refreshed snapshot after receiving remote-only changes", async () => {

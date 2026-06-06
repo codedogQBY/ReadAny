@@ -372,7 +372,8 @@ export async function applyChanges(
 
           const deletedAt = tableData.deletedTimestamps?.[deletedId] ?? 0;
           if (!options.forceApply && deletedAt > 0) {
-            const localTs = existingRecords.get(String(deletedId))?.timestamp;
+            const localState = existingRecords.get(String(deletedId));
+            const localTs = localState?.timestamp;
             if (localTs !== undefined && localTs > deletedAt) {
               console.log(
                 `[SimpleSync] Skipping deletion of ${tableName}/${deletedId}: local record is newer (${localTs} > ${deletedAt})`,
@@ -382,8 +383,13 @@ export async function applyChanges(
             }
           }
           await db.execute(`DELETE FROM ${tableName} WHERE ${pk} = ?`, [deletedId]);
+          if (deletedAt > 0) {
+            await rememberRemoteTombstone(db, tableName, deletedId, deletedAt, payload.deviceId);
+          }
           applied++;
-          existingRecords.delete(String(deletedId));
+          existingRecords.set(String(deletedId), {
+            timestamp: deletedAt,
+          });
         }
 
         console.log(
@@ -458,6 +464,35 @@ function shouldApplyRemoteRecord(
   return (remoteDeletedAt ?? 0) > (localDeletedAt ?? 0);
 }
 
+async function rememberRemoteTombstone(
+  db: Awaited<ReturnType<typeof getDB>>,
+  tableName: string,
+  id: string,
+  deletedAt: number,
+  deviceId: string,
+): Promise<void> {
+  try {
+    await db.execute(
+      `INSERT INTO sync_tombstones (id, table_name, deleted_at, device_id)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(id, table_name) DO UPDATE SET
+         deleted_at = CASE
+           WHEN excluded.deleted_at > sync_tombstones.deleted_at
+           THEN excluded.deleted_at
+           ELSE sync_tombstones.deleted_at
+         END,
+         device_id = CASE
+           WHEN excluded.deleted_at > sync_tombstones.deleted_at
+           THEN excluded.device_id
+           ELSE sync_tombstones.device_id
+         END`,
+      [id, tableName, deletedAt, deviceId],
+    );
+  } catch {
+    // sync_tombstones may not exist on older schema variants.
+  }
+}
+
 async function loadExistingRecordStates(
   db: Awaited<ReturnType<typeof getDB>>,
   tableName: string,
@@ -490,6 +525,32 @@ async function loadExistingRecordStates(
         deletedAt: normalizeDeletedAt(row.deleted_at),
       });
     }
+  }
+
+  try {
+    for (let offset = 0; offset < ids.length; offset += chunkSize) {
+      const chunk = ids.slice(offset, offset + chunkSize);
+      const placeholders = chunk.map(() => "?").join(", ");
+      const tombstones = await db.select<{ id: string; deleted_at: number }>(
+        `SELECT id, deleted_at
+         FROM sync_tombstones
+         WHERE table_name = ?
+           AND id IN (${placeholders})`,
+        [tableName, ...chunk],
+      );
+      for (const tombstone of tombstones) {
+        const id = String(tombstone.id);
+        const deletedAt = tombstone.deleted_at ?? 0;
+        const existing = states.get(id);
+        if (!existing || deletedAt > existing.timestamp) {
+          states.set(id, {
+            timestamp: deletedAt,
+          });
+        }
+      }
+    }
+  } catch {
+    // sync_tombstones may not exist on older schema variants.
   }
 
   return states;
