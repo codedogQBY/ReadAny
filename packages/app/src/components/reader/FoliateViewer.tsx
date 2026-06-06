@@ -2216,17 +2216,12 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           // Reset annotation click flag
           annotationClickedRef.current = false;
           // Record if there's a selection when pointer goes down
-          const view = viewRef.current;
-          const contents = view?.renderer?.getContents?.();
-          if (contents?.[0]?.doc) {
-            const iframeDoc = contents[0].doc as Document;
-            const sel = iframeDoc.getSelection();
-            hadSelectionOnPointerDown.current = !!(
-              sel &&
-              !sel.isCollapsed &&
-              sel.toString().trim().length > 0
-            );
-          }
+          const sel = doc.getSelection();
+          hadSelectionOnPointerDown.current = !!(
+            sel &&
+            !sel.isCollapsed &&
+            sel.toString().trim().length > 0
+          );
         };
 
         const handlePointerUp = (ev: PointerEvent) => {
@@ -2268,16 +2263,11 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
               return;
             }
 
-            const view = viewRef.current;
-            const contents = view?.renderer?.getContents?.();
-            if (!contents?.[0]?.doc) return;
-
-            const iframeDoc = contents[0].doc as Document;
-            const sel = iframeDoc.getSelection();
+            const sel = doc.getSelection();
             const hasSelectionNow = sel && !sel.isCollapsed && sel.toString().trim().length > 0;
 
             // Check if there's a new selection being made
-            const newSel = getSelectionFromView();
+            const newSel = getSelectionFromView(doc);
 
             if (newSel) {
               // New selection made - update stored range and notify parent
@@ -2429,14 +2419,21 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       [bookKey],
     );
 
-    const getSelectionFromView = useCallback((): BookSelection | null => {
+    const getSelectionFromView = useCallback((targetDoc?: Document | null): BookSelection | null => {
       const view = viewRef.current;
       if (!view) return null;
 
-      const contents = view.renderer?.getContents?.();
-      if (!contents?.[0]?.doc) return null;
+      const contents = getRendererContents(view);
+      const selectedContent =
+        (targetDoc ? contents.find((content) => content.doc === targetDoc) : null) ??
+        contents.find((content) => {
+          const sel = content.doc?.getSelection?.();
+          return !!(sel && !sel.isCollapsed && sel.toString().trim().length > 0);
+        }) ??
+        null;
+      if (!selectedContent?.doc) return null;
 
-      const doc = contents[0].doc as Document;
+      const doc = selectedContent.doc;
       const sel = doc.getSelection();
       const range = getSelectionRange(sel);
       if (!range) return null;
@@ -2447,8 +2444,8 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       let cfi: string | undefined;
       let chapterIndex: number | undefined;
       try {
-        const index = contents[0].index;
-        if (index !== undefined) {
+        const index = selectedContent.index;
+        if (typeof index === "number") {
           cfi = view.getCFI(index, range);
           chapterIndex = index;
         }
