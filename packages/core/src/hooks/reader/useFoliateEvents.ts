@@ -11,6 +11,7 @@ export interface FoliateEventHandlers {
   onRelocate?: (event: Event) => void;
   onDrawAnnotation?: (event: Event) => void;
   onShowAnnotation?: (event: Event) => void;
+  onLink?: (event: Event) => void;
   onExternalLink?: (event: Event) => void;
 }
 
@@ -19,6 +20,7 @@ export function useFoliateEvents(view: FoliateView | null, handlers?: FoliateEve
   const onRelocate = handlers?.onRelocate;
   const onDrawAnnotation = handlers?.onDrawAnnotation;
   const onShowAnnotation = handlers?.onShowAnnotation;
+  const onLink = handlers?.onLink;
   const onExternalLink = handlers?.onExternalLink;
 
   useEffect(() => {
@@ -28,6 +30,7 @@ export function useFoliateEvents(view: FoliateView | null, handlers?: FoliateEve
     if (onRelocate) view.addEventListener("relocate", onRelocate);
     if (onDrawAnnotation) view.addEventListener("draw-annotation", onDrawAnnotation);
     if (onShowAnnotation) view.addEventListener("show-annotation", onShowAnnotation);
+    if (onLink) view.addEventListener("link", onLink);
     if (onExternalLink) view.addEventListener("external-link", onExternalLink);
 
     return () => {
@@ -35,8 +38,9 @@ export function useFoliateEvents(view: FoliateView | null, handlers?: FoliateEve
       if (onRelocate) view.removeEventListener("relocate", onRelocate);
       if (onDrawAnnotation) view.removeEventListener("draw-annotation", onDrawAnnotation);
       if (onShowAnnotation) view.removeEventListener("show-annotation", onShowAnnotation);
+      if (onLink) view.removeEventListener("link", onLink);
       if (onExternalLink) view.removeEventListener("external-link", onExternalLink);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, onLoad, onRelocate, onDrawAnnotation, onShowAnnotation, onExternalLink]);
+  }, [view, onLoad, onRelocate, onDrawAnnotation, onShowAnnotation, onLink, onExternalLink]);
 }

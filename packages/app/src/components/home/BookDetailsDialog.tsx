@@ -33,6 +33,7 @@ import {
   cn,
   createBookMetadataFormValues,
   createEmptyBookReview,
+  getBookProgressPercent,
   hasMissingBookMetadataAutoFillTargets,
   mergeMissingBookMetadataValues,
   splitEditableList,
@@ -359,7 +360,7 @@ export function BookDetailsDialog({ book, open, onOpenChange }: BookDetailsDialo
     );
   };
 
-  const progressPct = Math.round(book.progress * 100);
+  const progressPct = getBookProgressPercent(book.progress);
   const handleDialogOpenChange = (nextOpen: boolean) => {
     if (!nextOpen && values && hasMetadataChanges(values)) {
       if (autoSaveTimerRef.current !== null) {

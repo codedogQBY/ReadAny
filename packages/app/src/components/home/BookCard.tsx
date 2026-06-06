@@ -20,6 +20,7 @@ import { useLibraryStore } from "@/stores/library-store";
 import { useReaderStore } from "@/stores/reader-store";
 import { useVectorModelStore } from "@/stores/vector-model-store";
 import type { Book, VectorizeProgress } from "@readany/core/types";
+import { getBookProgressPercent } from "@readany/core/utils";
 import {
   Check,
   ChevronRight,
@@ -81,7 +82,7 @@ export const BookCard = memo(function BookCard({
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const suppressOpenUntilRef = useRef(0);
-  const progressPct = Math.round(book.progress * 100);
+  const progressPct = getBookProgressPercent(book.progress);
   const coverSrc = useResolvedSrc(book.meta.coverUrl);
   const syncVersion = useSyncVersion();
   const coverImageKey = coverSrc ? `${coverSrc}-${syncVersion}` : "";

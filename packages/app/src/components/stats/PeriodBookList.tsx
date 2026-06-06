@@ -1,5 +1,6 @@
 import { useResolvedSrc } from "@/hooks/use-resolved-src";
 import type { PeriodBookStats } from "@readany/core/stats";
+import { getBookProgressPercent } from "@readany/core/utils";
 /**
  * PeriodBookList — shows books read in a time period with reading time and progress
  */
@@ -15,6 +16,7 @@ interface PeriodBookListItemProps {
 
 function PeriodBookListItem({ book }: PeriodBookListItemProps) {
   const coverSrc = useResolvedSrc(book.coverUrl);
+  const progressPct = getBookProgressPercent(book.progress);
 
   return (
     <div className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-muted/40">
@@ -43,12 +45,10 @@ function PeriodBookListItem({ book }: PeriodBookListItemProps) {
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
             <div
               className="h-full rounded-full bg-emerald-500 transition-all"
-              style={{ width: `${Math.min(book.progress * 100, 100)}%` }}
+              style={{ width: `${progressPct}%` }}
             />
           </div>
-          <span className="text-[10px] text-muted-foreground">
-            {Math.round(book.progress * 100)}%
-          </span>
+          <span className="text-[10px] text-muted-foreground">{progressPct}%</span>
         </div>
       </div>
     </div>

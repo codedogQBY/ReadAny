@@ -31,6 +31,8 @@ export interface FoliateView extends HTMLElement {
   getCFI(index: number, range?: Range): string;
   // biome-ignore lint: foliate-js uses loosely typed objects
   resolveCFI(cfi: string): any;
+  // biome-ignore lint: foliate-js navigation targets can be hrefs, CFIs, numbers, or fraction objects
+  resolveNavigation?(target: any): any;
 
   // Annotations
   // biome-ignore lint: foliate-js annotation format

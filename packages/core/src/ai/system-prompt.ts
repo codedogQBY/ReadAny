@@ -8,6 +8,7 @@
  * 6. Response constraints
  */
 import type { Book, SemanticContext, Skill } from "../types";
+import { getBookProgressPercent } from "../utils/book-progress";
 
 interface PromptContext {
   book: Book | null;
@@ -59,7 +60,7 @@ function buildBookContextSection(book: Book | null): string {
     `- Title: ${book.meta.title}`,
     `- Author: ${book.meta.author}`,
     book.meta.language ? `- Language: ${book.meta.language}` : "",
-    `- Reading Progress: ${Math.round(book.progress * 100)}%`,
+    `- Reading Progress: ${getBookProgressPercent(book.progress)}%`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -221,7 +222,9 @@ function buildWorkflowSection(isVectorized: boolean, hasBookContext: boolean): s
 
   steps.push("3. **Register citations before answering** — If your answer uses book content:");
   steps.push("   - Call **addCitation** before writing the final response body");
-  steps.push("   - Wait for addCitation to return successfully before using the matching [N] marker");
+  steps.push(
+    "   - Wait for addCitation to return successfully before using the matching [N] marker",
+  );
   steps.push("   - This rule applies to BOTH indexed books and non-indexed fallback content");
   steps.push("4. **Synthesize and answer** — Only after citation registration, write your answer");
   steps.push("");
@@ -250,10 +253,14 @@ function buildWorkflowSection(isVectorized: boolean, hasBookContext: boolean): s
     steps.push("   - Plot events, character descriptions, or story details");
     steps.push("   - Any content retrieved via ragSearch, summarize, or content tools");
     steps.push("   - General knowledge not from this book does not need citation");
-    steps.push("   - Your own analysis does not need citation, but cite the content you're analyzing");
+    steps.push(
+      "   - Your own analysis does not need citation, but cite the content you're analyzing",
+    );
     steps.push("");
     steps.push("4. **Citation workflow with CFI:**");
-    steps.push("   - Step 1: Use ragSearch/ragContext or indexed analysis tools to retrieve content");
+    steps.push(
+      "   - Step 1: Use ragSearch/ragContext or indexed analysis tools to retrieve content",
+    );
     steps.push("   - Step 2: Extract chapterTitle, chapterIndex, and **CFI** from tool results");
     steps.push(
       "   - Step 3: Call addCitation with the extracted CFI and set citationIndex to the number you will use in [N]",
@@ -261,9 +268,7 @@ function buildWorkflowSection(isVectorized: boolean, hasBookContext: boolean): s
     steps.push(
       "     The citationIndex values MUST follow the final response marker order exactly: the source for [1] uses citationIndex=1, [2] uses citationIndex=2, etc. Never swap citationIndex values even if tool calls complete out of order.",
     );
-    steps.push(
-      "   - Step 4: Wait for addCitation to return a citation result successfully",
-    );
+    steps.push("   - Step 4: Wait for addCitation to return a citation result successfully");
     steps.push(
       "   - Step 5: Write your final response using [1], [2] to reference citations — each must match the citationIndex you set",
     );
@@ -366,7 +371,7 @@ function buildConstraintsSection(
   ];
 
   if (spoilerFree && book) {
-    const progress = Math.round(book.progress * 100);
+    const progress = getBookProgressPercent(book.progress);
     const chapter = semanticContext?.currentChapter || "unknown";
     lines.push("");
     lines.push("### Spoiler-Free Mode (ACTIVE)");
