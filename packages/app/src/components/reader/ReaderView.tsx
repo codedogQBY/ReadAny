@@ -1549,12 +1549,11 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
       // Get container and iframe for coordinate transformation
       const containerRect = containerRef.current?.getBoundingClientRect();
-      const view = foliateRef.current?.getView();
-      const contents = view?.renderer?.getContents?.();
+      const rangeDoc = range.startContainer.ownerDocument;
+      const iframe = rangeDoc?.defaultView?.frameElement as HTMLIFrameElement | null | undefined;
 
       let offsetRects: DOMRect[] = rects;
-      if (contents?.[0]?.element) {
-        const iframe = contents[0].element as HTMLIFrameElement;
+      if (iframe) {
         const iframeRect = iframe.getBoundingClientRect();
         const scaleX = iframe.clientWidth > 0 ? iframeRect.width / iframe.clientWidth : 1;
         const scaleY = iframe.clientHeight > 0 ? iframeRect.height / iframe.clientHeight : 1;
@@ -1591,11 +1590,11 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
         const containerW = containerRect?.width ?? 800;
         const containerH = containerRect?.height ?? 600;
 
-        const popoverHalfW = 100;
+        const popoverW = 190;
         const popoverH = 44;
 
-        let x = firstRect.left + firstRect.width / 2 - offsetX;
-        x = Math.max(popoverHalfW + 4, Math.min(x, containerW - popoverHalfW - 4));
+        let x = firstRect.left + firstRect.width / 2 - offsetX - popoverW / 2;
+        x = Math.max(4, Math.min(x, containerW - popoverW - 4));
 
         let y = firstRect.top - popoverH - 4 - offsetY;
         if (y < 4) {

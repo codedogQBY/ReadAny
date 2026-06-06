@@ -170,28 +170,29 @@ export function SelectionPopover({
           </div>
         )}
 
-        {/* Main action buttons */}
-        <div className="flex items-center gap-0.5 rounded-lg border border-border bg-background p-1 shadow-lg">
-          {buttons.map((btn) => (
-            <button
-              type="button"
-              key={btn.label}
-              className={cn(
-                "flex h-8 w-8 items-center justify-center rounded-md transition-colors",
-                btn.disabled ? "cursor-not-allowed opacity-40" : "hover:bg-muted",
-                btn.isHighlight && showColors && !isPdf && "bg-muted",
-                btn.icon === Trash2 &&
-                  !btn.disabled &&
-                  "hover:bg-destructive/10 hover:text-destructive",
-              )}
-              title={btn.label}
-              onClick={btn.disabled ? undefined : btn.onClick}
-              disabled={btn.disabled}
-            >
-              <btn.icon className="h-4 w-4" />
-            </button>
-          ))}
-        </div>
+        {!annotated && (
+          <div className="flex items-center gap-0.5 rounded-lg border border-border bg-background p-1 shadow-lg">
+            {buttons.map((btn) => (
+              <button
+                type="button"
+                key={btn.label}
+                className={cn(
+                  "flex h-8 w-8 items-center justify-center rounded-md transition-colors",
+                  btn.disabled ? "cursor-not-allowed opacity-40" : "hover:bg-muted",
+                  btn.isHighlight && showColors && !isPdf && "bg-muted",
+                  btn.icon === Trash2 &&
+                    !btn.disabled &&
+                    "hover:bg-destructive/10 hover:text-destructive",
+                )}
+                title={btn.label}
+                onClick={btn.disabled ? undefined : btn.onClick}
+                disabled={btn.disabled}
+              >
+                <btn.icon className="h-4 w-4" />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

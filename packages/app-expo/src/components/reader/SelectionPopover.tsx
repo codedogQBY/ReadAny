@@ -99,7 +99,9 @@ export function SelectionPopover({
     }
   }, [selection.cfi, hasExistingHighlight]);
 
-  const buttonCount = 4 + (onNote ? 1 : 0) + (onTranslate ? 1 : 0) + (onSpeak ? 1 : 0);
+  const buttonCount = hasExistingHighlight
+    ? 0
+    : 4 + (onNote ? 1 : 0) + (onTranslate ? 1 : 0) + (onSpeak ? 1 : 0);
   const colorRowItemCount = HIGHLIGHT_COLORS.length + (canRemoveHighlight ? 2 : 0);
   const colorRowWidth = showColors
     ? HIGHLIGHT_COLORS.length * COLOR_DOT_SIZE +
@@ -109,7 +111,12 @@ export function SelectionPopover({
     : 0;
   const actionRowWidth = buttonCount * (BUTTON_SIZE + GAP) + POPOVER_PADDING * 2;
   const colorRowHeight = showColors ? 40 : 0;
-  const popoverHeight = 44 + colorRowHeight + POPOVER_PADDING * 2 + GAP;
+  const actionRowHeight = hasExistingHighlight ? 0 : 44;
+  const popoverHeight =
+    actionRowHeight +
+    colorRowHeight +
+    POPOVER_PADDING * 2 +
+    (showColors && actionRowHeight ? GAP : 0);
   const popoverWidth = Math.min(
     Math.max(actionRowWidth, colorRowWidth + POPOVER_PADDING * 2),
     SCREEN_WIDTH - POPOVER_MARGIN * 2,
@@ -200,7 +207,7 @@ export function SelectionPopover({
       <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onDismiss} />
       <View style={[s.popover, { left: position.x, top: position.y }]}>
         {showColors && (
-          <View style={s.colorRow}>
+          <View style={[s.colorRow, !hasExistingHighlight && s.colorRowWithActions]}>
             {HIGHLIGHT_COLORS.map((color) => (
               <TouchableOpacity
                 key={color}
@@ -228,40 +235,42 @@ export function SelectionPopover({
           </View>
         )}
 
-        <View style={s.actionRow}>
-          <TouchableOpacity
-            style={[s.iconBtn, showColors && s.iconBtnActive]}
-            onPress={handleHighlightPress}
-          >
-            <HighlighterIcon size={18} color={showColors ? colors.primary : colors.foreground} />
-          </TouchableOpacity>
-
-          {onNote && (
-            <TouchableOpacity style={s.iconBtn} onPress={handleNote}>
-              <NotebookPenIcon size={18} color={colors.foreground} />
+        {!hasExistingHighlight && (
+          <View style={s.actionRow}>
+            <TouchableOpacity
+              style={[s.iconBtn, showColors && s.iconBtnActive]}
+              onPress={handleHighlightPress}
+            >
+              <HighlighterIcon size={18} color={showColors ? colors.primary : colors.foreground} />
             </TouchableOpacity>
-          )}
 
-          <TouchableOpacity style={s.iconBtn} onPress={handleCopy}>
-            <CopyIcon size={18} color={colors.foreground} />
-          </TouchableOpacity>
+            {onNote && (
+              <TouchableOpacity style={s.iconBtn} onPress={handleNote}>
+                <NotebookPenIcon size={18} color={colors.foreground} />
+              </TouchableOpacity>
+            )}
 
-          {onTranslate && (
-            <TouchableOpacity style={s.iconBtn} onPress={handleTranslate}>
-              <LanguagesIcon size={18} color={colors.foreground} />
+            <TouchableOpacity style={s.iconBtn} onPress={handleCopy}>
+              <CopyIcon size={18} color={colors.foreground} />
             </TouchableOpacity>
-          )}
 
-          <TouchableOpacity style={s.iconBtn} onPress={onAIChat}>
-            <SparklesIcon size={18} color={colors.foreground} />
-          </TouchableOpacity>
+            {onTranslate && (
+              <TouchableOpacity style={s.iconBtn} onPress={handleTranslate}>
+                <LanguagesIcon size={18} color={colors.foreground} />
+              </TouchableOpacity>
+            )}
 
-          {onSpeak && (
-            <TouchableOpacity style={s.iconBtn} onPress={handleSpeak}>
-              <Volume2Icon size={18} color={colors.foreground} />
+            <TouchableOpacity style={s.iconBtn} onPress={onAIChat}>
+              <SparklesIcon size={18} color={colors.foreground} />
             </TouchableOpacity>
-          )}
-        </View>
+
+            {onSpeak && (
+              <TouchableOpacity style={s.iconBtn} onPress={handleSpeak}>
+                <Volume2Icon size={18} color={colors.foreground} />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
       </View>
 
       <Modal
@@ -339,6 +348,8 @@ const makeStyles = (colors: ThemeColors) =>
       gap: 6,
       paddingVertical: 6,
       paddingHorizontal: 8,
+    },
+    colorRowWithActions: {
       marginBottom: GAP,
     },
     colorDot: {
