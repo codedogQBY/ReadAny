@@ -2717,10 +2717,6 @@ function applyRendererSettings(
     applyReflowLayoutSettings(view, settings);
   }
 
-  if (!isFixedLayout) {
-    renderer.setAttribute("animated", "");
-  }
-
   // Apply CSS styles (skip font overrides for fixed layout)
   applyRendererStyles(view, settings, isFixedLayout, theme);
 }
