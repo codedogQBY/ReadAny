@@ -104,9 +104,28 @@ export class ExpoPlatformService implements IPlatformService {
   // ---- Language / Locale ----
 
   async getLocale(): Promise<string> {
-    // Use React Native's I18nManager to get device locale
-    const { I18nManager } = require("react-native");
-    return I18nManager.localeIdentifier || "en_US";
+    const { I18nManager, NativeModules, Platform } = require("react-native");
+    const candidates: unknown[] =
+      Platform.OS === "ios"
+        ? [
+            NativeModules.SettingsManager?.settings?.AppleLocale,
+            NativeModules.SettingsManager?.settings?.AppleLanguages?.[0],
+            NativeModules.PlatformConstants?.localeIdentifier,
+            I18nManager.localeIdentifier,
+          ]
+        : [
+            NativeModules.I18nManager?.localeIdentifier,
+            NativeModules.PlatformConstants?.localeIdentifier,
+            I18nManager.localeIdentifier,
+          ];
+
+    for (const candidate of candidates) {
+      if (typeof candidate === "string" && candidate.trim()) {
+        return candidate;
+      }
+    }
+
+    return "en_US";
   }
 
   // ---- File picker (expo-document-picker) ----

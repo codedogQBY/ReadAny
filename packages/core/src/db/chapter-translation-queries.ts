@@ -35,6 +35,8 @@ export interface UpsertChapterTranslationInput {
   translationVisible?: boolean;
 }
 
+export interface ImportChapterTranslationInput extends ChapterTranslationRecord {}
+
 type ChapterTranslationRow = {
   id: string;
   book_id: string;
@@ -192,6 +194,44 @@ export async function updateChapterTranslationVisibility(
       syncVersion,
       deviceId,
       id,
+    ],
+  );
+}
+
+export async function importChapterTranslationRecord(
+  input: ImportChapterTranslationInput,
+): Promise<void> {
+  const database = await getDB();
+  await ensureChapterTranslationsTable(database);
+  await database.execute(
+    `INSERT INTO chapter_translations (
+      id, book_id, section_index, source_lang, target_lang,
+      provider, model, source_hash, paragraphs,
+      original_visible, translation_visible, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      provider = excluded.provider,
+      model = excluded.model,
+      source_hash = excluded.source_hash,
+      paragraphs = excluded.paragraphs,
+      original_visible = excluded.original_visible,
+      translation_visible = excluded.translation_visible,
+      created_at = excluded.created_at,
+      updated_at = excluded.updated_at`,
+    [
+      input.id,
+      input.bookId,
+      input.sectionIndex,
+      input.sourceLang,
+      input.targetLang,
+      input.provider,
+      input.model || null,
+      input.sourceHash,
+      JSON.stringify(input.paragraphs),
+      input.originalVisible ? 1 : 0,
+      input.translationVisible ? 1 : 0,
+      input.createdAt,
+      input.updatedAt,
     ],
   );
 }

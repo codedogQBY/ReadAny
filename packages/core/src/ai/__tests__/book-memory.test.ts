@@ -13,7 +13,9 @@ describe("book memory", () => {
       {
         userInput: "Why does the author compare reality and fantasy?",
         assistantText: "The answer focuses on the chapter's argument.",
-        selectedQuotes: [{ text: "reality is structured by fantasy", source: "Preface" }],
+        selectedQuotes: [
+          { id: "quote-1", text: "reality is structured by fantasy", source: "Preface" },
+        ],
         chapterTitle: "Preface",
         chapterIndex: 0,
         positionPercent: 0.12,

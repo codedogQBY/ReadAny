@@ -101,12 +101,14 @@ export {
   computeChapterSourceHash,
   deleteChapterTranslationsForSection,
   getChapterTranslation,
+  importChapterTranslationRecord,
   updateChapterTranslationVisibility,
   upsertChapterTranslation,
 } from "./chapter-translation-queries";
 export type {
   ChapterTranslationParagraphRecord,
   ChapterTranslationRecord,
+  ImportChapterTranslationInput,
   UpsertChapterTranslationInput,
 } from "./chapter-translation-queries";
 

@@ -21,6 +21,7 @@ import {
   parseBookFolderName,
   sanitizeBookTitleForFs,
 } from "./sync-naming";
+import { syncChapterTranslationFiles } from "./chapter-translation-files";
 import { parallelLimit } from "./sync-transfer";
 import {
   REMOTE_BOOKS_ROOT,
@@ -73,6 +74,23 @@ type BookRow = {
   file_hash: string;
   cover_url: string;
   title: string;
+};
+
+type ChapterTranslationFileRow = {
+  id: string;
+  book_id: string;
+  book_title: string | null;
+  section_index: number;
+  source_lang: string;
+  target_lang: string;
+  provider: string | null;
+  model: string | null;
+  source_hash: string;
+  paragraphs: string | null;
+  original_visible: number;
+  translation_visible: number;
+  created_at: number;
+  updated_at: number;
 };
 
 type BookInfo = {
@@ -316,6 +334,19 @@ export async function syncFiles(
     );
   }
 
+  const translationRows = await loadChapterTranslationRows(db);
+  if (translationRows.length > 0) {
+    const translationResult = await syncChapterTranslationFiles(backend, translationRows, {
+      forceUploadAll,
+      forceDownloadAll,
+      disableUploads,
+    });
+    filesUploaded += translationResult.uploaded;
+    filesDownloaded += translationResult.downloaded;
+    filesUploadFailed += translationResult.uploadFailed;
+    filesDownloadFailed += translationResult.downloadFailed;
+  }
+
   // --- Phase 3: orphan cleanup ---
   if (!disableRemoteDeletes) {
     await cleanupRemoteOrphans(backend, listings, currentBookIds);
@@ -327,6 +358,38 @@ export async function syncFiles(
 }
 
 /* ─────────────────────────  helpers  ───────────────────────── */
+
+async function loadChapterTranslationRows(
+  db: Awaited<ReturnType<typeof getDB>>,
+): Promise<ChapterTranslationFileRow[]> {
+  try {
+    const rows = await db.select<ChapterTranslationFileRow>(
+      `SELECT
+        ct.id,
+        ct.book_id,
+        b.title AS book_title,
+        ct.section_index,
+        ct.source_lang,
+        ct.target_lang,
+        ct.provider,
+        ct.model,
+        ct.source_hash,
+        ct.paragraphs,
+        ct.original_visible,
+        ct.translation_visible,
+        ct.created_at,
+        ct.updated_at
+      FROM chapter_translations ct
+      JOIN books b ON b.id = ct.book_id
+      WHERE b.deleted_at IS NULL`,
+      [],
+    );
+    return rows.filter((row) => typeof row.paragraphs === "string" || row.paragraphs === null);
+  } catch (error) {
+    console.warn("[Sync] Failed to load chapter translations for file sync:", error);
+    return [];
+  }
+}
 
 async function loadRemoteListings(
   backend: ISyncBackend,

@@ -48,13 +48,13 @@ describe("chapter-translation-queries", () => {
     );
     expect(
       computeChapterSourceHash([
-        { paragraphId: "p1", originalText: "Hello", translatedText: "Hello zh" },
-        { paragraphId: "p2", originalText: "World", translatedText: "World zh" },
+        { paragraphId: "p1", originalText: "Hello" },
+        { paragraphId: "p2", originalText: "World" },
       ]),
     ).toBe(
       computeChapterSourceHash([
-        { paragraphId: "p1", originalText: "Hello", translatedText: "Hello zh" },
-        { paragraphId: "p2", originalText: "World", translatedText: "World zh" },
+        { paragraphId: "p1", originalText: "Hello" },
+        { paragraphId: "p2", originalText: "World" },
       ]),
     );
   });
@@ -80,7 +80,7 @@ describe("chapter-translation-queries", () => {
 
     expect(coreMocks.nextSyncVersion).toHaveBeenCalledWith(mockDb, "chapter_translations");
     expect(coreMocks.getDeviceId).toHaveBeenCalled();
-    const [sql, params] = mockExecute.mock.calls.at(-1)!;
+    const [sql, params] = mockExecute.mock.calls[mockExecute.mock.calls.length - 1]!;
     expect(sql).toContain("INSERT INTO chapter_translations");
     expect(params[0]).toBe("book-1:3:AUTO:zh-CN");
     expect(params[1]).toBe("book-1");
@@ -166,7 +166,7 @@ describe("chapter-translation-queries", () => {
       "chapter_translations",
       "book-1:3:AUTO:zh-CN",
     );
-    const [sql, params] = mockExecute.mock.calls.at(-1)!;
+    const [sql, params] = mockExecute.mock.calls[mockExecute.mock.calls.length - 1]!;
     expect(sql).toContain("UPDATE chapter_translations SET");
     expect(sql).toContain("original_visible = ?");
     expect(sql).toContain("translation_visible = ?");

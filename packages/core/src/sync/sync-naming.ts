@@ -9,15 +9,21 @@
  * Local storage stays UUID-flat (`books/{id}.{ext}`, `covers/{id}.{ext}`).
  */
 
-import {
-  COVER_EXTENSIONS,
-  REMOTE_BOOKS_ROOT,
-} from "./sync-types";
+import { COVER_EXTENSIONS, REMOTE_BOOKS_ROOT } from "./sync-types";
 
 const FALLBACK_TITLE = "未命名";
 const MAX_TITLE_LEN = 64;
 // UUID v4 form: 8-4-4-4-12 hex chars (36 chars total).
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function stripAsciiControlCharacters(value: string): string {
+  return Array.from(value)
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code >= 32 && code !== 127;
+    })
+    .join("");
+}
 
 /**
  * Strip filesystem / WebDAV-unsafe characters, collapse whitespace,
@@ -25,9 +31,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  */
 export function sanitizeBookTitleForFs(title: string | null | undefined): string {
   if (!title) return FALLBACK_TITLE;
-  const cleaned = title
-    .replace(/[\/\\:*?"<>|]/g, "_")
-    .replace(/[\x00-\x1F\x7F]/g, "")
+  const cleaned = stripAsciiControlCharacters(title.replace(/[\/\\:*?"<>|]/g, "_"))
     .replace(/\s+/g, " ")
     .trim();
   if (!cleaned) return FALLBACK_TITLE;
@@ -45,13 +49,51 @@ export function buildBookFolderName(book: { id: string; title?: string | null })
 }
 
 /** File path inside the book dir, e.g. {title}.epub. */
-export function buildBookRemoteFile(book: { id: string; title?: string | null }, ext: string): string {
+export function buildBookRemoteFile(
+  book: { id: string; title?: string | null },
+  ext: string,
+): string {
   return `${buildBookRemoteDir(book)}/${sanitizeBookTitleForFs(book.title)}.${ext}`;
 }
 
 /** Cover path inside the book dir, e.g. {title}.jpg. */
-export function buildBookRemoteCover(book: { id: string; title?: string | null }, ext: string): string {
+export function buildBookRemoteCover(
+  book: { id: string; title?: string | null },
+  ext: string,
+): string {
   return `${buildBookRemoteDir(book)}/${sanitizeBookTitleForFs(book.title)}.${ext}`;
+}
+
+function sanitizeTranslationPathSegment(value: string | number): string {
+  const cleaned = stripAsciiControlCharacters(String(value).replace(/[\/\\:*?"<>|]/g, "_"))
+    .replace(/\s+/g, "_")
+    .trim();
+  return cleaned || "unknown";
+}
+
+export function buildBookRemoteTranslationsDir(book: {
+  id: string;
+  title?: string | null;
+}): string {
+  return `${buildBookRemoteDir(book)}/translations`;
+}
+
+export function buildChapterTranslationRemoteFile(
+  book: { id: string; title?: string | null },
+  translation: {
+    sectionIndex: number;
+    sourceLang: string;
+    targetLang: string;
+    sourceHash?: string;
+  },
+): string {
+  const section = String(translation.sectionIndex).padStart(5, "0");
+  const sourceLang = sanitizeTranslationPathSegment(translation.sourceLang);
+  const targetLang = sanitizeTranslationPathSegment(translation.targetLang);
+  const hash = translation.sourceHash
+    ? `-${sanitizeTranslationPathSegment(translation.sourceHash)}`
+    : "";
+  return `${buildBookRemoteTranslationsDir(book)}/${section}-${sourceLang}-${targetLang}${hash}.json`;
 }
 
 /**

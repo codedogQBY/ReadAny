@@ -607,7 +607,7 @@ describe("simple sync convergence", () => {
     ).toHaveProperty("books");
   });
 
-  it("syncs persisted chapter translations as first-class records", async () => {
+  it("syncs chapter translations through the legacy device payload for existing clients", async () => {
     const backend = new MemoryBackend();
     const deviceA = new FakeSyncDb();
     const deviceB = new FakeSyncDb();
@@ -617,6 +617,11 @@ describe("simple sync convergence", () => {
 
     now = 1100;
     await syncDevice("device-a", deviceA, backend);
+
+    const uploaded = backend.jsonFiles.get("/readany/sync/device-device-a.json") as {
+      tables: Record<string, { records: Row[] }>;
+    };
+    expect(uploaded.tables.chapter_translations.records[0]).toHaveProperty("paragraphs");
 
     now = 1200;
     await syncDevice("device-b", deviceB, backend);

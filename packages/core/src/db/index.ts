@@ -69,6 +69,7 @@ export {
   computeChapterSourceHash,
   deleteChapterTranslationsForSection,
   getChapterTranslation,
+  importChapterTranslationRecord,
   updateChapterTranslationVisibility,
   upsertChapterTranslation,
   // Reading session queries
@@ -94,5 +95,6 @@ export type { HighlightWithBook } from "./database";
 export type {
   ChapterTranslationParagraphRecord,
   ChapterTranslationRecord,
+  ImportChapterTranslationInput,
   UpsertChapterTranslationInput,
 } from "./database";

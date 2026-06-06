@@ -17,9 +17,12 @@ vi.mock("../sync-adapter", () => ({
 }));
 
 const mockSelect = vi.fn();
+const mockExecute = vi.fn();
 const mockSetBookSyncStatus = vi.fn();
+const mockImportChapterTranslationRecord = vi.fn();
 vi.mock("../../db/database", () => ({
-  getDB: vi.fn(async () => ({ select: mockSelect })),
+  getDB: vi.fn(async () => ({ select: mockSelect, execute: mockExecute })),
+  importChapterTranslationRecord: mockImportChapterTranslationRecord,
   setBookSyncStatus: mockSetBookSyncStatus,
 }));
 
@@ -47,6 +50,8 @@ describe("sync-files", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSelect.mockResolvedValue([]);
+    mockExecute.mockResolvedValue(undefined);
+    mockImportChapterTranslationRecord.mockResolvedValue(undefined);
     mockAdapter.listFiles.mockResolvedValue([]);
   });
 
@@ -244,6 +249,148 @@ describe("sync-files", () => {
         expect.objectContaining({
           phase: "files",
           operation: "upload",
+        }),
+      );
+    });
+
+    it("uploads persisted chapter translations as visible JSON files", async () => {
+      mockSelect.mockImplementation(async (sql: string) => {
+        if (sql.includes("FROM books WHERE deleted_at IS NULL")) {
+          return [
+            {
+              id: "book-1",
+              file_path: null,
+              file_hash: "h1",
+              cover_url: null,
+              title: "Test Book",
+            },
+          ];
+        }
+        if (sql.includes("FROM chapter_translations")) {
+          return [
+            {
+              id: "book-1:0:AUTO:zh-CN",
+              book_id: "book-1",
+              book_title: "Test Book",
+              section_index: 0,
+              source_lang: "AUTO",
+              target_lang: "zh-CN",
+              provider: "ai",
+              model: "deepseek-v4-pro[1m]",
+              source_hash: "hash-1",
+              paragraphs: JSON.stringify([
+                { paragraphId: "p1", originalText: "Hello", translatedText: "Hello zh" },
+              ]),
+              original_visible: 1,
+              translation_visible: 1,
+              created_at: 1000,
+              updated_at: 1000,
+            },
+          ];
+        }
+        return [];
+      });
+
+      const backend = createMockBackend({
+        listDir: vi.fn().mockResolvedValue([]),
+      });
+
+      const result = await syncFiles(backend);
+
+      expect(result.filesUploaded).toBe(1);
+      expect(backend.put).toHaveBeenCalledWith(
+        `${REMOTE_BOOKS_ROOT}/Test Book-book-1/translations/00000-AUTO-zh-CN-hash-1.json`,
+        expect.any(Uint8Array),
+      );
+    });
+
+    it("downloads remote chapter translation JSON into the local database", async () => {
+      mockSelect.mockImplementation(async (sql: string) => {
+        if (sql.includes("FROM books WHERE deleted_at IS NULL")) {
+          return [
+            {
+              id: "book-1",
+              file_path: null,
+              file_hash: "h1",
+              cover_url: null,
+              title: "Test Book",
+            },
+          ];
+        }
+        if (sql.includes("FROM chapter_translations")) {
+          return [
+            {
+              id: "book-1:0:AUTO:zh-CN",
+              book_id: "book-1",
+              book_title: "Test Book",
+              section_index: 0,
+              source_lang: "AUTO",
+              target_lang: "zh-CN",
+              provider: "ai",
+              model: "deepseek-v4-pro[1m]",
+              source_hash: "hash-1",
+              paragraphs: "[]",
+              original_visible: 1,
+              translation_visible: 1,
+              created_at: 1000,
+              updated_at: 1000,
+            },
+          ];
+        }
+        return [];
+      });
+
+      const remotePath = `${REMOTE_BOOKS_ROOT}/Test Book-book-1/translations/00000-AUTO-zh-CN-hash-1.json`;
+      const backend = createMockBackend({
+        listDir: vi.fn().mockImplementation(async (path: string) => {
+          if (path === `${REMOTE_BOOKS_ROOT}/Test Book-book-1/translations`) {
+            return [
+              {
+                name: "00000-AUTO-zh-CN-hash-1.json",
+                path: remotePath,
+                size: 100,
+                lastModified: 2000,
+                isDirectory: false,
+              },
+            ];
+          }
+          return [];
+        }),
+        get: vi.fn().mockResolvedValue(
+          new TextEncoder().encode(
+            JSON.stringify({
+              schemaVersion: 1,
+              id: "book-1:0:AUTO:zh-CN",
+              bookId: "book-1",
+              sectionIndex: 0,
+              sourceLang: "AUTO",
+              targetLang: "zh-CN",
+              provider: "ai",
+              model: "deepseek-v4-pro[1m]",
+              sourceHash: "hash-1",
+              paragraphs: [
+                { paragraphId: "p1", originalText: "Hello", translatedText: "Hello zh" },
+              ],
+              originalVisible: true,
+              translationVisible: true,
+              createdAt: 1000,
+              updatedAt: 1000,
+            }),
+          ),
+        ),
+      });
+
+      const result = await syncFiles(backend);
+
+      expect(result.filesDownloaded).toBe(1);
+      expect(backend.get).toHaveBeenCalledWith(remotePath);
+      expect(mockImportChapterTranslationRecord).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "book-1:0:AUTO:zh-CN",
+          bookId: "book-1",
+          paragraphs: [
+            { paragraphId: "p1", originalText: "Hello", translatedText: "Hello zh" },
+          ],
         }),
       );
     });
