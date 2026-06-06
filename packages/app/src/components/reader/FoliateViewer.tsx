@@ -230,11 +230,7 @@ function getTTSSegmentIdentity(cfi?: string | null, text?: string | null) {
   return `${cfi || ""}::${normalizeTTSSegmentText(text)}`;
 }
 
-function getIframeClickMetrics(
-  doc: Document,
-  container: HTMLElement | null,
-  clientX: number,
-) {
+function getIframeClickMetrics(doc: Document, container: HTMLElement | null, clientX: number) {
   const iframe = doc.defaultView?.frameElement as HTMLIFrameElement | null;
   if (!iframe || !container) return null;
 
@@ -256,6 +252,168 @@ function getIframeClickMetrics(
       left: containerRect.left,
       width: containerRect.width,
     },
+  };
+}
+
+function isFootnoteMarkerText(text: string): boolean {
+  const value = text.replace(/\s+/g, "").trim();
+  if (!value) return false;
+  if (value === "注" || value === "註") return true;
+  return /^[\[\(（【〔［]?(?:\d{1,4}|[一二三四五六七八九十百千万零〇两]{1,8}|[ivxlcdmIVXLCDM]{1,10})[\]\)）】〕］]?$/.test(
+    value,
+  );
+}
+
+function getHrefFragmentId(href?: string | null): string | null {
+  if (!href) return null;
+  const hashIndex = href.indexOf("#");
+  if (hashIndex < 0 || hashIndex === href.length - 1) return null;
+  try {
+    return decodeURIComponent(href.slice(hashIndex + 1));
+  } catch {
+    return href.slice(hashIndex + 1);
+  }
+}
+
+function findElementByFragmentId(doc: Document, fragmentId: string | null): Element | null {
+  if (!fragmentId) return null;
+  const byId = doc.getElementById(fragmentId);
+  if (byId) return byId;
+  return doc.getElementsByName(fragmentId)[0] ?? null;
+}
+
+function isFootnoteLikeElement(element: Element | null): boolean {
+  if (!element) return false;
+  const haystack = [
+    element.id,
+    element.getAttribute("role"),
+    element.getAttribute("type"),
+    element.getAttribute("epub:type"),
+    element.className,
+  ]
+    .map((value) => String(value || "").toLowerCase())
+    .join(" ");
+  return /\b(doc-)?(noteref|footnote|endnote|rearnote|note)\b|fn(ref)?|duokan-footnote|calibre-footnote/.test(
+    haystack,
+  );
+}
+
+function isLikelyFootnoteLink(anchor: HTMLAnchorElement, href?: string | null): boolean {
+  const rawHref = anchor.getAttribute("href") || href || "";
+  const hrefLower = rawHref.toLowerCase();
+  const markerText = isFootnoteMarkerText(anchor.textContent || "");
+  if (
+    isFootnoteLikeElement(anchor) ||
+    isFootnoteLikeElement(anchor.closest("sup, span, a, [role], [type], [epub\\:type]"))
+  ) {
+    return true;
+  }
+  if (
+    /(^|[#/_-])(fn|footnote|endnote|note|noteref|duokan-footnote|calibre-footnote)/i.test(hrefLower)
+  ) {
+    return true;
+  }
+  return markerText && Boolean(getHrefFragmentId(rawHref));
+}
+
+function getElementPreviewText(element: Element | Range | null): string {
+  if (!element) return "";
+  const cloned =
+    element instanceof Range
+      ? element.cloneContents()
+      : element.cloneNode(true) instanceof DocumentFragment
+        ? (element.cloneNode(true) as DocumentFragment)
+        : (() => {
+            const fragment = document.createDocumentFragment();
+            fragment.appendChild(element.cloneNode(true));
+            return fragment;
+          })();
+
+  for (const node of Array.from(cloned.querySelectorAll("script, style, rt, rp, a[href]"))) {
+    const text = node.textContent || "";
+    if (node.matches("a[href]") && !isFootnoteMarkerText(text)) continue;
+    node.remove();
+  }
+
+  return cleanText(cloned.textContent || "").slice(0, 600);
+}
+
+async function resolveFootnotePreviewText(
+  view: FoliateView | null,
+  anchor: HTMLAnchorElement,
+  href?: string | null,
+): Promise<string> {
+  const rawHref = anchor.getAttribute("href") || href || "";
+  const sourceDoc = anchor.ownerDocument;
+  const localTarget = findElementByFragmentId(sourceDoc, getHrefFragmentId(rawHref));
+  if (localTarget && (isFootnoteLikeElement(localTarget) || isLikelyFootnoteLink(anchor, href))) {
+    return getElementPreviewText(localTarget);
+  }
+
+  if (!view?.resolveNavigation || !href) return "";
+  try {
+    const resolved = await Promise.resolve(view.resolveNavigation(href));
+    const targetIndex = resolved?.index;
+    if (typeof targetIndex !== "number") return "";
+    const currentContent = view.renderer
+      ?.getContents?.()
+      ?.find((item: { index?: number }) => item.index === targetIndex);
+    const targetDoc =
+      (currentContent?.doc as Document | undefined) ??
+      (await view.book?.sections?.[targetIndex]?.createDocument?.());
+    if (!targetDoc) return "";
+    const target = typeof resolved.anchor === "function" ? resolved.anchor(targetDoc) : null;
+    return getElementPreviewText(target);
+  } catch {
+    return "";
+  }
+}
+
+function getFootnotePreviewKey(anchor: HTMLAnchorElement, href?: string | null): string {
+  return [
+    anchor.ownerDocument.location?.href || "",
+    anchor.getAttribute("href") || href || "",
+    anchor.textContent?.trim() || "",
+  ].join("::");
+}
+
+function getAnchorPreviewPosition(
+  anchor: HTMLAnchorElement,
+  container: HTMLElement | null,
+): Omit<FootnotePreview, "key" | "text"> | null {
+  if (!container) return null;
+  const rect = anchor.getBoundingClientRect();
+  const iframe = anchor.ownerDocument.defaultView?.frameElement as HTMLIFrameElement | null;
+  const iframeRect = iframe?.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+  const scaleX =
+    iframe && iframe.clientWidth > 0 && iframeRect ? iframeRect.width / iframe.clientWidth : 1;
+  const scaleY =
+    iframe && iframe.clientHeight > 0 && iframeRect ? iframeRect.height / iframe.clientHeight : 1;
+  const anchorX =
+    (iframeRect?.left ?? 0) + rect.left * scaleX + (rect.width * scaleX) / 2 - containerRect.left;
+  const anchorTop = (iframeRect?.top ?? 0) + rect.top * scaleY - containerRect.top;
+  const anchorBottom = anchorTop + rect.height * scaleY;
+  const width = Math.max(180, Math.min(360, containerRect.width - 32));
+  const maxLeft = Math.max(16, containerRect.width - width - 16);
+  const left = Math.max(16, Math.min(maxLeft, anchorX - width / 2));
+  const belowTop = anchorBottom + 12;
+  const belowSpace = containerRect.height - belowTop - 16;
+  const aboveSpace = anchorTop - 16;
+  const placement = belowSpace < 120 && aboveSpace > belowSpace ? "above" : "below";
+  const maxHeight =
+    placement === "above"
+      ? Math.max(96, Math.min(260, aboveSpace - 10))
+      : Math.max(96, Math.min(260, belowSpace));
+  const top = Math.max(16, Math.min(containerRect.height - maxHeight - 16, belowTop));
+  return {
+    left,
+    width,
+    maxHeight,
+    placement,
+    ...(placement === "above"
+      ? { bottom: Math.max(16, containerRect.height - anchorTop + 10) }
+      : { top }),
   };
 }
 
@@ -404,6 +562,22 @@ interface FoliateViewerProps {
   onToggleChat?: () => void;
 }
 
+interface LinkEventDetail {
+  a?: HTMLAnchorElement;
+  href?: string;
+}
+
+interface FootnotePreview {
+  key: string;
+  text: string;
+  left: number;
+  width: number;
+  maxHeight: number;
+  placement: "above" | "below";
+  top?: number;
+  bottom?: number;
+}
+
 export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>(
   function FoliateViewer(
     {
@@ -430,6 +604,8 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
     const viewRef = useRef<FoliateView | null>(null);
     const isViewCreated = useRef(false);
     const [loading, setLoading] = useState(true);
+    const [footnotePreview, setFootnotePreview] = useState<FootnotePreview | null>(null);
+    const activeFootnoteKeyRef = useRef<string | null>(null);
 
     const isFixedLayout = isFixedLayoutBook(format, bookDoc);
     // Track when view is ready so hooks/events re-bind
@@ -1488,6 +1664,8 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
                 },
               }
             : rawDetail;
+        activeFootnoteKeyRef.current = null;
+        setFootnotePreview(null);
         onRelocate?.(detail);
 
         // Update reading context service
@@ -1585,6 +1763,33 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
     // Stable wrapper functions that delegate to latest impl via ref
     const docLoadHandler = useCallback((event: Event) => docLoadHandlerRef.current(event), []);
     const relocateHandler = useCallback((event: Event) => relocateHandlerRef.current(event), []);
+
+    const linkHandler = useCallback((event: Event) => {
+      const customEvent = event as CustomEvent<LinkEventDetail>;
+      const anchor = customEvent.detail?.a;
+      const href = customEvent.detail?.href;
+      if (!anchor || !isLikelyFootnoteLink(anchor, href)) return;
+
+      event.preventDefault();
+      annotationClickedRef.current = true;
+      const key = getFootnotePreviewKey(anchor, href);
+      if (activeFootnoteKeyRef.current === key) {
+        activeFootnoteKeyRef.current = null;
+        setFootnotePreview(null);
+        return;
+      }
+      void (async () => {
+        const text = await resolveFootnotePreviewText(viewRef.current, anchor, href);
+        const position = getAnchorPreviewPosition(anchor, containerRef.current);
+        if (!text || !position) {
+          activeFootnoteKeyRef.current = null;
+          setFootnotePreview(null);
+          return;
+        }
+        activeFootnoteKeyRef.current = key;
+        setFootnotePreview({ key, text, ...position });
+      })();
+    }, []);
 
     // --- Draw annotation handler ---
     // This is called by foliate-js when an annotation needs to be rendered
@@ -2152,6 +2357,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       onRelocate: relocateHandler,
       onDrawAnnotation: drawAnnotationHandler,
       onShowAnnotation: showAnnotationHandler,
+      onLink: linkHandler,
     });
 
     // --- Open book ---
@@ -2231,6 +2437,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           view.addEventListener("draw-annotation", drawAnnotationHandler);
           view.addEventListener("delete-annotation", deleteAnnotationHandler);
           view.addEventListener("show-annotation", showAnnotationHandler);
+          view.addEventListener("link", linkHandler);
           setViewReady(true);
 
           // Navigate to last location or start
@@ -2359,6 +2566,8 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         const view = viewRef.current;
         if (!container) return;
         if (target !== container && target !== view) return;
+        activeFootnoteKeyRef.current = null;
+        setFootnotePreview(null);
 
         const rect = container.getBoundingClientRect();
         console.log("[ReaderTap][shell:post]", {
@@ -2391,6 +2600,22 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         tabIndex={-1}
         onClick={handleViewerShellClick}
       >
+        {footnotePreview && (
+          <button
+            type="button"
+            className="absolute z-40 max-w-[min(360px,calc(100%-32px))] overflow-y-auto rounded-md border border-border bg-popover px-3.5 py-3 text-left text-sm leading-relaxed text-popover-foreground shadow-lg"
+            style={{
+              left: footnotePreview.left,
+              top: footnotePreview.top,
+              bottom: footnotePreview.bottom,
+              width: footnotePreview.width,
+              maxHeight: footnotePreview.maxHeight,
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <span className="block whitespace-pre-wrap">{footnotePreview.text}</span>
+          </button>
+        )}
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-background">
             <div className="flex flex-col items-center gap-3">
@@ -2490,10 +2715,6 @@ function applyRendererSettings(
     renderer.setAttribute("max-block-size", "1440px");
     renderer.setAttribute("gap", isSinglePage ? "1.2%" : "4.5%");
     applyReflowLayoutSettings(view, settings);
-  }
-
-  if (!isFixedLayout) {
-    renderer.setAttribute("animated", "");
   }
 
   // Apply CSS styles (skip font overrides for fixed layout)

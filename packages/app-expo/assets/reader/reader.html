@@ -116,6 +116,28 @@
       padding: 20px;
     }
 
+    #footnote-tip {
+      position: absolute;
+      z-index: 80;
+      display: none;
+      overflow-y: auto;
+      border: 1px solid rgba(127, 127, 127, 0.24);
+      border-radius: 8px;
+      background: var(--bg, #1c1c1e);
+      color: var(--fg, #e8e8ed);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+      padding: 12px 14px;
+      font-size: 15px;
+      line-height: 1.65;
+      text-align: left;
+      word-break: break-word;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    #footnote-tip[data-visible="true"] {
+      display: block;
+    }
+
     /* Suppress iOS selection callout */
     * {
       -webkit-touch-callout: none !important;
@@ -132,6 +154,7 @@
     <div id="pull-bookmark-indicator" aria-hidden="true" data-armed="false">
       <div class="pill" id="pull-bookmark-indicator-text"></div>
     </div>
+    <button id="footnote-tip" type="button" aria-hidden="true"></button>
     <div id="loading">
       <div class="spinner"></div>
       <div id="loading-text">Loading...</div>
@@ -175,6 +198,7 @@
     let bookmarkPullGestureActive = false;
     let pullBookmarkResetTimer = null;
     let refreshAnnotationsTimer = null;
+    let activeFootnoteTipKey = null;
     let bookmarkPullStateMeta = {
       bookmarked: false,
       pullToAdd: '下滑添加书签',
@@ -731,6 +755,176 @@
       return !!doc?.__readany_noteTapGuardUntil && doc.__readany_noteTapGuardUntil > Date.now();
     }
 
+    function isFootnoteMarkerText(text) {
+      const value = String(text || '').replace(/\s+/g, '').trim();
+      if (!value) return false;
+      if (value === '注' || value === '註') return true;
+      return /^[\[\(（【〔［]?(?:\d{1,4}|[一二三四五六七八九十百千万零〇两]{1,8}|[ivxlcdmIVXLCDM]{1,10})[\]\)）】〕］]?$/.test(value);
+    }
+
+    function getHrefFragmentId(href) {
+      const value = String(href || '');
+      const hashIndex = value.indexOf('#');
+      if (hashIndex < 0 || hashIndex === value.length - 1) return null;
+      try {
+        return decodeURIComponent(value.slice(hashIndex + 1));
+      } catch {
+        return value.slice(hashIndex + 1);
+      }
+    }
+
+    function findElementByFragmentId(doc, fragmentId) {
+      if (!doc || !fragmentId) return null;
+      const byId = doc.getElementById(fragmentId);
+      if (byId) return byId;
+      try {
+        return doc.getElementsByName(fragmentId)[0] || null;
+      } catch {
+        return null;
+      }
+    }
+
+    function isFootnoteLikeElement(element) {
+      if (!element) return false;
+      const haystack = [
+        element.id,
+        element.getAttribute && element.getAttribute('role'),
+        element.getAttribute && element.getAttribute('type'),
+        element.getAttribute && element.getAttribute('epub:type'),
+        element.className,
+      ].map((value) => String(value || '').toLowerCase()).join(' ');
+      return /\b(doc-)?(noteref|footnote|endnote|rearnote|note)\b|fn(ref)?|duokan-footnote|calibre-footnote/.test(haystack);
+    }
+
+    function isLikelyFootnoteLink(anchor, href) {
+      if (!anchor) return false;
+      const rawHref = anchor.getAttribute('href') || href || '';
+      const hrefLower = String(rawHref).toLowerCase();
+      if (
+        isFootnoteLikeElement(anchor) ||
+        isFootnoteLikeElement(anchor.closest && anchor.closest('sup, span, a, [role], [type], [epub\\:type]'))
+      ) {
+        return true;
+      }
+      if (/(^|[#/_-])(fn|footnote|endnote|note|noteref|duokan-footnote|calibre-footnote)/i.test(hrefLower)) {
+        return true;
+      }
+      return isFootnoteMarkerText(anchor.textContent || '') && !!getHrefFragmentId(rawHref);
+    }
+
+    function getFootnoteTipKey(anchor, href) {
+      return [
+        anchor?.ownerDocument?.location?.href || '',
+        anchor?.getAttribute?.('href') || href || '',
+        anchor?.textContent?.trim() || '',
+      ].join('::');
+    }
+
+    function getFootnoteElementText(element) {
+      if (!element) return '';
+      let cloned;
+      try {
+        cloned = element instanceof Range
+          ? element.cloneContents()
+          : (() => {
+              const fragment = document.createDocumentFragment();
+              fragment.appendChild(element.cloneNode(true));
+              return fragment;
+            })();
+      } catch {
+        return '';
+      }
+
+      for (const node of Array.from(cloned.querySelectorAll('script, style, rt, rp, a[href]'))) {
+        const text = node.textContent || '';
+        if (node.matches('a[href]') && !isFootnoteMarkerText(text)) continue;
+        node.remove();
+      }
+
+      return String(cloned.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 600);
+    }
+
+    async function resolveFootnoteTipText(anchor, href) {
+      const rawHref = anchor?.getAttribute?.('href') || href || '';
+      const sourceDoc = anchor?.ownerDocument;
+      const localTarget = findElementByFragmentId(sourceDoc, getHrefFragmentId(rawHref));
+      if (localTarget && (isFootnoteLikeElement(localTarget) || isLikelyFootnoteLink(anchor, href))) {
+        return getFootnoteElementText(localTarget);
+      }
+
+      if (!view || !href) return '';
+      try {
+        const resolved = typeof view.resolveNavigation === 'function'
+          ? await Promise.resolve(view.resolveNavigation(href))
+          : currentBook?.resolveHref
+            ? await Promise.resolve(currentBook.resolveHref(href))
+            : null;
+        const targetIndex = resolved && Number.isInteger(resolved.index) ? resolved.index : -1;
+        if (targetIndex < 0) return '';
+        const currentContent = getRendererContents().find((item) => item && item.index === targetIndex && item.doc);
+        const targetDoc =
+          currentContent?.doc ||
+          (currentBook?.sections?.[targetIndex]?.createDocument
+            ? await currentBook.sections[targetIndex].createDocument()
+            : null);
+        if (!targetDoc) return '';
+        const target = typeof resolved.anchor === 'function' ? resolved.anchor(targetDoc) : null;
+        return getFootnoteElementText(target);
+      } catch {
+        return '';
+      }
+    }
+
+    function hideFootnoteTip() {
+      const tip = document.getElementById('footnote-tip');
+      activeFootnoteTipKey = null;
+      if (!tip) return;
+      tip.dataset.visible = 'false';
+      tip.setAttribute('aria-hidden', 'true');
+      tip.textContent = '';
+    }
+
+    function positionFootnoteTip(anchor, text) {
+      const tip = document.getElementById('footnote-tip');
+      const container = document.getElementById('reader-container');
+      if (!tip || !container || !anchor || !text) return false;
+
+      const rect = anchor.getBoundingClientRect();
+      const iframe = anchor.ownerDocument?.defaultView?.frameElement;
+      const iframeRect = iframe ? iframe.getBoundingClientRect() : { left: 0, top: 0 };
+      const containerRect = container.getBoundingClientRect();
+      const scaleX = iframe && iframe.clientWidth > 0 ? iframeRect.width / iframe.clientWidth : 1;
+      const scaleY = iframe && iframe.clientHeight > 0 ? iframeRect.height / iframe.clientHeight : 1;
+      const anchorX = iframeRect.left + rect.left * scaleX + rect.width * scaleX / 2 - containerRect.left;
+      const anchorTop = iframeRect.top + rect.top * scaleY - containerRect.top;
+      const anchorBottom = anchorTop + rect.height * scaleY;
+      const width = Math.max(180, Math.min(340, containerRect.width - 32));
+      const maxLeft = Math.max(16, containerRect.width - width - 16);
+      const left = Math.max(16, Math.min(maxLeft, anchorX - width / 2));
+      const belowTop = anchorBottom + 12;
+      const belowSpace = containerRect.height - belowTop - 16;
+      const aboveSpace = anchorTop - 16;
+      const placeAbove = belowSpace < 120 && aboveSpace > belowSpace;
+      const maxHeight = placeAbove
+        ? Math.max(96, Math.min(240, aboveSpace - 10))
+        : Math.max(96, Math.min(240, belowSpace));
+
+      tip.textContent = text;
+      tip.style.left = `${left}px`;
+      tip.style.width = `${width}px`;
+      tip.style.maxHeight = `${maxHeight}px`;
+      tip.style.top = '';
+      tip.style.bottom = '';
+      if (placeAbove) {
+        tip.style.bottom = `${Math.max(16, containerRect.height - anchorTop + 10)}px`;
+      } else {
+        tip.style.top = `${Math.max(16, Math.min(containerRect.height - maxHeight - 16, belowTop))}px`;
+      }
+      tip.dataset.visible = 'true';
+      tip.setAttribute('aria-hidden', 'false');
+      return true;
+    }
+
     // Attach long-press note tooltip detection to each doc
     function attachNoteLongPress(doc) {
       if (doc.__readany_noteLongPress) return;
@@ -1066,6 +1260,7 @@
         var snippetTimer = null;
         el.addEventListener('relocate', (e) => {
           markLoaded();
+          hideFootnoteTip();
           const detail = e.detail;
           const previousSectionIndex = currentSectionIndex;
           if (tapNavigationInFlight) {
@@ -1179,6 +1374,31 @@
           postShowAnnotation(value, range);
         });
 
+        el.addEventListener('link', (e) => {
+          const detail = e.detail || {};
+          const anchor = detail.a;
+          const href = detail.href;
+          if (!anchor || !isLikelyFootnoteLink(anchor, href)) return;
+
+          e.preventDefault();
+          const key = getFootnoteTipKey(anchor, href);
+          if (activeFootnoteTipKey === key) {
+            hideFootnoteTip();
+            return;
+          }
+
+          Promise.resolve(resolveFootnoteTipText(anchor, href))
+            .then((text) => {
+              if (!text) {
+                hideFootnoteTip();
+                return;
+              }
+              activeFootnoteTipKey = key;
+              if (!positionFootnoteTip(anchor, text)) hideFootnoteTip();
+            })
+            .catch(() => hideFootnoteTip());
+        });
+
         container.appendChild(el);
         view = el;
 
@@ -1205,7 +1425,6 @@
           renderer.setAttribute('max-column-count', '1');
           renderer.setAttribute('max-block-size', '100%');
           renderer.setAttribute('max-inline-size', '100%');
-          renderer.setAttribute('animated', '');
           // Default gap/margin
           const margin = msg.pageMargin || 16;
           const gapPercent = Math.max(1, Math.round((margin / 393) * 100));
@@ -1650,7 +1869,12 @@ a { color: ${primary} !important; }
         }
 
         const target = e.target || state.target;
-        if (target && target.closest && target.closest('a[href], audio, video, button, input, select, textarea')) return;
+        if (target && target.closest && target.closest('a[href], audio, video, button, input, select, textarea')) {
+          if (!target.closest('a[href]')) hideFootnoteTip();
+          return;
+        }
+
+        hideFootnoteTip();
 
         const sel = doc.getSelection();
         if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) return;

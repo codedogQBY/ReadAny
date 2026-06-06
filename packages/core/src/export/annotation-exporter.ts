@@ -1,11 +1,12 @@
-import { getPlatformService } from "../services/platform";
 /**
  * Annotation Exporter — export highlights and notes in multiple formats
  * Supports: Markdown, JSON, Obsidian (with frontmatter), Notion (clipboard-friendly)
  *
  * Cross-platform: uses IPlatformService for file download and clipboard operations.
  */
+import { getPlatformService } from "../services/platform";
 import type { Book, Highlight, Note } from "../types";
+import { getBookProgressPercent } from "../utils/book-progress";
 
 export type ExportFormat = "markdown" | "json" | "obsidian" | "notion";
 
@@ -166,7 +167,7 @@ export class AnnotationExporter {
       `author: "${book.meta.author}"`,
       "type: book-notes",
       `created: ${new Date().toISOString()}`,
-      `progress: ${Math.round(book.progress * 100)}%`,
+      `progress: ${getBookProgressPercent(book.progress)}%`,
       "tags:",
       "  - book",
       "  - reading-notes",
@@ -177,7 +178,7 @@ export class AnnotationExporter {
       "",
       "## Metadata",
       `- **Author:** [[${book.meta.author}]]`,
-      `- **Progress:** ${Math.round(book.progress * 100)}%`,
+      `- **Progress:** ${getBookProgressPercent(book.progress)}%`,
       `- **Exported:** ${new Date().toLocaleDateString()}`,
       "",
       "---",

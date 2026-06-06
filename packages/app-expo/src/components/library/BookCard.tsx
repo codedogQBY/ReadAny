@@ -1,9 +1,4 @@
-import {
-  CheckIcon,
-  ClockIcon,
-  Loader2Icon,
-  MoreVerticalIcon,
-} from "@/components/ui/Icon";
+import { CheckIcon, ClockIcon, Loader2Icon, MoreVerticalIcon } from "@/components/ui/Icon";
 import { useColors } from "@/styles/theme";
 import { getPlatformService } from "@readany/core/services";
 /**
@@ -11,6 +6,7 @@ import { getPlatformService } from "@readany/core/services";
  * Cover (28:41), progress bar, vectorization overlay, tag badges, long-press action sheet.
  */
 import type { Book } from "@readany/core/types";
+import { getBookProgressPercent } from "@readany/core/utils";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -121,7 +117,7 @@ export const BookCard = memo(function BookCard({
     })();
   }, [book.meta.coverUrl]);
 
-  const progressPct = Math.round(book.progress * 100);
+  const progressPct = getBookProgressPercent(book.progress);
 
   const vecPct = vectorProgress
     ? vectorProgress.totalChunks > 0

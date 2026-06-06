@@ -30,6 +30,7 @@ import {
   buildBookMetadataUpdate,
   createBookMetadataFormValues,
   createEmptyBookReview,
+  getBookProgressPercent,
   hasMissingBookMetadataAutoFillTargets,
   mergeMissingBookMetadataValues,
   splitEditableList,
@@ -434,7 +435,7 @@ export function BookDetailsScreen({ route }: Props) {
     );
   }
 
-  const progressPct = Math.round(book.progress * 100);
+  const progressPct = getBookProgressPercent(book.progress);
   const groupName = resolveGroupName(book, groups, t("sidebar.uncategorized", "未分类"));
   const reviewCount = values.reviews.filter((review) => review.content.trim()).length;
 
