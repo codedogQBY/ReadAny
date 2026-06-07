@@ -558,83 +558,108 @@ export function TTSPage({
   const controlsJSX = (
     <View style={s.controls}>
       {/* Prev segment */}
-      <Pressable
-        style={({ pressed }) => [
-          s.ctrlBtnSm,
-          pressed && { opacity: 0.5 },
-          safeChunkIndex <= 0 && s.ctrlBtnDisabled,
-        ]}
-        onPress={() => {
-          if (safeChunkIndex > 0) {
-            handleLyricPress(lyricSegments[safeChunkIndex - 1], safeChunkIndex - 1);
-          }
-        }}
-        hitSlop={12}
-        disabled={safeChunkIndex <= 0}
-        accessibilityLabel={t("tts.prevSentence")}
-      >
-        <SkipBackIcon
-          size={18}
-          color={safeChunkIndex > 0 ? colors.foreground : colors.mutedForeground}
-        />
-      </Pressable>
+      <View style={s.controlItem}>
+        <Pressable
+          style={({ pressed }) => [
+            s.ctrlBtnSm,
+            pressed && { opacity: 0.5 },
+            safeChunkIndex <= 0 && s.ctrlBtnDisabled,
+          ]}
+          onPress={() => {
+            if (safeChunkIndex > 0) {
+              handleLyricPress(lyricSegments[safeChunkIndex - 1], safeChunkIndex - 1);
+            }
+          }}
+          hitSlop={12}
+          disabled={safeChunkIndex <= 0}
+          accessibilityLabel={t("tts.prevSentence")}
+        >
+          <SkipBackIcon
+            size={18}
+            color={safeChunkIndex > 0 ? colors.foreground : colors.mutedForeground}
+          />
+        </Pressable>
+        <Text style={s.controlLabel} numberOfLines={1}>
+          {t("tts.prevSentenceShort")}
+        </Text>
+      </View>
 
-      <Pressable
-        style={({ pressed }) => [s.ctrlBtn, pressed && { opacity: 0.5 }]}
-        onPress={onReplay}
-        hitSlop={14}
-        accessibilityLabel={t("tts.restartFromHere")}
-      >
-        <RotateCcwIcon size={20} color={colors.foreground} />
-      </Pressable>
+      <View style={s.controlItem}>
+        <Pressable
+          style={({ pressed }) => [s.ctrlBtn, pressed && { opacity: 0.5 }]}
+          onPress={onReplay}
+          hitSlop={14}
+          accessibilityLabel={t("tts.restartFromHere")}
+        >
+          <RotateCcwIcon size={20} color={colors.foreground} />
+        </Pressable>
+        <Text style={s.controlLabel} numberOfLines={1}>
+          {t("tts.replayShort")}
+        </Text>
+      </View>
 
-      <TouchableOpacity
-        style={s.playBtn}
-        onPress={onPlayPause}
-        activeOpacity={0.85}
-        accessibilityLabel={isPlaying ? t("tts.pause") : t("tts.play")}
-      >
-        {isLoading ? (
-          <ActivityIndicator size="large" color={colors.primaryForeground} />
-        ) : isPlaying ? (
-          <PauseIcon size={28} color={colors.primaryForeground} />
-        ) : (
-          <PlayIcon size={30} color={colors.primaryForeground} />
-        )}
-      </TouchableOpacity>
+      <View style={[s.controlItem, s.controlItemPrimary]}>
+        <TouchableOpacity
+          style={s.playBtn}
+          onPress={onPlayPause}
+          activeOpacity={0.85}
+          accessibilityLabel={isPlaying ? t("tts.pause") : t("tts.play")}
+        >
+          {isLoading ? (
+            <ActivityIndicator size="large" color={colors.primaryForeground} />
+          ) : isPlaying ? (
+            <PauseIcon size={28} color={colors.primaryForeground} />
+          ) : (
+            <PlayIcon size={30} color={colors.primaryForeground} />
+          )}
+        </TouchableOpacity>
+        <Text style={[s.controlLabel, s.controlLabelPrimary]} numberOfLines={1}>
+          {isPlaying ? t("tts.pauseShort") : t("tts.playShort")}
+        </Text>
+      </View>
 
-      <Pressable
-        style={({ pressed }) => [s.ctrlBtn, pressed && { opacity: 0.5 }]}
-        onPress={onStop}
-        hitSlop={14}
-        accessibilityLabel={t("common.stop")}
-      >
-        <SquareIcon size={18} color={colors.foreground} />
-      </Pressable>
+      <View style={s.controlItem}>
+        <Pressable
+          style={({ pressed }) => [s.ctrlBtn, pressed && { opacity: 0.5 }]}
+          onPress={onStop}
+          hitSlop={14}
+          accessibilityLabel={t("common.stop")}
+        >
+          <SquareIcon size={18} color={colors.foreground} />
+        </Pressable>
+        <Text style={s.controlLabel} numberOfLines={1}>
+          {t("tts.stopShort")}
+        </Text>
+      </View>
 
       {/* Next segment */}
-      <Pressable
-        style={({ pressed }) => [
-          s.ctrlBtnSm,
-          pressed && { opacity: 0.5 },
-          safeChunkIndex >= lyricSegments.length - 1 && s.ctrlBtnDisabled,
-        ]}
-        onPress={() => {
-          if (safeChunkIndex < lyricSegments.length - 1) {
-            handleLyricPress(lyricSegments[safeChunkIndex + 1], safeChunkIndex + 1);
-          }
-        }}
-        hitSlop={12}
-        disabled={safeChunkIndex >= lyricSegments.length - 1}
-        accessibilityLabel={t("tts.nextSentence")}
-      >
-        <SkipForwardIcon
-          size={18}
-          color={
-            safeChunkIndex < lyricSegments.length - 1 ? colors.foreground : colors.mutedForeground
-          }
-        />
-      </Pressable>
+      <View style={s.controlItem}>
+        <Pressable
+          style={({ pressed }) => [
+            s.ctrlBtnSm,
+            pressed && { opacity: 0.5 },
+            safeChunkIndex >= lyricSegments.length - 1 && s.ctrlBtnDisabled,
+          ]}
+          onPress={() => {
+            if (safeChunkIndex < lyricSegments.length - 1) {
+              handleLyricPress(lyricSegments[safeChunkIndex + 1], safeChunkIndex + 1);
+            }
+          }}
+          hitSlop={12}
+          disabled={safeChunkIndex >= lyricSegments.length - 1}
+          accessibilityLabel={t("tts.nextSentence")}
+        >
+          <SkipForwardIcon
+            size={18}
+            color={
+              safeChunkIndex < lyricSegments.length - 1 ? colors.foreground : colors.mutedForeground
+            }
+          />
+        </Pressable>
+        <Text style={s.controlLabel} numberOfLines={1}>
+          {t("tts.nextSentenceShort")}
+        </Text>
+      </View>
     </View>
   );
 
