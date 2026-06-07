@@ -66,10 +66,22 @@ function sanitizeCustomHeaders(headers?: Headers): Headers | undefined {
   return sanitized;
 }
 
+function isTauriDesktop(): boolean {
+    return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function selectFetchImplementation(endpoint: AIEndpoint): typeof globalThis.fetch {
+      if (endpoint.provider === "ollama" && isTauriDesktop()) {  // 桌面端 Ollama：替换底层 fetch 为原生 fetch，绕过 Tauri HTTP 插件
+        return globalThis.fetch.bind(globalThis);
+    }
+    // 默认使用 _streamingFetch（Tauri 插件）或原生 fetch
+    return (_streamingFetch ?? globalThis.fetch).bind(globalThis);
+}
+
 export function getEndpointFetch(endpoint: AIEndpoint, model?: string): typeof globalThis.fetch {
   const exactUrl = endpoint.useExactRequestUrl ? endpoint.baseUrl?.trim() : "";
-  const baseFetch = (_streamingFetch ?? globalThis.fetch).bind(globalThis);
-
+  const baseFetch = selectFetchImplementation(endpoint);
+  
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const finalInput = isRequestLike(input)
       ? exactUrl
