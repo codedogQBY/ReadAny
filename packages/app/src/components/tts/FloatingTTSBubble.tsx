@@ -278,6 +278,7 @@ export function FloatingTTSBubble() {
           type="button"
           onClick={handleBubbleClick}
           className="relative flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl transition-transform active:scale-95 select-none"
+          aria-label={t("tts.player")}
           title={t("tts.player")}
         >
           {playState === "loading" ? (
@@ -318,6 +319,8 @@ export function FloatingTTSBubble() {
               type="button"
               onClick={(e) => adjustRate(e, -0.1)}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-muted/80 text-foreground transition-colors hover:bg-muted"
+              aria-label={t("tts.decreaseRate")}
+              title={t("tts.decreaseRate")}
             >
               <Minus className="h-3.5 w-3.5" />
             </button>
@@ -328,6 +331,8 @@ export function FloatingTTSBubble() {
               type="button"
               onClick={(e) => adjustRate(e, 0.1)}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-muted/80 text-foreground transition-colors hover:bg-muted"
+              aria-label={t("tts.increaseRate")}
+              title={t("tts.increaseRate")}
             >
               <Plus className="h-3.5 w-3.5" />
             </button>
@@ -337,6 +342,8 @@ export function FloatingTTSBubble() {
               onClick={handlePlayPause}
               disabled={playState === "loading"}
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              aria-label={playState === "playing" ? t("tts.pause") : t("tts.play")}
+              title={playState === "playing" ? t("tts.pause") : t("tts.play")}
             >
               {playState === "loading" ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
@@ -351,6 +358,7 @@ export function FloatingTTSBubble() {
               type="button"
               onClick={handleStop}
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/80 text-foreground transition-colors hover:bg-muted"
+              aria-label={t("tts.stop")}
               title={t("tts.stop")}
             >
               <Square className="h-3.5 w-3.5" />
@@ -361,6 +369,7 @@ export function FloatingTTSBubble() {
                 type="button"
                 onClick={handleJumpToCurrentLocation}
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/80 text-foreground transition-colors hover:bg-muted"
+                aria-label={t("tts.jumpToCurrentLocation")}
                 title={t("tts.jumpToCurrentLocation")}
               >
                 <BookOpen className="h-3.5 w-3.5" />
@@ -372,6 +381,7 @@ export function FloatingTTSBubble() {
                 type="button"
                 onClick={handleOpenLyricsPage}
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/80 text-foreground transition-colors hover:bg-muted"
+                aria-label={t("tts.openLyricsPage", "跳到歌词页")}
                 title={t("tts.openLyricsPage", "跳到歌词页")}
               >
                 <ScrollText className="h-3.5 w-3.5" />

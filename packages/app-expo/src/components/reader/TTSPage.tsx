@@ -571,7 +571,7 @@ export function TTSPage({
         }}
         hitSlop={12}
         disabled={safeChunkIndex <= 0}
-        accessibilityLabel={t("tts.prevChapter")}
+        accessibilityLabel={t("tts.prevSentence")}
       >
         <SkipBackIcon
           size={18}
@@ -592,7 +592,7 @@ export function TTSPage({
         style={s.playBtn}
         onPress={onPlayPause}
         activeOpacity={0.85}
-        accessibilityLabel={isPlaying ? t("tts.paused") : t("tts.playing")}
+        accessibilityLabel={isPlaying ? t("tts.pause") : t("tts.play")}
       >
         {isLoading ? (
           <ActivityIndicator size="large" color={colors.primaryForeground} />
@@ -626,7 +626,7 @@ export function TTSPage({
         }}
         hitSlop={12}
         disabled={safeChunkIndex >= lyricSegments.length - 1}
-        accessibilityLabel={t("tts.nextChapter")}
+        accessibilityLabel={t("tts.nextSentence")}
       >
         <SkipForwardIcon
           size={18}
@@ -645,11 +645,21 @@ export function TTSPage({
         <View style={s.settingGroup}>
           <Text style={s.settingLbl}>{t("tts.rate")}</Text>
           <View style={s.stepper}>
-            <Pressable style={s.stepBtn} onPress={() => onAdjustRate(-0.1)} hitSlop={12}>
+            <Pressable
+              style={s.stepBtn}
+              onPress={() => onAdjustRate(-0.1)}
+              hitSlop={12}
+              accessibilityLabel={t("tts.decreaseRate")}
+            >
               <MinusIcon size={10} color={colors.foreground} />
             </Pressable>
             <Text style={s.stepVal}>{config.rate.toFixed(1)}x</Text>
-            <Pressable style={s.stepBtn} onPress={() => onAdjustRate(0.1)} hitSlop={12}>
+            <Pressable
+              style={s.stepBtn}
+              onPress={() => onAdjustRate(0.1)}
+              hitSlop={12}
+              accessibilityLabel={t("tts.increaseRate")}
+            >
               <PlusIcon size={10} color={colors.foreground} />
             </Pressable>
           </View>
@@ -661,11 +671,21 @@ export function TTSPage({
         <View style={s.settingGroup}>
           <Text style={s.settingLbl}>{t("tts.pitch")}</Text>
           <View style={s.stepper}>
-            <Pressable style={s.stepBtn} onPress={() => onAdjustPitch(-0.1)} hitSlop={12}>
+            <Pressable
+              style={s.stepBtn}
+              onPress={() => onAdjustPitch(-0.1)}
+              hitSlop={12}
+              accessibilityLabel={t("tts.decreasePitch")}
+            >
               <MinusIcon size={10} color={colors.foreground} />
             </Pressable>
             <Text style={s.stepVal}>{config.pitch.toFixed(1)}</Text>
-            <Pressable style={s.stepBtn} onPress={() => onAdjustPitch(0.1)} hitSlop={12}>
+            <Pressable
+              style={s.stepBtn}
+              onPress={() => onAdjustPitch(0.1)}
+              hitSlop={12}
+              accessibilityLabel={t("tts.increasePitch")}
+            >
               <PlusIcon size={10} color={colors.foreground} />
             </Pressable>
           </View>

@@ -131,10 +131,10 @@ export function TTSMiniPlayer({ visible, onClose, anchorLayout }: TTSMiniPlayerP
   }, [playState, pulseAnim]);
 
   const statusText =
-    playState === "loading" ? "加载中…"
-    : playState === "playing" ? "播放中"
-    : playState === "paused" ? "已暂停"
-    : "已停止";
+    playState === "loading" ? t("tts.loading")
+    : playState === "playing" ? t("tts.playing")
+    : playState === "paused" ? t("tts.paused")
+    : t("tts.stopped");
 
   const panelWidth = Math.min(388, Math.max(320, (anchorLayout?.screenWidth || 360) - 16));
   const [panelHeight, setPanelHeight] = useState(152);
@@ -188,7 +188,7 @@ export function TTSMiniPlayer({ visible, onClose, anchorLayout }: TTSMiniPlayerP
           </Animated.View>
           <View style={styles.titleGroup}>
             <Text style={[styles.bookText, { color: colors.foreground }]} numberOfLines={1}>
-              {currentBookTitle || "正在听书"}
+              {currentBookTitle || t("tts.listeningToBook")}
             </Text>
             {!!currentChapterTitle && (
               <Text style={[styles.chapterText, { color: colors.mutedForeground }]} numberOfLines={1}>
@@ -206,6 +206,8 @@ export function TTSMiniPlayer({ visible, onClose, anchorLayout }: TTSMiniPlayerP
           <TouchableOpacity
             style={[styles.rateBtn, { backgroundColor: colors.muted }]}
             onPress={() => adjustRate(-0.1)}
+            accessibilityRole="button"
+            accessibilityLabel={t("tts.decreaseRate")}
           >
             <Text style={[styles.rateBtnText, { color: colors.foreground }]}>−</Text>
           </TouchableOpacity>
@@ -215,6 +217,8 @@ export function TTSMiniPlayer({ visible, onClose, anchorLayout }: TTSMiniPlayerP
           <TouchableOpacity
             style={[styles.rateBtn, { backgroundColor: colors.muted }]}
             onPress={() => adjustRate(0.1)}
+            accessibilityRole="button"
+            accessibilityLabel={t("tts.increaseRate")}
           >
             <Text style={[styles.rateBtnText, { color: colors.foreground }]}>+</Text>
           </TouchableOpacity>
@@ -225,6 +229,8 @@ export function TTSMiniPlayer({ visible, onClose, anchorLayout }: TTSMiniPlayerP
             style={[styles.playBtn, { backgroundColor: colors.primary }]}
             onPress={handlePlayPause}
             disabled={playState === "loading" || playState === "stopped"}
+            accessibilityRole="button"
+            accessibilityLabel={playState === "playing" ? t("tts.pause") : t("tts.play")}
           >
             {playState === "loading" ? (
               <ActivityIndicator size="small" color={colors.primaryForeground} />

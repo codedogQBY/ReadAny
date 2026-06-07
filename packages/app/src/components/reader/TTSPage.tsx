@@ -671,7 +671,8 @@ export function TTSPage({
               }
             }}
             disabled={safeChunkIndex <= 0}
-            aria-label={t("tts.prevChapter")}
+            aria-label={t("tts.prevSentence")}
+            title={t("tts.prevSentence")}
           >
             <SkipBack className="h-4 w-4" />
           </button>
@@ -682,6 +683,7 @@ export function TTSPage({
             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border/60 bg-background text-foreground transition-colors hover:bg-muted"
             onClick={onReplay}
             aria-label={t("tts.restartFromHere")}
+            title={t("tts.restartFromHere")}
           >
             <RotateCcw className="h-4 w-4" />
           </button>
@@ -691,7 +693,8 @@ export function TTSPage({
             type="button"
             className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition-transform hover:scale-[1.04] active:scale-[0.97]"
             onClick={onPlayPause}
-            aria-label={isPlaying ? t("tts.paused") : t("tts.playing")}
+            aria-label={isPlaying ? t("tts.pause") : t("tts.play")}
+            title={isPlaying ? t("tts.pause") : t("tts.play")}
           >
             {isLoading ? (
               <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground" />
@@ -708,6 +711,7 @@ export function TTSPage({
             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border/60 bg-background text-foreground transition-colors hover:bg-muted"
             onClick={onStop}
             aria-label={t("common.stop")}
+            title={t("common.stop")}
           >
             <Square className="h-4 w-4 fill-current" />
           </button>
@@ -722,7 +726,8 @@ export function TTSPage({
               }
             }}
             disabled={safeChunkIndex >= lyricSegments.length - 1}
-            aria-label={t("tts.nextChapter")}
+            aria-label={t("tts.nextSentence")}
+            title={t("tts.nextSentence")}
           >
             <SkipForward className="h-4 w-4" />
           </button>
@@ -737,7 +742,8 @@ export function TTSPage({
               type="button"
               className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border/60 text-foreground transition-colors hover:bg-muted"
               onClick={() => onAdjustRate(-0.1)}
-              aria-label="Decrease rate"
+              aria-label={t("tts.decreaseRate")}
+              title={t("tts.decreaseRate")}
             >
               <Minus className="h-2.5 w-2.5" />
             </button>
@@ -748,7 +754,8 @@ export function TTSPage({
               type="button"
               className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border/60 text-foreground transition-colors hover:bg-muted"
               onClick={() => onAdjustRate(0.1)}
-              aria-label="Increase rate"
+              aria-label={t("tts.increaseRate")}
+              title={t("tts.increaseRate")}
             >
               <Plus className="h-2.5 w-2.5" />
             </button>
@@ -763,7 +770,8 @@ export function TTSPage({
               type="button"
               className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border/60 text-foreground transition-colors hover:bg-muted"
               onClick={() => onAdjustPitch(-0.1)}
-              aria-label="Decrease pitch"
+              aria-label={t("tts.decreasePitch")}
+              title={t("tts.decreasePitch")}
             >
               <Minus className="h-2.5 w-2.5" />
             </button>
@@ -774,7 +782,8 @@ export function TTSPage({
               type="button"
               className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border/60 text-foreground transition-colors hover:bg-muted"
               onClick={() => onAdjustPitch(0.1)}
-              aria-label="Increase pitch"
+              aria-label={t("tts.increasePitch")}
+              title={t("tts.increasePitch")}
             >
               <Plus className="h-2.5 w-2.5" />
             </button>

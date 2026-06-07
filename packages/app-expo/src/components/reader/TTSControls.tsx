@@ -171,7 +171,7 @@ export function TTSControls({ onClose, onReplay }: TTSControlsProps) {
     playState === "loading"
       ? t("tts.loading", "加载中")
       : playState === "playing"
-        ? t("tts.playing", "播放中")
+        ? t("tts.playing", "正在朗读")
         : playState === "paused"
           ? t("tts.paused", "已暂停")
           : t("tts.stopped", "已停止");

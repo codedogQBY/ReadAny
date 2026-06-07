@@ -9,6 +9,7 @@ import { HeadphonesIcon } from "@/components/ui/Icon";
 import { useColors } from "@/styles/theme";
 import { TTSMiniPlayer } from "./TTSMiniPlayer";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   Animated,
@@ -22,6 +23,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 const BUBBLE_SIZE = 56;
 
 export function FloatingTTSBubble() {
+  const { t } = useTranslation();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
@@ -142,6 +144,8 @@ export function FloatingTTSBubble() {
             style={[styles.bubble, { backgroundColor: colors.primary }]}
             onPress={handleBubbleTap}
             activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={t("tts.player")}
           >
             {playState === "loading" ? (
               <ActivityIndicator size="small" color={colors.primaryForeground} />
