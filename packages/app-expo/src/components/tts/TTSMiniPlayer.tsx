@@ -203,7 +203,15 @@ export function TTSMiniPlayer({ visible, onClose, anchorLayout }: TTSMiniPlayerP
 
         <View style={styles.controls}>
           <View style={styles.playbackRow}>
-            <View style={[styles.rateCluster, { backgroundColor: colors.muted }]}>
+            <View
+              style={[
+                styles.rateCluster,
+                {
+                  backgroundColor: withOpacity(colors.muted, 0.55),
+                  borderColor: withOpacity(colors.border, 0.5),
+                },
+              ]}
+            >
               <TouchableOpacity
                 style={styles.rateBtn}
                 onPress={() => adjustRate(-0.1)}
@@ -247,26 +255,27 @@ export function TTSMiniPlayer({ visible, onClose, anchorLayout }: TTSMiniPlayerP
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.stopBtn, { backgroundColor: colors.muted }]}
+              style={[
+                styles.iconBtn,
+                {
+                  backgroundColor: withOpacity(colors.muted, 0.55),
+                  borderColor: withOpacity(colors.border, 0.5),
+                },
+              ]}
               onPress={handleStop}
               accessibilityRole="button"
               accessibilityLabel={t("tts.stop", "停止")}
             >
-              <SquareIcon size={15} color={colors.foreground} />
-              <Text style={[styles.stopBtnText, { color: colors.mutedForeground }]} numberOfLines={1}>
-                {t("tts.stopShort")}
-              </Text>
+              <SquareIcon size={14} color={colors.foreground} />
             </TouchableOpacity>
           </View>
 
           <View style={styles.quickActions}>
             <TouchableOpacity
               style={[
-                styles.quickAction,
+                styles.textAction,
                 {
-                  backgroundColor: sleepTimerEndsAt
-                    ? withOpacity(colors.primary, 0.14)
-                    : colors.muted,
+                  backgroundColor: sleepTimerEndsAt ? withOpacity(colors.primary, 0.1) : "transparent",
                 },
               ]}
               onPress={() => setTimerSheetVisible(true)}
@@ -276,7 +285,7 @@ export function TTSMiniPlayer({ visible, onClose, anchorLayout }: TTSMiniPlayerP
               <ClockIcon size={15} color={sleepTimerEndsAt ? colors.primary : colors.foreground} />
               <Text
                 style={[
-                  styles.quickActionText,
+                  styles.textActionText,
                   { color: sleepTimerEndsAt ? colors.primary : colors.mutedForeground },
                 ]}
                 numberOfLines={1}
@@ -287,13 +296,13 @@ export function TTSMiniPlayer({ visible, onClose, anchorLayout }: TTSMiniPlayerP
 
             {!!currentBookId && (
               <TouchableOpacity
-                style={[styles.quickAction, { backgroundColor: colors.muted }]}
+                style={styles.textAction}
                 onPress={handleJumpToCurrentLocation}
                 accessibilityRole="button"
                 accessibilityLabel={t("tts.jumpToCurrentLocation")}
               >
                 <BookOpenIcon size={15} color={colors.foreground} />
-                <Text style={[styles.quickActionText, { color: colors.mutedForeground }]} numberOfLines={1}>
+                <Text style={[styles.textActionText, { color: colors.mutedForeground }]} numberOfLines={1}>
                   {t("tts.readerShort")}
                 </Text>
               </TouchableOpacity>
@@ -301,13 +310,13 @@ export function TTSMiniPlayer({ visible, onClose, anchorLayout }: TTSMiniPlayerP
 
             {!!currentBookId && (
               <TouchableOpacity
-                style={[styles.quickAction, { backgroundColor: colors.muted }]}
+                style={styles.textAction}
                 onPress={handleOpenLyricsPage}
                 accessibilityRole="button"
                 accessibilityLabel={t("tts.openLyricsPage", "跳到歌词页")}
               >
                 <ScrollTextIcon size={15} color={colors.foreground} />
-                <Text style={[styles.quickActionText, { color: colors.mutedForeground }]} numberOfLines={1}>
+                <Text style={[styles.textActionText, { color: colors.mutedForeground }]} numberOfLines={1}>
                   {t("tts.lyricsShort")}
                 </Text>
               </TouchableOpacity>
@@ -346,8 +355,9 @@ const styles = StyleSheet.create({
   divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 16 },
   controls: {
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 10,
+    paddingTop: 10,
+    paddingBottom: 11,
+    gap: 8,
   },
   playbackRow: {
     flexDirection: "row",
@@ -357,8 +367,9 @@ const styles = StyleSheet.create({
   rateCluster: {
     flex: 1,
     minWidth: 128,
-    height: 44,
+    height: 42,
     borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -376,43 +387,42 @@ const styles = StyleSheet.create({
   rateLabel: { fontSize: 10, lineHeight: 12 },
   rateValue: { fontSize: fontSize.xs, fontWeight: "600", textAlign: "center" },
   playBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     alignItems: "center",
     justifyContent: "center",
   },
-  stopBtn: {
-    width: 62,
-    height: 44,
+  iconBtn: {
+    width: 42,
+    height: 42,
     borderRadius: radius.lg,
-    flexDirection: "row",
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",
     justifyContent: "center",
-    gap: 5,
   },
-  stopBtnText: { fontSize: 11, fontWeight: "600", lineHeight: 13 },
   quickActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    justifyContent: "space-between",
+    paddingHorizontal: 2,
+    paddingTop: 2,
   },
-  quickAction: {
-    flex: 1,
+  textAction: {
     minWidth: 0,
-    height: 34,
-    borderRadius: radius.md,
+    height: 28,
+    borderRadius: radius.sm,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 5,
-    paddingHorizontal: 8,
+    gap: 4,
+    paddingHorizontal: 7,
   },
-  quickActionText: {
+  textActionText: {
     flexShrink: 1,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "600",
-    lineHeight: 13,
+    lineHeight: 12,
     textAlign: "center",
   },
 });
