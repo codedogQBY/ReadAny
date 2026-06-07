@@ -170,7 +170,9 @@ export function TTSPage({
       index: number,
     ) => {
       const fallbackKey = segment.text.trim().slice(0, 32) || `line-${index}`;
-      const baseKey = segment.cfi ? `${prefix}:${segment.cfi}` : `${prefix}:${index}:${fallbackKey}`;
+      const baseKey = segment.cfi
+        ? `${prefix}:${segment.cfi}`
+        : `${prefix}:${index}:${fallbackKey}`;
       const occurrence = keyCounts.get(baseKey) ?? 0;
       keyCounts.set(baseKey, occurrence + 1);
       return {
@@ -241,7 +243,14 @@ export function TTSPage({
       return prevCount + cfiInCurr;
     }
     return Math.max(0, Math.min(prevCount, lyricSegments.length - 1));
-  }, [currentChunkIndex, currentSegmentCfi, currentSegmentText, lyricSegments, narrationSegments, prevCount]);
+  }, [
+    currentChunkIndex,
+    currentSegmentCfi,
+    currentSegmentText,
+    lyricSegments,
+    narrationSegments,
+    prevCount,
+  ]);
   const lyricCenterPadding = useMemo(
     () => Math.max(40, Math.round(lyricAreaHeight / 2 - 32)),
     [lyricAreaHeight],
@@ -302,11 +311,9 @@ export function TTSPage({
   const voiceLabel = getTTSVoiceLabel(config);
   const isPlaying = playState === "playing";
   const isLoading = playState === "loading";
-  const isPaused = playState === "paused";
-  // Center lyrics when playing/loading (continuous follow) OR when paused (one-shot
-  // on open — deduped by lastCenteredSignatureRef so it only fires once per position).
-  const shouldAutoCenterLyrics = isPlaying || isLoading || isPaused;
-  const chromeTopInset = Platform.OS === "android" ? Math.max(insets.top, 6) : Math.max(insets.top, 10);
+  const shouldAutoCenterLyrics = isPlaying || isLoading;
+  const chromeTopInset =
+    Platform.OS === "android" ? Math.max(insets.top, 6) : Math.max(insets.top, 10);
   const chromeBottomInset =
     Platform.OS === "android" ? Math.max(insets.bottom, 6) : Math.max(insets.bottom, 10);
 
@@ -408,6 +415,7 @@ export function TTSPage({
     const targetId = lyricSegments[targetIndex]?.id;
     if (targetId && lyricLayoutRef.current.has(targetId)) {
       const timer = setTimeout(() => {
+        if (!shouldAutoCenterLyrics) return;
         lastCenteredSignatureRef.current = centerSignature;
         centerLyricIndex(targetIndex, true);
       }, 80);
@@ -551,7 +559,11 @@ export function TTSPage({
     <View style={s.controls}>
       {/* Prev segment */}
       <Pressable
-        style={({ pressed }) => [s.ctrlBtnSm, pressed && { opacity: 0.5 }, safeChunkIndex <= 0 && s.ctrlBtnDisabled]}
+        style={({ pressed }) => [
+          s.ctrlBtnSm,
+          pressed && { opacity: 0.5 },
+          safeChunkIndex <= 0 && s.ctrlBtnDisabled,
+        ]}
         onPress={() => {
           if (safeChunkIndex > 0) {
             handleLyricPress(lyricSegments[safeChunkIndex - 1], safeChunkIndex - 1);
@@ -561,7 +573,10 @@ export function TTSPage({
         disabled={safeChunkIndex <= 0}
         accessibilityLabel={t("tts.prevChapter")}
       >
-        <SkipBackIcon size={18} color={safeChunkIndex > 0 ? colors.foreground : colors.mutedForeground} />
+        <SkipBackIcon
+          size={18}
+          color={safeChunkIndex > 0 ? colors.foreground : colors.mutedForeground}
+        />
       </Pressable>
 
       <Pressable
@@ -599,7 +614,11 @@ export function TTSPage({
 
       {/* Next segment */}
       <Pressable
-        style={({ pressed }) => [s.ctrlBtnSm, pressed && { opacity: 0.5 }, safeChunkIndex >= lyricSegments.length - 1 && s.ctrlBtnDisabled]}
+        style={({ pressed }) => [
+          s.ctrlBtnSm,
+          pressed && { opacity: 0.5 },
+          safeChunkIndex >= lyricSegments.length - 1 && s.ctrlBtnDisabled,
+        ]}
         onPress={() => {
           if (safeChunkIndex < lyricSegments.length - 1) {
             handleLyricPress(lyricSegments[safeChunkIndex + 1], safeChunkIndex + 1);
@@ -609,7 +628,12 @@ export function TTSPage({
         disabled={safeChunkIndex >= lyricSegments.length - 1}
         accessibilityLabel={t("tts.nextChapter")}
       >
-        <SkipForwardIcon size={18} color={safeChunkIndex < lyricSegments.length - 1 ? colors.foreground : colors.mutedForeground} />
+        <SkipForwardIcon
+          size={18}
+          color={
+            safeChunkIndex < lyricSegments.length - 1 ? colors.foreground : colors.mutedForeground
+          }
+        />
       </Pressable>
     </View>
   );
@@ -617,48 +641,48 @@ export function TTSPage({
   const settingsJSX = (
     <>
       <View style={s.settings}>
-      {/* Rate stepper */}
-      <View style={s.settingGroup}>
-        <Text style={s.settingLbl}>{t("tts.rate")}</Text>
-        <View style={s.stepper}>
-          <Pressable style={s.stepBtn} onPress={() => onAdjustRate(-0.1)} hitSlop={12}>
-            <MinusIcon size={10} color={colors.foreground} />
-          </Pressable>
-          <Text style={s.stepVal}>{config.rate.toFixed(1)}x</Text>
-          <Pressable style={s.stepBtn} onPress={() => onAdjustRate(0.1)} hitSlop={12}>
-            <PlusIcon size={10} color={colors.foreground} />
-          </Pressable>
+        {/* Rate stepper */}
+        <View style={s.settingGroup}>
+          <Text style={s.settingLbl}>{t("tts.rate")}</Text>
+          <View style={s.stepper}>
+            <Pressable style={s.stepBtn} onPress={() => onAdjustRate(-0.1)} hitSlop={12}>
+              <MinusIcon size={10} color={colors.foreground} />
+            </Pressable>
+            <Text style={s.stepVal}>{config.rate.toFixed(1)}x</Text>
+            <Pressable style={s.stepBtn} onPress={() => onAdjustRate(0.1)} hitSlop={12}>
+              <PlusIcon size={10} color={colors.foreground} />
+            </Pressable>
+          </View>
         </View>
-      </View>
 
-      <View style={s.settingDiv} />
+        <View style={s.settingDiv} />
 
-      {/* Pitch stepper */}
-      <View style={s.settingGroup}>
-        <Text style={s.settingLbl}>{t("tts.pitch")}</Text>
-        <View style={s.stepper}>
-          <Pressable style={s.stepBtn} onPress={() => onAdjustPitch(-0.1)} hitSlop={12}>
-            <MinusIcon size={10} color={colors.foreground} />
-          </Pressable>
-          <Text style={s.stepVal}>{config.pitch.toFixed(1)}</Text>
-          <Pressable style={s.stepBtn} onPress={() => onAdjustPitch(0.1)} hitSlop={12}>
-            <PlusIcon size={10} color={colors.foreground} />
-          </Pressable>
+        {/* Pitch stepper */}
+        <View style={s.settingGroup}>
+          <Text style={s.settingLbl}>{t("tts.pitch")}</Text>
+          <View style={s.stepper}>
+            <Pressable style={s.stepBtn} onPress={() => onAdjustPitch(-0.1)} hitSlop={12}>
+              <MinusIcon size={10} color={colors.foreground} />
+            </Pressable>
+            <Text style={s.stepVal}>{config.pitch.toFixed(1)}</Text>
+            <Pressable style={s.stepBtn} onPress={() => onAdjustPitch(0.1)} hitSlop={12}>
+              <PlusIcon size={10} color={colors.foreground} />
+            </Pressable>
+          </View>
         </View>
-      </View>
 
-      <View style={s.settingDiv} />
+        <View style={s.settingDiv} />
 
-      <TouchableOpacity
-        style={[s.timerQuickCluster, sleepTimerLabel ? s.timerQuickClusterActive : null]}
-        onPress={() => setTimerSheetVisible(true)}
-        activeOpacity={0.8}
-      >
-        <View style={[s.timerQuickBtn, sleepTimerLabel ? s.timerQuickBtnActive : null]}>
-          <ClockIcon size={14} color={sleepTimerLabel ? colors.primary : colors.foreground} />
-        </View>
-        {sleepTimerLabel ? <Text style={s.timerCountdownInline}>{sleepTimerLabel}</Text> : null}
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={[s.timerQuickCluster, sleepTimerLabel ? s.timerQuickClusterActive : null]}
+          onPress={() => setTimerSheetVisible(true)}
+          activeOpacity={0.8}
+        >
+          <View style={[s.timerQuickBtn, sleepTimerLabel ? s.timerQuickBtnActive : null]}>
+            <ClockIcon size={14} color={sleepTimerLabel ? colors.primary : colors.foreground} />
+          </View>
+          {sleepTimerLabel ? <Text style={s.timerCountdownInline}>{sleepTimerLabel}</Text> : null}
+        </TouchableOpacity>
       </View>
     </>
   );
@@ -672,7 +696,10 @@ export function TTSPage({
         activeOpacity={onUpdateConfig ? 0.7 : 1}
         disabled={!onUpdateConfig}
       >
-        <Text style={[s.chipTxt, onUpdateConfig ? { color: colors.primary } : null]} numberOfLines={1}>
+        <Text
+          style={[s.chipTxt, onUpdateConfig ? { color: colors.primary } : null]}
+          numberOfLines={1}
+        >
           {engineLabel}
           {onUpdateConfig ? " ›" : ""}
         </Text>
@@ -684,7 +711,10 @@ export function TTSPage({
         activeOpacity={onUpdateConfig ? 0.7 : 1}
         disabled={!onUpdateConfig}
       >
-        <Text style={[s.chipTxt, onUpdateConfig ? { color: colors.primary } : null]} numberOfLines={1}>
+        <Text
+          style={[s.chipTxt, onUpdateConfig ? { color: colors.primary } : null]}
+          numberOfLines={1}
+        >
           {voiceLabel}
           {onUpdateConfig ? " ›" : ""}
         </Text>
@@ -702,7 +732,10 @@ export function TTSPage({
               onReturnToReading();
               return;
             }
-            handleLyricPress(lyricSegments[safeChunkIndex] ?? { text: currentText, cfi: null }, safeChunkIndex);
+            handleLyricPress(
+              lyricSegments[safeChunkIndex] ?? { text: currentText, cfi: null },
+              safeChunkIndex,
+            );
           }}
           activeOpacity={0.8}
         >
@@ -744,7 +777,11 @@ export function TTSPage({
         <HeadphonesIcon size={10} color={colors.primary} />
         <Text style={s.statusTxt}>{stateLabel}</Text>
       </View>
-      <TouchableOpacity style={s.iconBtn} onPress={() => setTimerSheetVisible(true)} activeOpacity={0.7}>
+      <TouchableOpacity
+        style={s.iconBtn}
+        onPress={() => setTimerSheetVisible(true)}
+        activeOpacity={0.7}
+      >
         <ClockIcon size={20} color={sleepTimerEndsAt ? colors.primary : colors.mutedForeground} />
       </TouchableOpacity>
     </View>
@@ -805,11 +842,7 @@ export function TTSPage({
                 onScrollEndDrag={releaseUserScrolling}
                 scrollEventThrottle={16}
                 onScroll={(event) => {
-                  const {
-                    contentOffset,
-                    contentSize,
-                    layoutMeasurement,
-                  } = event.nativeEvent;
+                  const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
                   const distanceFromBottom =
                     contentSize.height - (contentOffset.y + layoutMeasurement.height);
                   const canAutoLoadMore =
@@ -834,11 +867,7 @@ export function TTSPage({
                     }
                     triggerLoadMoreAbove();
                   }
-                  if (
-                    canAutoLoadMore &&
-                    loadMoreBelowArmedRef.current &&
-                    distanceFromBottom < 32
-                  ) {
+                  if (canAutoLoadMore && loadMoreBelowArmedRef.current && distanceFromBottom < 32) {
                     loadMoreBelowArmedRef.current = false;
                     if (__DEV__) {
                       console.log("[TTSPage][lyrics] load-more-below", {
@@ -868,6 +897,7 @@ export function TTSPage({
                             pendingCenterRef.current = null;
                             lastCenteredSignatureRef.current = `${index}:${currentSegmentCfi || ""}:${Math.round(lyricAreaHeight)}`;
                             requestAnimationFrame(() => {
+                              if (!shouldAutoCenterLyrics) return;
                               centerLyricIndex(index, true);
                             });
                           }

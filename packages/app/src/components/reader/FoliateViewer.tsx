@@ -271,9 +271,8 @@ function getPaginatedVisibleRangeCandidates(renderer: {
   return candidates.filter(
     (candidate, index, list) =>
       candidate.right > candidate.left &&
-      list.findIndex(
-        (item) => item.left === candidate.left && item.right === candidate.right,
-      ) === index,
+      list.findIndex((item) => item.left === candidate.left && item.right === candidate.right) ===
+        index,
   );
 }
 
@@ -834,7 +833,9 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
             : range.commonAncestorContainer.ownerDocument;
         const active =
           contents.find((content) => content?.doc === sourceDoc) ??
-          contents.find((content) => content?.doc && content.index === view.renderer?.primaryIndex) ??
+          contents.find(
+            (content) => content?.doc && content.index === view.renderer?.primaryIndex,
+          ) ??
           contents.find((content) => content?.doc) ??
           null;
         if (!active?.doc || active.index == null || !active.overlayer) return null;
@@ -919,7 +920,8 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
             const visibleRange = doc ? getVisibleRangeForDoc(doc) : null;
             return visibleRange ? rectIntersectsPaginatedRange(rect, visibleRange) : false;
           }
-          const win = doc?.defaultView ?? (primaryContent?.doc as Document | undefined)?.defaultView;
+          const win =
+            doc?.defaultView ?? (primaryContent?.doc as Document | undefined)?.defaultView;
           if (!win) return false;
           return (
             rect.right > 0 &&
@@ -1097,7 +1099,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           ) => Array<{ text?: string; cfi?: string }>;
         };
 
-        if ((segments.length > 0 || alignCfi) && tts) {
+        if (segments.length > 0 && tts) {
           try {
             const alignTargetCfi = alignCfi || segments[0]?.cfi;
             if (!alignTargetCfi) return segments;
@@ -1144,8 +1146,8 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
                 return true;
               });
             if (alignedSegments.length > 0) {
-              let returnedSegments = alignedSegments;
-              let returnSource = "aligned";
+              let returnedSegments = segments;
+              let returnSource = "direct-visible";
               if (segments.length > 0) {
                 const visibleIdentities = new Set(
                   segments.map((segment) => getTTSSegmentIdentity(segment.cfi, segment.text)),
@@ -1179,7 +1181,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
                   }
                 } else {
                   returnedSegments = segments;
-                  returnSource = "direct-fallback";
+                  returnSource = "direct-visible";
                 }
               }
               console.log("[FoliateViewer][TTS] visibleTTSSegments", {
@@ -2419,86 +2421,89 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       [bookKey],
     );
 
-    const getSelectionFromView = useCallback((targetDoc?: Document | null): BookSelection | null => {
-      const view = viewRef.current;
-      if (!view) return null;
+    const getSelectionFromView = useCallback(
+      (targetDoc?: Document | null): BookSelection | null => {
+        const view = viewRef.current;
+        if (!view) return null;
 
-      const contents = getRendererContents(view);
-      const selectedContent =
-        (targetDoc ? contents.find((content) => content.doc === targetDoc) : null) ??
-        contents.find((content) => {
-          const sel = content.doc?.getSelection?.();
-          return !!(sel && !sel.isCollapsed && sel.toString().trim().length > 0);
-        }) ??
-        null;
-      if (!selectedContent?.doc) return null;
+        const contents = getRendererContents(view);
+        const selectedContent =
+          (targetDoc ? contents.find((content) => content.doc === targetDoc) : null) ??
+          contents.find((content) => {
+            const sel = content.doc?.getSelection?.();
+            return !!(sel && !sel.isCollapsed && sel.toString().trim().length > 0);
+          }) ??
+          null;
+        if (!selectedContent?.doc) return null;
 
-      const doc = selectedContent.doc;
-      const sel = doc.getSelection();
-      const range = getSelectionRange(sel);
-      if (!range) return null;
-      const text = getRangeTextWithoutRuby(range, sel?.toString() || "");
-      if (!text) return null;
+        const doc = selectedContent.doc;
+        const sel = doc.getSelection();
+        const range = getSelectionRange(sel);
+        if (!range) return null;
+        const text = getRangeTextWithoutRuby(range, sel?.toString() || "");
+        if (!text) return null;
 
-      // Get CFI for the selection
-      let cfi: string | undefined;
-      let chapterIndex: number | undefined;
-      try {
-        const index = selectedContent.index;
-        if (typeof index === "number") {
-          cfi = view.getCFI(index, range);
-          chapterIndex = index;
+        // Get CFI for the selection
+        let cfi: string | undefined;
+        let chapterIndex: number | undefined;
+        try {
+          const index = selectedContent.index;
+          if (typeof index === "number") {
+            cfi = view.getCFI(index, range);
+            chapterIndex = index;
+          }
+        } catch {
+          // CFI generation may fail for some selections
         }
-      } catch {
-        // CFI generation may fail for some selections
-      }
 
-      const rects = Array.from(range.getClientRects());
+        const rects = Array.from(range.getClientRects());
 
-      // Convert iframe-local coordinates to main window coordinates.
-      // For fixed-layout (PDF), iframes may have CSS transform: scale(),
-      // so we need to account for both the iframe position and the scale factor.
-      const iframe = doc.defaultView?.frameElement as HTMLIFrameElement | null;
-      let offsetRects: DOMRect[];
+        // Convert iframe-local coordinates to main window coordinates.
+        // For fixed-layout (PDF), iframes may have CSS transform: scale(),
+        // so we need to account for both the iframe position and the scale factor.
+        const iframe = doc.defaultView?.frameElement as HTMLIFrameElement | null;
+        let offsetRects: DOMRect[];
 
-      if (iframe) {
-        const iframeRect = iframe.getBoundingClientRect();
-        // Compute scale: iframeRect is the scaled size in main window,
-        // iframe.clientWidth is the unscaled content width
-        const scaleX = iframe.clientWidth > 0 ? iframeRect.width / iframe.clientWidth : 1;
-        const scaleY = iframe.clientHeight > 0 ? iframeRect.height / iframe.clientHeight : 1;
+        if (iframe) {
+          const iframeRect = iframe.getBoundingClientRect();
+          // Compute scale: iframeRect is the scaled size in main window,
+          // iframe.clientWidth is the unscaled content width
+          const scaleX = iframe.clientWidth > 0 ? iframeRect.width / iframe.clientWidth : 1;
+          const scaleY = iframe.clientHeight > 0 ? iframeRect.height / iframe.clientHeight : 1;
 
-        offsetRects = rects.map(
-          (r) =>
-            new DOMRect(
-              iframeRect.left + r.x * scaleX,
-              iframeRect.top + r.y * scaleY,
-              r.width * scaleX,
-              r.height * scaleY,
-            ),
-        );
-      } else {
-        // Fallback: use container offset (for non-iframe renderers)
-        const containerRect = containerRef.current?.getBoundingClientRect();
-        offsetRects = containerRect
-          ? rects.map(
-              (r) => new DOMRect(r.x + containerRect.x, r.y + containerRect.y, r.width, r.height),
-            )
-          : rects;
-      }
+          offsetRects = rects.map(
+            (r) =>
+              new DOMRect(
+                iframeRect.left + r.x * scaleX,
+                iframeRect.top + r.y * scaleY,
+                r.width * scaleX,
+                r.height * scaleY,
+              ),
+          );
+        } else {
+          // Fallback: use container offset (for non-iframe renderers)
+          const containerRect = containerRef.current?.getBoundingClientRect();
+          offsetRects = containerRect
+            ? rects.map(
+                (r) => new DOMRect(r.x + containerRect.x, r.y + containerRect.y, r.width, r.height),
+              )
+            : rects;
+        }
 
-      // Update reading context service with selection
-      if (cfi && chapterIndex !== undefined) {
-        readingContextService.updateSelection({
-          text,
-          cfi,
-          chapterIndex,
-          chapterTitle: "", // Will be filled by relocate handler
-        });
-      }
+        // Update reading context service with selection
+        if (cfi && chapterIndex !== undefined) {
+          readingContextService.updateSelection({
+            text,
+            cfi,
+            chapterIndex,
+            chapterTitle: "", // Will be filled by relocate handler
+          });
+        }
 
-      return { text, cfi, chapterIndex, rects: offsetRects, range };
-    }, []);
+        return { text, cfi, chapterIndex, rects: offsetRects, range };
+      },
+      [],
+    );
 
     // Bind foliate events (use viewReady state to ensure re-bind after view creation)
     useFoliateEvents(viewReady ? viewRef.current : null, {

@@ -121,12 +121,14 @@ export function TTSPage({
   const voiceAnchorRef = useRef<HTMLButtonElement>(null);
   const activeLyricRef = useRef<HTMLButtonElement | null>(null);
   const pendingScrollRef = useRef(false);
+  const autoScrollLyricsRef = useRef(false);
 
   const setActiveLyricRef = useCallback((el: HTMLButtonElement | null) => {
     activeLyricRef.current = el;
     if (el && pendingScrollRef.current) {
       pendingScrollRef.current = false;
       requestAnimationFrame(() => {
+        if (!autoScrollLyricsRef.current) return;
         el.scrollIntoView({ block: "center", behavior: "smooth" });
       });
     }
@@ -159,7 +161,9 @@ export function TTSPage({
     const keyCounts = new Map<string, number>();
     const toLyricItem = (prefix: "prev" | "curr", segment: TTSLyricSegment, index: number) => {
       const fallbackKey = segment.text.trim().slice(0, 32) || `line-${index}`;
-      const baseKey = segment.cfi ? `${prefix}:${segment.cfi}` : `${prefix}:${index}:${fallbackKey}`;
+      const baseKey = segment.cfi
+        ? `${prefix}:${segment.cfi}`
+        : `${prefix}:${index}:${fallbackKey}`;
       const occurrence = keyCounts.get(baseKey) ?? 0;
       keyCounts.set(baseKey, occurrence + 1);
       return {
@@ -189,9 +193,17 @@ export function TTSPage({
   const nextExcerpt = lyricSegments[safeChunkIndex + 1]?.text || fallbackPreview.nextExcerpt;
   const supportingExcerpt =
     lyricSegments[safeChunkIndex - 1]?.text || fallbackPreview.supportingExcerpt;
+  const shouldAutoScrollLyrics = visible && (playState === "playing" || playState === "loading");
 
   useEffect(() => {
-    if (!visible) return;
+    autoScrollLyricsRef.current = shouldAutoScrollLyrics;
+    if (!shouldAutoScrollLyrics) {
+      pendingScrollRef.current = false;
+    }
+  }, [shouldAutoScrollLyrics]);
+
+  useEffect(() => {
+    if (!shouldAutoScrollLyrics) return;
     const el = activeLyricRef.current;
     if (el) {
       el.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -199,7 +211,7 @@ export function TTSPage({
       // Element not mounted yet — flag so setActiveLyricRef scrolls when it mounts
       pendingScrollRef.current = true;
     }
-  }, [safeChunkIndex, visible]);
+  }, [safeChunkIndex, shouldAutoScrollLyrics]);
 
   const handleLyricPress = useCallback(
     (segment: { text: string; cfi?: string | null }, index: number) => {
@@ -286,12 +298,10 @@ export function TTSPage({
 
   return (
     <div className="absolute inset-0 z-[65] flex bg-background">
-
       {/* ═══════════════════════════════════════════════════════════
           LEFT PANEL — Cover + album info (Apple Music ~45%)
       ══════════════════════════════════════════════════════════════ */}
       <div className="relative flex w-[44%] shrink-0 flex-col items-center justify-center overflow-hidden px-10 py-8">
-
         {/* Ambient glow behind cover */}
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="h-[55%] w-[70%] rounded-full bg-primary/10 blur-3xl" />
@@ -379,10 +389,7 @@ export function TTSPage({
               {voicePickerOpen && onUpdateConfig && (
                 <>
                   {/* Backdrop */}
-                  <div
-                    className="fixed inset-0 z-[70]"
-                    onClick={() => setVoicePickerOpen(false)}
-                  />
+                  <div className="fixed inset-0 z-[70]" onClick={() => setVoicePickerOpen(false)} />
                   <div className="absolute bottom-full left-1/2 z-[71] mb-2 max-h-[420px] w-64 -translate-x-1/2 overflow-y-auto rounded-xl border border-border/60 bg-background shadow-xl">
                     {/* Engine section */}
                     <div className="sticky top-0 z-10 border-b border-border/30 bg-background/95 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -391,7 +398,11 @@ export function TTSPage({
                     {(["edge", "dashscope", "system"] as const).map((eng) => {
                       const isActive = config.engine === eng;
                       const label =
-                        eng === "edge" ? "Edge TTS" : eng === "dashscope" ? "DashScope" : t("tts.system");
+                        eng === "edge"
+                          ? "Edge TTS"
+                          : eng === "dashscope"
+                            ? "DashScope"
+                            : t("tts.system");
                       const desc =
                         eng === "edge"
                           ? t("tts.engineDescEdge")
@@ -406,11 +417,17 @@ export function TTSPage({
                           className={`flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-muted ${isActive ? "bg-primary/5" : ""}`}
                         >
                           <span className="flex flex-col">
-                            <span className={`text-xs font-semibold ${isActive ? "text-primary" : "text-foreground"}`}>{label}</span>
+                            <span
+                              className={`text-xs font-semibold ${isActive ? "text-primary" : "text-foreground"}`}
+                            >
+                              {label}
+                            </span>
                             <span className="text-[10px] text-muted-foreground/70">{desc}</span>
                           </span>
                           {isActive && (
-                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">✓</span>
+                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                              ✓
+                            </span>
                           )}
                         </button>
                       );
@@ -479,36 +496,36 @@ export function TTSPage({
                           )}
                         </button>
                         {systemVoiceGroups.map(([lang, langVoices]) => (
-                        <div key={lang}>
-                          <div className="bg-muted/60 px-3 py-1 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground/70">
-                            {getLocaleDisplayLabel(lang, displayLocale)}
+                          <div key={lang}>
+                            <div className="bg-muted/60 px-3 py-1 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                              {getLocaleDisplayLabel(lang, displayLocale)}
+                            </div>
+                            {langVoices.map((voice) => {
+                              const isSelected = selectedSystemVoiceValue === voice.id;
+                              return (
+                                <button
+                                  key={voice.id}
+                                  type="button"
+                                  onClick={() => {
+                                    onUpdateConfig?.({
+                                      voiceName: voice.id,
+                                      systemVoiceLabel: findSystemVoiceLabel(
+                                        voice.id,
+                                        systemVoiceOptions,
+                                      ),
+                                    });
+                                    setVoicePickerOpen(false);
+                                  }}
+                                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition-colors hover:bg-muted ${isSelected ? "font-semibold text-primary" : "text-foreground"}`}
+                                >
+                                  {voice.label}
+                                  {isSelected && (
+                                    <span className="text-[11px] font-bold text-primary">✓</span>
+                                  )}
+                                </button>
+                              );
+                            })}
                           </div>
-                          {langVoices.map((voice) => {
-                            const isSelected = selectedSystemVoiceValue === voice.id;
-                            return (
-                              <button
-                                key={voice.id}
-                                type="button"
-                                onClick={() => {
-                                  onUpdateConfig?.({
-                                    voiceName: voice.id,
-                                    systemVoiceLabel: findSystemVoiceLabel(
-                                      voice.id,
-                                      systemVoiceOptions,
-                                    ),
-                                  });
-                                  setVoicePickerOpen(false);
-                                }}
-                                className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition-colors hover:bg-muted ${isSelected ? "font-semibold text-primary" : "text-foreground"}`}
-                              >
-                                {voice.label}
-                                {isSelected && (
-                                  <span className="text-[11px] font-bold text-primary">✓</span>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
                         ))}
                       </>
                     )}
@@ -524,7 +541,6 @@ export function TTSPage({
           RIGHT PANEL — Lyrics + controls (56%)
       ══════════════════════════════════════════════════════════════ */}
       <div className="flex min-w-0 flex-1 flex-col border-l border-border/30">
-
         {/* ── Top bar ── */}
         <header className="flex shrink-0 items-center justify-between px-6 py-4">
           <button
@@ -638,9 +654,7 @@ export function TTSPage({
           <div className="mt-1.5 flex items-center justify-between text-[10px] text-muted-foreground">
             <span>{t("tts.readingProgress", { progress: progressPct })}</span>
             <span className="tabular-nums">
-              {totalChunks > 0
-                ? `${currentChunkIndex + 1} / ${totalChunks}`
-                : `${progressPct}%`}
+              {totalChunks > 0 ? `${currentChunkIndex + 1} / ${totalChunks}` : `${progressPct}%`}
             </span>
           </div>
         </div>
@@ -716,7 +730,6 @@ export function TTSPage({
 
         {/* ── Settings: rate + pitch + continuous ── */}
         <div className="flex shrink-0 items-center justify-center gap-0 rounded-none border-t border-border/30 bg-muted/30 px-6 py-3">
-
           {/* Rate */}
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-medium text-muted-foreground">{t("tts.rate")}</span>
@@ -796,7 +809,6 @@ export function TTSPage({
             ) : null}
           </div>
         </div>
-
       </div>
     </div>
   );

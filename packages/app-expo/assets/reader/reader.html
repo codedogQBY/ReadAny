@@ -3440,15 +3440,17 @@ a { color: ${primary} !important; }
         // Fall back to CFI string alignment for older tts.js builds without tts.from()
         const firstVisibleCfi = segments[0]?.cfi || null;
         const resolvedAlignRange = resolveRangeForCfi(alignCfi);
-        const alignedSegments = collectTTSSegmentsFromEngine(
-          alignCfi ? 500 : (segments.length || 12),
-          alignCfi || firstVisibleCfi,
-          resolvedAlignRange?.range || firstVisibleRange
-        );
-        let returnSource = alignedSegments.length ? 'aligned' : 'direct';
+        const alignedSegments = segments.length
+          ? collectTTSSegmentsFromEngine(
+              alignCfi ? 500 : segments.length,
+              alignCfi || firstVisibleCfi,
+              resolvedAlignRange?.range || firstVisibleRange
+            )
+          : [];
+        let returnSource = segments.length ? 'direct-visible' : 'no-visible-segments';
         let filteredAlignedCount = 0;
         let filteredAlignedPreview = [];
-        let returnedSegments = alignedSegments.length ? alignedSegments : segments;
+        let returnedSegments = segments;
         if (alignedSegments.length && segments.length) {
           const visibleIdentities = new Set(
             segments.map((segment) => getTTSSegmentIdentity(segment.cfi, segment.text))
@@ -3483,7 +3485,7 @@ a { color: ${primary} !important; }
               returnedSegments = segments;
             }
           } else {
-            returnSource = 'direct-fallback';
+            returnSource = 'direct-visible';
             returnedSegments = segments;
           }
         }
@@ -3507,11 +3509,13 @@ a { color: ${primary} !important; }
         return returnedSegments;
       } catch (e) {
         console.log('[visibleTTSSegments] extraction error:', e);
-        const fallbackSegments = collectTTSSegmentsFromEngine(alignCfi ? 500 : 12, alignCfi || null, resolveRangeForCfi(alignCfi)?.range || null);
+        const fallbackSegments = alignCfi
+          ? collectTTSSegmentsFromEngine(500, alignCfi, resolveRangeForCfi(alignCfi)?.range || null)
+          : [];
         window.__lastVisibleTTSDiagnostics = {
           alignCfi: alignCfi || null,
           extractionError: String(e),
-          returnSource: 'engine-fallback',
+          returnSource: alignCfi ? 'engine-align-fallback' : 'no-visible-segments',
           directCount: 0,
           alignedCount: fallbackSegments.length,
           filteredAlignedCount: 0,

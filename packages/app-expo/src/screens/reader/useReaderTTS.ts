@@ -573,7 +573,7 @@ export function useReaderTTS({
           : splitNarrationText((await bridgeRef.current?.getVisibleText()) || "").map(
               (segmentText) => ({
                 text: segmentText,
-                cfi: alignCfi || currentCfi,
+                cfi: alignCfi || "",
               }),
             );
 
@@ -584,7 +584,7 @@ export function useReaderTTS({
         }))
         .filter((segment) => segment.text.length > 0);
     },
-    [bridgeRef, currentCfi],
+    [bridgeRef],
   );
 
   // ─── logTTSExtractionDiagnostics ──────────────────────────────────────────
