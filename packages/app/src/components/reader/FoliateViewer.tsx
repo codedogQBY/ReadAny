@@ -901,7 +901,6 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           contents.find((content) => content?.doc && content.index === renderer.primaryIndex) ??
           contents.find((content) => content?.doc) ??
           null;
-        const scanContents = renderer.scrolled && primaryContent ? [primaryContent] : contents;
 
         await ensureDesktopTTS();
 
@@ -913,6 +912,93 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           return range;
         };
 
+        const getReaderViewportRect = () => {
+          const containerRect = containerRef.current?.getBoundingClientRect();
+          const viewportRect = {
+            left: 0,
+            top: 0,
+            right: window.innerWidth,
+            bottom: window.innerHeight,
+          };
+          if (!containerRect || containerRect.width <= 0 || containerRect.height <= 0) {
+            return viewportRect;
+          }
+          return {
+            left: Math.max(containerRect.left, viewportRect.left),
+            top: Math.max(containerRect.top, viewportRect.top),
+            right: Math.min(containerRect.right, viewportRect.right),
+            bottom: Math.min(containerRect.bottom, viewportRect.bottom),
+          };
+        };
+
+        const mapIframeRectToHost = (rect: DOMRect, doc?: Document | null) => {
+          const iframe = doc?.defaultView?.frameElement as HTMLIFrameElement | null;
+          if (!iframe) return rect;
+          const iframeRect = iframe.getBoundingClientRect();
+          const scaleX = iframe.clientWidth > 0 ? iframeRect.width / iframe.clientWidth : 1;
+          const scaleY = iframe.clientHeight > 0 ? iframeRect.height / iframe.clientHeight : 1;
+          return {
+            left: iframeRect.left + rect.left * scaleX,
+            top: iframeRect.top + rect.top * scaleY,
+            right: iframeRect.left + rect.right * scaleX,
+            bottom: iframeRect.top + rect.bottom * scaleY,
+            width: rect.width * scaleX,
+            height: rect.height * scaleY,
+          };
+        };
+
+        const isHostRectVisible = (rect: {
+          left: number;
+          top: number;
+          right: number;
+          bottom: number;
+          width: number;
+          height: number;
+        }) => {
+          if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+          const viewport = getReaderViewportRect();
+          return (
+            rect.right > viewport.left &&
+            rect.left < viewport.right &&
+            rect.bottom > viewport.top &&
+            rect.top < viewport.bottom
+          );
+        };
+
+        const getContentHostRect = (content: RendererContent) => {
+          const doc = content?.doc ?? null;
+          const iframe = doc?.defaultView?.frameElement as HTMLIFrameElement | null;
+          if (iframe) {
+            const rect = iframe.getBoundingClientRect();
+            return {
+              left: rect.left,
+              top: rect.top,
+              right: rect.right,
+              bottom: rect.bottom,
+              width: rect.width,
+              height: rect.height,
+            };
+          }
+          if (doc?.body) {
+            return mapIframeRectToHost(doc.body.getBoundingClientRect(), doc);
+          }
+          return null;
+        };
+
+        const scanContents = renderer.scrolled
+          ? contents
+              .filter((content) => !!content?.doc)
+              .map((content) => ({ content, rect: getContentHostRect(content) }))
+              .filter((item) => item.rect && isHostRectVisible(item.rect))
+              .sort((a, b) => {
+                const topDelta = (a.rect?.top ?? 0) - (b.rect?.top ?? 0);
+                return Math.abs(topDelta) > 1
+                  ? topDelta
+                  : (a.rect?.left ?? 0) - (b.rect?.left ?? 0);
+              })
+              .map((item) => item.content)
+          : contents;
+
         const isRectVisibleInReader = (rect: DOMRect, doc?: Document | null) => {
           if (!rect || rect.width <= 0 || rect.height <= 0) return false;
           const isPaginated = !renderer.scrolled;
@@ -920,15 +1006,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
             const visibleRange = doc ? getVisibleRangeForDoc(doc) : null;
             return visibleRange ? rectIntersectsPaginatedRange(rect, visibleRange) : false;
           }
-          const win =
-            doc?.defaultView ?? (primaryContent?.doc as Document | undefined)?.defaultView;
-          if (!win) return false;
-          return (
-            rect.right > 0 &&
-            rect.left < win.innerWidth &&
-            rect.bottom > 0 &&
-            rect.top < win.innerHeight
-          );
+          return isHostRectVisible(mapIframeRectToHost(rect, doc));
         };
 
         // Require the START of the sentence range to be visible on the current page,
@@ -999,8 +1077,16 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
             );
           }
 
-          // Last resort: use body directly if still nothing found
-          if (visibleBlocks.length === 0 && doc.body?.textContent?.trim()) {
+          // Last resort for unusual books. In scrolled mode this is only safe
+          // when the document belongs to a real iframe, because visibility must
+          // be measured against the outer reader viewport rather than the
+          // iframe's full document height.
+          if (
+            visibleBlocks.length === 0 &&
+            doc.body?.textContent?.trim() &&
+            (!renderer.scrolled || doc.defaultView?.frameElement) &&
+            isRectVisibleInReader(doc.body.getBoundingClientRect(), doc)
+          ) {
             visibleBlocks = [doc.body];
           }
 
@@ -1187,6 +1273,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
               console.log("[FoliateViewer][TTS] visibleTTSSegments", {
                 alignCfi: alignCfi || null,
                 contentsCount: contents.length,
+                scannedContentsCount: scanContents.length,
                 directCount: segments.length,
                 alignedCount: alignedSegments.length,
                 returnedCount: returnedSegments.length,
@@ -1203,6 +1290,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         console.log("[FoliateViewer][TTS] visibleTTSSegments", {
           alignCfi: alignCfi || null,
           contentsCount: contents.length,
+          scannedContentsCount: scanContents.length,
           directCount: segments.length,
           alignedCount: 0,
           returnedCount: segments.length,

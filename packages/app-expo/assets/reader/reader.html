@@ -2817,6 +2817,95 @@ a { color: ${primary} !important; }
       return container.nodeType === Node.DOCUMENT_NODE ? container : container.ownerDocument;
     }
 
+    function getReaderViewportRect() {
+      const viewport = {
+        left: 0,
+        top: 0,
+        right: window.innerWidth || document.documentElement.clientWidth || 0,
+        bottom: window.innerHeight || document.documentElement.clientHeight || 0,
+      };
+      try {
+        const viewRect = view && view.getBoundingClientRect ? view.getBoundingClientRect() : null;
+        if (!viewRect || viewRect.width <= 0 || viewRect.height <= 0) return viewport;
+        return {
+          left: Math.max(viewRect.left, viewport.left),
+          top: Math.max(viewRect.top, viewport.top),
+          right: Math.min(viewRect.right, viewport.right),
+          bottom: Math.min(viewRect.bottom, viewport.bottom),
+        };
+      } catch (e) {
+        return viewport;
+      }
+    }
+
+    function mapIframeRectToHost(rect, doc) {
+      try {
+        const iframe = doc && doc.defaultView && doc.defaultView.frameElement;
+        if (!iframe || !iframe.getBoundingClientRect) return rect;
+        const iframeRect = iframe.getBoundingClientRect();
+        const scaleX = iframe.clientWidth > 0 ? iframeRect.width / iframe.clientWidth : 1;
+        const scaleY = iframe.clientHeight > 0 ? iframeRect.height / iframe.clientHeight : 1;
+        return {
+          left: iframeRect.left + rect.left * scaleX,
+          top: iframeRect.top + rect.top * scaleY,
+          right: iframeRect.left + rect.right * scaleX,
+          bottom: iframeRect.top + rect.bottom * scaleY,
+          width: rect.width * scaleX,
+          height: rect.height * scaleY,
+        };
+      } catch (e) {
+        return rect;
+      }
+    }
+
+    function isHostRectVisible(rect) {
+      if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+      const viewport = getReaderViewportRect();
+      return rect.right > viewport.left &&
+        rect.left < viewport.right &&
+        rect.bottom > viewport.top &&
+        rect.top < viewport.bottom;
+    }
+
+    function getContentHostRect(content) {
+      const doc = content && content.doc;
+      const iframe = doc && doc.defaultView && doc.defaultView.frameElement;
+      if (iframe && iframe.getBoundingClientRect) {
+        const rect = iframe.getBoundingClientRect();
+        return {
+          left: rect.left,
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom,
+          width: rect.width,
+          height: rect.height,
+        };
+      }
+      if (doc && doc.body) {
+        return mapIframeRectToHost(doc.body.getBoundingClientRect(), doc);
+      }
+      return null;
+    }
+
+    function getVisibleContentsForTTS(contents, renderer) {
+      if (!renderer || !renderer.scrolled) return contents;
+      return (contents || [])
+        .filter(function(content) { return !!(content && content.doc); })
+        .map(function(content) {
+          return { content: content, rect: getContentHostRect(content) };
+        })
+        .filter(function(item) {
+          return item.rect && isHostRectVisible(item.rect);
+        })
+        .sort(function(a, b) {
+          const topDelta = (a.rect ? a.rect.top : 0) - (b.rect ? b.rect.top : 0);
+          return Math.abs(topDelta) > 1
+            ? topDelta
+            : (a.rect ? a.rect.left : 0) - (b.rect ? b.rect.left : 0);
+        })
+        .map(function(item) { return item.content; });
+    }
+
     function isRectVisibleInReader(rect, renderer, win, doc) {
       if (!rect || rect.width <= 0 || rect.height <= 0) return false;
       const isPaginated = !renderer.scrolled;
@@ -2824,7 +2913,7 @@ a { color: ${primary} !important; }
         const visibleRange = getVisibleRangeForTTSDoc(doc, renderer);
         return visibleRange ? rectIntersectsPaginatedRange(rect, visibleRange) : false;
       }
-      return rect.right > 0 && rect.left < win.innerWidth && rect.bottom > 0 && rect.top < win.innerHeight;
+      return isHostRectVisible(mapIframeRectToHost(rect, doc));
     }
 
     function isRangeVisibleInReader(range, renderer, win) {
@@ -3297,8 +3386,7 @@ a { color: ${primary} !important; }
         const contents = getRendererContents();
         if (!renderer || !contents.length) return [];
         ttsVisibleRangeByDoc = new WeakMap();
-        const primaryContent = getPrimaryRendererContent();
-        const scanContents = renderer.scrolled && primaryContent ? [primaryContent] : contents;
+        const scanContents = getVisibleContentsForTTS(contents, renderer);
         const segments = [];
         const stats = {
           contentsCount: contents.length,
