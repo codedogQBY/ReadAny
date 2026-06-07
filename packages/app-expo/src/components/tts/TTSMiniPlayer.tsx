@@ -202,58 +202,68 @@ export function TTSMiniPlayer({ visible, onClose, anchorLayout }: TTSMiniPlayerP
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
         <View style={styles.controls}>
-          <View style={styles.playbackRow}>
-            <View
-              style={[
-                styles.rateCluster,
-                {
-                  backgroundColor: withOpacity(colors.muted, 0.55),
-                  borderColor: withOpacity(colors.border, 0.5),
-                },
-              ]}
-            >
-              <TouchableOpacity
-                style={styles.rateBtn}
-                onPress={() => adjustRate(-0.1)}
-                accessibilityRole="button"
-                accessibilityLabel={t("tts.decreaseRate")}
-              >
-                <Text style={[styles.rateBtnText, { color: colors.foreground }]}>−</Text>
-              </TouchableOpacity>
-              <View style={styles.rateCenter}>
-                <Text style={[styles.rateLabel, { color: colors.mutedForeground }]} numberOfLines={1}>
-                  {t("tts.rate")}
-                </Text>
-                <Text style={[styles.rateValue, { color: colors.foreground }]}>
-                  {config.rate.toFixed(1)}x
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.rateBtn}
-                onPress={() => adjustRate(0.1)}
-                accessibilityRole="button"
-                accessibilityLabel={t("tts.increaseRate")}
-              >
-                <Text style={[styles.rateBtnText, { color: colors.foreground }]}>+</Text>
-              </TouchableOpacity>
-            </View>
-
+          <View
+            style={[
+              styles.rateCluster,
+              {
+                backgroundColor: withOpacity(colors.muted, 0.55),
+                borderColor: withOpacity(colors.border, 0.5),
+              },
+            ]}
+          >
             <TouchableOpacity
-              style={[styles.playBtn, { backgroundColor: colors.primary }]}
-              onPress={handlePlayPause}
-              disabled={playState === "loading" || playState === "stopped"}
+              style={styles.rateBtn}
+              onPress={() => adjustRate(-0.1)}
               accessibilityRole="button"
-              accessibilityLabel={playState === "playing" ? t("tts.pause") : t("tts.play")}
+              accessibilityLabel={t("tts.decreaseRate")}
             >
-              {playState === "loading" ? (
-                <ActivityIndicator size="small" color={colors.primaryForeground} />
-              ) : playState === "playing" ? (
-                <PauseIcon size={20} color={colors.primaryForeground} />
-              ) : (
-                <PlayIcon size={20} color={colors.primaryForeground} />
-              )}
+              <Text style={[styles.rateBtnText, { color: colors.foreground }]}>−</Text>
             </TouchableOpacity>
+            <Text style={[styles.rateValue, { color: colors.mutedForeground }]}>
+              {config.rate.toFixed(1)}x
+            </Text>
+            <TouchableOpacity
+              style={styles.rateBtn}
+              onPress={() => adjustRate(0.1)}
+              accessibilityRole="button"
+              accessibilityLabel={t("tts.increaseRate")}
+            >
+              <Text style={[styles.rateBtnText, { color: colors.foreground }]}>+</Text>
+            </TouchableOpacity>
+          </View>
 
+          <TouchableOpacity
+            style={[styles.playBtn, { backgroundColor: colors.primary }]}
+            onPress={handlePlayPause}
+            disabled={playState === "loading" || playState === "stopped"}
+            accessibilityRole="button"
+            accessibilityLabel={playState === "playing" ? t("tts.pause") : t("tts.play")}
+          >
+            {playState === "loading" ? (
+              <ActivityIndicator size="small" color={colors.primaryForeground} />
+            ) : playState === "playing" ? (
+              <PauseIcon size={20} color={colors.primaryForeground} />
+            ) : (
+              <PlayIcon size={20} color={colors.primaryForeground} />
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.iconBtn,
+              {
+                backgroundColor: withOpacity(colors.muted, 0.55),
+                borderColor: withOpacity(colors.border, 0.5),
+              },
+            ]}
+            onPress={handleStop}
+            accessibilityRole="button"
+            accessibilityLabel={t("tts.stop", "停止")}
+          >
+            <SquareIcon size={14} color={colors.foreground} />
+          </TouchableOpacity>
+
+          {!!currentBookId && (
             <TouchableOpacity
               style={[
                 styles.iconBtn,
@@ -262,66 +272,49 @@ export function TTSMiniPlayer({ visible, onClose, anchorLayout }: TTSMiniPlayerP
                   borderColor: withOpacity(colors.border, 0.5),
                 },
               ]}
-              onPress={handleStop}
+              onPress={handleJumpToCurrentLocation}
               accessibilityRole="button"
-              accessibilityLabel={t("tts.stop", "停止")}
+              accessibilityLabel={t("tts.jumpToCurrentLocation")}
             >
-              <SquareIcon size={14} color={colors.foreground} />
+              <BookOpenIcon size={14} color={colors.foreground} />
             </TouchableOpacity>
-          </View>
+          )}
 
-          <View style={styles.quickActions}>
+          {!!currentBookId && (
             <TouchableOpacity
               style={[
-                styles.textAction,
+                styles.iconBtn,
                 {
-                  backgroundColor: sleepTimerEndsAt ? withOpacity(colors.primary, 0.1) : "transparent",
+                  backgroundColor: withOpacity(colors.muted, 0.55),
+                  borderColor: withOpacity(colors.border, 0.5),
                 },
               ]}
-              onPress={() => setTimerSheetVisible(true)}
+              onPress={handleOpenLyricsPage}
               accessibilityRole="button"
-              accessibilityLabel={t("tts.sleepTimer", "定时停止")}
+              accessibilityLabel={t("tts.openLyricsPage", "跳到歌词页")}
             >
-              <ClockIcon size={15} color={sleepTimerEndsAt ? colors.primary : colors.foreground} />
-              <Text
-                style={[
-                  styles.textActionText,
-                  { color: sleepTimerEndsAt ? colors.primary : colors.mutedForeground },
-                ]}
-                numberOfLines={1}
-              >
-                {t("tts.timerShort")}
-              </Text>
+              <ScrollTextIcon size={14} color={colors.foreground} />
             </TouchableOpacity>
+          )}
 
-            {!!currentBookId && (
-              <TouchableOpacity
-                style={styles.textAction}
-                onPress={handleJumpToCurrentLocation}
-                accessibilityRole="button"
-                accessibilityLabel={t("tts.jumpToCurrentLocation")}
-              >
-                <BookOpenIcon size={15} color={colors.foreground} />
-                <Text style={[styles.textActionText, { color: colors.mutedForeground }]} numberOfLines={1}>
-                  {t("tts.readerShort")}
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            {!!currentBookId && (
-              <TouchableOpacity
-                style={styles.textAction}
-                onPress={handleOpenLyricsPage}
-                accessibilityRole="button"
-                accessibilityLabel={t("tts.openLyricsPage", "跳到歌词页")}
-              >
-                <ScrollTextIcon size={15} color={colors.foreground} />
-                <Text style={[styles.textActionText, { color: colors.mutedForeground }]} numberOfLines={1}>
-                  {t("tts.lyricsShort")}
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
+          <TouchableOpacity
+            style={[
+              styles.iconBtn,
+              {
+                backgroundColor: sleepTimerEndsAt
+                  ? withOpacity(colors.primary, 0.12)
+                  : withOpacity(colors.muted, 0.55),
+                borderColor: sleepTimerEndsAt
+                  ? withOpacity(colors.primary, 0.26)
+                  : withOpacity(colors.border, 0.5),
+              },
+            ]}
+            onPress={() => setTimerSheetVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel={t("tts.sleepTimer", "定时停止")}
+          >
+            <ClockIcon size={14} color={sleepTimerEndsAt ? colors.primary : colors.foreground} />
+          </TouchableOpacity>
         </View>
       </View>
       <TTSSleepTimerSheet visible={timerSheetVisible} onClose={() => setTimerSheetVisible(false)} />
@@ -354,20 +347,17 @@ const styles = StyleSheet.create({
   statusText: { fontSize: fontSize.xs },
   divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 16 },
   controls: {
-    paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 11,
-    gap: 8,
-  },
-  playbackRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    gap: 5,
   },
   rateCluster: {
     flex: 1,
-    minWidth: 128,
-    height: 42,
+    minWidth: 86,
+    maxWidth: 108,
+    height: 36,
     borderRadius: radius.lg,
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
@@ -376,53 +366,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   rateBtn: {
-    width: 34,
-    height: 36,
+    width: 27,
+    height: 32,
     borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
   },
   rateBtnText: { fontSize: 18, fontWeight: "500", lineHeight: 20 },
-  rateCenter: { minWidth: 42, alignItems: "center", gap: 1 },
-  rateLabel: { fontSize: 10, lineHeight: 12 },
-  rateValue: { fontSize: fontSize.xs, fontWeight: "600", textAlign: "center" },
+  rateValue: { fontSize: fontSize.xs, width: 36, textAlign: "center" },
   playBtn: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: "center",
     justifyContent: "center",
   },
   iconBtn: {
-    width: 42,
-    height: 42,
+    width: 34,
+    height: 34,
     borderRadius: radius.lg,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",
     justifyContent: "center",
-  },
-  quickActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 2,
-    paddingTop: 2,
-  },
-  textAction: {
-    minWidth: 0,
-    height: 28,
-    borderRadius: radius.sm,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-    paddingHorizontal: 7,
-  },
-  textActionText: {
-    flexShrink: 1,
-    fontSize: 10,
-    fontWeight: "600",
-    lineHeight: 12,
-    textAlign: "center",
   },
 });
