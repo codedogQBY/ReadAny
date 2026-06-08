@@ -1,18 +1,31 @@
 import { Download, RotateCcw } from "@/components/ui/Icon";
 import { useColors } from "@/styles/theme";
+import type { ThemeColors } from "@/styles/theme";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import WebView from "react-native-webview";
+import WebView, { type WebViewMessageEvent } from "react-native-webview";
 
 interface MindmapViewProps {
   markdown: string;
   title?: string;
 }
 
-const generateHtml = (markdown: string, colors: any) => {
+const safeSvgFilename = (name: string) => {
+  const sanitized = name
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .split("")
+    .map((char) => (char.charCodeAt(0) < 32 ? "_" : char))
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+  return `${sanitized || "mindmap"}.svg`;
+};
+
+const generateHtml = (markdown: string, colors: ThemeColors) => {
   const escapedMarkdown = markdown
     .replace(/\\/g, "\\\\")
     .replace(/`/g, "\\`")
@@ -25,17 +38,23 @@ const generateHtml = (markdown: string, colors: any) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { 
-      width: 100%; 
-      height: 100%; 
+    html, body {
+      width: 100%;
+      height: 100%;
       overflow: hidden;
       background: ${colors.background};
+      overscroll-behavior: none;
       touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
     }
-    #mindmap { 
-      width: 100%; 
-      height: 100%; 
+    #mindmap {
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      cursor: grab;
     }
+    #mindmap:active { cursor: grabbing; }
     svg { width: 100%; height: 100%; }
     .markmap-node-circle { cursor: pointer; }
     .markmap-foreign { font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
@@ -51,20 +70,195 @@ const generateHtml = (markdown: string, colors: any) => {
     (function() {
       var markdown = \`${escapedMarkdown}\`;
       var mm = null;
-      
+      var touchState = null;
+      var suppressClickUntil = 0;
+
+      function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+      }
+
+      function getPoint(touch, svg) {
+        var rect = svg.getBoundingClientRect();
+        return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+      }
+
+      function getDistance(a, b) {
+        var dx = a.x - b.x;
+        var dy = a.y - b.y;
+        return Math.sqrt(dx * dx + dy * dy);
+      }
+
+      function getCenter(a, b) {
+        return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      }
+
+      function getCurrentTransform() {
+        var g = document.querySelector('#mindmap > g');
+        if (!g) return { x: 0, y: 0, k: 1 };
+        var transform = g.transform && g.transform.baseVal.consolidate();
+        if (!transform) return { x: 0, y: 0, k: 1 };
+        var matrix = transform.matrix;
+        return { x: matrix.e, y: matrix.f, k: matrix.a || 1 };
+      }
+
+      function applyTransform(transform) {
+        var g = document.querySelector('#mindmap > g');
+        if (!g) return;
+        g.setAttribute(
+          'transform',
+          'translate(' + transform.x + ',' + transform.y + ') scale(' + transform.k + ')'
+        );
+      }
+
+      function installTouchPanFallback() {
+        var svg = document.querySelector('#mindmap');
+        if (!svg || svg.dataset.touchFallback === '1') return;
+        svg.dataset.touchFallback = '1';
+
+        svg.addEventListener('click', function(event) {
+          if (Date.now() < suppressClickUntil) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        }, true);
+
+        svg.addEventListener('touchstart', function(event) {
+          if (!event.touches || event.touches.length === 0) return;
+          var current = getCurrentTransform();
+          if (event.touches.length === 1) {
+            touchState = {
+              type: 'pan',
+              start: getPoint(event.touches[0], svg),
+              transform: current,
+              moved: false
+            };
+          } else {
+            var first = getPoint(event.touches[0], svg);
+            var second = getPoint(event.touches[1], svg);
+            touchState = {
+              type: 'pinch',
+              center: getCenter(first, second),
+              distance: getDistance(first, second),
+              transform: current,
+              moved: false
+            };
+          }
+        }, { passive: false });
+
+        svg.addEventListener('touchmove', function(event) {
+          if (!touchState || !event.touches || event.touches.length === 0) return;
+
+          if (touchState.type === 'pan' && event.touches.length === 1) {
+            var point = getPoint(event.touches[0], svg);
+            var dx = point.x - touchState.start.x;
+            var dy = point.y - touchState.start.y;
+            if (Math.abs(dx) > 2 || Math.abs(dy) > 2) touchState.moved = true;
+            applyTransform({
+              x: touchState.transform.x + dx,
+              y: touchState.transform.y + dy,
+              k: touchState.transform.k
+            });
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+
+          if (touchState.type === 'pinch' && event.touches.length >= 2) {
+            var first = getPoint(event.touches[0], svg);
+            var second = getPoint(event.touches[1], svg);
+            var center = getCenter(first, second);
+            var distance = getDistance(first, second);
+            var nextScale = clamp(touchState.transform.k * (distance / touchState.distance), 0.2, 6);
+            var scaleRatio = nextScale / touchState.transform.k;
+            touchState.moved = true;
+            applyTransform({
+              x: center.x - (touchState.center.x - touchState.transform.x) * scaleRatio,
+              y: center.y - (touchState.center.y - touchState.transform.y) * scaleRatio,
+              k: nextScale
+            });
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        }, { passive: false });
+
+        svg.addEventListener('touchend', function() {
+          if (touchState && touchState.moved) {
+            suppressClickUntil = Date.now() + 120;
+          }
+          touchState = null;
+        }, { passive: true });
+
+        svg.addEventListener('touchcancel', function() {
+          touchState = null;
+        }, { passive: true });
+      }
+
+      function getStandaloneSvg() {
+        var svgEl = document.querySelector('#mindmap');
+        if (!svgEl) return '';
+
+        var originalG = svgEl.querySelector('g');
+        var bbox = { x: -200, y: -200, width: 800, height: 600 };
+        try {
+          if (originalG) bbox = originalG.getBBox();
+        } catch(e) {}
+
+        var padding = 50;
+        var contentX = bbox.x - padding;
+        var contentY = bbox.y - padding;
+        var contentWidth = Math.max(1, bbox.width + padding * 2);
+        var contentHeight = Math.max(1, bbox.height + padding * 2);
+        var cloned = svgEl.cloneNode(true);
+        var clonedG = cloned.querySelector('g');
+
+        if (clonedG) {
+          clonedG.setAttribute('transform', 'translate(0,0) scale(1)');
+        }
+
+        cloned.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        cloned.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+        cloned.setAttribute('viewBox', contentX + ' ' + contentY + ' ' + contentWidth + ' ' + contentHeight);
+        cloned.setAttribute('width', String(contentWidth));
+        cloned.setAttribute('height', String(contentHeight));
+        cloned.style.width = '';
+        cloned.style.height = '';
+
+        cloned.querySelectorAll('foreignObject *').forEach(function(el) {
+          el.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+        });
+
+        var bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        bgRect.setAttribute('x', String(contentX));
+        bgRect.setAttribute('y', String(contentY));
+        bgRect.setAttribute('width', String(contentWidth));
+        bgRect.setAttribute('height', String(contentHeight));
+        bgRect.setAttribute('fill', '${colors.background}');
+        cloned.insertBefore(bgRect, cloned.firstChild);
+
+        var style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+        style.textContent = '.markmap-foreign,.markmap-foreign *{color:${colors.foreground}!important;font-family:-apple-system,BlinkMacSystemFont,sans-serif;} .markmap-node-circle{fill:${colors.background};}';
+        cloned.insertBefore(style, cloned.firstChild);
+
+        var svgData = new XMLSerializer().serializeToString(cloned);
+        if (!svgData.startsWith('<?xml')) {
+          svgData = '<?xml version="1.0" encoding="UTF-8"?>\\n' + svgData;
+        }
+        return svgData;
+      }
+
       function init() {
         if (!window.markmap || !window.markmap.Transformer || !window.markmap.Markmap) {
           setTimeout(init, 100);
           return;
         }
-        
+
         try {
           var Transformer = window.markmap.Transformer;
           var Markmap = window.markmap.Markmap;
-          
+
           var transformer = new Transformer();
           var result = transformer.transform(markdown);
-          
+
           mm = Markmap.create('#mindmap', {
             autoFit: true,
             duration: 300,
@@ -73,49 +267,31 @@ const generateHtml = (markdown: string, colors: any) => {
               return '${colors.primary}';
             }
           }, result.root);
-          
+
           window._markmap = mm;
-          
+          installTouchPanFallback();
+
           window.getSvgContent = function() {
-            var svgEl = document.querySelector('#mindmap');
-            var cloned = svgEl.cloneNode(true);
-            var g = cloned.querySelector('g');
-            if (g) {
-              g.setAttribute('transform', 'translate(0,0) scale(1)');
-            }
-            var bbox = { x: -200, y: -200, width: 800, height: 600 };
-            try {
-              bbox = g.getBBox();
-            } catch(e) {}
-            var padding = 50;
-            cloned.setAttribute('viewBox', (bbox.x - padding) + ' ' + (bbox.y - padding) + ' ' + (bbox.width + padding * 2) + ' ' + (bbox.height + padding * 2));
-            cloned.setAttribute('width', bbox.width + padding * 2);
-            cloned.setAttribute('height', bbox.height + padding * 2);
-            var bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            bgRect.setAttribute('x', bbox.x - padding);
-            bgRect.setAttribute('y', bbox.y - padding);
-            bgRect.setAttribute('width', bbox.width + padding * 2);
-            bgRect.setAttribute('height', bbox.height + padding * 2);
-            bgRect.setAttribute('fill', '${colors.background}');
-            cloned.insertBefore(bgRect, cloned.firstChild);
-            return cloned.outerHTML;
+            return getStandaloneSvg();
           };
-          
+
           window.resetView = function() {
             if (mm) {
-              mm.fit();
+              mm.fit().then(function() {
+                setTimeout(installTouchPanFallback, 0);
+              });
             }
           };
-          
+
           window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'loaded' }));
         } catch (err) {
-          window.ReactNativeWebView.postMessage(JSON.stringify({ 
-            type: 'error', 
-            message: 'Error initializing mindmap: ' + err.message 
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'error',
+            message: 'Error initializing mindmap: ' + err.message
           }));
         }
       }
-      
+
       if (document.readyState === 'complete') {
         init();
       } else {
@@ -157,7 +333,7 @@ export function MindmapView({ markdown, title }: MindmapViewProps) {
   }, []);
 
   const onMessage = useCallback(
-    async (event: any) => {
+    async (event: WebViewMessageEvent) => {
       try {
         const data = JSON.parse(event.nativeEvent.data);
         if (data.type === "loaded") {
@@ -166,19 +342,21 @@ export function MindmapView({ markdown, title }: MindmapViewProps) {
           console.error("Mindmap error:", data.message);
           setLoading(false);
         } else if (data.type === "svg") {
-          const filename = `${title || "mindmap"}.svg`;
+          const filename = safeSvgFilename(title || t("mindmap.title", "思维导图"));
           const filepath = `${FileSystem.documentDirectory}${filename}`;
-          await FileSystem.writeAsStringAsync(filepath, data.content);
+          await FileSystem.writeAsStringAsync(filepath, data.content, {
+            encoding: FileSystem.EncodingType.UTF8,
+          });
           await Sharing.shareAsync(filepath, { mimeType: "image/svg+xml" });
         }
       } catch (e) {
         console.error("WebView message error:", e);
       }
     },
-    [title],
+    [title, t],
   );
 
-  const displayTitle = title && title.length > 20 ? title.slice(0, 20) + "..." : title;
+  const displayTitle = title && title.length > 20 ? `${title.slice(0, 20)}...` : title;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -209,8 +387,10 @@ export function MindmapView({ markdown, title }: MindmapViewProps) {
           style={styles.webview}
           onLoadEnd={() => setLoading(false)}
           onMessage={onMessage}
-          scrollEnabled={false}
+          scrollEnabled={true}
+          nestedScrollEnabled={true}
           bounces={false}
+          overScrollMode="never"
           originWhitelist={["*"]}
           javaScriptEnabled={true}
           domStorageEnabled={true}
