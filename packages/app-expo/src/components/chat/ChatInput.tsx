@@ -1,4 +1,5 @@
 import { BrainIcon, EyeOffIcon, SendIcon, StopCircleIcon, XIcon } from "@/components/ui/Icon";
+import { useKeyboardInsets } from "@/hooks/use-keyboard-insets";
 import { fontSize as fs, radius, useColors, withOpacity } from "@/styles/theme";
 import type { ThemeColors } from "@/styles/theme";
 import type { AttachedQuote } from "@readany/core/types";
@@ -8,7 +9,14 @@ import type { AttachedQuote } from "@readany/core/types";
  */
 import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import {
+  StyleSheet,
+  Text,
+  TextInput,
+  type TextInputContentSizeChangeEvent,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 interface ChatInputProps {
   onSend: (
@@ -44,6 +52,10 @@ export function ChatInput({
   const colors = useColors();
   const s = makeStyles(colors);
   const inputRef = useRef<TextInput>(null);
+  const keyboardInsets = useKeyboardInsets();
+  const bottomPadding = keyboardInsets.isVisible
+    ? 12
+    : Math.max(4, Math.min(keyboardInsets.safeAreaBottom, 8));
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
@@ -63,21 +75,24 @@ export function ChatInput({
     }
   }, []);
 
-  const handleContentSizeChange = useCallback((e: any) => {
-    if (!text) {
-      setInputHeight(SINGLE_LINE_INPUT_HEIGHT);
-      return;
-    }
-    const contentHeight = e.nativeEvent.contentSize.height;
-    const totalHeight = contentHeight + INPUT_PADDING_VERTICAL;
-    const h = Math.min(totalHeight, MAX_INPUT_HEIGHT);
-    setInputHeight(Math.max(SINGLE_LINE_INPUT_HEIGHT, h));
-  }, [text]);
+  const handleContentSizeChange = useCallback(
+    (e: TextInputContentSizeChangeEvent) => {
+      if (!text) {
+        setInputHeight(SINGLE_LINE_INPUT_HEIGHT);
+        return;
+      }
+      const contentHeight = e.nativeEvent.contentSize.height;
+      const totalHeight = contentHeight + INPUT_PADDING_VERTICAL;
+      const h = Math.min(totalHeight, MAX_INPUT_HEIGHT);
+      setInputHeight(Math.max(SINGLE_LINE_INPUT_HEIGHT, h));
+    },
+    [text],
+  );
 
   const canSend = text.trim().length > 0 || quotes.length > 0;
 
   return (
-    <View style={s.wrapper}>
+    <View style={[s.wrapper, { paddingBottom: bottomPadding }]}>
       <View style={s.container}>
         {/* Attached quotes chips */}
         {quotes.length > 0 && (

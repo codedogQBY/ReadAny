@@ -1,11 +1,12 @@
-import { Download, RotateCcw } from "@/components/ui/Icon";
+import { Download, Maximize2, Minimize2, RotateCcw } from "@/components/ui/Icon";
 import { useColors } from "@/styles/theme";
 import type { ThemeColors } from "@/styles/theme";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import WebView, { type WebViewMessageEvent } from "react-native-webview";
 
 interface MindmapViewProps {
@@ -307,12 +308,16 @@ export function MindmapView({ markdown, title }: MindmapViewProps) {
   const colors = useColors();
   const { t } = useTranslation();
   const webviewRef = useRef<WebView>(null);
+  const fullscreenWebviewRef = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
+  const [fullscreenLoading, setFullscreenLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   const html = useMemo(() => generateHtml(markdown, colors), [markdown, colors]);
 
   const handleReset = useCallback(() => {
-    webviewRef.current?.injectJavaScript(`
+    const target = expanded ? fullscreenWebviewRef.current : webviewRef.current;
+    target?.injectJavaScript(`
       (function() {
         if (window.resetView) {
           window.resetView();
@@ -320,27 +325,41 @@ export function MindmapView({ markdown, title }: MindmapViewProps) {
       })();
       true;
     `);
-  }, []);
+  }, [expanded]);
 
   const handleDownload = useCallback(async () => {
-    webviewRef.current?.injectJavaScript(`
+    const target = expanded ? fullscreenWebviewRef.current : webviewRef.current;
+    target?.injectJavaScript(`
       (function() {
         const svgContent = window.getSvgContent();
         window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'svg', content: svgContent }));
       })();
       true;
     `);
+  }, [expanded]);
+
+  const openFullscreen = useCallback(() => {
+    setFullscreenLoading(true);
+    setExpanded(true);
   }, []);
 
-  const onMessage = useCallback(
-    async (event: WebViewMessageEvent) => {
+  const handleMessage = useCallback(
+    async (event: WebViewMessageEvent, fullscreen: boolean) => {
       try {
         const data = JSON.parse(event.nativeEvent.data);
         if (data.type === "loaded") {
-          setLoading(false);
+          if (fullscreen) {
+            setFullscreenLoading(false);
+          } else {
+            setLoading(false);
+          }
         } else if (data.type === "error") {
           console.error("Mindmap error:", data.message);
-          setLoading(false);
+          if (fullscreen) {
+            setFullscreenLoading(false);
+          } else {
+            setLoading(false);
+          }
         } else if (data.type === "svg") {
           const filename = safeSvgFilename(title || t("mindmap.title", "思维导图"));
           const filepath = `${FileSystem.documentDirectory}${filename}`;
@@ -372,6 +391,9 @@ export function MindmapView({ markdown, title }: MindmapViewProps) {
           <TouchableOpacity onPress={handleDownload} style={styles.button}>
             <Download size={16} color={colors.mutedForeground} />
           </TouchableOpacity>
+          <TouchableOpacity onPress={openFullscreen} style={styles.button}>
+            <Maximize2 size={16} color={colors.mutedForeground} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -386,7 +408,7 @@ export function MindmapView({ markdown, title }: MindmapViewProps) {
           source={{ html }}
           style={styles.webview}
           onLoadEnd={() => setLoading(false)}
-          onMessage={onMessage}
+          onMessage={(event) => handleMessage(event, false)}
           scrollEnabled={true}
           nestedScrollEnabled={true}
           bounces={false}
@@ -403,6 +425,59 @@ export function MindmapView({ markdown, title }: MindmapViewProps) {
           {t("mindmap.zoomHintMindmap", "双指缩放 · 拖动移动 · 点击节点展开/收起")}
         </Text>
       </View>
+
+      {expanded && (
+        <Modal visible animationType="fade" onRequestClose={() => setExpanded(false)}>
+          <SafeAreaView style={[styles.fullscreen, { backgroundColor: colors.background }]}>
+            <View style={[styles.fullscreenHeader, { borderBottomColor: colors.border }]}>
+              <Text
+                style={[styles.fullscreenTitle, { color: colors.foreground }]}
+                numberOfLines={1}
+              >
+                {displayTitle || t("mindmap.title", "思维导图")}
+              </Text>
+              <View style={styles.controls}>
+                <TouchableOpacity onPress={handleReset} style={styles.button}>
+                  <RotateCcw size={18} color={colors.mutedForeground} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleDownload} style={styles.button}>
+                  <Download size={18} color={colors.mutedForeground} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setExpanded(false)} style={styles.button}>
+                  <Minimize2 size={18} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              </View>
+            </View>
+            <View style={styles.fullscreenWebviewContainer}>
+              {fullscreenLoading && (
+                <View style={[styles.loading, { backgroundColor: colors.background }]}>
+                  <ActivityIndicator color={colors.foreground} />
+                </View>
+              )}
+              <WebView
+                ref={fullscreenWebviewRef}
+                source={{ html }}
+                style={styles.webview}
+                onLoadEnd={() => setFullscreenLoading(false)}
+                onMessage={(event) => handleMessage(event, true)}
+                scrollEnabled={true}
+                nestedScrollEnabled={true}
+                bounces={false}
+                overScrollMode="never"
+                originWhitelist={["*"]}
+                javaScriptEnabled={true}
+                domStorageEnabled={true}
+                mixedContentMode="compatibility"
+              />
+            </View>
+            <View style={[styles.footer, { borderTopColor: colors.border }]}>
+              <Text style={[styles.hint, { color: colors.mutedForeground }]}>
+                {t("mindmap.zoomHintMindmap", "双指缩放 · 拖动移动 · 点击节点展开/收起")}
+              </Text>
+            </View>
+          </SafeAreaView>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -453,6 +528,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
     alignItems: "center",
+    zIndex: 1,
   },
   footer: {
     paddingHorizontal: 12,
@@ -461,5 +537,25 @@ const styles = StyleSheet.create({
   },
   hint: {
     fontSize: 13,
+  },
+  fullscreen: {
+    flex: 1,
+  },
+  fullscreenHeader: {
+    minHeight: 50,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  fullscreenTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  fullscreenWebviewContainer: {
+    flex: 1,
+    overflow: "hidden",
   },
 });

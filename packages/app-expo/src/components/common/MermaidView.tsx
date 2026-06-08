@@ -1,18 +1,32 @@
-import { Download, RotateCcw } from "@/components/ui/Icon";
+import { Download, Maximize2, Minimize2, RotateCcw } from "@/components/ui/Icon";
 import { useColors } from "@/styles/theme";
+import type { ThemeColors } from "@/styles/theme";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import WebView from "react-native-webview";
+import { ActivityIndicator, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import WebView, { type WebViewMessageEvent } from "react-native-webview";
 
 interface MermaidViewProps {
   chart: string;
   title?: string;
 }
 
-const generateHtml = (colors: any) => {
+const safeSvgFilename = (name: string) => {
+  const sanitized = name
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .split("")
+    .map((char) => (char.charCodeAt(0) < 32 ? "_" : char))
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+  return `${sanitized || "mermaid"}.svg`;
+};
+
+const generateHtml = (colors: ThemeColors) => {
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -20,26 +34,30 @@ const generateHtml = (colors: any) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { 
-      width: 100%; 
-      height: 100%; 
+    html, body {
+      width: 100%;
+      height: 100%;
       overflow: hidden;
       background: ${colors.background};
+      overscroll-behavior: none;
       touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
     }
-    #container { 
-      width: 100%; 
-      height: 100%; 
+    #container {
+      width: 100%;
+      height: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
     }
-    #container svg { 
-      width: 100% !important; 
-      height: 100% !important; 
-      max-width: 100% !important; 
+    #container svg {
+      width: 100% !important;
+      height: 100% !important;
+      max-width: 100% !important;
       max-height: 100% !important;
-      cursor: grab; 
+      touch-action: none;
+      cursor: grab;
     }
     #container svg:active { cursor: grabbing; }
     .error { color: #e53935; padding: 20px; font-size: 14px; }
@@ -152,17 +170,32 @@ const generateHtml = (colors: any) => {
         var bbox = { x: 0, y: 0, width: 800, height: 600 };
         try { bbox = cloned.getBBox(); } catch(e) {}
         var padding = 20;
-        cloned.setAttribute('viewBox', (bbox.x - padding) + ' ' + (bbox.y - padding) + ' ' + (bbox.width + padding * 2) + ' ' + (bbox.height + padding * 2));
-        cloned.setAttribute('width', bbox.width + padding * 2);
-        cloned.setAttribute('height', bbox.height + padding * 2);
+        var contentX = bbox.x - padding;
+        var contentY = bbox.y - padding;
+        var contentWidth = Math.max(1, bbox.width + padding * 2);
+        var contentHeight = Math.max(1, bbox.height + padding * 2);
+        cloned.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        cloned.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+        cloned.setAttribute('viewBox', contentX + ' ' + contentY + ' ' + contentWidth + ' ' + contentHeight);
+        cloned.setAttribute('width', String(contentWidth));
+        cloned.setAttribute('height', String(contentHeight));
+        cloned.style.width = '';
+        cloned.style.height = '';
+        cloned.querySelectorAll('foreignObject *').forEach(function(el) {
+          el.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+        });
         var bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        bgRect.setAttribute('x', bbox.x - padding);
-        bgRect.setAttribute('y', bbox.y - padding);
-        bgRect.setAttribute('width', bbox.width + padding * 2);
-        bgRect.setAttribute('height', bbox.height + padding * 2);
+        bgRect.setAttribute('x', String(contentX));
+        bgRect.setAttribute('y', String(contentY));
+        bgRect.setAttribute('width', String(contentWidth));
+        bgRect.setAttribute('height', String(contentHeight));
         bgRect.setAttribute('fill', '${colors.background}');
         cloned.insertBefore(bgRect, cloned.firstChild);
-        return cloned.outerHTML;
+        var svgData = new XMLSerializer().serializeToString(cloned);
+        if (!svgData.startsWith('<?xml')) {
+          svgData = '<?xml version="1.0" encoding="UTF-8"?>\\n' + svgData;
+        }
+        return svgData;
       };
       
       if (document.readyState === 'complete') {
@@ -180,8 +213,12 @@ export function MermaidView({ chart, title }: MermaidViewProps) {
   const colors = useColors();
   const { t } = useTranslation();
   const webviewRef = useRef<WebView>(null);
+  const fullscreenWebviewRef = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
+  const [fullscreenLoading, setFullscreenLoading] = useState(true);
   const [isReady, setIsReady] = useState(false);
+  const [isFullscreenReady, setIsFullscreenReady] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const chartRef = useRef(chart);
 
   // 同步 chart 到 ref
@@ -192,15 +229,15 @@ export function MermaidView({ chart, title }: MermaidViewProps) {
   const html = useMemo(() => generateHtml(colors), [colors]);
 
   // 渲染图表的函数
-  const renderChart = useCallback((chartToRender: string) => {
-    if (!webviewRef.current || !chartToRender) return;
+  const renderChart = useCallback((targetRef: RefObject<WebView | null>, chartToRender: string) => {
+    if (!targetRef.current || !chartToRender) return;
 
     const escapedChart = chartToRender
       .replace(/\\/g, "\\\\")
       .replace(/`/g, "\\`")
       .replace(/\$/g, "\\$");
 
-    webviewRef.current.injectJavaScript(`
+    targetRef.current.injectJavaScript(`
       (function() {
         if (window.renderChart) {
           window.renderChart(\`${escapedChart}\`);
@@ -213,19 +250,29 @@ export function MermaidView({ chart, title }: MermaidViewProps) {
   // 当 isReady 变为 true 时，渲染当前 chart
   useEffect(() => {
     if (isReady && chartRef.current) {
-      renderChart(chartRef.current);
+      renderChart(webviewRef, chartRef.current);
     }
   }, [isReady, renderChart]);
+
+  useEffect(() => {
+    if (expanded && isFullscreenReady && chartRef.current) {
+      renderChart(fullscreenWebviewRef, chartRef.current);
+    }
+  }, [expanded, isFullscreenReady, renderChart]);
 
   // 当 chart 变化时渲染
   useEffect(() => {
     if (isReady && chart) {
-      renderChart(chart);
+      renderChart(webviewRef, chart);
     }
-  }, [chart, isReady, renderChart]);
+    if (expanded && isFullscreenReady && chart) {
+      renderChart(fullscreenWebviewRef, chart);
+    }
+  }, [chart, expanded, isFullscreenReady, isReady, renderChart]);
 
   const handleReset = useCallback(() => {
-    webviewRef.current?.injectJavaScript(`
+    const target = expanded ? fullscreenWebviewRef.current : webviewRef.current;
+    target?.injectJavaScript(`
       (function() {
         if (window.resetView) {
           window.resetView();
@@ -233,29 +280,43 @@ export function MermaidView({ chart, title }: MermaidViewProps) {
       })();
       true;
     `);
-  }, []);
+  }, [expanded]);
 
   const handleDownload = useCallback(async () => {
-    webviewRef.current?.injectJavaScript(`
+    const target = expanded ? fullscreenWebviewRef.current : webviewRef.current;
+    target?.injectJavaScript(`
       (function() {
         const svgContent = window.getSvgContent();
         window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'svg', content: svgContent }));
       })();
       true;
     `);
+  }, [expanded]);
+
+  const openFullscreen = useCallback(() => {
+    setFullscreenLoading(true);
+    setIsFullscreenReady(false);
+    setExpanded(true);
   }, []);
 
-  const onMessage = useCallback(
-    async (event: any) => {
+  const handleMessage = useCallback(
+    async (event: WebViewMessageEvent, fullscreen: boolean) => {
       try {
         const data = JSON.parse(event.nativeEvent.data);
         if (data.type === "loaded") {
-          setLoading(false);
-          setIsReady(true);
+          if (fullscreen) {
+            setFullscreenLoading(false);
+            setIsFullscreenReady(true);
+          } else {
+            setLoading(false);
+            setIsReady(true);
+          }
         } else if (data.type === "svg") {
-          const filename = `${title || "mermaid"}.svg`;
+          const filename = safeSvgFilename(title || t("mindmap.mermaidChart", "Mermaid 图表"));
           const filepath = `${FileSystem.documentDirectory}${filename}`;
-          await FileSystem.writeAsStringAsync(filepath, data.content);
+          await FileSystem.writeAsStringAsync(filepath, data.content, {
+            encoding: FileSystem.EncodingType.UTF8,
+          });
           await Sharing.shareAsync(filepath, { mimeType: "image/svg+xml" });
         } else if (data.type === "debug") {
           console.log("[Mermaid Debug]", data.message);
@@ -264,10 +325,10 @@ export function MermaidView({ chart, title }: MermaidViewProps) {
         console.error("WebView message error:", e);
       }
     },
-    [title],
+    [title, t],
   );
 
-  const displayTitle = title && title.length > 20 ? title.slice(0, 20) + "..." : title;
+  const displayTitle = title && title.length > 20 ? `${title.slice(0, 20)}...` : title;
 
   return (
     <View style={styles.container}>
@@ -282,6 +343,9 @@ export function MermaidView({ chart, title }: MermaidViewProps) {
           <TouchableOpacity onPress={handleDownload} style={styles.button}>
             <Download size={14} color={colors.mutedForeground} />
           </TouchableOpacity>
+          <TouchableOpacity onPress={openFullscreen} style={styles.button}>
+            <Maximize2 size={14} color={colors.mutedForeground} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -295,9 +359,11 @@ export function MermaidView({ chart, title }: MermaidViewProps) {
           ref={webviewRef}
           source={{ html }}
           style={styles.webview}
-          onMessage={onMessage}
-          scrollEnabled={false}
+          onMessage={(event) => handleMessage(event, false)}
+          scrollEnabled={true}
+          nestedScrollEnabled={true}
           bounces={false}
+          overScrollMode="never"
           originWhitelist={["*"]}
           javaScriptEnabled={true}
           domStorageEnabled={true}
@@ -310,6 +376,58 @@ export function MermaidView({ chart, title }: MermaidViewProps) {
           {t("mindmap.zoomHint", "双击放大 · 双指缩放 · 拖动移动")}
         </Text>
       </View>
+
+      {expanded && (
+        <Modal visible animationType="fade" onRequestClose={() => setExpanded(false)}>
+          <SafeAreaView style={[styles.fullscreen, { backgroundColor: colors.background }]}>
+            <View style={[styles.fullscreenHeader, { borderBottomColor: colors.border }]}>
+              <Text
+                style={[styles.fullscreenTitle, { color: colors.foreground }]}
+                numberOfLines={1}
+              >
+                {displayTitle || t("mindmap.mermaidChart", "Mermaid 图表")}
+              </Text>
+              <View style={styles.controls}>
+                <TouchableOpacity onPress={handleReset} style={styles.button}>
+                  <RotateCcw size={18} color={colors.mutedForeground} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleDownload} style={styles.button}>
+                  <Download size={18} color={colors.mutedForeground} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setExpanded(false)} style={styles.button}>
+                  <Minimize2 size={18} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              </View>
+            </View>
+            <View style={styles.fullscreenWebviewContainer}>
+              {fullscreenLoading && (
+                <View style={[styles.loading, { backgroundColor: colors.background }]}>
+                  <ActivityIndicator color={colors.foreground} />
+                </View>
+              )}
+              <WebView
+                ref={fullscreenWebviewRef}
+                source={{ html }}
+                style={styles.webview}
+                onMessage={(event) => handleMessage(event, true)}
+                scrollEnabled={true}
+                nestedScrollEnabled={true}
+                bounces={false}
+                overScrollMode="never"
+                originWhitelist={["*"]}
+                javaScriptEnabled={true}
+                domStorageEnabled={true}
+                mixedContentMode="compatibility"
+              />
+            </View>
+            <View style={[styles.footer, { borderColor: colors.border }]}>
+              <Text style={[styles.hint, { color: colors.mutedForeground }]}>
+                {t("mindmap.zoomHint", "双击放大 · 双指缩放 · 拖动移动")}
+              </Text>
+            </View>
+          </SafeAreaView>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -360,5 +478,25 @@ const styles = StyleSheet.create({
   },
   hint: {
     fontSize: 13,
+  },
+  fullscreen: {
+    flex: 1,
+  },
+  fullscreenHeader: {
+    minHeight: 50,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  fullscreenTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  fullscreenWebviewContainer: {
+    flex: 1,
+    overflow: "hidden",
   },
 });
