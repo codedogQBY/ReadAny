@@ -6,7 +6,7 @@ import * as Sharing from "expo-sharing";
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivityIndicator, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import WebView, { type WebViewMessageEvent } from "react-native-webview";
 
 interface MermaidViewProps {
@@ -212,6 +212,7 @@ const generateHtml = (colors: ThemeColors) => {
 export function MermaidView({ chart, title }: MermaidViewProps) {
   const colors = useColors();
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const webviewRef = useRef<WebView>(null);
   const fullscreenWebviewRef = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
@@ -379,7 +380,16 @@ export function MermaidView({ chart, title }: MermaidViewProps) {
 
       {expanded && (
         <Modal visible animationType="fade" onRequestClose={() => setExpanded(false)}>
-          <SafeAreaView style={[styles.fullscreen, { backgroundColor: colors.background }]}>
+          <View
+            style={[
+              styles.fullscreen,
+              {
+                backgroundColor: colors.background,
+                paddingTop: insets.top,
+                paddingBottom: insets.bottom,
+              },
+            ]}
+          >
             <View style={[styles.fullscreenHeader, { borderBottomColor: colors.border }]}>
               <Text
                 style={[styles.fullscreenTitle, { color: colors.foreground }]}
@@ -425,7 +435,7 @@ export function MermaidView({ chart, title }: MermaidViewProps) {
                 {t("mindmap.zoomHint", "双击放大 · 双指缩放 · 拖动移动")}
               </Text>
             </View>
-          </SafeAreaView>
+          </View>
         </Modal>
       )}
     </View>

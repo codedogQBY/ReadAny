@@ -30,21 +30,13 @@ export function TabNavigator() {
   const layout = useResponsiveLayout();
 
   const androidNavigationFallback =
-    Platform.OS === "android"
-      ? insets.bottom > 0
-        ? 28
-        : layout.isTablet
-          ? 32
-          : 40
-      : 0;
+    Platform.OS === "android" ? (insets.bottom > 0 ? 28 : layout.isTablet ? 32 : 40) : 0;
 
   // Some Android devices under-report or completely miss the bottom inset when
   // classic three-button navigation is enabled, so we keep a larger fallback
   // reserve in that case to stop the system bar from covering the tab bar.
   const bottomInset =
-    Platform.OS === "android"
-      ? Math.max(insets.bottom, androidNavigationFallback)
-      : insets.bottom;
+    Platform.OS === "android" ? Math.max(insets.bottom, androidNavigationFallback) : insets.bottom;
 
   const baseTabBarHeight = layout.isTabletLandscape ? 72 : layout.isTablet ? 76 : 60;
   const tabBarHeight = baseTabBarHeight + bottomInset;
@@ -54,6 +46,7 @@ export function TabNavigator() {
       safeAreaInsets={{ ...insets, bottom: bottomInset }}
       screenOptions={{
         headerShown: false,
+        tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedForeground,
         tabBarLabelStyle: {

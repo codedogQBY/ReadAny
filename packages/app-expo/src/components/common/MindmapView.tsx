@@ -6,7 +6,7 @@ import * as Sharing from "expo-sharing";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivityIndicator, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import WebView, { type WebViewMessageEvent } from "react-native-webview";
 
 interface MindmapViewProps {
@@ -307,6 +307,7 @@ const generateHtml = (markdown: string, colors: ThemeColors) => {
 export function MindmapView({ markdown, title }: MindmapViewProps) {
   const colors = useColors();
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const webviewRef = useRef<WebView>(null);
   const fullscreenWebviewRef = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
@@ -428,7 +429,16 @@ export function MindmapView({ markdown, title }: MindmapViewProps) {
 
       {expanded && (
         <Modal visible animationType="fade" onRequestClose={() => setExpanded(false)}>
-          <SafeAreaView style={[styles.fullscreen, { backgroundColor: colors.background }]}>
+          <View
+            style={[
+              styles.fullscreen,
+              {
+                backgroundColor: colors.background,
+                paddingTop: insets.top,
+                paddingBottom: insets.bottom,
+              },
+            ]}
+          >
             <View style={[styles.fullscreenHeader, { borderBottomColor: colors.border }]}>
               <Text
                 style={[styles.fullscreenTitle, { color: colors.foreground }]}
@@ -475,7 +485,7 @@ export function MindmapView({ markdown, title }: MindmapViewProps) {
                 {t("mindmap.zoomHintMindmap", "双指缩放 · 拖动移动 · 点击节点展开/收起")}
               </Text>
             </View>
-          </SafeAreaView>
+          </View>
         </Modal>
       )}
     </View>

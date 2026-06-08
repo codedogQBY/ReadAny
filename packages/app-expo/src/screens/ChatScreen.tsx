@@ -484,6 +484,7 @@ export function ChatScreen() {
           <KeyboardAvoidingView
             style={s.content}
             behavior={Platform.OS === "ios" ? "padding" : "height"}
+            enabled={Platform.OS !== "ios"}
             keyboardVerticalOffset={0}
           >
             <View style={s.content}>

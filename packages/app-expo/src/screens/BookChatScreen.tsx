@@ -541,6 +541,7 @@ export function BookChatScreen({ route, navigation }: Props) {
           <KeyboardAvoidingView
             style={s.content}
             behavior={Platform.OS === "ios" ? "padding" : "height"}
+            enabled={Platform.OS !== "ios"}
             keyboardVerticalOffset={0}
           >
             <View style={s.content}>

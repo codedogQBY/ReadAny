@@ -10,6 +10,7 @@ import type { AttachedQuote } from "@readany/core/types";
 import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -53,9 +54,10 @@ export function ChatInput({
   const s = makeStyles(colors);
   const inputRef = useRef<TextInput>(null);
   const keyboardInsets = useKeyboardInsets();
-  const bottomPadding = keyboardInsets.isVisible
-    ? 12
-    : Math.max(4, Math.min(keyboardInsets.safeAreaBottom, 8));
+  const bottomPadding =
+    Platform.OS === "ios" && keyboardInsets.isVisible
+      ? keyboardInsets.bottomInset + 8
+      : Math.max(4, Math.min(keyboardInsets.safeAreaBottom, 8));
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
