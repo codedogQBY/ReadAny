@@ -2,6 +2,10 @@ const createSVGElement = (tag) => document.createElementNS("http://www.w3.org/20
 
 export class Overlayer {
   #svg = createSVGElement("svg");
+  #defs = createSVGElement("defs");
+  #content = createSVGElement("g");
+  #holeMask = null;
+  #holeId = `foliate-overlayer-hole-${Math.random().toString(36).slice(2)}`;
   #map = new Map();
   constructor() {
     Object.assign(this.#svg.style, {
@@ -12,33 +16,71 @@ export class Overlayer {
       height: "100%",
       pointerEvents: "none",
     });
+    this.#svg.append(this.#defs, this.#content);
   }
   get element() {
     return this.#svg;
   }
   add(key, range, draw, options) {
     if (this.#map.has(key)) this.remove(key);
-    if (typeof range === "function") range = range(this.#svg.getRootNode());
-    const rects = range.getClientRects();
+    const resolvedRange = typeof range === "function" ? range(this.#svg.getRootNode()) : range;
+    const rects = resolvedRange.getClientRects();
     const element = draw(rects, options);
-    this.#svg.append(element);
-    this.#map.set(key, { range, draw, options, element, rects });
+    this.#content.append(element);
+    this.#map.set(key, { range: resolvedRange, draw, options, element, rects });
   }
   remove(key) {
     if (!this.#map.has(key)) return;
-    this.#svg.removeChild(this.#map.get(key).element);
+    this.#map.get(key).element.remove();
     this.#map.delete(key);
   }
   redraw() {
     for (const obj of this.#map.values()) {
       const { range, draw, options, element } = obj;
-      this.#svg.removeChild(element);
+      element.remove();
       const rects = range.getClientRects();
       const el = draw(rects, options);
-      this.#svg.append(el);
+      this.#content.append(el);
       obj.element = el;
       obj.rects = rects;
     }
+  }
+  setHole(x, y, width, height, radius = 0) {
+    if (!this.#holeMask) {
+      const mask = createSVGElement("mask");
+      mask.id = this.#holeId;
+      mask.setAttribute("maskUnits", "userSpaceOnUse");
+      mask.setAttribute("x", "0");
+      mask.setAttribute("y", "0");
+      mask.setAttribute("width", "100%");
+      mask.setAttribute("height", "100%");
+
+      const visible = createSVGElement("rect");
+      visible.setAttribute("x", "0");
+      visible.setAttribute("y", "0");
+      visible.setAttribute("width", "100%");
+      visible.setAttribute("height", "100%");
+      visible.setAttribute("fill", "white");
+
+      const hole = createSVGElement("rect");
+      hole.setAttribute("fill", "black");
+      mask.append(visible, hole);
+      this.#defs.append(mask);
+      this.#content.setAttribute("mask", `url(#${this.#holeId})`);
+      this.#holeMask = { mask, hole };
+    }
+
+    this.#holeMask.hole.setAttribute("x", x);
+    this.#holeMask.hole.setAttribute("y", y);
+    this.#holeMask.hole.setAttribute("width", width);
+    this.#holeMask.hole.setAttribute("height", height);
+    this.#holeMask.hole.setAttribute("rx", radius);
+    this.#holeMask.hole.setAttribute("ry", radius);
+  }
+  clearHole() {
+    this.#content.removeAttribute("mask");
+    this.#holeMask?.mask.remove();
+    this.#holeMask = null;
   }
   hitTest({ x, y }) {
     const arr = Array.from(this.#map.entries());
