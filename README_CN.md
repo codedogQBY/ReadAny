@@ -115,7 +115,7 @@
 - **智能对话** - 针对书籍内容提问，AI 知道你的位置、选中文字、高亮笔记
 - **语义搜索** - 超越关键词，向量检索 + BM25 混合搜索
 - **即时翻译** - AI 翻译或 DeepL，支持 19 种语言
-- **多模型支持** - OpenAI、Claude、Gemini、Ollama、DeepSeek
+- **多模型支持** - OpenAI、Claude、Gemini、Ollama、DeepSeek、Atlas Cloud
 - **技能系统** - 内置技能（摘要、概念解释、角色追踪等）+ 自定义技能
 
 ### 📝 标注与知识管理
@@ -213,6 +213,7 @@ pnpm expo:android
 | OpenAI | [platform.openai.com](https://platform.openai.com/) |
 | Anthropic Claude | [console.anthropic.com](https://console.anthropic.com/) |
 | Google Gemini | [aistudio.google.com](https://aistudio.google.com/) |
+| Atlas Cloud | [atlascloud.ai](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ReadAny)（OpenAI 兼容，100+ 模型）|
 | Ollama / DeepSeek | 本地或自定义端点 |
 
 ---

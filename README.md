@@ -115,7 +115,7 @@
 - **Intelligent Chat** - Ask questions about your books, AI knows your position, selected text, and highlights
 - **Semantic Search** - Beyond keywords, vector retrieval + BM25 hybrid search
 - **Instant Translation** - AI translation or DeepL, 19 languages supported
-- **Multiple AI Providers** - OpenAI, Claude, Gemini, Ollama, DeepSeek
+- **Multiple AI Providers** - OpenAI, Claude, Gemini, Ollama, DeepSeek, Atlas Cloud
 - **Skills System** - Built-in skills (summarizer, concept explainer, character tracker, etc.) + create custom skills
 
 ### 📝 Annotation & Knowledge Management
@@ -213,6 +213,7 @@ Mobile app source lives in [`packages/app-expo`](packages/app-expo).
 | OpenAI | [platform.openai.com](https://platform.openai.com/) |
 | Anthropic Claude | [console.anthropic.com](https://console.anthropic.com/) |
 | Google Gemini | [aistudio.google.com](https://aistudio.google.com/) |
+| Atlas Cloud | [atlascloud.ai](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ReadAny) (OpenAI-compatible, 100+ models) |
 | Ollama / DeepSeek | Local or custom endpoint |
 
 ---

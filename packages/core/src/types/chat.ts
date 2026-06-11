@@ -144,6 +144,7 @@ export type AIProviderType =
   | "mistral"
   | "perplexity"
   | "aihubmix"
+  | "atlascloud"
   | "custom";
 
 export interface AIEndpoint {
