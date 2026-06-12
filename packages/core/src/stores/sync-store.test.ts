@@ -222,7 +222,7 @@ describe("useSyncStore", () => {
     });
   });
 
-  it("saves custom WebDAV remote root and trims nested path", async () => {
+  it("saves custom WebDAV remote root and preserves path casing", async () => {
     mockPlatformService.kvGetItem.mockResolvedValue("saved-secret");
 
     await useSyncStore
@@ -232,7 +232,7 @@ describe("useSyncStore", () => {
         "alice",
         "password",
         false,
-        " /apps//readany-sync/ ",
+        " /Apps//ReadAny-Sync/ ",
       );
 
     const savedConfigCall = mockPlatformService.kvSetItem.mock.calls.find(
@@ -243,7 +243,7 @@ describe("useSyncStore", () => {
       type: "webdav",
       url: "https://dav.example.com/root",
       username: "alice",
-      remoteRoot: "apps/readany-sync",
+      remoteRoot: "Apps/ReadAny-Sync",
     });
   });
 

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { type FetchOptions, type IPlatformService, setPlatformService } from "../services/platform";
-import { WebDavClient } from "./webdav-client";
+import { WebDavClient, sanitizeWebDavRemoteRoot } from "./webdav-client";
 
 function installFetchStub(
   handler: (url: string, options?: FetchOptions) => Response | Promise<Response>,
@@ -124,5 +124,37 @@ describe("WebDavClient PROPFIND parsing", () => {
 
     expect(calls.map((call) => call.method)).toEqual(["PROPFIND"]);
     expect(calls.map((call) => call.url)).toEqual(["https://dav.example.com/dav/readany/sync/"]);
+  });
+
+  it("preserves remote root path casing while normalizing slashes", () => {
+    expect(sanitizeWebDavRemoteRoot(" /Apps//ReadAny-Sync/ ")).toBe("Apps/ReadAny-Sync");
+  });
+
+  it("percent-encodes non-ASCII WebDAV request paths without adding path headers", async () => {
+    const calls: Array<{ url: string; headers: Record<string, string> }> = [];
+    installFetchStub((url, options) => {
+      calls.push({
+        url,
+        headers: (options?.headers ?? {}) as Record<string, string>,
+      });
+      return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+    });
+
+    const client = new WebDavClient("https://dav.example.com/dav", "alice", "secret");
+    const path =
+      "/ReadAnySync/data/books/这里是，终末停滞委员会。 [第一卷]/姉の彼女にキスをした.epub";
+    await client.get(path);
+
+    const expectedPath = path
+      .split("/")
+      .map((segment) => encodeURIComponent(segment))
+      .join("/");
+    expect(calls[0]?.url).toBe(`https://dav.example.com/dav${expectedPath}`);
+    expect(Object.keys(calls[0]?.headers ?? {})).toEqual(["Authorization"]);
+    expect(
+      Object.values(calls[0]?.headers ?? {}).every((value) =>
+        Array.from(value).every((char) => char.charCodeAt(0) <= 0x7f),
+      ),
+    ).toBe(true);
   });
 });

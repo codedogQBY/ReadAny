@@ -27,8 +27,7 @@ export function sanitizeWebDavRemoteRoot(remoteRoot: string): string {
   const normalized = stripControlChars(remoteRoot)
     .trim()
     .replace(/^\/+|\/+$/g, "")
-    .replace(/\/{2,}/g, "/")
-    .toLowerCase();
+    .replace(/\/{2,}/g, "/");
   return normalized;
 }
 
