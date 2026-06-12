@@ -155,6 +155,25 @@ function getTTSSegmentIdentity(
     .trim()}`;
 }
 
+function getAdjacentTTSSectionIndex(
+  currentIndex: number | null | undefined,
+  totalSections: number | null | undefined,
+  direction: "previous" | "next",
+): number | null {
+  if (typeof currentIndex !== "number" || !Number.isInteger(currentIndex) || currentIndex < 0) {
+    return null;
+  }
+
+  const targetIndex = direction === "next" ? currentIndex + 1 : currentIndex - 1;
+  if (targetIndex < 0) return null;
+
+  if (typeof totalSections === "number" && Number.isFinite(totalSections)) {
+    if (totalSections <= 0 || targetIndex >= totalSections) return null;
+  }
+
+  return targetIndex;
+}
+
 /**
  * Load a book file from disk and parse it with DocumentLoader.
  * Returns both the BookDoc and detected format.
@@ -521,6 +540,10 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
   // Current section index for chapter translation
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
+  const [currentSectionTotal, setCurrentSectionTotal] = useState<number | null>(null);
+  const currentSectionIndexRef = useRef(0);
+  const currentSectionTotalRef = useRef<number | null>(null);
+  const currentChapterTitleRef = useRef("");
 
   // Track when foliate is ready to receive annotations
   const [foliateReady, setFoliateReady] = useState(false);
@@ -702,6 +725,10 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    currentSectionTotalRef.current = currentSectionTotal ?? bookDoc?.sections?.length ?? null;
+  }, [currentSectionTotal, bookDoc?.sections?.length]);
+
   // UI state
   const [selection, setSelection] = useState<BookSelection | null>(null);
   const [selectionPos, setSelectionPos] = useState({ x: 0, y: 0 });
@@ -805,6 +832,20 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   >(null);
   const previousReaderBookIdRef = useRef<string | null>(null);
 
+  useEffect(() => {
+    const chapterIndex = readerTab?.chapterIndex;
+    if (typeof chapterIndex === "number" && Number.isInteger(chapterIndex) && chapterIndex >= 0) {
+      currentSectionIndexRef.current = chapterIndex;
+    }
+  }, [readerTab?.chapterIndex]);
+
+  useEffect(() => {
+    const chapterTitle = readerTab?.chapterTitle?.trim();
+    if (chapterTitle) {
+      currentChapterTitleRef.current = chapterTitle;
+    }
+  }, [readerTab?.chapterTitle]);
+
   const resetReaderTTSState = useCallback(
     ({
       stopPlayback = false,
@@ -841,6 +882,11 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     const previousBookId = previousReaderBookIdRef.current;
     previousReaderBookIdRef.current = bookId;
     const switchedBook = !!previousBookId && previousBookId !== bookId;
+    currentSectionIndexRef.current = 0;
+    currentSectionTotalRef.current = null;
+    currentChapterTitleRef.current = "";
+    setCurrentSectionIndex(0);
+    setCurrentSectionTotal(null);
     resetReaderTTSState({ stopPlayback: false, clearSessionBinding: false });
     if (switchedBook) {
       setShowTTS(false);
@@ -905,6 +951,15 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       if (!href) return;
       suppressProgressTracking();
       foliateRef.current?.goToHref(href);
+    },
+    [suppressProgressTracking],
+  );
+
+  const goToSectionSafely = useCallback(
+    (sectionIndex: number) => {
+      if (!Number.isInteger(sectionIndex) || sectionIndex < 0) return;
+      suppressProgressTracking();
+      foliateRef.current?.goToIndex(sectionIndex);
     },
     [suppressProgressTracking],
   );
@@ -1101,14 +1156,23 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const handleRelocate = useCallback(
     (detail: RelocateDetail) => {
       const progress = detail.fraction ?? 0;
-      const cfi = detail.cfi || `section-${detail.section?.current ?? 0}`;
+      const sectionIndex = detail.section?.current ?? 0;
+      const cfi = detail.cfi || `section-${sectionIndex}`;
+      const sectionTotal = detail.section?.total;
+
+      currentSectionIndexRef.current = sectionIndex;
+      if (typeof sectionTotal === "number" && Number.isFinite(sectionTotal)) {
+        currentSectionTotalRef.current = sectionTotal;
+        setCurrentSectionTotal((prev) => (prev === sectionTotal ? prev : sectionTotal));
+      }
 
       // Update reader store (immediate)
       setProgress(tabId, progress, cfi);
 
       // Update chapter info
       if (detail.tocItem?.label) {
-        setChapter(tabId, detail.section?.current ?? 0, detail.tocItem.label, detail.tocItem.href);
+        currentChapterTitleRef.current = detail.tocItem.label;
+        setChapter(tabId, sectionIndex, detail.tocItem.label, detail.tocItem.href);
       }
 
       // Display true pages only when the renderer exposes them.
@@ -1249,6 +1313,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const handleSectionLoad = useCallback(
     (sectionIndex: number) => {
       // Reset chapter translation on section change
+      currentSectionIndexRef.current = sectionIndex;
       setCurrentSectionIndex(sectionIndex);
       setTranslationReady(false);
       chapterTranslation.reset();
@@ -1601,9 +1666,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           right: r.right - containerRect.left,
         }));
 
-        const topmostRect = containerRelativeRects.reduce((min, r) =>
-          r.top < min.top ? r : min,
-        );
+        const topmostRect = containerRelativeRects.reduce((min, r) => (r.top < min.top ? r : min));
         const bottommostRect = containerRelativeRects.reduce((max, r) =>
           r.bottom > max.bottom ? r : max,
         );
@@ -1790,13 +1853,35 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     [filterDistinctTTSSegments],
   );
 
-  const queueDesktopTTSChapterTransition = useCallback(
-    (targetIndex: number, options?: { autoResume?: boolean }) => {
-      const target = tocItems[targetIndex];
-      if (!target?.href) return false;
+  const getCurrentTTSSectionIndex = useCallback(() => {
+    const sectionIndex = currentSectionIndexRef.current;
+    return Number.isInteger(sectionIndex) && sectionIndex >= 0 ? sectionIndex : null;
+  }, []);
+
+  const getKnownTTSSectionTotal = useCallback(() => {
+    const sectionTotal = currentSectionTotalRef.current;
+    if (typeof sectionTotal === "number" && Number.isFinite(sectionTotal)) {
+      return sectionTotal;
+    }
+    return typeof bookDoc?.sections?.length === "number" ? bookDoc.sections.length : null;
+  }, [bookDoc?.sections?.length]);
+
+  const queueDesktopTTSSectionTransition = useCallback(
+    (targetSectionIndex: number, options?: { autoResume?: boolean }) => {
+      if (!Number.isInteger(targetSectionIndex) || targetSectionIndex < 0) {
+        return false;
+      }
+
+      const sectionTotal = getKnownTTSSectionTotal();
+      if (
+        typeof sectionTotal === "number" &&
+        Number.isFinite(sectionTotal) &&
+        (sectionTotal <= 0 || targetSectionIndex >= sectionTotal)
+      ) {
+        return false;
+      }
 
       const autoResume = options?.autoResume !== false;
-      const nextChapterTitle = target.title || readerTab?.chapterTitle || "";
 
       if (pendingTTSContinueSafetyTimerRef.current) {
         clearTimeout(pendingTTSContinueSafetyTimerRef.current);
@@ -1831,6 +1916,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           const firstVisibleCfi = normalizedSegments[0]?.cfi || "";
           const lastVisibleCfi =
             normalizedSegments[normalizedSegments.length - 1]?.cfi || firstVisibleCfi;
+          const nextChapterTitle = currentChapterTitleRef.current || readerTab?.chapterTitle || "";
 
           setTtsSourceKind("page");
           setTtsContinuousEnabled(autoResume);
@@ -1860,16 +1946,16 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       }, 1200);
 
       void foliateRef.current?.setTTSHighlight(null);
-      handleGoToChapter(target.href);
+      goToSectionSafely(targetSectionIndex);
       return true;
     },
     [
       book?.meta.title,
       bookId,
-      handleGoToChapter,
+      getKnownTTSSectionTotal,
+      goToSectionSafely,
       primeDesktopTTSLyricContext,
       readerTab?.chapterTitle,
-      tocItems,
       ttsPlay,
       ttsSetCurrentBook,
       ttsSetCurrentLocation,
@@ -1924,14 +2010,14 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
         return;
       }
 
-      const nextChapterIndex =
-        (readerTab?.chapterIndex ?? -1) >= 0 &&
-        (readerTab?.chapterIndex ?? -1) < tocItems.length - 1
-          ? (readerTab?.chapterIndex ?? -1) + 1
-          : -1;
+      const nextChapterIndex = getAdjacentTTSSectionIndex(
+        getCurrentTTSSectionIndex(),
+        getKnownTTSSectionTotal(),
+        "next",
+      );
       if (
-        nextChapterIndex >= 0 &&
-        queueDesktopTTSChapterTransition(nextChapterIndex, { autoResume: true })
+        nextChapterIndex !== null &&
+        queueDesktopTTSSectionTransition(nextChapterIndex, { autoResume: true })
       ) {
         return;
       }
@@ -1943,11 +2029,11 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     })();
   }, [
     currentTTSSegment?.cfi,
+    getCurrentTTSSectionIndex,
+    getKnownTTSSectionTotal,
     mergeUniqueTTSSegments,
-    queueDesktopTTSChapterTransition,
-    readerTab?.chapterIndex,
+    queueDesktopTTSSectionTransition,
     readerTab?.currentCfi,
-    tocItems.length,
     ttsSetOnEnd,
     ttsStop,
   ]);
@@ -1958,42 +2044,43 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   }, [handleTTSPageEnd, ttsSetOnEnd, ttsSourceKind]);
 
   const handleTTSPrevChapter = useCallback(() => {
-    const currentIdx = readerTab?.chapterIndex ?? -1;
-    const idx = currentIdx > 0 ? currentIdx - 1 : 0;
+    const idx = getAdjacentTTSSectionIndex(
+      getCurrentTTSSectionIndex(),
+      getKnownTTSSectionTotal(),
+      "previous",
+    );
+    if (idx === null) return;
     if (ttsSourceKind === "page" && ttsPlayState !== "stopped") {
-      queueDesktopTTSChapterTransition(idx, { autoResume: true });
+      queueDesktopTTSSectionTransition(idx, { autoResume: true });
       return;
     }
-    const prevHref = tocItems[idx]?.href;
-    if (prevHref) {
-      handleGoToChapter(prevHref);
-    }
+    goToSectionSafely(idx);
   }, [
-    handleGoToChapter,
-    queueDesktopTTSChapterTransition,
-    readerTab?.chapterIndex,
-    tocItems,
+    getCurrentTTSSectionIndex,
+    getKnownTTSSectionTotal,
+    goToSectionSafely,
+    queueDesktopTTSSectionTransition,
     ttsPlayState,
     ttsSourceKind,
   ]);
 
   const handleTTSNextChapter = useCallback(() => {
-    const currentIdx = readerTab?.chapterIndex ?? -1;
-    const idx =
-      currentIdx >= 0 && currentIdx < tocItems.length - 1 ? currentIdx + 1 : tocItems.length - 1;
+    const idx = getAdjacentTTSSectionIndex(
+      getCurrentTTSSectionIndex(),
+      getKnownTTSSectionTotal(),
+      "next",
+    );
+    if (idx === null) return;
     if (ttsSourceKind === "page" && ttsPlayState !== "stopped") {
-      queueDesktopTTSChapterTransition(idx, { autoResume: true });
+      queueDesktopTTSSectionTransition(idx, { autoResume: true });
       return;
     }
-    const nextHref = tocItems[idx]?.href;
-    if (nextHref) {
-      handleGoToChapter(nextHref);
-    }
+    goToSectionSafely(idx);
   }, [
-    handleGoToChapter,
-    queueDesktopTTSChapterTransition,
-    readerTab?.chapterIndex,
-    tocItems,
+    getCurrentTTSSectionIndex,
+    getKnownTTSSectionTotal,
+    goToSectionSafely,
+    queueDesktopTTSSectionTransition,
     ttsPlayState,
     ttsSourceKind,
   ]);
@@ -2665,6 +2752,8 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     return <div className="flex h-full items-center justify-center">{t("common.loading")}</div>;
   }
 
+  const canNavigateTTSSections = (currentSectionTotal ?? bookDoc?.sections?.length ?? 0) > 1;
+
   return (
     <div className="flex h-full bg-muted/30 p-1">
       {/* TOC sidebar — LEFT side */}
@@ -2966,8 +3055,8 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
             onLoadMoreAbove={handleLoadMoreAboveTTSLyrics}
             onLoadMoreBelow={handleLoadMoreBelowTTSLyrics}
             onUpdateConfig={ttsUpdateConfig}
-            onPrevChapter={tocItems.length > 0 ? handleTTSPrevChapter : undefined}
-            onNextChapter={tocItems.length > 0 ? handleTTSNextChapter : undefined}
+            onPrevChapter={canNavigateTTSSections ? handleTTSPrevChapter : undefined}
+            onNextChapter={canNavigateTTSSections ? handleTTSNextChapter : undefined}
           />
 
           {/* Always-visible thin progress bar at the very bottom */}
