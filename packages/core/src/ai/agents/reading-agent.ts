@@ -19,6 +19,8 @@ import { buildSystemPrompt } from "../system-prompt";
 import { ThinkTagStreamParser } from "../think-tag-parser";
 import type { ToolDefinition, ToolParameter } from "../tools/tool-types";
 
+const DEFAULT_TOOL_TIMEOUT_MS = 45_000;
+
 // --- Stream Event Types ---
 
 export type AgentStreamEvent =
@@ -62,6 +64,8 @@ export interface ReadingAgentOptions {
   }) => ToolDefinition[];
   /** Abort signal for immediate cancellation */
   signal?: AbortSignal;
+  /** Maximum time a single tool may run before returning an error result. */
+  toolTimeoutMs?: number;
 }
 
 // --- Build Zod schema from ToolDefinition.parameters ---
@@ -98,9 +102,26 @@ function buildZodSchema(
 
 // --- Tool Executor (error-safe wrapper) ---
 
-async function executeTool(tool: ToolDefinition, args: Record<string, unknown>): Promise<unknown> {
+function withToolTimeout<T>(promise: Promise<T>, timeoutMs: number, toolName: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`Tool "${toolName}" timed out after ${Math.round(timeoutMs / 1000)}s`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
+}
+
+async function executeTool(
+  tool: ToolDefinition,
+  args: Record<string, unknown>,
+  timeoutMs: number,
+): Promise<unknown> {
   try {
-    return await tool.execute(args);
+    return await withToolTimeout(Promise.resolve(tool.execute(args)), timeoutMs, tool.name);
   } catch (error) {
     return {
       error: error instanceof Error ? error.message : String(error),
@@ -127,6 +148,7 @@ export async function* streamReadingAgent(
     memorySummary,
     getAvailableTools,
     signal,
+    toolTimeoutMs = DEFAULT_TOOL_TIMEOUT_MS,
   } = options;
 
   // Helper to check if aborted
@@ -255,7 +277,9 @@ export async function* streamReadingAgent(
         description: tool.description,
         schema,
         func: async (input) => {
-          return JSON.stringify(await executeTool(tool, input as Record<string, unknown>));
+          return JSON.stringify(
+            await executeTool(tool, input as Record<string, unknown>, toolTimeoutMs),
+          );
         },
       });
     });

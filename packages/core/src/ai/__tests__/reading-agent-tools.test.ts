@@ -39,6 +39,7 @@ function makeAIConfig(): AIConfig {
 
 beforeEach(() => {
   createReactAgentMock.mockReset();
+  vi.useRealTimers();
 });
 
 describe("streamReadingAgent tool registration", () => {
@@ -75,6 +76,58 @@ describe("streamReadingAgent tool registration", () => {
     expect(toolNames).toContain("fallbackSearch");
     expect(toolNames).toContain("fallbackChapterContext");
     expect(toolNames).toContain("addCitation");
+  });
+
+  it("returns a structured error when a tool execution times out", async () => {
+    createReactAgentMock.mockReturnValue({
+      streamEvents: vi.fn(() => ({
+        [Symbol.asyncIterator]: async function* () {
+          // no-op stream
+        },
+      })),
+    });
+
+    const tools: ToolDefinition[] = [
+      {
+        name: "slowTool",
+        description: "A tool that never resolves",
+        parameters: {},
+        execute: () => new Promise(() => {}),
+      },
+    ];
+
+    for await (const _event of streamReadingAgent(
+      {
+        aiConfig: makeAIConfig(),
+        book: null,
+        bookId: "book-1",
+        semanticContext: null,
+        enabledSkills: [],
+        isVectorized: false,
+        getAvailableTools: () => tools,
+        toolTimeoutMs: 1_000,
+      },
+      "search",
+    )) {
+      // drain stream
+    }
+
+    const call = createReactAgentMock.mock.calls[createReactAgentMock.mock.calls.length - 1]?.[0];
+    const registeredTool = (
+      call.tools as Array<{ name: string; func: (input: unknown) => Promise<string> }>
+    ).find((tool) => tool.name === "slowTool");
+
+    expect(registeredTool).toBeDefined();
+    if (!registeredTool) throw new Error("Expected slowTool to be registered");
+
+    vi.useFakeTimers();
+    const result = registeredTool.func({});
+    const pending = expect(result).resolves.toBe(
+      JSON.stringify({ error: 'Tool "slowTool" timed out after 1s' }),
+    );
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    await pending;
   });
 
   it("keeps tool-call turn text out of the final response before addCitation completes", async () => {
