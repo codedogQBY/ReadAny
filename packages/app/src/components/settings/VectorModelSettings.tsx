@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { useVectorModelStore } from "@/stores/vector-model-store";
 import { BUILTIN_EMBEDDING_MODELS } from "@readany/core/ai/builtin-embedding-models";
 import { clearModelCache, loadEmbeddingPipeline } from "@readany/core/ai/local-embedding-service";
+import { requestRemoteEmbeddingBatch } from "@readany/core/rag";
 import type { VectorModelConfig } from "@readany/core/types";
 import { Check, Download, Edit2, Loader2, Plus, Trash2, X } from "lucide-react";
 import { useCallback, useState } from "react";
@@ -267,24 +268,16 @@ function RemoteModelsSection() {
       setTestResults((prev) => ({ ...prev, [model.id]: t("settings.vm_testing") }));
       try {
         const testUrl = normalizeEmbeddingsUrl(model.url);
-        const isOllama = testUrl.endsWith("/api/embed");
-        const headers: Record<string, string> = { "Content-Type": "application/json" };
-        if (model.apiKey.trim()) headers.Authorization = `Bearer ${model.apiKey}`;
-
-        const requestBody = isOllama
-          ? { model: model.modelId, input: "test" }
-          : { input: ["test"], model: model.modelId, encoding_format: "float" };
-
-        const res = await fetch(testUrl, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(requestBody),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-        const json = await res.json();
-        const len = isOllama
-          ? (json?.embeddings?.[0]?.length ?? 0)
-          : (json?.data?.[0]?.embedding?.length ?? 0);
+        const result = await requestRemoteEmbeddingBatch(
+          {
+            url: testUrl,
+            modelId: model.modelId,
+            apiKey: model.apiKey,
+          },
+          ["test"],
+        );
+        if (!result.ok) throw new Error(`HTTP ${result.status}: ${result.errorText}`);
+        const len = result.embeddings[0]?.length ?? 0;
 
         updateVectorModel(model.id, { dimension: len });
         setTestResults((prev) => ({
