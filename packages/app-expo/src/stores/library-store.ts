@@ -177,17 +177,15 @@ async function extractMobileImportMetadata(params: {
   const { filePath, format, fileName, fileSize, sourceBytes } = params;
 
   if (format === "epub") {
-    const bytes =
-      sourceBytes ??
-      (fileSize > 0 && fileSize <= MOBILE_IMPORT_METADATA_MAX_BYTES
-        ? await getPlatformService().readFile(filePath)
-        : null);
-    if (bytes) {
-      return extractBookMetadata(bytes, format, fileName);
+    if (sourceBytes) {
+      return extractBookMetadata(sourceBytes, format, fileName);
     }
-    console.warn(
-      `[extractMobileImportMetadata] Skip EPUB metadata for large file: ${fileName} (${fileSize} bytes)`,
-    );
+    if (fileSize > 0 && fileSize <= MOBILE_IMPORT_METADATA_MAX_BYTES) {
+      return extractBookMetadata(await getPlatformService().readFile(filePath), format, fileName);
+    }
+
+    const rangeReadable = await createRangeReadableFile(filePath, fileSize);
+    return extractBookMetadataFromFile(rangeReadable, format, fileName);
   }
 
   if (format === "mobi" || format === "azw" || format === "azw3") {
