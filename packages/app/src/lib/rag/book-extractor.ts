@@ -4,7 +4,7 @@
  * text segments with EPUB CFI references for precise navigation.
  */
 import { DocumentLoader } from "@/lib/reader/document-loader";
-import type { TOCItem } from "@/lib/reader/document-loader";
+import { buildChapterSectionGroups } from "@readany/core/rag";
 import * as CFI from "foliate-js/epubcfi.js";
 
 export interface TextSegment {
@@ -35,32 +35,34 @@ export async function extractBookChapters(filePath: string): Promise<ChapterData
 
   const sections = book.sections ?? [];
   const toc = book.toc ?? [];
-  const tocMap = buildTocMap(toc);
+  const chapterGroups = buildChapterSectionGroups(sections, toc);
 
   const chapters: ChapterData[] = [];
 
-  for (let i = 0; i < sections.length; i++) {
-    const section = sections[i];
-    if (!section.createDocument) continue;
+  for (const group of chapterGroups) {
+    const chapterSegments: TextSegment[] = [];
 
-    try {
-      const doc = await section.createDocument();
-      const body = doc.body;
-      if (!body) continue;
+    for (const sectionIndex of group.sectionIndices) {
+      const section = sections[sectionIndex];
+      if (!section?.createDocument) continue;
 
-      const title = tocMap.get(i) ?? tocMap.get(section.href ?? "") ?? `Section ${i + 1}`;
-      const baseCfi = section.cfi || CFI.fake.fromIndex(i);
+      try {
+        const doc = await section.createDocument();
+        const body = doc.body;
+        if (!body) continue;
 
-      const segments = extractSegmentsWithCfi(doc, baseCfi);
-
-      if (segments.length === 0) continue;
-
-      const content = segments.map((s) => s.text).join("\n\n");
-
-      chapters.push({ index: i, title, content, segments });
-    } catch (err) {
-      console.warn(`[extractBookChapters] Failed to extract section ${i}:`, err);
+        const baseCfi = section.cfi || CFI.fake.fromIndex(sectionIndex);
+        chapterSegments.push(...extractSegmentsWithCfi(doc, baseCfi));
+      } catch (err) {
+        console.warn(`[extractBookChapters] Failed to extract section ${sectionIndex}:`, err);
+      }
     }
+
+    if (chapterSegments.length === 0) continue;
+
+    const content = chapterSegments.map((s) => s.text).join("\n\n");
+
+    chapters.push({ index: group.index, title: group.title, content, segments: chapterSegments });
   }
 
   return chapters;
@@ -127,9 +129,10 @@ function getTextNodes(element: Element): Text[] {
   const walker = element.ownerDocument.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
 
   const nodes: Text[] = [];
-  let node: Text | null;
-  while ((node = walker.nextNode() as Text | null)) {
-    if (node.textContent && node.textContent.trim()) {
+  while (true) {
+    const node = walker.nextNode() as Text | null;
+    if (!node) break;
+    if (node.textContent?.trim()) {
       nodes.push(node);
     }
   }
@@ -141,8 +144,9 @@ function extractBlockText(block: Element): string {
   const walker = block.ownerDocument.createTreeWalker(block, NodeFilter.SHOW_TEXT, null);
 
   const texts: string[] = [];
-  let node: Text | null;
-  while ((node = walker.nextNode() as Text | null)) {
+  while (true) {
+    const node = walker.nextNode() as Text | null;
+    if (!node) break;
     const text = node.textContent?.trim();
     if (text) {
       texts.push(text);
@@ -150,29 +154,6 @@ function extractBlockText(block: Element): string {
   }
 
   return texts.join(" ");
-}
-
-function buildTocMap(toc: TOCItem[]): Map<string | number, string> {
-  const map = new Map<string | number, string>();
-
-  function walk(items: TOCItem[]) {
-    for (const item of items) {
-      if (item.label) {
-        map.set(item.index, item.label);
-        if (item.href) {
-          const base = item.href.split("#")[0];
-          map.set(base, item.label);
-          map.set(item.href, item.label);
-        }
-      }
-      if (item.subitems?.length) {
-        walk(item.subitems);
-      }
-    }
-  }
-
-  walk(toc);
-  return map;
 }
 
 async function extractPdfChapters(fileBytes: Uint8Array): Promise<ChapterData[]> {

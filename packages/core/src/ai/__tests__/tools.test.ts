@@ -285,9 +285,9 @@ describe("ragToc tool", () => {
 
     expect(result.totalChapters).toBe(3);
     expect(result.chapters).toEqual([
-      { index: 0, title: "Intro" },
-      { index: 1, title: "Chapter 1" },
-      { index: 2, title: "Chapter 2" },
+      { index: 0, number: 1, title: "Intro" },
+      { index: 1, number: 2, title: "Chapter 1" },
+      { index: 2, number: 3, title: "Chapter 2" },
     ]);
   });
 });

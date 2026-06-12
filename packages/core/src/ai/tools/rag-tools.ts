@@ -97,7 +97,7 @@ export function createRagTocTool(bookId: string): ToolDefinition {
   return {
     name: "ragToc",
     description:
-      "Get the table of contents of the current book. Use this when the user wants to see the book structure or navigate to a specific chapter.",
+      "Get the table of contents of the current book. Use this when the user wants to see the book structure or navigate to a specific chapter. Use the returned 'index' when calling chapter tools; 'number' is the human-readable chapter order.",
     parameters: {},
     execute: async () => {
       // Get unique chapter titles from chunks
@@ -110,8 +110,9 @@ export function createRagTocTool(bookId: string): ToolDefinition {
       }
 
       return {
-        chapters: Array.from(chapters.entries()).map(([index, title]) => ({
+        chapters: Array.from(chapters.entries()).map(([index, title], ordinal) => ({
           index,
+          number: ordinal + 1,
           title,
         })),
         totalChapters: chapters.size,
