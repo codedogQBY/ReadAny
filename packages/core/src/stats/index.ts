@@ -20,9 +20,7 @@ export {
   getGoalProgress,
   getAllGoalProgress,
 } from "./goals-service";
-export {
-  evaluateStreakStatus,
-} from "./streak-service";
+export { evaluateStreakStatus } from "./streak-service";
 export type { StreakStatus } from "./streak-service";
 export { computeBookETA } from "./eta-service";
 export type { BookETA } from "./eta-service";
@@ -39,9 +37,7 @@ export type {
   BadgeDefinition,
   EarnedBadge,
 } from "./badges";
-export {
-  mergeCurrentSessionIntoDailyFacts,
-} from "./live-facts";
+export { mergeCurrentSessionIntoDailyFacts } from "./live-facts";
 export {
   mergeCurrentSessionIntoDailyStats,
   mergeCurrentSessionIntoOverallStats,
@@ -50,9 +46,8 @@ export {
   ReadingReportsService,
   readingReportsService,
 } from "./reports-service";
-export {
-  buildStatsViewModel,
-} from "./view-model-builder";
+export { buildStatsViewModel } from "./view-model-builder";
+export { isStatsRelevantBookUpdate } from "./refresh-policy";
 export {
   buildLifetimePeriodRef,
   buildPeriodRef,

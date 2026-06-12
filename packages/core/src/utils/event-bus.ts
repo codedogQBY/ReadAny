@@ -7,6 +7,7 @@ type EventMap = {
   "book:closed": { bookId: string };
   "book:imported": { bookId: string; filePath: string };
   "book:deleted": { bookId: string };
+  "book:updated": { bookId: string; changedFields?: string[] };
   "annotation:added": {
     bookId: string;
     annotationId: string;
@@ -34,10 +35,12 @@ class EventBusImpl {
 
   /** Subscribe to an event */
   on<K extends keyof EventMap>(event: K, callback: EventCallback<K>): () => void {
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, new Set());
+    let listeners = this.listeners.get(event);
+    if (!listeners) {
+      listeners = new Set();
+      this.listeners.set(event, listeners);
     }
-    this.listeners.get(event)!.add(callback as EventCallback<keyof EventMap>);
+    listeners.add(callback as EventCallback<keyof EventMap>);
 
     // Return unsubscribe function
     return () => {
@@ -61,13 +64,16 @@ class EventBusImpl {
 
   /** Emit an event */
   emit<K extends keyof EventMap>(event: K, data: EventMap[K]): void {
-    this.listeners.get(event)?.forEach((cb) => {
+    const listeners = this.listeners.get(event);
+    if (!listeners) return;
+
+    for (const cb of listeners) {
       try {
         cb(data);
       } catch (err) {
         console.error(`EventBus error in handler for '${event}':`, err);
       }
-    });
+    }
   }
 
   /** Remove all listeners for an event (or all events) */

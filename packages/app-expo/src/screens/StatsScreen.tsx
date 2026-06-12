@@ -15,26 +15,27 @@
  * - Milestones (lifetime)
  * - Longest streak card
  */
-import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  ClockIcon,
-  SearchIcon,
-} from "@/components/ui/Icon";
+import { ChevronLeftIcon, ChevronRightIcon, ClockIcon, SearchIcon } from "@/components/ui/Icon";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { useReadingSessionStore } from "@/stores";
 import { useColors, withOpacity } from "@/styles/theme";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
-  fromLocalDateKey,
-  readingReportsService,
-  evaluateBadges,
-  buildStatsSummary,
-  getAllGoalProgress,
+  type NavigationProp,
+  type ParamListBase,
+  useFocusEffect,
+  useNavigation,
+} from "@react-navigation/native";
+import {
+  type GoalPeriod,
+  type GoalType,
   type StatsDimension,
   type StatsReport,
-  type GoalType,
-  type GoalPeriod,
+  buildStatsSummary,
+  evaluateBadges,
+  fromLocalDateKey,
+  getAllGoalProgress,
+  isStatsRelevantBookUpdate,
+  readingReportsService,
 } from "@readany/core/stats";
 import { useGoalsStore } from "@readany/core/stores";
 import { eventBus } from "@readany/core/utils/event-bus";
@@ -43,15 +44,8 @@ import { useTranslation } from "react-i18next";
 import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useResolvedCovers } from "./notes/useResolvedCovers";
-import { makeStyles } from "./stats/stats-styles";
-import {
-  buildHeroNarrative,
-  formatDateLabel,
-  formatCharacterCount,
-  formatCharactersPerMinute,
-  formatTimeLocalized,
-  localizeInsight,
-} from "./stats/stats-utils";
+import { BadgesPreview } from "./stats/BadgesPreview";
+import { GoalsSection } from "./stats/GoalsSection";
 import {
   ChartSurface,
   DaySummaryPanel,
@@ -64,8 +58,15 @@ import {
   SectionCard,
   TopBooksSection,
 } from "./stats/StatsSections";
-import { BadgesPreview } from "./stats/BadgesPreview";
-import { GoalsSection } from "./stats/GoalsSection";
+import { makeStyles } from "./stats/stats-styles";
+import {
+  buildHeroNarrative,
+  formatCharacterCount,
+  formatCharactersPerMinute,
+  formatDateLabel,
+  formatTimeLocalized,
+  localizeInsight,
+} from "./stats/stats-utils";
 
 const DIMENSIONS: StatsDimension[] = ["day", "week", "month", "year", "lifetime"];
 
@@ -80,7 +81,10 @@ function formatPeriodLabel(report: StatsReport, isZh: boolean): string {
   }
   if (report.dimension === "month") {
     const date = fromLocalDateKey(report.period.startDate);
-    return new Intl.DateTimeFormat(isZh ? "zh-CN" : "en-US", { year: "numeric", month: "long" }).format(date);
+    return new Intl.DateTimeFormat(isZh ? "zh-CN" : "en-US", {
+      year: "numeric",
+      month: "long",
+    }).format(date);
   }
   if (report.dimension === "year") return report.period.key;
   return "";
@@ -101,7 +105,7 @@ export default function StatsScreen() {
   const colors = useColors();
   const { t, i18n } = useTranslation();
   const isZh = i18n.language.startsWith("zh");
-  const nav = useNavigation();
+  const nav = useNavigation<NavigationProp<ParamListBase>>();
   const layout = useResponsiveLayout();
   const statsContentWidth = Math.min(
     layout.centeredContentWidth,
@@ -151,10 +155,14 @@ export default function StatsScreen() {
     setErrorKey(null);
     try {
       let r: StatsReport;
-      if (dimension === "day") r = await readingReportsService.getDayReport(anchorDate, currentSession);
-      else if (dimension === "week") r = await readingReportsService.getWeekReport(anchorDate, currentSession);
-      else if (dimension === "month") r = await readingReportsService.getMonthReport(anchorDate, currentSession);
-      else if (dimension === "year") r = await readingReportsService.getYearReport(anchorDate, currentSession);
+      if (dimension === "day")
+        r = await readingReportsService.getDayReport(anchorDate, currentSession);
+      else if (dimension === "week")
+        r = await readingReportsService.getWeekReport(anchorDate, currentSession);
+      else if (dimension === "month")
+        r = await readingReportsService.getMonthReport(anchorDate, currentSession);
+      else if (dimension === "year")
+        r = await readingReportsService.getYearReport(anchorDate, currentSession);
       else r = await readingReportsService.getLifetimeReport(currentSession);
       setReport(r);
     } catch (err) {
@@ -195,8 +203,18 @@ export default function StatsScreen() {
     return eventBus.on("sync:completed", () => void loadReport());
   }, [loadReport]);
 
+  useEffect(() => {
+    return eventBus.on("book:updated", ({ changedFields }) => {
+      if (!isStatsRelevantBookUpdate(changedFields)) return;
+      void loadReport();
+    });
+  }, [loadReport]);
+
   /* ── Derived ── */
-  const periodLabel = useMemo(() => (report ? formatPeriodLabel(report, isZh) : ""), [report, isZh]);
+  const periodLabel = useMemo(
+    () => (report ? formatPeriodLabel(report, isZh) : ""),
+    [report, isZh],
+  );
 
   const headlineValue = useMemo(() => {
     if (!report) return "";
@@ -246,29 +264,40 @@ export default function StatsScreen() {
         delta: ssC?.delta,
         deltaLabel: ssC?.deltaLabel,
       },
-      { label: t("stats.desktop.books"), value: String(report.summary.booksTouched), sublabel: readingVolumeValue, delta: bkC?.delta, deltaLabel: bkC?.deltaLabel },
+      {
+        label: t("stats.desktop.books"),
+        value: String(report.summary.booksTouched),
+        sublabel: readingVolumeValue,
+        delta: bkC?.delta,
+        deltaLabel: bkC?.deltaLabel,
+      },
       {
         label: t("stats.desktop.streak"),
         value: `${report.dimension === "lifetime" ? report.summary.longestStreak : report.summary.currentStreak} ${t("stats.desktop.daysSuffix")}`,
         sublabel: `${t("stats.desktop.longestSession")} ${formatTimeLocalized(report.summary.longestSessionTime, isZh)}`,
       },
       {
-        label: readingSpeedValue ? t("stats.desktop.readingSpeed") : t("stats.desktop.avgActiveDay"),
+        label: readingSpeedValue
+          ? t("stats.desktop.readingSpeed")
+          : t("stats.desktop.avgActiveDay"),
         value: readingSpeedValue ?? formatTimeLocalized(report.summary.avgActiveDayTime, isZh),
-        sublabel: readingSpeedValue ? t("stats.desktop.characters") : t("stats.desktop.readingTime"),
+        sublabel: readingSpeedValue
+          ? t("stats.desktop.characters")
+          : t("stats.desktop.readingTime"),
       },
     ];
   }, [report, isZh, t]);
 
   const localizedInsights = useMemo(
-    () => report ? report.insights.map((ins) => localizeInsight(ins, report, t, isZh)) : [],
+    () => (report ? report.insights.map((ins) => localizeInsight(ins, report, t, isZh)) : []),
     [report, t, isZh],
   );
 
   const localizedMilestones = useMemo(
-    () => report?.dimension === "lifetime"
-      ? report.milestones.map((ins) => localizeInsight(ins, report, t, isZh))
-      : [],
+    () =>
+      report?.dimension === "lifetime"
+        ? report.milestones.map((ins) => localizeInsight(ins, report, t, isZh))
+        : [],
     [report, t, isZh],
   );
 
@@ -277,7 +306,10 @@ export default function StatsScreen() {
 
   useEffect(() => {
     if (report) {
-      readingReportsService.getAllDailyFacts(currentSession).then(setAllFacts).catch((err) => console.warn("[Stats] Failed to load daily facts:", err));
+      readingReportsService
+        .getAllDailyFacts(currentSession)
+        .then(setAllFacts)
+        .catch((err) => console.warn("[Stats] Failed to load daily facts:", err));
     }
   }, [currentSession, report]);
 
@@ -305,9 +337,7 @@ export default function StatsScreen() {
 
   const visibleGoalProgress = useMemo(
     () =>
-      activeGoalPeriod
-        ? goalProgress.filter(({ goal }) => goal.period === activeGoalPeriod)
-        : [],
+      activeGoalPeriod ? goalProgress.filter(({ goal }) => goal.period === activeGoalPeriod) : [],
     [goalProgress, activeGoalPeriod],
   );
 
@@ -348,67 +378,71 @@ export default function StatsScreen() {
     [addGoalAction],
   );
 
-  const copy = useMemo(() => ({
-    heatmapLegendLow: t("stats.desktop.heatmapLegendLow"),
-    heatmapLegendHigh: t("stats.desktop.heatmapLegendHigh"),
-    activeDaysSummary: (count: number) => t("stats.desktop.activeDaysSummary", { count }),
-    noDataDesc: t("stats.desktop.noDataDesc"),
-    noDataTitle: t("stats.desktop.noDataTitle"),
-    chartPeakLabel: (label: string, value: string) => t("stats.desktop.chartPeakLabel", { label, value }),
-    singlePointLabel: t("stats.desktop.singlePointLabel"),
-    singlePointDesc: t("stats.desktop.singlePointDesc"),
-    topBookLead: t("stats.desktop.topBookLead"),
-    topBooksCollapse: t("stats.desktop.topBooksCollapse"),
-    topBooksExpandCount: (count: number) => t("stats.desktop.topBooksExpandCount", { count }),
-    noTopBooks: t("stats.desktop.noTopBooks"),
-    unknownAuthor: t("stats.desktop.unknownAuthor"),
-    pagesReadSuffix: t("stats.desktop.pagesReadSuffix"),
-    charactersReadSuffix: t("stats.desktop.charactersReadSuffix"),
-    charactersPerMinuteSuffix: t("stats.desktop.charactersPerMinuteSuffix"),
-    sessionsSuffix: t("stats.desktop.sessionsSuffix"),
-    noInsights: t("stats.desktop.noInsights"),
-    // Day summary
-    firstSession: t("stats.desktop.firstSession"),
-    lastSession: t("stats.desktop.lastSession"),
-    peakHour: t("stats.desktop.peakHour"),
-    longestRead: t("stats.desktop.longestRead"),
-    topFocus: t("stats.desktop.topFocus"),
-    noDayTopBook: t("stats.desktop.noDayTopBook"),
-    noTimeline: t("stats.desktop.noTimeline"),
-    activeNow: t("stats.desktop.activeNow"),
-    // Calendar
-    readingCalendar: t("stats.desktop.readingCalendar"),
-    readingCalendarDesc: t("stats.desktop.readingCalendarDesc"),
-    // Rhythm
-    timeOfDay: t("stats.desktop.timeOfDay"),
-    timeOfDayDesc: t("stats.desktop.timeOfDayDesc"),
-    categoryDistribution: t("stats.desktop.categoryDistribution"),
-    categoryDistributionDesc: t("stats.desktop.categoryDistributionDesc"),
-    uncategorized: t("stats.desktop.uncategorized"),
-    timeOfDayLabels: {
-      lateNight: t("stats.desktop.timeOfDayLabels.lateNight"),
-      earlyMorning: t("stats.desktop.timeOfDayLabels.earlyMorning"),
-      morning: t("stats.desktop.timeOfDayLabels.morning"),
-      afternoon: t("stats.desktop.timeOfDayLabels.afternoon"),
-      evening: t("stats.desktop.timeOfDayLabels.evening"),
-      night: t("stats.desktop.timeOfDayLabels.night"),
-    },
-    // Yearly snapshots
-    books: t("stats.desktop.books"),
-    activeDays: t("stats.desktop.activeDays"),
-    // Journey
-    daysSuffix: t("stats.desktop.daysSuffix"),
-    startedOn: t("stats.desktop.startedOn"),
-    activeReadingDays: t("stats.desktop.activeReadingDays"),
-    inactiveReadingDays: t("stats.desktop.inactiveReadingDays"),
-    journeyNarrative: (days: number) => t("stats.desktop.journeyNarrative", { days }),
-    // Milestones
-    milestones: t("stats.desktop.milestones"),
-    milestonesDesc: t("stats.desktop.milestonesDesc"),
-    // Day summary
-    daySummary: t("stats.desktop.daySummary"),
-    daySummaryDesc: t("stats.desktop.daySummaryDesc"),
-  }), [t]);
+  const copy = useMemo(
+    () => ({
+      heatmapLegendLow: t("stats.desktop.heatmapLegendLow"),
+      heatmapLegendHigh: t("stats.desktop.heatmapLegendHigh"),
+      activeDaysSummary: (count: number) => t("stats.desktop.activeDaysSummary", { count }),
+      noDataDesc: t("stats.desktop.noDataDesc"),
+      noDataTitle: t("stats.desktop.noDataTitle"),
+      chartPeakLabel: (label: string, value: string) =>
+        t("stats.desktop.chartPeakLabel", { label, value }),
+      singlePointLabel: t("stats.desktop.singlePointLabel"),
+      singlePointDesc: t("stats.desktop.singlePointDesc"),
+      topBookLead: t("stats.desktop.topBookLead"),
+      topBooksCollapse: t("stats.desktop.topBooksCollapse"),
+      topBooksExpandCount: (count: number) => t("stats.desktop.topBooksExpandCount", { count }),
+      noTopBooks: t("stats.desktop.noTopBooks"),
+      unknownAuthor: t("stats.desktop.unknownAuthor"),
+      pagesReadSuffix: t("stats.desktop.pagesReadSuffix"),
+      charactersReadSuffix: t("stats.desktop.charactersReadSuffix"),
+      charactersPerMinuteSuffix: t("stats.desktop.charactersPerMinuteSuffix"),
+      sessionsSuffix: t("stats.desktop.sessionsSuffix"),
+      noInsights: t("stats.desktop.noInsights"),
+      // Day summary
+      firstSession: t("stats.desktop.firstSession"),
+      lastSession: t("stats.desktop.lastSession"),
+      peakHour: t("stats.desktop.peakHour"),
+      longestRead: t("stats.desktop.longestRead"),
+      topFocus: t("stats.desktop.topFocus"),
+      noDayTopBook: t("stats.desktop.noDayTopBook"),
+      noTimeline: t("stats.desktop.noTimeline"),
+      activeNow: t("stats.desktop.activeNow"),
+      // Calendar
+      readingCalendar: t("stats.desktop.readingCalendar"),
+      readingCalendarDesc: t("stats.desktop.readingCalendarDesc"),
+      // Rhythm
+      timeOfDay: t("stats.desktop.timeOfDay"),
+      timeOfDayDesc: t("stats.desktop.timeOfDayDesc"),
+      categoryDistribution: t("stats.desktop.categoryDistribution"),
+      categoryDistributionDesc: t("stats.desktop.categoryDistributionDesc"),
+      uncategorized: t("stats.desktop.uncategorized"),
+      timeOfDayLabels: {
+        lateNight: t("stats.desktop.timeOfDayLabels.lateNight"),
+        earlyMorning: t("stats.desktop.timeOfDayLabels.earlyMorning"),
+        morning: t("stats.desktop.timeOfDayLabels.morning"),
+        afternoon: t("stats.desktop.timeOfDayLabels.afternoon"),
+        evening: t("stats.desktop.timeOfDayLabels.evening"),
+        night: t("stats.desktop.timeOfDayLabels.night"),
+      },
+      // Yearly snapshots
+      books: t("stats.desktop.books"),
+      activeDays: t("stats.desktop.activeDays"),
+      // Journey
+      daysSuffix: t("stats.desktop.daysSuffix"),
+      startedOn: t("stats.desktop.startedOn"),
+      activeReadingDays: t("stats.desktop.activeReadingDays"),
+      inactiveReadingDays: t("stats.desktop.inactiveReadingDays"),
+      journeyNarrative: (days: number) => t("stats.desktop.journeyNarrative", { days }),
+      // Milestones
+      milestones: t("stats.desktop.milestones"),
+      milestonesDesc: t("stats.desktop.milestonesDesc"),
+      // Day summary
+      daySummary: t("stats.desktop.daySummary"),
+      daySummaryDesc: t("stats.desktop.daySummaryDesc"),
+    }),
+    [t],
+  );
 
   const dimLabels: Record<StatsDimension, string> = {
     day: t("stats.desktop.dimensions.day"),
@@ -466,7 +500,10 @@ export default function StatsScreen() {
               <TouchableOpacity
                 key={dim}
                 style={[s.dimTab, dimension === dim && s.dimTabActive]}
-                onPress={() => { setDimension(dim); setAnchorDate(new Date()); }}
+                onPress={() => {
+                  setDimension(dim);
+                  setAnchorDate(new Date());
+                }}
                 activeOpacity={0.7}
               >
                 <Text style={[s.dimTabText, dimension === dim && s.dimTabTextActive]}>
@@ -515,14 +552,28 @@ export default function StatsScreen() {
                       onPress={() => setAnchorDate((p) => shiftAnchor(p, dimension, -1))}
                       disabled={!report.navigation.canGoPrev}
                     >
-                      <ChevronLeftIcon size={16} color={report.navigation.canGoPrev ? colors.foreground : withOpacity(colors.mutedForeground, 0.3)} />
+                      <ChevronLeftIcon
+                        size={16}
+                        color={
+                          report.navigation.canGoPrev
+                            ? colors.foreground
+                            : withOpacity(colors.mutedForeground, 0.3)
+                        }
+                      />
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={s.heroNavBtn}
                       onPress={() => setAnchorDate((p) => shiftAnchor(p, dimension, 1))}
                       disabled={!report.navigation.canGoNext}
                     >
-                      <ChevronRightIcon size={16} color={report.navigation.canGoNext ? colors.foreground : withOpacity(colors.mutedForeground, 0.3)} />
+                      <ChevronRightIcon
+                        size={16}
+                        color={
+                          report.navigation.canGoNext
+                            ? colors.foreground
+                            : withOpacity(colors.mutedForeground, 0.3)
+                        }
+                      />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -536,9 +587,7 @@ export default function StatsScreen() {
               </View>
 
               {/* Hero narrative */}
-              {heroNarrative ? (
-                <Text style={s.heroNarrative}>{heroNarrative}</Text>
-              ) : null}
+              {heroNarrative ? <Text style={s.heroNarrative}>{heroNarrative}</Text> : null}
 
               {/* Supporting metrics grid */}
               <View style={s.metricsGrid}>
@@ -566,10 +615,7 @@ export default function StatsScreen() {
 
             {/* ═══ Reading Goals (month/year only) ═══ */}
             {activeGoalPeriod && !(useTabletSectionGrid && report.dimension === "month") && (
-              <SectionCard
-                title={goalSectionTitle}
-                description={goalSectionDescription}
-              >
+              <SectionCard title={goalSectionTitle} description={goalSectionDescription}>
                 <GoalsSection
                   progress={visibleGoalProgress}
                   onAddGoal={handleAddGoal}
@@ -581,10 +627,7 @@ export default function StatsScreen() {
 
             {/* ═══ Day Summary (day dimension) ═══ */}
             {report.dimension === "day" && !useTabletSectionGrid && (
-              <SectionCard
-                title={copy.daySummary}
-                description={copy.daySummaryDesc}
-              >
+              <SectionCard title={copy.daySummary} description={copy.daySummaryDesc}>
                 <DaySummaryPanel
                   dayFact={report.dayFact}
                   topBook={report.topBooks[0]}
@@ -602,42 +645,42 @@ export default function StatsScreen() {
                   report.dimension === "month" ||
                   report.dimension === "year")
               ) && (
-              <SectionCard
-                title={primaryChart.type === "heatmap"
-                  ? t("stats.desktop.readingHeatmap")
-                  : t("stats.desktop.primaryChart")}
-                description={primaryChart.type === "heatmap"
-                  ? t("stats.desktop.readingHeatmapDesc")
-                  : t("stats.desktop.primaryChartDesc")}
-              >
-                <ChartSurface
-                  chart={primaryChart}
-                  isZh={isZh}
-                  copy={copy}
-                />
-              </SectionCard>
-            )}
+                <SectionCard
+                  title={
+                    primaryChart.type === "heatmap"
+                      ? t("stats.desktop.readingHeatmap")
+                      : t("stats.desktop.primaryChart")
+                  }
+                  description={
+                    primaryChart.type === "heatmap"
+                      ? t("stats.desktop.readingHeatmapDesc")
+                      : t("stats.desktop.primaryChartDesc")
+                  }
+                >
+                  <ChartSurface chart={primaryChart} isZh={isZh} copy={copy} />
+                </SectionCard>
+              )}
 
             {useTabletSectionGrid && report.dimension === "day" && (
               <View style={s.sectionGrid}>
                 {primaryChart && (
                   <SectionCard
-                    title={primaryChart.type === "heatmap"
-                      ? t("stats.desktop.readingHeatmap")
-                      : t("stats.desktop.primaryChart")}
-                    description={primaryChart.type === "heatmap"
-                      ? t("stats.desktop.readingHeatmapDesc")
-                      : t("stats.desktop.primaryChartDesc")}
+                    title={
+                      primaryChart.type === "heatmap"
+                        ? t("stats.desktop.readingHeatmap")
+                        : t("stats.desktop.primaryChart")
+                    }
+                    description={
+                      primaryChart.type === "heatmap"
+                        ? t("stats.desktop.readingHeatmapDesc")
+                        : t("stats.desktop.primaryChartDesc")
+                    }
                     style={{
                       width: primarySectionWidth,
                       marginBottom: 0,
                     }}
                   >
-                    <ChartSurface
-                      chart={primaryChart}
-                      isZh={isZh}
-                      copy={copy}
-                    />
+                    <ChartSurface chart={primaryChart} isZh={isZh} copy={copy} />
                   </SectionCard>
                 )}
 
@@ -663,22 +706,22 @@ export default function StatsScreen() {
               <View style={s.sectionGrid}>
                 {primaryChart && (
                   <SectionCard
-                    title={primaryChart.type === "heatmap"
-                      ? t("stats.desktop.readingHeatmap")
-                      : t("stats.desktop.primaryChart")}
-                    description={primaryChart.type === "heatmap"
-                      ? t("stats.desktop.readingHeatmapDesc")
-                      : t("stats.desktop.primaryChartDesc")}
+                    title={
+                      primaryChart.type === "heatmap"
+                        ? t("stats.desktop.readingHeatmap")
+                        : t("stats.desktop.primaryChart")
+                    }
+                    description={
+                      primaryChart.type === "heatmap"
+                        ? t("stats.desktop.readingHeatmapDesc")
+                        : t("stats.desktop.primaryChartDesc")
+                    }
                     style={{
                       width: activeGoalPeriod ? primarySectionWidth : statsContentWidth,
                       marginBottom: 0,
                     }}
                   >
-                    <ChartSurface
-                      chart={primaryChart}
-                      isZh={isZh}
-                      copy={copy}
-                    />
+                    <ChartSurface chart={primaryChart} isZh={isZh} copy={copy} />
                   </SectionCard>
                 )}
 
@@ -706,22 +749,22 @@ export default function StatsScreen() {
               <View style={s.sectionGrid}>
                 {primaryChart && (
                   <SectionCard
-                    title={primaryChart.type === "heatmap"
-                      ? t("stats.desktop.readingHeatmap")
-                      : t("stats.desktop.primaryChart")}
-                    description={primaryChart.type === "heatmap"
-                      ? t("stats.desktop.readingHeatmapDesc")
-                      : t("stats.desktop.primaryChartDesc")}
+                    title={
+                      primaryChart.type === "heatmap"
+                        ? t("stats.desktop.readingHeatmap")
+                        : t("stats.desktop.primaryChart")
+                    }
+                    description={
+                      primaryChart.type === "heatmap"
+                        ? t("stats.desktop.readingHeatmapDesc")
+                        : t("stats.desktop.primaryChartDesc")
+                    }
                     style={{
                       width: hasRhythmProfile ? primarySectionWidth : statsContentWidth,
                       marginBottom: 0,
                     }}
                   >
-                    <ChartSurface
-                      chart={primaryChart}
-                      isZh={isZh}
-                      copy={copy}
-                    />
+                    <ChartSurface chart={primaryChart} isZh={isZh} copy={copy} />
                   </SectionCard>
                 )}
 
@@ -746,10 +789,7 @@ export default function StatsScreen() {
 
             {/* ═══ Month Calendar (month dimension) ═══ */}
             {monthlyReport?.readingCalendar && (
-              <SectionCard
-                title={copy.readingCalendar}
-                description={copy.readingCalendarDesc}
-              >
+              <SectionCard title={copy.readingCalendar} description={copy.readingCalendarDesc}>
                 <MonthCalendarSection
                   calendar={monthlyReport.readingCalendar}
                   isZh={isZh}
@@ -764,32 +804,40 @@ export default function StatsScreen() {
             report.dimension === "lifetime" ? (
               <View style={useTabletSectionGrid ? s.sectionGrid : undefined}>
                 {yearOrLifetimeReport &&
-                  (yearOrLifetimeReport.timeOfDayChart || yearOrLifetimeReport.categoryDistribution) &&
+                  (yearOrLifetimeReport.timeOfDayChart ||
+                    yearOrLifetimeReport.categoryDistribution) &&
                   report.dimension === "lifetime" && (
-                  <SectionCard
-                    title={undefined}
-                    style={useTabletSectionGrid ? { width: primarySectionWidth, marginBottom: 0 } : undefined}
-                  >
-                    <RhythmProfileSection
-                      timeOfDayChart={yearOrLifetimeReport.timeOfDayChart}
-                      categoryChart={yearOrLifetimeReport.categoryDistribution}
-                      isZh={isZh}
-                      copy={copy}
-                    />
-                  </SectionCard>
-                )}
+                    <SectionCard
+                      title={undefined}
+                      style={
+                        useTabletSectionGrid
+                          ? { width: primarySectionWidth, marginBottom: 0 }
+                          : undefined
+                      }
+                    >
+                      <RhythmProfileSection
+                        timeOfDayChart={yearOrLifetimeReport.timeOfDayChart}
+                        categoryChart={yearOrLifetimeReport.categoryDistribution}
+                        isZh={isZh}
+                        copy={copy}
+                      />
+                    </SectionCard>
+                  )}
 
                 {report.dimension === "lifetime" && (
                   <SectionCard
                     title={t("stats.desktop.journey")}
                     description={t("stats.desktop.journeySubtitle")}
-                    style={useTabletSectionGrid ? { width: hasRhythmProfile ? secondarySectionWidth : statsContentWidth, marginBottom: 0 } : undefined}
+                    style={
+                      useTabletSectionGrid
+                        ? {
+                            width: hasRhythmProfile ? secondarySectionWidth : statsContentWidth,
+                            marginBottom: 0,
+                          }
+                        : undefined
+                    }
                   >
-                    <JourneySummaryPanel
-                      report={report}
-                      isZh={isZh}
-                      copy={copy}
-                    />
+                    <JourneySummaryPanel report={report} isZh={isZh} copy={copy} />
                   </SectionCard>
                 )}
               </View>
@@ -823,7 +871,11 @@ export default function StatsScreen() {
                 <SectionCard
                   title={t("stats.desktop.insights")}
                   description={t("stats.desktop.insightsDesc")}
-                  style={useTabletSectionGrid ? { width: secondarySectionWidth, marginBottom: 0 } : undefined}
+                  style={
+                    useTabletSectionGrid
+                      ? { width: secondarySectionWidth, marginBottom: 0 }
+                      : undefined
+                  }
                 >
                   <InsightsSection insights={localizedInsights} copy={copy} />
                 </SectionCard>
@@ -837,7 +889,11 @@ export default function StatsScreen() {
                   <SectionCard
                     title={t("stats.desktop.milestones")}
                     description={t("stats.desktop.milestonesDesc")}
-                    style={useTabletSectionGrid ? { width: halfSectionWidth, marginBottom: 0 } : undefined}
+                    style={
+                      useTabletSectionGrid
+                        ? { width: halfSectionWidth, marginBottom: 0 }
+                        : undefined
+                    }
                   >
                     <InsightsSection insights={localizedMilestones} copy={copy} />
                   </SectionCard>
@@ -858,11 +914,17 @@ export default function StatsScreen() {
                     }
                     action={
                       <TouchableOpacity
-                        onPress={() => (nav as any).navigate("Badges")}
+                        onPress={() => nav.navigate("Badges")}
                         style={{ flexDirection: "row", alignItems: "center", gap: 2 }}
                         activeOpacity={0.6}
                       >
-                        <Text style={{ fontSize: 12, fontWeight: "500", color: withOpacity(colors.primary, 0.6) }}>
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            fontWeight: "500",
+                            color: withOpacity(colors.primary, 0.6),
+                          }}
+                        >
                           {t("stats.desktop.viewAllBadges")}
                         </Text>
                         <ChevronRightIcon size={14} color={withOpacity(colors.primary, 0.6)} />
@@ -872,13 +934,12 @@ export default function StatsScreen() {
                     <BadgesPreview
                       earned={earnedBadges}
                       t={t}
-                      onViewAll={() => (nav as any).navigate("Badges")}
+                      onViewAll={() => nav.navigate("Badges")}
                     />
                   </SectionCard>
                 )}
               </View>
             ) : null}
-
           </View>
         )}
       </ScrollView>
