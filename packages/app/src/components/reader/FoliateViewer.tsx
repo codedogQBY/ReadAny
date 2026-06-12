@@ -2783,7 +2783,13 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       }
 
       applyReflowLayoutSettings(view, viewSettings);
-    }, [viewSettings.viewMode, viewSettings.paginatedLayout, isFixedLayout, appTheme]);
+    }, [
+      viewSettings.viewMode,
+      viewSettings.paginatedLayout,
+      viewSettings.fixedLayoutZoom,
+      isFixedLayout,
+      appTheme,
+    ]);
 
     const handleViewerShellClick = useCallback(
       (event: {
@@ -3068,6 +3074,7 @@ function applyRendererSettings(
     // EPUBs do not look "shrunk inside a spread". Double-page mode still uses
     // fit-page to keep both pages fully visible inside the viewport.
     renderer.setAttribute("zoom", isSinglePage ? "fit-width" : "fit-page");
+    renderer.setAttribute("zoom-factor", String(settings.fixedLayoutZoom ?? 1));
     if (view.book?.rendition) {
       view.book.rendition.spread = spreadMode;
     }

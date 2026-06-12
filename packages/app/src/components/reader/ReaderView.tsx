@@ -61,12 +61,21 @@ const MAX_TRACKED_PAGE_DELTA = 20;
 const MAX_TRACKED_FRACTION_DELTA = 0.08;
 const INITIAL_PROGRESS_RESTORE_GUARD_MS = 1800;
 const PROGRAMMATIC_NAV_GUARD_MS = 1200;
+const FIXED_LAYOUT_ZOOM_MIN = 0.5;
+const FIXED_LAYOUT_ZOOM_MAX = 3;
+const FIXED_LAYOUT_ZOOM_STEP = 0.1;
 const BOOK_IMPORT_FILTERS = [
   {
     name: "Books",
     extensions: ["epub", "pdf", "mobi", "azw", "azw3", "cbz", "fb2", "fbz", "txt", "umd"],
   },
 ];
+
+function normalizeFixedLayoutZoom(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  const rounded = Math.round(value * 10) / 10;
+  return Math.min(FIXED_LAYOUT_ZOOM_MAX, Math.max(FIXED_LAYOUT_ZOOM_MIN, rounded));
+}
 
 function countReadableCharacters(doc: Document): number {
   const rawText = doc.body?.textContent ?? "";
@@ -869,6 +878,13 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     viewSettings.viewMode === "scroll",
   );
   const isDoublePage = (viewSettings.paginatedLayout ?? "double") === "double";
+  const fixedLayoutZoom = normalizeFixedLayoutZoom(viewSettings.fixedLayoutZoom ?? 1);
+  const handleFixedLayoutZoomChange = useCallback(
+    (zoom: number) => {
+      updateReadSettings({ fixedLayoutZoom: normalizeFixedLayoutZoom(zoom) });
+    },
+    [updateReadSettings],
+  );
   const toolbarVisible = controlsVisible || isToolbarPinned;
   const readingHeaderTitle = (readerTab?.chapterTitle || book?.meta.title || "").trim();
   const contentTopPadding = isToolbarPinned ? 78 : 56;
@@ -2905,6 +2921,11 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
             isChatOpen={showChat}
             isTTSActive={showTTS || ttsPlayState !== "stopped"}
             isFixedLayout={isFixedLayout}
+            fixedLayoutZoom={fixedLayoutZoom}
+            fixedLayoutZoomMin={FIXED_LAYOUT_ZOOM_MIN}
+            fixedLayoutZoomMax={FIXED_LAYOUT_ZOOM_MAX}
+            fixedLayoutZoomStep={FIXED_LAYOUT_ZOOM_STEP}
+            onFixedLayoutZoomChange={handleFixedLayoutZoomChange}
             isPinned={isToolbarPinned}
             onTogglePinned={() => setIsToolbarPinned((prev) => !prev)}
             onMouseEnter={handleMouseEnter}
