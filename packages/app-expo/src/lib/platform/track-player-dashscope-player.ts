@@ -5,11 +5,8 @@ import { File, Paths } from "expo-file-system";
 import { AppState, type AppStateStatus, Image, Platform } from "react-native";
 import TrackPlayer, { Event, State } from "react-native-track-player";
 
+import { chunkIndexFromTrackId, trackIdForChunkIndex } from "./track-player-chunk-id";
 import { ensureSilenceFile } from "./tts-silence-keeper";
-import {
-  chunkIndexFromTrackId,
-  trackIdForChunkIndex,
-} from "./track-player-chunk-id";
 
 const CHUNK_MAX_CHARS = 500;
 const DEFAULT_ARTWORK = (() => {
@@ -209,6 +206,7 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
       if (state !== "active") return;
       if (gen !== this._speakGen || this._stopped) return;
       this._ensureProducerRunning(gen);
+      this._syncActiveTrackFromNative(gen);
       if (this._queueStarved) {
         this._recoverFromStarvation(gen);
       }
@@ -371,8 +369,7 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
       await TrackPlayer.skip(targetQueuePos).catch(() => {});
       await TrackPlayer.play();
       const resolvedTrack = await TrackPlayer.getActiveTrack().catch(() => null);
-      const resolvedChunkIndex =
-        chunkIndexFromTrackId(resolvedTrack?.id) ?? targetChunkIndex;
+      const resolvedChunkIndex = chunkIndexFromTrackId(resolvedTrack?.id) ?? targetChunkIndex;
       this._notifyChunkChange(resolvedChunkIndex);
       this._startProgressPolling(gen);
       this.onStateChange?.("playing");
@@ -396,7 +393,10 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
         .map((track, index) => (ids.has(String(track.id)) ? index : -1))
         .filter((index) => index >= 0)
         .sort((a, b) => b - a);
-      if (indexes.length > 0) await TrackPlayer.remove(indexes).catch((err) => console.warn("[TTS] TrackPlayer remove failed:", err));
+      if (indexes.length > 0)
+        await TrackPlayer.remove(indexes).catch((err) =>
+          console.warn("[TTS] TrackPlayer remove failed:", err),
+        );
     } catch (err) {
       console.warn("[TTS] Failed to clear silence tracks:", err);
     }
@@ -436,6 +436,35 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
     this._lastNotifiedIndex = index;
     this._currentIndex = index;
     this.onChunkChange?.(index, this._chunks.length);
+  }
+
+  private _syncActiveTrackFromNative(gen: number): void {
+    void (async () => {
+      try {
+        const [activeTrack, playbackState] = await Promise.all([
+          TrackPlayer.getActiveTrack().catch(() => null),
+          TrackPlayer.getPlaybackState().catch(() => null),
+        ]);
+        if (gen !== this._speakGen || this._stopped) return;
+
+        const chunkIndex = chunkIndexFromTrackId(activeTrack?.id);
+        if (chunkIndex != null) {
+          this._notifyChunkChange(chunkIndex);
+        }
+
+        if (playbackState?.state === State.Playing) {
+          this._playStarted = true;
+          this._startProgressPolling(gen);
+          this.onStateChange?.("playing");
+        } else if (this._paused && playbackState?.state === State.Paused) {
+          this.onStateChange?.("paused");
+        } else if (playbackState?.state === State.Ended || playbackState?.state === State.Stopped) {
+          this._handlePlaybackEnded(gen, chunkIndex ?? undefined);
+        }
+      } catch (error) {
+        console.warn("[TrackPlayerDashScopeTTSPlayer] failed to sync active track", error);
+      }
+    })();
   }
 
   private _startProgressPolling(gen: number): void {
