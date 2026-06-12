@@ -6,6 +6,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { ChevronDownIcon, ChevronRightIcon } from "@/components/ui/Icon";
 import { type ThemeColors, fontSize, fontWeight, radius, useColors } from "@/styles/theme";
+import { getFirstTocHref } from "@readany/core/reader";
 import type { TOCItem } from "@readany/core/types";
 
 export function TOCTreeItem({
@@ -21,7 +22,9 @@ export function TOCTreeItem({
 }) {
   const colors = useColors();
   const tocS = makeTocStyles(colors);
-  const hasChildren = item.subitems && item.subitems.length > 0;
+  const children = item.subitems ?? [];
+  const hasChildren = children.length > 0;
+  const targetHref = getFirstTocHref(item);
   const isCurrent = item.title === currentChapter;
   const hasCurrentChild = (items: TOCItem[]): boolean => {
     for (const child of items) {
@@ -30,20 +33,28 @@ export function TOCTreeItem({
     }
     return false;
   };
-  const shouldExpand = hasChildren && hasCurrentChild(item.subitems!);
+  const shouldExpand = hasChildren && hasCurrentChild(children);
   const [expanded, setExpanded] = useState(shouldExpand);
+  const handlePress = () => {
+    if (targetHref) {
+      onSelect(targetHref);
+      return;
+    }
+
+    if (hasChildren) setExpanded((value) => !value);
+  };
 
   return (
     <View>
       <TouchableOpacity
         style={[tocS.item, { paddingLeft: 12 + level * 16 }, isCurrent && tocS.itemActive]}
-        onPress={() => item.href && onSelect(item.href)}
+        onPress={handlePress}
         activeOpacity={0.7}
       >
         {hasChildren ? (
           <TouchableOpacity
             style={tocS.expandBtn}
-            onPress={() => setExpanded(!expanded)}
+            onPress={() => setExpanded((value) => !value)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             {expanded ? (
@@ -61,7 +72,7 @@ export function TOCTreeItem({
       </TouchableOpacity>
       {expanded && hasChildren && (
         <View>
-          {item.subitems!.map((child) => (
+          {children.map((child) => (
             <TOCTreeItem
               key={child.id || child.href}
               item={child}

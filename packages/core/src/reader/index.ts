@@ -5,6 +5,9 @@ export { FONT_THEMES, DEFAULT_FONT_THEME, getFontTheme } from "./font-themes";
 export { DEFAULT_BINDINGS, isInputElement, matchBinding, findAction } from "./keyboard";
 export type { KeyBinding } from "./keyboard";
 
+// Table of contents
+export { getFirstTocHref } from "./toc";
+
 // Pagination
 export {
   getPageDirection,
