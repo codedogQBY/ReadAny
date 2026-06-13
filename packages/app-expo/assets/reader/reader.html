@@ -1823,6 +1823,9 @@
             -webkit-text-size-adjust: none;
             text-size-adjust: none;
           }
+          :root:not(.vrtl):not(.vltr) body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *) {
+            font-family: var(--readany-font-family) !important;
+          }
           :root:is(.vrtl, .vltr),
           :root:is(.vrtl, .vltr) body {
             font-family: var(--readany-font-family);
@@ -1833,6 +1836,15 @@
           :root:not(.vrtl):not(.vltr) p,
           :root:not(.vrtl):not(.vltr) div,
           :root:not(.vrtl):not(.vltr) blockquote,
+          :root:not(.vrtl):not(.vltr) dd,
+          :root:not(.vrtl):not(.vltr) li,
+          :root:not(.vrtl):not(.vltr) span {
+            font-size: ${fSize}px !important;
+          }
+          :root:not(.vrtl):not(.vltr) p,
+          :root:not(.vrtl):not(.vltr) div,
+          :root:not(.vrtl):not(.vltr) blockquote,
+          :root:not(.vrtl):not(.vltr) dd,
           :root:not(.vrtl):not(.vltr) li,
           :root:not(.vrtl):not(.vltr) span,
           :root:not(.vrtl):not(.vltr) h1,
