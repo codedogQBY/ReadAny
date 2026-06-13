@@ -883,6 +883,11 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   } | null>(null);
   const totalBookCharactersRef = useRef<number | null>(null);
   const progressTrackingGuardUntilRef = useRef(0);
+  const latestProgressRef = useRef<{
+    bookId: string;
+    progress: number;
+    cfi: string;
+  } | null>(null);
 
   const suppressProgressTracking = useCallback((duration = PROGRAMMATIC_NAV_GUARD_MS) => {
     progressTrackingGuardUntilRef.current = Math.max(
@@ -924,6 +929,27 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     }, 5000),
   ).current;
 
+  const flushLatestProgress = useCallback(() => {
+    const latest = latestProgressRef.current;
+    if (!latest || latest.bookId !== bookId) return;
+    updateBook(latest.bookId, {
+      progress: latest.progress,
+      currentCfi: latest.cfi,
+      lastOpenedAt: Date.now(),
+    });
+  }, [bookId, updateBook]);
+
+  useEffect(() => {
+    window.addEventListener("pagehide", flushLatestProgress);
+    window.addEventListener("beforeunload", flushLatestProgress);
+
+    return () => {
+      window.removeEventListener("pagehide", flushLatestProgress);
+      window.removeEventListener("beforeunload", flushLatestProgress);
+      flushLatestProgress();
+    };
+  }, [flushLatestProgress]);
+
   // --- Load book on mount ---
   useEffect(() => {
     if (!book?.filePath || isInitializedRef.current) return;
@@ -958,6 +984,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
   useEffect(() => {
     sessionProgressRef.current = null;
+    latestProgressRef.current = null;
     suppressProgressTracking(INITIAL_PROGRESS_RESTORE_GUARD_MS);
   }, [bookId, tabId, bookFormat, suppressProgressTracking]);
 
@@ -1105,6 +1132,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
       // Update reader store (immediate)
       setProgress(tabId, progress, cfi);
+      latestProgressRef.current = { bookId, progress, cfi };
 
       // Update chapter info
       if (detail.tocItem?.label) {
