@@ -176,6 +176,36 @@ const replaceSeries = async (str, regex, f) => {
 
 const regexEscape = (str) => str.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
 
+const parseSrcset = (srcset) => {
+  const candidates = [];
+  let i = 0;
+  while (i < srcset.length) {
+    let leading = "";
+    while (i < srcset.length && /[\t\n\f\r ,]/.test(srcset[i])) leading += srcset[i++];
+    if (i >= srcset.length) {
+      if (leading) candidates.push({ leading, url: "", descriptor: "", comma: "" });
+      break;
+    }
+
+    const urlStart = i;
+    const isDataURL = srcset.slice(i, i + 5).toLowerCase() === "data:";
+    while (
+      i < srcset.length &&
+      !/[\t\n\f\r ]/.test(srcset[i]) &&
+      (isDataURL || srcset[i] !== ",")
+    )
+      i++;
+
+    const url = srcset.slice(urlStart, i);
+    const descriptorStart = i;
+    while (i < srcset.length && srcset[i] !== ",") i++;
+    const descriptor = srcset.slice(descriptorStart, i);
+    const comma = i < srcset.length && srcset[i] === "," ? srcset[i++] : "";
+    candidates.push({ leading, url, descriptor, comma });
+  }
+  return candidates;
+};
+
 const tidy = (obj) => {
   for (const [key, val] of Object.entries(obj))
     if (val == null) delete obj[key];
@@ -1026,14 +1056,19 @@ class Loader {
           child = child.nextSibling;
         }
       }
-      // replace hrefs (excluding anchors)
-      // TODO: srcset?
+      // replace resource hrefs (excluding anchors)
       const replace = async (el, attr) =>
         el.setAttribute(attr, await this.loadHref(el.getAttribute(attr), href, parents));
+      const replaceSrcset = async (el, attr) =>
+        el.setAttribute(attr, await this.replaceSrcset(el.getAttribute(attr), href, parents));
       for (const el of doc.querySelectorAll("link[href]")) await replace(el, "href");
       for (const el of doc.querySelectorAll("[src]")) await replace(el, "src");
+      for (const el of doc.querySelectorAll("[srcset]")) await replaceSrcset(el, "srcset");
+      for (const el of doc.querySelectorAll("[imagesrcset]"))
+        await replaceSrcset(el, "imagesrcset");
       for (const el of doc.querySelectorAll("[poster]")) await replace(el, "poster");
       for (const el of doc.querySelectorAll("object[data]")) await replace(el, "data");
+      for (const el of doc.querySelectorAll("image[href], use[href]")) await replace(el, "href");
       for (const el of doc.querySelectorAll("[*|href]:not([href])"))
         el.setAttributeNS(
           NS.XLINK,
@@ -1072,6 +1107,16 @@ class Loader {
     return replaceSeries(replacedUrls, /@import\s*["']([^"'\n]*?)["']/gi, (_, url) =>
       this.loadHref(url, href, parents).then((url) => `@import "${url}"`),
     );
+  }
+  async replaceSrcset(str, href, parents = []) {
+    if (!str) return str;
+    let result = "";
+    for (const { leading, url, descriptor, comma } of parseSrcset(str)) {
+      result += leading;
+      result += url ? await this.loadHref(url, href, parents) : "";
+      result += descriptor + comma;
+    }
+    return result;
   }
   // find & replace all possible relative paths for all assets without parsing
   replaceString(str, href, parents = []) {
