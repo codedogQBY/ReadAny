@@ -3121,7 +3121,7 @@ function getRendererStyles(settings: ViewSettings, theme: AppTheme): string {
 
   // Custom font takes precedence over font theme
   const fontFamily = settings.customFontFamily
-    ? settings.customFontFamily
+    ? JSON.stringify(settings.customFontFamily)
     : `'${fontTheme.cjk}', '${fontTheme.serif}', serif`;
 
   // paragraphSpacing is stored as px tuned at the default 16px font size.

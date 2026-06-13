@@ -144,6 +144,7 @@ const NOTE_TOOLTIP_SIDE_PADDING = 12;
 const NOTE_TOOLTIP_ABOVE_OFFSET = 2;
 const NOTE_TOOLTIP_BELOW_OFFSET = 8;
 const NOTE_TOOLTIP_TOP_THRESHOLD = 180;
+import { useRubyStore } from "@readany/core/stores/ruby-store";
 import { ReaderSettingsPanel } from "./reader/ReaderSettingsPanel";
 import { ReaderTOCPanel } from "./reader/ReaderTOCPanel";
 import {
@@ -159,7 +160,6 @@ import { useReaderSearch } from "./reader/useReaderSearch";
 import { useReaderSystemInfo } from "./reader/useReaderSystemInfo";
 import { useReaderTTS } from "./reader/useReaderTTS";
 import { useVolumeButtonPaging } from "./reader/useVolumeButtonPaging";
-import { useRubyStore } from "@readany/core/stores/ruby-store";
 
 const READER_HTML_ASSET = Asset.fromModule(require("../../assets/reader/reader.html"));
 const LOCAL_FONT_SERVER_DIR = "readany-fonts";
@@ -333,8 +333,8 @@ export function ReaderScreen({ route, navigation }: Props) {
   const customFonts = useFontStore((s) => s.fonts);
   const selectedFontId = useFontStore((s) => s.selectedFontId);
   const customFontFamily = useMemo(() => {
-    if (!selectedFontId) return undefined;
-    return customFonts.find((f) => f.id === selectedFontId)?.fontFamily;
+    if (!selectedFontId) return "";
+    return customFonts.find((f) => f.id === selectedFontId)?.fontFamily ?? "";
   }, [customFonts, selectedFontId]);
   const customFontFaceCSS = useMemo(
     () => buildCustomFontFaceCSS(customFonts, selectedFontId, fontServerUrl),
@@ -571,7 +571,7 @@ export function ReaderScreen({ route, navigation }: Props) {
       const settings = useSettingsStore.getState().readSettings;
       const { fonts, selectedFontId: selId } = useFontStore.getState();
       const fontCSS = buildCustomFontFaceCSS(fonts, selId, fileServerRef.current);
-      const fontFamily = selId ? fonts.find((f) => f.id === selId)?.fontFamily : undefined;
+      const fontFamily = selId ? fonts.find((f) => f.id === selId)?.fontFamily : "";
       console.log("[ReaderScreen][Font] selection", {
         selectedFontId: selId,
         fontFamily,
@@ -586,7 +586,7 @@ export function ReaderScreen({ route, navigation }: Props) {
         viewMode: settings.viewMode,
         paginatedLayout: settings.paginatedLayout,
         customFontFaceCSS: fontCSS,
-        customFontFamily: fontFamily,
+        customFontFamily: fontFamily ?? "",
       });
 
       // Auto-restore ruby annotations if enabled for this book
@@ -594,7 +594,9 @@ export function ReaderScreen({ route, navigation }: Props) {
       if (rubyMode) {
         void (async () => {
           try {
-            const { checkExistingDictMobile, readDictStrings } = await import("@/lib/ruby/dict-service-mobile");
+            const { checkExistingDictMobile, readDictStrings } = await import(
+              "@/lib/ruby/dict-service-mobile"
+            );
             const exists = await checkExistingDictMobile();
             if (exists) {
               const { wordDict, charDict } = await readDictStrings();
@@ -961,7 +963,7 @@ export function ReaderScreen({ route, navigation }: Props) {
       const currentSettings = useSettingsStore.getState().readSettings;
       const { fonts, selectedFontId: selId } = useFontStore.getState();
       const fontCSS = buildCustomFontFaceCSS(fonts, selId, fileServerRef.current);
-      const fontFamily = selId ? fonts.find((f) => f.id === selId)?.fontFamily : undefined;
+      const fontFamily = selId ? fonts.find((f) => f.id === selId)?.fontFamily : "";
       // Recompute effective fontSize after every settings change — covers
       // both stepper changes and toggling followSystemFontScale on/off.
       const merged = { ...currentSettings, ...updates };
@@ -969,7 +971,7 @@ export function ReaderScreen({ route, navigation }: Props) {
         ...merged,
         fontSize: computeEffectiveFontSize(merged.fontSize, merged.followSystemFontScale),
         customFontFaceCSS: fontCSS,
-        customFontFamily: fontFamily,
+        customFontFamily: fontFamily ?? "",
       });
     },
     [bridge, updateReadSettings, computeEffectiveFontSize],
@@ -1412,8 +1414,9 @@ export function ReaderScreen({ route, navigation }: Props) {
 
   const isPanelOpen = showTOC || showSettings || showSearch || showNotebook || showTranslation;
   const existingSelectionHighlight = selection
-    ? (highlights.find((highlight) => highlight.bookId === bookId && highlight.cfi === selection.cfi) ??
-      null)
+    ? (highlights.find(
+        (highlight) => highlight.bookId === bookId && highlight.cfi === selection.cfi,
+      ) ?? null)
     : null;
   const readerTopMargin = !showSearch
     ? showTopTitleProgress

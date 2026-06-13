@@ -466,7 +466,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
                 : selectedFont.format === "woff2"
                   ? "woff2"
                   : "truetype";
-          return `@font-face {\n  font-family: '${selectedFont.fontFamily}';\n  src: url('${blobUrl}') format('${cssFormat}');\n  font-weight: normal;\n  font-style: normal;\n}`;
+          return `@font-face {\n  font-family: ${JSON.stringify(selectedFont.fontFamily)};\n  src: url('${blobUrl}') format('${cssFormat}');\n  font-weight: normal;\n  font-style: normal;\n}`;
         })()
       : "";
     return {
@@ -1601,9 +1601,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           right: r.right - containerRect.left,
         }));
 
-        const topmostRect = containerRelativeRects.reduce((min, r) =>
-          r.top < min.top ? r : min,
-        );
+        const topmostRect = containerRelativeRects.reduce((min, r) => (r.top < min.top ? r : min));
         const bottommostRect = containerRelativeRects.reduce((max, r) =>
           r.bottom > max.bottom ? r : max,
         );
