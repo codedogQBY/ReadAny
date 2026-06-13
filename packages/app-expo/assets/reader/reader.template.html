@@ -4789,6 +4789,24 @@ a { color: ${primary} !important; }
     };
   </script>
 
+  <script>
+    if (typeof Promise.withResolvers !== 'function') {
+      Object.defineProperty(Promise, 'withResolvers', {
+        configurable: true,
+        writable: true,
+        value: function withResolvers() {
+          var resolveFn;
+          var rejectFn;
+          var promise = new Promise(function(resolve, reject) {
+            resolveFn = resolve;
+            rejectFn = reject;
+          });
+          return { promise: promise, resolve: resolveFn, reject: rejectFn };
+        },
+      });
+    }
+  </script>
+
   <!-- __READANY_FOLIATE_BUNDLE_INSERT_POINT_7f3a9b2e__ -->
 
   <script>
