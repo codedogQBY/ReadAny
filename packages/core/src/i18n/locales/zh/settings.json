@@ -239,7 +239,7 @@
     "syncPassword": "密码",
     "syncRemoteRoot": "远端文件夹",
     "syncRemoteRootPlaceholder": "readany",
-    "syncRemoteRootDesc": "可自定义同步写入的远端目录，支持多级路径；测试连接和首次同步时会自动创建。",
+    "syncRemoteRootDesc": "可自定义同步写入的远端目录，支持多级路径；测试连接和首次同步时会自动创建。该目录由 ReadAny 独占用于双向同步，不会读取你已存放在远端的书；如需导入已有 WebDAV 书库，请使用“连接其他 WebDAV”。",
     "syncTestConnection": "测试连接",
     "syncTesting": "测试中...",
     "syncTestSuccess": "连接成功",

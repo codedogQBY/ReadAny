@@ -243,7 +243,7 @@
     "syncPassword": "Password",
     "syncRemoteRoot": "Remote Folder",
     "syncRemoteRootPlaceholder": "readany",
-    "syncRemoteRootDesc": "Choose the remote folder used for sync. Nested paths are supported and will be created automatically during test or first sync.",
+    "syncRemoteRootDesc": "Choose the remote folder used only for ReadAny sync. Nested paths are supported and will be created automatically during test or first sync. ReadAny does not scan books you already placed there; import an existing WebDAV library with \"Connect another WebDAV\".",
     "syncTestConnection": "Test Connection",
     "syncTesting": "Testing...",
     "syncTestSuccess": "Connection successful",

@@ -234,7 +234,7 @@
     "syncPassword": "Mot de passe",
     "syncRemoteRoot": "Dossier distant",
     "syncRemoteRootPlaceholder": "readany",
-    "syncRemoteRootDesc": "Choisissez le dossier distant utilisé pour la synchronisation. Les chemins imbriqués sont pris en charge et seront créés automatiquement lors du test ou de la première synchronisation.",
+    "syncRemoteRootDesc": "Choisissez le dossier distant réservé à la synchronisation ReadAny. Les chemins imbriqués sont pris en charge et seront créés automatiquement lors du test ou de la première synchronisation. ReadAny n'analyse pas les livres que vous y avez déjà placés ; importez une bibliothèque WebDAV existante avec « Connecter un autre WebDAV ».",
     "syncTestConnection": "Tester la connexion",
     "syncTesting": "Test en cours...",
     "syncTestSuccess": "Connexion réussie",

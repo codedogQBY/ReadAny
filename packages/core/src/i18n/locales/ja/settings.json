@@ -236,7 +236,7 @@
     "syncPassword": "パスワード",
     "syncRemoteRoot": "リモートフォルダ",
     "syncRemoteRootPlaceholder": "readany",
-    "syncRemoteRootDesc": "同期に使用するリモートフォルダを選択してください。ネストされたパスに対応し、テストまたは初回同期時に自動作成されます。",
+    "syncRemoteRootDesc": "ReadAny の同期専用として使用するリモートフォルダを選択してください。ネストされたパスに対応し、テストまたは初回同期時に自動作成されます。ReadAny はここに既に置かれている本をスキャンしません。既存の WebDAV ライブラリを取り込む場合は「別のWebDAVに接続」を使用してください。",
     "syncTestConnection": "接続テスト",
     "syncTesting": "テスト中...",
     "syncTestSuccess": "接続に成功しました",

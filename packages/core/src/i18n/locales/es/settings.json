@@ -234,7 +234,7 @@
     "syncPassword": "Contraseña",
     "syncRemoteRoot": "Carpeta remota",
     "syncRemoteRootPlaceholder": "readany",
-    "syncRemoteRootDesc": "Elige la carpeta remota para sincronización. Las rutas anidadas son compatibles y se crearán automáticamente durante la prueba o la primera sincronización.",
+    "syncRemoteRootDesc": "Elige la carpeta remota reservada para la sincronización de ReadAny. Se admiten rutas anidadas y se crearán automáticamente durante la prueba o la primera sincronización. ReadAny no escanea los libros que ya hayas colocado allí; importa una biblioteca WebDAV existente con \"Conectar otro WebDAV\".",
     "syncTestConnection": "Probar conexión",
     "syncTesting": "Probando...",
     "syncTestSuccess": "Conexión exitosa",
