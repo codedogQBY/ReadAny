@@ -169,7 +169,7 @@ export function TranslationPopover({ text, position, onClose }: TranslationPopov
   const aiConfig = useSettingsStore((s) => s.aiConfig);
   const endpointId = translationConfig.provider.endpointId || aiConfig.activeEndpointId;
   const endpoint = aiConfig.endpoints.find((e) => e.id === endpointId);
-  const providerName = provider === "ai" ? endpoint?.name || "AI" : "DeepL";
+  const providerName = provider === "ai" ? endpoint?.name || "AI" : translationConfig.provider.name;
 
   return (
     <div
