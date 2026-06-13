@@ -2801,33 +2801,27 @@ a { color: ${primary} !important; }
       return (fallback || '').trim();
     }
 
-    function getSelectionEndRect(range) {
-      if (!range) return null;
-      try {
-        const caretRange = range.cloneRange();
-        caretRange.collapse(false);
-        const caretRects = Array.from(caretRange.getClientRects()).filter(r => r.width >= 0 && r.height > 0);
-        if (caretRects.length) return caretRects[caretRects.length - 1];
-      } catch {}
-
-      const rects = Array.from(range.getClientRects()).filter(r => r.width > 0 && r.height > 0);
-      return rects[rects.length - 1] || range.getBoundingClientRect();
-    }
-
     function getSelectionAdvanceIntent(selectionRange, lastLocationRange, dragPoint) {
       if (!selectionRange || !lastLocationRange) return null;
 
+      const point = dragPoint && Date.now() - dragPoint.updatedAt < 700
+        ? dragPoint
+        : null;
+      if (!point) return null;
+
+      let atNextBoundary = false;
+      let atPrevBoundary = false;
       try {
         if (selectionRange.compareBoundaryPoints(Range.END_TO_END, lastLocationRange) >= 0) {
-          return 'next';
+          atNextBoundary = true;
         }
         if (selectionRange.compareBoundaryPoints(Range.START_TO_START, lastLocationRange) <= 0) {
-          return 'prev';
+          atPrevBoundary = true;
         }
       } catch {}
+      if (!atNextBoundary && !atPrevBoundary) return null;
 
       try {
-        const edgeRect = getSelectionEndRect(selectionRange);
         const doc = selectionRange.endContainer && selectionRange.endContainer.ownerDocument
           ? selectionRange.endContainer.ownerDocument
           : null;
@@ -2842,28 +2836,21 @@ a { color: ${primary} !important; }
         );
         if (viewportWidth <= 0 || viewportHeight <= 0) return null;
 
-        const point = dragPoint && Date.now() - dragPoint.updatedAt < 1000
-          ? dragPoint
-          : edgeRect
-            ? { x: edgeRect.right, y: edgeRect.bottom }
-            : null;
-        if (!point) return null;
-
         const isRtl = !!(view.book && view.book.dir === 'rtl');
-        const horizontalInset = Math.max(132, Math.min(420, viewportWidth * 0.30));
-        const verticalInset = Math.max(140, Math.min(360, viewportHeight * 0.28));
+        const horizontalInset = Math.max(48, Math.min(96, viewportWidth * 0.12));
+        const verticalInset = Math.max(56, Math.min(120, viewportHeight * 0.14));
         const inBottomBand = point.y >= viewportHeight - verticalInset;
 
         if (isRtl) {
-          if (point.x <= horizontalInset) return 'next';
-          if (dragPoint && point.x >= viewportWidth - horizontalInset) return 'prev';
-          if (inBottomBand && point.x <= viewportWidth * 0.74) return 'next';
-          if (dragPoint && inBottomBand && point.x >= viewportWidth * 0.88) return 'prev';
+          if (atNextBoundary && point.x <= horizontalInset) return 'next';
+          if (atPrevBoundary && point.x >= viewportWidth - horizontalInset) return 'prev';
+          if (atNextBoundary && inBottomBand && point.x <= viewportWidth * 0.20) return 'next';
+          if (atPrevBoundary && inBottomBand && point.x >= viewportWidth * 0.80) return 'prev';
         } else {
-          if (point.x >= viewportWidth - horizontalInset) return 'next';
-          if (dragPoint && point.x <= horizontalInset) return 'prev';
-          if (inBottomBand && point.x >= viewportWidth * 0.26) return 'next';
-          if (dragPoint && inBottomBand && point.x <= viewportWidth * 0.12) return 'prev';
+          if (atNextBoundary && point.x >= viewportWidth - horizontalInset) return 'next';
+          if (atPrevBoundary && point.x <= horizontalInset) return 'prev';
+          if (atNextBoundary && inBottomBand && point.x >= viewportWidth * 0.80) return 'next';
+          if (atPrevBoundary && inBottomBand && point.x <= viewportWidth * 0.20) return 'prev';
         }
 
         return null;
