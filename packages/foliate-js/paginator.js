@@ -167,6 +167,21 @@ const getBoundingClientRect = target => {
     return new DOMRect(left, top, right - left, bottom - top)
 }
 
+const isNonEmptyRect = rect => rect?.width > 0 && rect?.height > 0
+
+const getMappedRectStart = (rect, mapRect) => {
+    const mapped = mapRect(rect)
+    const start = Math.min(mapped.left, mapped.right)
+    return Number.isFinite(start) ? start : null
+}
+
+const pickAnchorRect = (rects, mapRect) => {
+    const items = Array.from(rects)
+        .map(rect => ({ rect, start: getMappedRectStart(rect, mapRect) }))
+        .filter(({ rect, start }) => isNonEmptyRect(rect) && start !== null)
+    return items.find(({ start }) => start >= 0)?.rect ?? items[0]?.rect ?? rects[0]
+}
+
 const getVisibleRange = (doc, start, end, mapRect) => {
     // A resize/scroll callback can fire after the view's document has been
     // torn down (e.g. during teardown, or while an async section load is still
@@ -1907,28 +1922,39 @@ export class Paginator extends HTMLElement {
                     ({ left: size - right - marginTop, right: size - left - marginBottom })
                 : ({ top, bottom }) => ({ left: top - marginTop, right: bottom - marginBottom })
         }
-        const pxSize = this.#renderedPages * this.size
-        return this.#rtl
-            ? ({ left, right }) =>
+        const pxSize = view
+            ? view.element.getBoundingClientRect()[this.sideProp]
+            : this.#renderedPages * this.size
+        if (this.#rtl) {
+            return ({ left, right }) =>
                 ({ left: pxSize - right, right: pxSize - left })
-            : this.#vertical
-                ? ({ top, bottom }) => ({ left: top, right: bottom })
-                : f => f
+        }
+        if (this.#vertical) return ({ top, bottom }) => ({ left: top, right: bottom })
+        return f => f
     }
     async #scrollToRect(rect, reason) {
+        const primaryView = this.#primaryView
+        const mapRect = this.#getRectMapper(primaryView)
+        const localOffset = getMappedRectStart(rect, mapRect)
+        if (localOffset === null) return
+
         if (this.scrolled) {
             // rect is in iframe-local coordinates; add view offset
             // to convert to container scroll coordinates
-            const localOffset = this.#getRectMapper()(rect).left - 3
             const viewOffset = this.#getViewOffset(this.#primaryIndex)
-            return this.#scrollTo(viewOffset + localOffset, reason)
+            return this.#scrollTo(viewOffset + localOffset - 3, reason)
         }
-        // rect is in iframe-local coordinates. Convert to container
-        // coordinates by adding the primary view's offset.
-        const localOffset = this.#getRectMapper()(rect).left
+
+        // rect is in iframe-local column coordinates. Convert to a rendered
+        // spread by adding the primary view's column offset within that spread.
         const viewOffset = this.#getViewOffset(this.#primaryIndex)
-        const containerOffset = viewOffset + localOffset
-        return this.#scrollToPage(Math.floor(containerOffset / this.size + 0.01), reason)
+        const pagesBeforeView = this.#getPagesBeforeView(this.#primaryIndex)
+        const columnSize = this.size / this.columnCount
+        if (!columnSize) return
+        const viewStartColumn = Math.floor((viewOffset - pagesBeforeView * this.size) / columnSize + 0.01)
+        const anchorColumn = Math.floor(localOffset / columnSize + 0.01)
+        const page = pagesBeforeView + Math.floor((viewStartColumn + anchorColumn) / this.columnCount)
+        return this.#scrollToPage(page, reason)
     }
     async #scrollTo(offset, reason, smooth) {
         const { size } = this
@@ -2008,8 +2034,7 @@ export class Paginator extends HTMLElement {
         if (rects) {
             // when the start of the range is immediately after a hyphen in the
             // previous column, there is an extra zero width rect in that column
-            const rect = Array.from(rects)
-                .find(r => r.width > 0 && r.height > 0 && r.x >= 0 && r.y >= 0) || rects[0]
+            const rect = pickAnchorRect(rects, this.#getRectMapper(this.#primaryView))
             if (!rect) return
             await this.#scrollToRect(rect, reason)
             // focus the element when navigating with keyboard or screen reader
