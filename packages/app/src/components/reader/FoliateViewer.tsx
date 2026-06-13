@@ -1781,7 +1781,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
     );
 
     // --- Hooks ---
-    usePagination({ bookKey, viewRef, containerRef });
+    usePagination({ bookKey, viewRef, containerRef, isFixedLayout });
     useBookShortcuts({
       bookKey,
       viewRef,
