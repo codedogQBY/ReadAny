@@ -1819,6 +1819,47 @@ export class Paginator extends HTMLElement {
             pv.element.style.willChange = 'transform'
         }
     }
+    #onScrolledTouchMove(e, state) {
+        if (e.touches.length > 1) return
+        const touch = e.changedTouches[0]
+        if (!touch) return
+
+        const x = touch.screenX
+        const y = touch.screenY
+        const totalDx = Math.abs(x - (state.startX ?? x))
+        const totalDy = Math.abs(y - (state.startY ?? y))
+        const primaryTotal = this.#vertical ? totalDx : totalDy
+        const crossTotal = this.#vertical ? totalDy : totalDx
+
+        if (primaryTotal < 2 || primaryTotal < crossTotal) {
+            state.x = x
+            state.y = y
+            state.t = e.timeStamp
+            return
+        }
+
+        const dx = state.x - x
+        const dy = state.y - y
+        state.x = x
+        state.y = y
+        state.t = e.timeStamp
+
+        const delta = this.#vertical ? -dx : dy
+        if (Math.abs(delta) < 0.5) return
+
+        e.preventDefault()
+        this.#touchScrolled = true
+
+        const previous = this.containerPosition
+        this.containerPosition = previous + delta
+        const moved = Math.abs(this.containerPosition - previous) >= 0.5
+
+        if (!moved && Math.abs(delta) > 2) {
+            const forward = this.#vertical ? delta < 0 : delta > 0
+            if (forward && !this.atEnd) void this.next()
+            else if (!forward && !this.atStart) void this.prev()
+        }
+    }
     #onTouchMove(e) {
         const state = this.#touchState
         if (this.#navigationLocked || !state) return
@@ -1829,7 +1870,11 @@ export class Paginator extends HTMLElement {
         }
         if (state.pinched) return
         state.pinched = globalThis.visualViewport.scale > 1
-        if (this.scrolled || state.pinched) return
+        if (state.pinched) return
+        if (this.scrolled) {
+            this.#onScrolledTouchMove(e, state)
+            return
+        }
         // When the host opts out of swipe-to-paginate, let touch events reach
         // native behavior (text selection, etc.) without us tracking or
         // pre-empting them.
