@@ -263,10 +263,31 @@ const getVisibleRange = (doc, start, end, mapRect) => {
 }
 
 const selectionIsBackward = sel => {
-    const range = document.createRange()
-    range.setStart(sel.anchorNode, sel.anchorOffset)
-    range.setEnd(sel.focusNode, sel.focusOffset)
-    return range.collapsed
+    try {
+        const doc = sel.anchorNode?.ownerDocument ?? sel.focusNode?.ownerDocument ?? document
+        const range = doc.createRange()
+        range.setStart(sel.anchorNode, sel.anchorOffset)
+        range.setEnd(sel.focusNode, sel.focusOffset)
+        return range.collapsed
+    } catch {
+        return false
+    }
+}
+
+const getRangeEdgeRect = (range, atStart) => {
+    if (!range) return null
+    try {
+        const edge = range.cloneRange()
+        edge.collapse(atStart)
+        const rects = [...edge.getClientRects()].filter(r => r.width >= 0 && r.height > 0)
+        if (rects.length) return rects[atStart ? 0 : rects.length - 1]
+    } catch {}
+    try {
+        const rects = [...range.getClientRects()].filter(r => r.width > 0 && r.height > 0)
+        return rects[atStart ? 0 : rects.length - 1] ?? range.getBoundingClientRect()
+    } catch {
+        return null
+    }
 }
 
 const setSelectionTo = (target, collapse) => {
@@ -1257,17 +1278,14 @@ export class Paginator extends HTMLElement {
             }
         })
         let pointerSelectionTurn = null
-        const checkPointerSelection = throttle((range, sel) => {
+        const checkPointerSelection = throttle((range, sel, allowEdgeTurn) => {
             if (this.#navigationLocked) return
             if (pointerSelectionTurn) return
             if (!sel.rangeCount) return
             const selRange = sel.getRangeAt(0)
             const backward = selectionIsBackward(sel)
-            const turn = backward && selRange.compareBoundaryPoints(Range.START_TO_START, range) < 0
-                ? this.prev()
-                : !backward && selRange.compareBoundaryPoints(Range.END_TO_END, range) > 0
-                    ? this.next()
-                    : null
+            const turnDirection = this.#getPointerSelectionTurn(range, selRange, backward, allowEdgeTurn)
+            const turn = turnDirection < 0 ? this.prev() : turnDirection > 0 ? this.next() : null
             if (turn) {
                 pointerSelectionTurn = Promise.resolve(turn)
                     .finally(() => setTimeout(() => {
@@ -1278,20 +1296,25 @@ export class Paginator extends HTMLElement {
         this.addEventListener('load', ({ detail: { doc } }) => {
             let isPointerSelecting = false
             let pointerSelectionActiveUntil = 0
+            let pointerSelectionChangeCount = 0
             const markPointerSelecting = () => {
                 isPointerSelecting = true
                 pointerSelectionActiveUntil = Date.now() + 1200
             }
+            const beginPointerSelecting = () => {
+                pointerSelectionChangeCount = 0
+                markPointerSelecting()
+            }
             const clearPointerSelecting = () => setTimeout(() => {
                 if (Date.now() >= pointerSelectionActiveUntil) isPointerSelecting = false
             }, 160)
-            doc.addEventListener('selectstart', markPointerSelecting)
-            doc.addEventListener('pointerdown', markPointerSelecting)
+            doc.addEventListener('selectstart', beginPointerSelecting)
+            doc.addEventListener('pointerdown', beginPointerSelecting)
             doc.addEventListener('pointermove', () => {
                 if (doc.getSelection()?.type === 'Range') markPointerSelecting()
             })
             doc.addEventListener('pointerup', clearPointerSelecting)
-            doc.addEventListener('touchstart', markPointerSelecting)
+            doc.addEventListener('touchstart', beginPointerSelecting)
             doc.addEventListener('touchmove', () => {
                 if (doc.getSelection()?.type === 'Range') markPointerSelecting()
             }, { passive: true })
@@ -1306,8 +1329,10 @@ export class Paginator extends HTMLElement {
                 if (!range) return
                 const sel = doc.getSelection()
                 if (!sel.rangeCount) return
-                if ((isPointerSelecting || Date.now() < pointerSelectionActiveUntil) && sel.type === 'Range')
-                    checkPointerSelection(range, sel)
+                if ((isPointerSelecting || Date.now() < pointerSelectionActiveUntil) && sel.type === 'Range') {
+                    pointerSelectionChangeCount += 1
+                    checkPointerSelection(range, sel, pointerSelectionChangeCount > 1)
+                }
                 else if (isKeyboardSelecting) {
                     const selRange = sel.getRangeAt(0).cloneRange()
                     const backward = selectionIsBackward(sel)
@@ -1966,6 +1991,43 @@ export class Paginator extends HTMLElement {
             : this.#vertical
                 ? ({ top, bottom }) => ({ left: top, right: bottom })
                 : f => f
+    }
+    #getPointerSelectionTurn(visibleRange, selectionRange, backward, allowEdgeTurn) {
+        try {
+            if (backward && selectionRange.compareBoundaryPoints(Range.START_TO_START, visibleRange) < 0)
+                return -1
+            if (!backward && selectionRange.compareBoundaryPoints(Range.END_TO_END, visibleRange) > 0)
+                return 1
+        } catch {}
+        if (!allowEdgeTurn) return 0
+
+        const doc = selectionRange.commonAncestorContainer?.ownerDocument
+            ?? selectionRange.startContainer?.ownerDocument
+            ?? selectionRange.endContainer?.ownerDocument
+        const entry = [...this.#views].find(([, view]) => view.document === doc)
+        if (!entry) return 0
+
+        const [index, view] = entry
+        const rect = getRangeEdgeRect(selectionRange, backward)
+        if (!rect) return 0
+
+        const viewOffset = this.#getViewOffset(index)
+        const visibleStart = this.#renderedStart - viewOffset
+        const visibleEnd = this.#renderedEnd - viewOffset
+        const mapped = this.#getRectMapper(view)(rect)
+        const edgeInset = Math.max(32, Math.min(96, this.size * 0.12))
+
+        if (backward && mapped.left <= visibleStart + edgeInset) return -1
+        if (!backward && mapped.right >= visibleEnd - edgeInset) return 1
+
+        if (!this.#vertical) {
+            const blockSize = this.#container.getBoundingClientRect().height
+            const verticalInset = Math.max(48, Math.min(140, blockSize * 0.16))
+            if (backward && rect.top <= verticalInset) return -1
+            if (!backward && rect.bottom >= blockSize - verticalInset) return 1
+        }
+
+        return 0
     }
     async #scrollToRect(rect, reason) {
         if (this.scrolled) {
