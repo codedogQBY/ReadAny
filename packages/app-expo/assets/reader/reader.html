@@ -2570,12 +2570,16 @@ a { color: ${primary} !important; }
       }
 
       function supportsCrossPageSelection() {
+        const renderer = view && view.renderer;
+        const flow = renderer && renderer.getAttribute
+          ? renderer.getAttribute('flow')
+          : null;
         return !!(
           view &&
           !view.isFixedLayout &&
-          view.renderer &&
-          view.renderer.getAttribute &&
-          view.renderer.getAttribute('flow') === 'paginated'
+          renderer &&
+          flow !== 'scrolled' &&
+          renderer.scrolled !== true
         );
       }
 
@@ -2886,25 +2890,50 @@ a { color: ${primary} !important; }
         );
         if (viewportWidth <= 0 || viewportHeight <= 0) return null;
 
+        const renderer = view && view.renderer;
+        const visibleRange = renderer && renderer.scrolled !== true && typeof pickPaginatedVisibleRange === 'function'
+          ? pickPaginatedVisibleRange(doc, renderer)
+          : null;
+        const pageWidth = visibleRange
+          ? Math.max(1, visibleRange.right - visibleRange.left)
+          : viewportWidth;
+        const pageHeight = viewportHeight;
+        const toPageRect = rect => {
+          if (!rect) return null;
+          if (!visibleRange) return rect;
+          return {
+            left: rect.left - visibleRange.left,
+            right: rect.right - visibleRange.left,
+            top: rect.top,
+            bottom: rect.bottom,
+            width: rect.width,
+            height: rect.height,
+          };
+        };
+        const pageEdgeRects = {
+          start: toPageRect(edgeRects.start),
+          end: toPageRect(edgeRects.end),
+        };
+
         const isRtl = !!(view.book && view.book.dir === 'rtl');
-        const edgeInset = Math.max(28, Math.min(72, viewportWidth * 0.08));
-        const verticalEdgeInset = Math.max(36, Math.min(96, viewportHeight * 0.10));
-        const horizontalInset = Math.max(64, Math.min(128, viewportWidth * 0.16));
-        const verticalInset = Math.max(80, Math.min(160, viewportHeight * 0.18));
+        const edgeInset = Math.max(28, Math.min(72, pageWidth * 0.08));
+        const verticalEdgeInset = Math.max(36, Math.min(96, pageHeight * 0.10));
+        const horizontalInset = Math.max(64, Math.min(128, pageWidth * 0.16));
+        const verticalInset = Math.max(80, Math.min(160, pageHeight * 0.18));
 
         const reachesNextVisualEdge = rect => !!rect && (
           isRtl
-            ? rect.left <= edgeInset || rect.bottom >= viewportHeight - verticalEdgeInset
-            : rect.right >= viewportWidth - edgeInset || rect.bottom >= viewportHeight - verticalEdgeInset
+            ? rect.left <= edgeInset || rect.bottom >= pageHeight - verticalEdgeInset
+            : rect.right >= pageWidth - edgeInset || rect.bottom >= pageHeight - verticalEdgeInset
         );
         const reachesPrevVisualEdge = rect => !!rect && (
           isRtl
-            ? rect.right >= viewportWidth - edgeInset || rect.top <= verticalEdgeInset
+            ? rect.right >= pageWidth - edgeInset || rect.top <= verticalEdgeInset
             : rect.left <= edgeInset || rect.top <= verticalEdgeInset
         );
 
-        atNextBoundary = atNextBoundary || reachesNextVisualEdge(edgeRects.end);
-        atPrevBoundary = atPrevBoundary || reachesPrevVisualEdge(edgeRects.start);
+        atNextBoundary = atNextBoundary || reachesNextVisualEdge(pageEdgeRects.end);
+        atPrevBoundary = atPrevBoundary || reachesPrevVisualEdge(pageEdgeRects.start);
         if (!atNextBoundary && !atPrevBoundary) return null;
 
         const fallbackPoint = (rect, direction) => {
@@ -2914,18 +2943,18 @@ a { color: ${primary} !important; }
             if (isRtl) {
               return {
                 x: rect.left <= edgeInset ? Math.max(0, rect.left) : 0,
-                y: rect.bottom >= viewportHeight - verticalEdgeInset ? viewportHeight : Math.min(viewportHeight, rect.bottom),
+                y: rect.bottom >= pageHeight - verticalEdgeInset ? pageHeight : Math.min(pageHeight, rect.bottom),
               };
             }
             return {
-              x: rect.right >= viewportWidth - edgeInset ? Math.min(viewportWidth, rect.right) : viewportWidth,
-              y: rect.bottom >= viewportHeight - verticalEdgeInset ? viewportHeight : Math.min(viewportHeight, rect.bottom),
+              x: rect.right >= pageWidth - edgeInset ? Math.min(pageWidth, rect.right) : pageWidth,
+              y: rect.bottom >= pageHeight - verticalEdgeInset ? pageHeight : Math.min(pageHeight, rect.bottom),
             };
           }
           if (!reachesPrevVisualEdge(rect)) return null;
           if (isRtl) {
             return {
-              x: rect.right >= viewportWidth - edgeInset ? Math.min(viewportWidth, rect.right) : viewportWidth,
+              x: rect.right >= pageWidth - edgeInset ? Math.min(pageWidth, rect.right) : pageWidth,
               y: rect.top <= verticalEdgeInset ? 0 : Math.max(0, rect.top),
             };
           }
@@ -2941,25 +2970,25 @@ a { color: ${primary} !important; }
           if (!candidate) return false;
           if (isRtl) {
             return candidate.x <= horizontalInset ||
-              (isInBottomBand(candidate) && candidate.x <= viewportWidth * 0.40);
+              (isInBottomBand(candidate) && candidate.x <= pageWidth * 0.40);
           }
-          return candidate.x >= viewportWidth - horizontalInset ||
-            (isInBottomBand(candidate) && candidate.x >= viewportWidth * 0.40);
+          return candidate.x >= pageWidth - horizontalInset ||
+            (isInBottomBand(candidate) && candidate.x >= pageWidth * 0.40);
         };
         const isInPrevZone = candidate => {
           if (!candidate) return false;
           if (isRtl) {
-            return candidate.x >= viewportWidth - horizontalInset ||
-              (isInTopBand(candidate) && candidate.x >= viewportWidth * 0.60) ||
-              (isInBottomBand(candidate) && candidate.x >= viewportWidth * 0.60);
+            return candidate.x >= pageWidth - horizontalInset ||
+              (isInTopBand(candidate) && candidate.x >= pageWidth * 0.60) ||
+              (isInBottomBand(candidate) && candidate.x >= pageWidth * 0.60);
           }
           return candidate.x <= horizontalInset ||
-            (isInTopBand(candidate) && candidate.x <= viewportWidth * 0.40) ||
-            (isInBottomBand(candidate) && candidate.x <= viewportWidth * 0.40);
+            (isInTopBand(candidate) && candidate.x <= pageWidth * 0.40) ||
+            (isInBottomBand(candidate) && candidate.x <= pageWidth * 0.40);
         };
 
-        const nextPoint = point || fallbackPoint(edgeRects.end, 'next');
-        const prevPoint = point || fallbackPoint(edgeRects.start, 'prev');
+        const nextPoint = point || fallbackPoint(pageEdgeRects.end, 'next');
+        const prevPoint = point || fallbackPoint(pageEdgeRects.start, 'prev');
 
         if (isRtl) {
           if (atNextBoundary && isInNextZone(nextPoint)) return 'next';
