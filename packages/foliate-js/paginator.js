@@ -1313,17 +1313,10 @@ export class Paginator extends HTMLElement {
             : ''
         const pointerPointMoved = (a, b) => !a || !b ||
             Math.hypot(a.x - b.x, a.y - b.y) > SELECTION_EDGE_POINTER_MOVE_TOLERANCE
-        const pointerSelectionPointAllowsEdgeTurn = direction =>
-            !lastPointerSelectionPoint ||
-            this.#pointerPointMatchesSelectionEdge(lastPointerSelectionPoint, direction)
         const refreshPointerSelectionEdgeCandidate = direction => {
             const candidate = pointerSelectionEdgeCandidate
             if (!candidate) return null
             if (direction && candidate.direction !== direction) {
-                clearPointerSelectionEdgeCandidate()
-                return null
-            }
-            if (!pointerSelectionPointAllowsEdgeTurn(candidate.direction)) {
                 clearPointerSelectionEdgeCandidate()
                 return null
             }
@@ -1380,10 +1373,6 @@ export class Paginator extends HTMLElement {
             }
 
             const direction = turnIntent.direction
-            if (!pointerSelectionPointAllowsEdgeTurn(direction)) {
-                clearPointerSelectionEdgeCandidate()
-                return
-            }
             const rangeKey = getPointerSelectionRangeKey(selRange)
             const existingCandidate = refreshPointerSelectionEdgeCandidate(direction)
             if (existingCandidate) {
@@ -1405,7 +1394,6 @@ export class Paginator extends HTMLElement {
                 rangeKey,
                 stableSince: Date.now(),
                 run: () => {
-                    if (!pointerSelectionPointAllowsEdgeTurn(direction)) return
                     const currentSel = doc?.getSelection?.()
                     if (!currentSel || currentSel.type !== 'Range' || !currentSel.rangeCount) return
                     const currentRange = currentSel.getRangeAt(0)
@@ -1421,6 +1409,7 @@ export class Paginator extends HTMLElement {
             let isPointerSelecting = false
             let pointerSelectionActiveUntil = 0
             let pointerSelectionChangeCount = 0
+            const touchSelectionHandles = globalThis.navigator?.maxTouchPoints > 0
             const markPointerSelecting = e => {
                 rememberPointerSelectionPoint(e, doc)
                 isPointerSelecting = true
@@ -1459,15 +1448,16 @@ export class Paginator extends HTMLElement {
                 if (!range) return
                 const sel = doc.getSelection()
                 if (!sel.rangeCount) return
-                if ((isPointerSelecting || Date.now() < pointerSelectionActiveUntil) && sel.type === 'Range') {
-                    pointerSelectionChangeCount += 1
-                    checkPointerSelection(range, sel, pointerSelectionChangeCount > 1)
-                }
-                else if (isKeyboardSelecting) {
+                if (isKeyboardSelecting) {
                     const selRange = sel.getRangeAt(0).cloneRange()
                     const backward = selectionIsBackward(sel)
                     if (!backward) selRange.collapse()
                     this.#scrollToAnchor(selRange)
+                }
+                else if (sel.type === 'Range' &&
+                    (isPointerSelecting || Date.now() < pointerSelectionActiveUntil || touchSelectionHandles)) {
+                    pointerSelectionChangeCount += 1
+                    checkPointerSelection(range, sel, pointerSelectionChangeCount > 1 || touchSelectionHandles)
                 }
             })
             doc.addEventListener('focusin', e => {
@@ -2153,32 +2143,6 @@ export class Paginator extends HTMLElement {
             return { direction: 1, edge: true }
 
         return { direction: 0, edge: false }
-    }
-    #pointerPointMatchesSelectionEdge(point, direction) {
-        if (!point || !direction || Date.now() - point.updatedAt > SELECTION_EDGE_TURN_DWELL_MS + 2000)
-            return false
-        const width = point.doc?.defaultView?.innerWidth
-            || point.doc?.documentElement?.clientWidth
-            || this.#container.getBoundingClientRect().width
-        const height = point.doc?.defaultView?.innerHeight
-            || point.doc?.documentElement?.clientHeight
-            || this.#container.getBoundingClientRect().height
-        if (width <= 0 || height <= 0) return false
-
-        const inlineInset = Math.max(16, Math.min(36, (this.#vertical ? height : width) * 0.06))
-        if (this.#vertical) {
-            return direction < 0
-                ? point.y <= inlineInset
-                : point.y >= height - inlineInset
-        }
-        if (this.#rtl) {
-            return direction < 0
-                ? point.x >= width - inlineInset
-                : point.x <= inlineInset
-        }
-        return direction < 0
-            ? point.x <= inlineInset
-            : point.x >= width - inlineInset
     }
     async #scrollToRect(rect, reason) {
         if (this.scrolled) {
