@@ -14,6 +14,31 @@ const debounce = (f, wait, immediate) => {
     }
 }
 
+const throttle = (f, wait) => {
+    let timeout
+    let lastArgs
+    let lastCall = 0
+    const invoke = args => {
+        lastCall = Date.now()
+        timeout = null
+        lastArgs = null
+        f(...args)
+    }
+    return (...args) => {
+        lastArgs = args
+        const remaining = wait - (Date.now() - lastCall)
+        if (remaining <= 0 || remaining > wait) {
+            if (timeout) {
+                clearTimeout(timeout)
+                timeout = null
+            }
+            invoke(lastArgs)
+        } else if (!timeout) {
+            timeout = setTimeout(() => invoke(lastArgs), remaining)
+        }
+    }
+}
+
 // Transforms ALL children of the container so multi-view layouts
 // animate as a unified whole. Extra elements (e.g. background) are
 // also transformed so they slide in sync with the content.
@@ -1231,20 +1256,47 @@ export class Paginator extends HTMLElement {
                 else setSelectionTo(this.#anchor, -1)
             }
         })
-        const checkPointerSelection = debounce((range, sel) => {
+        let pointerSelectionTurn = null
+        const checkPointerSelection = throttle((range, sel) => {
             if (this.#navigationLocked) return
+            if (pointerSelectionTurn) return
             if (!sel.rangeCount) return
             const selRange = sel.getRangeAt(0)
             const backward = selectionIsBackward(sel)
-            if (backward && selRange.compareBoundaryPoints(Range.START_TO_START, range) < 0)
-                this.prev()
-            else if (!backward && selRange.compareBoundaryPoints(Range.END_TO_END, range) > 0)
-                this.next()
-        }, 700)
+            const turn = backward && selRange.compareBoundaryPoints(Range.START_TO_START, range) < 0
+                ? this.prev()
+                : !backward && selRange.compareBoundaryPoints(Range.END_TO_END, range) > 0
+                    ? this.next()
+                    : null
+            if (turn) {
+                pointerSelectionTurn = Promise.resolve(turn)
+                    .finally(() => setTimeout(() => {
+                        pointerSelectionTurn = null
+                    }, 80))
+            }
+        }, 220)
         this.addEventListener('load', ({ detail: { doc } }) => {
             let isPointerSelecting = false
-            doc.addEventListener('pointerdown', () => isPointerSelecting = true)
-            doc.addEventListener('pointerup', () => isPointerSelecting = false)
+            let pointerSelectionActiveUntil = 0
+            const markPointerSelecting = () => {
+                isPointerSelecting = true
+                pointerSelectionActiveUntil = Date.now() + 1200
+            }
+            const clearPointerSelecting = () => setTimeout(() => {
+                if (Date.now() >= pointerSelectionActiveUntil) isPointerSelecting = false
+            }, 160)
+            doc.addEventListener('selectstart', markPointerSelecting)
+            doc.addEventListener('pointerdown', markPointerSelecting)
+            doc.addEventListener('pointermove', () => {
+                if (doc.getSelection()?.type === 'Range') markPointerSelecting()
+            })
+            doc.addEventListener('pointerup', clearPointerSelecting)
+            doc.addEventListener('touchstart', markPointerSelecting)
+            doc.addEventListener('touchmove', () => {
+                if (doc.getSelection()?.type === 'Range') markPointerSelecting()
+            }, { passive: true })
+            doc.addEventListener('touchend', clearPointerSelecting)
+            doc.addEventListener('touchcancel', clearPointerSelecting)
             let isKeyboardSelecting = false
             doc.addEventListener('keydown', () => isKeyboardSelecting = true)
             doc.addEventListener('keyup', () => isKeyboardSelecting = false)
@@ -1254,7 +1306,7 @@ export class Paginator extends HTMLElement {
                 if (!range) return
                 const sel = doc.getSelection()
                 if (!sel.rangeCount) return
-                if (isPointerSelecting && sel.type === 'Range')
+                if ((isPointerSelecting || Date.now() < pointerSelectionActiveUntil) && sel.type === 'Range')
                     checkPointerSelection(range, sel)
                 else if (isKeyboardSelecting) {
                     const selRange = sel.getRangeAt(0).cloneRange()
