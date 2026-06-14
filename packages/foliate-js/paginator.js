@@ -39,7 +39,7 @@ const throttle = (f, wait) => {
     }
 }
 
-const SELECTION_EDGE_TURN_DWELL_MS = 500
+const SELECTION_EDGE_TURN_DWELL_MS = 700
 
 // Transforms ALL children of the container so multi-view layouts
 // animate as a unified whole. Extra elements (e.g. background) are
@@ -1281,6 +1281,8 @@ export class Paginator extends HTMLElement {
         })
         let pointerSelectionTurn = null
         let pointerSelectionEdgeCandidate = null
+        let lastPointerSelectionPoint = null
+        let pointerSelectionPressed = false
         const clearPointerSelectionEdgeCandidate = () => {
             if (pointerSelectionEdgeCandidate?.timer) clearTimeout(pointerSelectionEdgeCandidate.timer)
             pointerSelectionEdgeCandidate = null
@@ -1293,6 +1295,24 @@ export class Paginator extends HTMLElement {
                     pointerSelectionTurn = null
                 }, 80))
         }
+        const rememberPointerSelectionPoint = (e, doc) => {
+            const point = e?.touches?.[0] ?? e?.changedTouches?.[0] ?? e
+            if (typeof point?.clientX !== 'number' || typeof point?.clientY !== 'number') return
+            lastPointerSelectionPoint = {
+                x: point.clientX,
+                y: point.clientY,
+                doc,
+                updatedAt: Date.now(),
+            }
+            if (pointerSelectionEdgeCandidate &&
+                !this.#pointerPointMatchesSelectionEdge(lastPointerSelectionPoint, pointerSelectionEdgeCandidate.direction))
+                clearPointerSelectionEdgeCandidate()
+        }
+        const isPressedSelectionEvent = e =>
+            e?.type === 'pointerdown' ||
+            e?.type === 'touchstart' ||
+            e?.type === 'touchmove' ||
+            (e?.type === 'pointermove' && e.buttons > 0)
         const checkPointerSelection = throttle((range, sel, allowEdgeTurn) => {
             if (this.#navigationLocked) return
             if (pointerSelectionTurn) return
@@ -1311,6 +1331,11 @@ export class Paginator extends HTMLElement {
             }
 
             const direction = turnIntent.direction
+            if (!pointerSelectionPressed ||
+                !this.#pointerPointMatchesSelectionEdge(lastPointerSelectionPoint, direction)) {
+                clearPointerSelectionEdgeCandidate()
+                return
+            }
             if (pointerSelectionEdgeCandidate?.direction === direction) return
 
             clearPointerSelectionEdgeCandidate()
@@ -1319,12 +1344,15 @@ export class Paginator extends HTMLElement {
                 direction,
                 timer: setTimeout(() => {
                     pointerSelectionEdgeCandidate = null
+                    if (!pointerSelectionPressed) return
+                    if (!this.#pointerPointMatchesSelectionEdge(lastPointerSelectionPoint, direction)) return
                     const currentSel = doc?.getSelection?.()
                     if (!currentSel || currentSel.type !== 'Range' || !currentSel.rangeCount) return
                     const currentRange = currentSel.getRangeAt(0)
                     const currentBackward = selectionIsBackward(currentSel)
                     const currentIntent = this.#getPointerSelectionTurn(range, currentRange, currentBackward, true)
-                    if (currentIntent.edge && currentIntent.direction === direction)
+                    if (currentIntent.edge && currentIntent.direction === direction &&
+                        this.#pointerPointMatchesSelectionEdge(lastPointerSelectionPoint, direction))
                         runPointerSelectionTurn(direction)
                 }, SELECTION_EDGE_TURN_DWELL_MS),
             }
@@ -1333,30 +1361,34 @@ export class Paginator extends HTMLElement {
             let isPointerSelecting = false
             let pointerSelectionActiveUntil = 0
             let pointerSelectionChangeCount = 0
-            const markPointerSelecting = () => {
+            const markPointerSelecting = e => {
+                if (isPressedSelectionEvent(e)) pointerSelectionPressed = true
+                rememberPointerSelectionPoint(e, doc)
                 isPointerSelecting = true
                 pointerSelectionActiveUntil = Date.now() + 1200
             }
-            const beginPointerSelecting = () => {
+            const beginPointerSelecting = e => {
                 pointerSelectionChangeCount = 0
                 clearPointerSelectionEdgeCandidate()
-                markPointerSelecting()
+                markPointerSelecting(e)
             }
-            const clearPointerSelecting = () => setTimeout(() => {
-                if (Date.now() >= pointerSelectionActiveUntil) {
-                    isPointerSelecting = false
-                    clearPointerSelectionEdgeCandidate()
-                }
-            }, 160)
+            const clearPointerSelecting = () => {
+                pointerSelectionPressed = false
+                lastPointerSelectionPoint = null
+                clearPointerSelectionEdgeCandidate()
+                setTimeout(() => {
+                    if (Date.now() >= pointerSelectionActiveUntil) isPointerSelecting = false
+                }, 160)
+            }
             doc.addEventListener('selectstart', beginPointerSelecting)
             doc.addEventListener('pointerdown', beginPointerSelecting)
-            doc.addEventListener('pointermove', () => {
-                if (doc.getSelection()?.type === 'Range') markPointerSelecting()
+            doc.addEventListener('pointermove', e => {
+                if (doc.getSelection()?.type === 'Range') markPointerSelecting(e)
             })
             doc.addEventListener('pointerup', clearPointerSelecting)
             doc.addEventListener('touchstart', beginPointerSelecting)
-            doc.addEventListener('touchmove', () => {
-                if (doc.getSelection()?.type === 'Range') markPointerSelecting()
+            doc.addEventListener('touchmove', e => {
+                if (doc.getSelection()?.type === 'Range') markPointerSelecting(e)
             }, { passive: true })
             doc.addEventListener('touchend', clearPointerSelecting)
             doc.addEventListener('touchcancel', clearPointerSelecting)
@@ -2055,23 +2087,40 @@ export class Paginator extends HTMLElement {
         const visibleStart = this.#renderedStart - viewOffset
         const visibleEnd = this.#renderedEnd - viewOffset
         const mapped = this.#getRectMapper(view)(rect)
-        const edgeInset = Math.max(32, Math.min(96, this.size * 0.12))
+        const edgeInset = Math.max(18, Math.min(44, this.size * 0.07))
 
         if (backward && mapped.left <= visibleStart + edgeInset)
             return { direction: -1, edge: true }
         if (!backward && mapped.right >= visibleEnd - edgeInset)
             return { direction: 1, edge: true }
 
-        if (!this.#vertical) {
-            const blockSize = this.#container.getBoundingClientRect().height
-            const verticalInset = Math.max(48, Math.min(140, blockSize * 0.16))
-            if (backward && rect.top <= verticalInset)
-                return { direction: -1, edge: true }
-            if (!backward && rect.bottom >= blockSize - verticalInset)
-                return { direction: 1, edge: true }
-        }
-
         return { direction: 0, edge: false }
+    }
+    #pointerPointMatchesSelectionEdge(point, direction) {
+        if (!point || !direction || Date.now() - point.updatedAt > SELECTION_EDGE_TURN_DWELL_MS + 450)
+            return false
+        const width = point.doc?.defaultView?.innerWidth
+            || point.doc?.documentElement?.clientWidth
+            || this.#container.getBoundingClientRect().width
+        const height = point.doc?.defaultView?.innerHeight
+            || point.doc?.documentElement?.clientHeight
+            || this.#container.getBoundingClientRect().height
+        if (width <= 0 || height <= 0) return false
+
+        const inlineInset = Math.max(16, Math.min(36, (this.#vertical ? height : width) * 0.06))
+        if (this.#vertical) {
+            return direction < 0
+                ? point.y <= inlineInset
+                : point.y >= height - inlineInset
+        }
+        if (this.#rtl) {
+            return direction < 0
+                ? point.x >= width - inlineInset
+                : point.x <= inlineInset
+        }
+        return direction < 0
+            ? point.x <= inlineInset
+            : point.x >= width - inlineInset
     }
     async #scrollToRect(rect, reason) {
         if (this.scrolled) {
