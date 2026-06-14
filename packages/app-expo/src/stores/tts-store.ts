@@ -2,7 +2,10 @@ import {
   DEFAULT_TTS_CONFIG,
   type ITTSPlayer,
   type TTSConfig,
+  VOICE_RESPEAK_DEBOUNCE_MS,
+  isActivePlay,
   normalizeTTSConfig,
+  shouldRespeakForSynthChange,
   splitNarrationText,
 } from "@readany/core/tts";
 import TrackPlayer from "react-native-track-player";
@@ -57,6 +60,26 @@ function clearSleepTimerHandle(): void {
     clearTimeout(_sleepTimerHandle);
     _sleepTimerHandle = null;
   }
+}
+
+let _respeakTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearRespeakTimer(): void {
+  if (_respeakTimer) {
+    clearTimeout(_respeakTimer);
+    _respeakTimer = null;
+  }
+}
+
+function scheduleRespeak(): void {
+  clearRespeakTimer();
+  _respeakTimer = setTimeout(() => {
+    _respeakTimer = null;
+    const { playState, jumpToChunk } = useTTSStore.getState();
+    if (isActivePlay(playState)) {
+      jumpToChunk(_sessionCurrentIndex);
+    }
+  }, VOICE_RESPEAK_DEBOUNCE_MS);
 }
 
 function detachAndStopPlayer(player: ITTSPlayer | null): void {
@@ -257,6 +280,7 @@ export const useTTSStore = create<TTSState>()(
       sleepTimerDurationMinutes: null,
 
       play: (text: string | string[]) => {
+        clearRespeakTimer();
         const segments = normalizeSegments(text);
         const joinedText = segments.join(" ").trim();
         if (!joinedText) {
@@ -327,6 +351,7 @@ export const useTTSStore = create<TTSState>()(
 
       pause: () => {
         console.log("[TTSStore] pause called");
+        clearRespeakTimer();
         const { playState } = get();
         if (playState !== "playing" && playState !== "loading") return;
         _activeTTS?.pause();
@@ -371,6 +396,7 @@ export const useTTSStore = create<TTSState>()(
       stop: () => {
         console.log("[TTSStore] stop called");
         clearSleepTimerHandle();
+        clearRespeakTimer();
         _sessionGeneration += 1;
         detachAndStopAllPlayers();
         _sessionSegments = [];
@@ -405,10 +431,18 @@ export const useTTSStore = create<TTSState>()(
         }
       },
 
-      updateConfig: (updates) =>
-        set((state) => ({
-          config: normalizeTTSConfig({ ...state.config, ...updates }),
-        })),
+      updateConfig: (updates) => {
+        const previousConfig = normalizeTTSConfig(get().config);
+        const nextConfig = normalizeTTSConfig({ ...previousConfig, ...updates });
+        set({ config: nextConfig });
+
+        if (
+          shouldRespeakForSynthChange(previousConfig, nextConfig) &&
+          isActivePlay(get().playState)
+        ) {
+          scheduleRespeak();
+        }
+      },
 
       setPlayState: (playState) => set({ playState }),
 
@@ -448,6 +482,7 @@ export const useTTSStore = create<TTSState>()(
         }),
 
       jumpToChunk: (index: number) => {
+        clearRespeakTimer();
         if (index < 0 || index >= _sessionSegments.length) return;
 
         const config = normalizeTTSConfig(get().config);
