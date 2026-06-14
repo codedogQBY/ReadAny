@@ -33,6 +33,7 @@ import {
 import { useMissingBookPromptStore } from "@/stores/missing-book-prompt-store";
 import { useTheme } from "@/styles/ThemeContext";
 import { useColors, withOpacity } from "@/styles/theme";
+import { useIsFocused } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { readingContextService } from "@readany/core/ai/reading-context-service";
 import { runWithDbRetry } from "@readany/core/db/write-retry";
@@ -55,9 +56,10 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
+  type AppStateStatus,
   Easing,
   Modal,
-  NativeModules,
   Platform,
   Pressable,
   ScrollView,
@@ -150,7 +152,6 @@ import {
   CONTROLS_TIMEOUT,
   SCREEN_HEIGHT,
   SCREEN_WIDTH,
-  getVolumeManager,
 } from "./reader/reader-constants";
 import { BatteryIcon, ListIcon, SettingsIcon } from "./reader/reader-icons";
 import { makeStyles, noteTooltipMdStyles } from "./reader/reader-styles";
@@ -311,10 +312,8 @@ export function ReaderScreen({ route, navigation }: Props) {
   const updateReadSettings = useSettingsStore((s) => s.updateReadSettings);
   const translationConfig = useSettingsStore((s) => s.translationConfig);
   const aiConfig = useSettingsStore((s) => s.aiConfig);
-  const settingViewMode = readSettings.viewMode;
   const showTopTitleProgress = readSettings.showTopTitleProgress !== false;
   const showBottomTimeBattery = readSettings.showBottomTimeBattery !== false;
-  const volumeButtonsPageTurn = readSettings.volumeButtonsPageTurn === true;
 
   // Track OS-level accessibility font scale; re-renders when the user
   // changes the system font size while the reader is open.
@@ -508,6 +507,16 @@ export function ReaderScreen({ route, navigation }: Props) {
   // Also read ttsPlayState from store for volume paging guard
   const ttsPlayState = useTTSStore((s) => s.playState);
   const ttsConfig = useTTSStore((s) => s.config);
+
+  // Focus & foreground state for volume paging whitelist
+  const isFocused = useIsFocused();
+  const [appActive, setAppActive] = useState(true);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s: AppStateStatus) =>
+      setAppActive(s === "active"),
+    );
+    return () => sub.remove();
+  }, []);
 
   // Load reader HTML asset
   useEffect(() => {
@@ -883,23 +892,39 @@ export function ReaderScreen({ route, navigation }: Props) {
   }, [noteTooltip]);
 
   // ── Volume button paging ─────────────────────────────────────────────────
-  const volumeButtonPagingActive =
-    Platform.OS !== "web" &&
-    Platform.OS !== "windows" &&
-    !!NativeModules.VolumeManager &&
-    !!getVolumeManager() &&
-    volumeButtonsPageTurn &&
-    webViewReady &&
-    !showSearch &&
-    !showTOC &&
-    !showSettings &&
-    !showNotebook &&
-    !showTTS &&
-    ttsPlayState === "stopped";
+  const isPureReadingContext = useMemo(
+    () =>
+      Platform.OS === "android" &&
+      readSettings.volumeButtonsPageTurn === true &&
+      webViewReady &&
+      !loading &&
+      !error &&
+      !isReimporting &&
+      !showSearch &&
+      !showTOC &&
+      !showSettings &&
+      !showNotebook &&
+      !showTTS &&
+      !showTranslation &&
+      !showChapterTranslation &&
+      chapterTranslation.state.status === "idle" &&
+      !selection &&
+      !noteViewHighlight &&
+      !noteTooltip &&
+      ttsPlayState === "stopped" &&
+      isFocused &&
+      appActive,
+    // 维护约定：任何新增遮盖正文/输入态/导航跳转，必须在此追加判定。
+    [
+      readSettings.volumeButtonsPageTurn, webViewReady, loading, error, isReimporting,
+      showSearch, showTOC, showSettings, showNotebook, showTTS,
+      showTranslation, showChapterTranslation, chapterTranslation.state.status,
+      selection, noteViewHighlight, noteTooltip, ttsPlayState, isFocused, appActive,
+    ],
+  );
 
   useVolumeButtonPaging({
-    active: volumeButtonPagingActive,
-    settingViewMode,
+    active: isPureReadingContext,
     onPrev: () => bridge.goPrev(),
     onNext: () => bridge.goNext(),
   });

@@ -893,7 +893,7 @@ class View {
 
         // Cut a capsule-shaped hole in the overlayer so highlights don't paint
         // over the loupe.
-        if (this.#overlayer) {
+        if (typeof this.#overlayer?.setHole === 'function') {
             const overlayerRect = this.#overlayer.element.getBoundingClientRect()
             const dx = frameRect.left - overlayerRect.left
             const dy = frameRect.top - overlayerRect.top
@@ -911,7 +911,7 @@ class View {
         if (this.#loupeEl) {
             this.#loupeEl.style.display = 'none'
         }
-        if (this.#overlayer)
+        if (typeof this.#overlayer?.clearHole === 'function')
             this.#overlayer.clearHole()
     }
     destroyLoupe() {
@@ -921,7 +921,7 @@ class View {
             this.#loupeScaler = null
             this.#loupeCursor = null
         }
-        if (this.#overlayer)
+        if (typeof this.#overlayer?.clearHole === 'function')
             this.#overlayer.clearHole()
     }
     destroy() {

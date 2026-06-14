@@ -1864,7 +1864,9 @@
           currentThemeColors.fg,
           currentThemeColors.primary,
         );
-        renderer.setStyles(themedStyles);
+        if (typeof renderer.setStyles === 'function') {
+          renderer.setStyles(themedStyles);
+        }
         syncCustomFontStylesForAllDocs(currentCustomFontFaceCSS);
       }
 
@@ -2149,6 +2151,8 @@ a { color: ${primary} !important; }
         for (const img of doc.querySelectorAll('img')) {
           img.style.maxWidth = '100%';
           img.style.height = 'auto';
+          img.style.webkitUserDrag = 'none';
+          img.style.touchAction = 'manipulation';
         }
       }
       const style = doc.createElement('style');
@@ -2156,6 +2160,10 @@ a { color: ${primary} !important; }
       style.textContent = `
         * { -webkit-touch-callout: none !important; -webkit-user-select: text !important; user-select: text !important; }
         html, body { background-color: ${bg} !important; color: ${fg} !important; }
+        img, picture, svg, image, canvas {
+          -webkit-user-drag: none !important;
+          touch-action: manipulation !important;
+        }
         p, div, span, blockquote, li, dd, dt, h1, h2, h3, h4, h5, h6, td, th, caption, figcaption, label { color: inherit !important; }
         a { color: ${primary} !important; }
         ::selection { background: rgba(250, 204, 21, 0.4) !important; }
@@ -2163,6 +2171,12 @@ a { color: ${primary} !important; }
       `;
       doc.head.appendChild(style);
       doc.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); return false; }, true);
+    }
+
+    function isImageOnlyAnchor(anchor) {
+      if (!anchor || !anchor.matches || !anchor.matches('a[href]')) return false;
+      if ((anchor.textContent || '').trim().length > 0) return false;
+      return !!anchor.querySelector('img, picture, svg, image, canvas');
     }
 
     // ─── Tap detection ───
@@ -2255,8 +2269,11 @@ a { color: ${primary} !important; }
         }
 
         const target = e.target || state.target;
-        if (target && target.closest && target.closest('a[href], audio, video, button, input, select, textarea')) {
-          if (!target.closest('a[href]')) hideFootnoteTip();
+        const interactiveTarget = target && target.closest
+          ? target.closest('a[href], audio, video, button, input, select, textarea')
+          : null;
+        if (interactiveTarget && !isImageOnlyAnchor(interactiveTarget)) {
+          if (!interactiveTarget.closest('a[href]')) hideFootnoteTip();
           return;
         }
 
@@ -4969,7 +4986,7 @@ ${mE}
                 transform: scale(${A});
                 transform-origin: 0 0;
                 pointer-events: none;
-            `}if(r(this,ce).style.display="",r(this,Ks).style.left=`${z}px`,r(this,Ks).style.top=`${F}px`,r(this,Ks).style.width=`${c.documentElement.scrollWidth}px`,r(this,Ks).style.height=`${c.documentElement.scrollHeight}px`,r(this,ce).style.left=`${M+p}px`,r(this,ce).style.top=`${I+m}px`,r(this,Pt)){let O=r(this,Pt).element.getBoundingClientRect(),D=d.left-O.left,N=d.top-O.top,at=3,$=M+P+D,lt=I+k+N;r(this,Pt).setHole($,lt,E+at*2,C+at*2,L+at)}}hideLoupe(){r(this,ce)&&(r(this,ce).style.display="none"),r(this,Pt)&&r(this,Pt).clearHole()}destroyLoupe(){r(this,ce)&&(r(this,ce).remove(),b(this,ce,null),b(this,Ks,null),b(this,rl,null)),r(this,Pt)&&r(this,Pt).clearHole()}destroy(){this.document?.body&&r(this,sf).unobserve(this.document.body),this.destroyLoupe()}};sf=new WeakMap,is=new WeakMap,Wt=new WeakMap,nf=new WeakMap,Pt=new WeakMap,ns=new WeakMap,rf=new WeakMap,ga=new WeakMap,af=new WeakMap,nl=new WeakMap,of=new WeakMap,lf=new WeakMap,Kh=new WeakMap,Xg=new WeakSet,b_=function(){return/^((?!chrome|android).)*AppleWebKit/i.test(navigator.userAgent)&&!window.chrome&&window.getComputedStyle(this.document.body).zoom||1},ce=new WeakMap,Ks=new WeakMap,rl=new WeakMap;ef=class extends HTMLElement{constructor(){super();v(this,T);v(this,ir,this.attachShadow({mode:"closed"}));v(this,hf,new ResizeObserver(()=>this.render()));v(this,je);v(this,Ts);v(this,St);v(this,ma);v(this,al);v(this,st,new Map);v(this,dt,-1);v(this,At,!1);v(this,nr,!1);v(this,cf,0);v(this,df,0);v(this,ks,0);v(this,Zh,!1);v(this,sn,!1);v(this,rr,!1);v(this,Jh);v(this,Qh,new WeakMap);v(this,uf,matchMedia("(prefers-color-scheme: dark)"));v(this,tc);v(this,ar);v(this,ec);v(this,ol);v(this,ff);v(this,pf,!1);v(this,nn,!1);v(this,Ve,!1);v(this,rn,null);v(this,Rs,!1);v(this,gf,!1);v(this,sc,null);v(this,or,new Map);r(this,ir).innerHTML=`<style>
+            `}if(r(this,ce).style.display="",r(this,Ks).style.left=`${z}px`,r(this,Ks).style.top=`${F}px`,r(this,Ks).style.width=`${c.documentElement.scrollWidth}px`,r(this,Ks).style.height=`${c.documentElement.scrollHeight}px`,r(this,ce).style.left=`${M+p}px`,r(this,ce).style.top=`${I+m}px`,typeof r(this,Pt)?.setHole=="function"){let O=r(this,Pt).element.getBoundingClientRect(),D=d.left-O.left,N=d.top-O.top,at=3,$=M+P+D,lt=I+k+N;r(this,Pt).setHole($,lt,E+at*2,C+at*2,L+at)}}hideLoupe(){r(this,ce)&&(r(this,ce).style.display="none"),typeof r(this,Pt)?.clearHole=="function"&&r(this,Pt).clearHole()}destroyLoupe(){r(this,ce)&&(r(this,ce).remove(),b(this,ce,null),b(this,Ks,null),b(this,rl,null)),typeof r(this,Pt)?.clearHole=="function"&&r(this,Pt).clearHole()}destroy(){this.document?.body&&r(this,sf).unobserve(this.document.body),this.destroyLoupe()}};sf=new WeakMap,is=new WeakMap,Wt=new WeakMap,nf=new WeakMap,Pt=new WeakMap,ns=new WeakMap,rf=new WeakMap,ga=new WeakMap,af=new WeakMap,nl=new WeakMap,of=new WeakMap,lf=new WeakMap,Kh=new WeakMap,Xg=new WeakSet,b_=function(){return/^((?!chrome|android).)*AppleWebKit/i.test(navigator.userAgent)&&!window.chrome&&window.getComputedStyle(this.document.body).zoom||1},ce=new WeakMap,Ks=new WeakMap,rl=new WeakMap;ef=class extends HTMLElement{constructor(){super();v(this,T);v(this,ir,this.attachShadow({mode:"closed"}));v(this,hf,new ResizeObserver(()=>this.render()));v(this,je);v(this,Ts);v(this,St);v(this,ma);v(this,al);v(this,st,new Map);v(this,dt,-1);v(this,At,!1);v(this,nr,!1);v(this,cf,0);v(this,df,0);v(this,ks,0);v(this,Zh,!1);v(this,sn,!1);v(this,rr,!1);v(this,Jh);v(this,Qh,new WeakMap);v(this,uf,matchMedia("(prefers-color-scheme: dark)"));v(this,tc);v(this,ar);v(this,ec);v(this,ol);v(this,ff);v(this,pf,!1);v(this,nn,!1);v(this,Ve,!1);v(this,rn,null);v(this,Rs,!1);v(this,gf,!1);v(this,sc,null);v(this,or,new Map);r(this,ir).innerHTML=`<style>
         :host {
             display: block;
             container-type: size;

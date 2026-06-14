@@ -1864,7 +1864,9 @@
           currentThemeColors.fg,
           currentThemeColors.primary,
         );
-        renderer.setStyles(themedStyles);
+        if (typeof renderer.setStyles === 'function') {
+          renderer.setStyles(themedStyles);
+        }
         syncCustomFontStylesForAllDocs(currentCustomFontFaceCSS);
       }
 
@@ -2149,6 +2151,8 @@ a { color: ${primary} !important; }
         for (const img of doc.querySelectorAll('img')) {
           img.style.maxWidth = '100%';
           img.style.height = 'auto';
+          img.style.webkitUserDrag = 'none';
+          img.style.touchAction = 'manipulation';
         }
       }
       const style = doc.createElement('style');
@@ -2156,6 +2160,10 @@ a { color: ${primary} !important; }
       style.textContent = `
         * { -webkit-touch-callout: none !important; -webkit-user-select: text !important; user-select: text !important; }
         html, body { background-color: ${bg} !important; color: ${fg} !important; }
+        img, picture, svg, image, canvas {
+          -webkit-user-drag: none !important;
+          touch-action: manipulation !important;
+        }
         p, div, span, blockquote, li, dd, dt, h1, h2, h3, h4, h5, h6, td, th, caption, figcaption, label { color: inherit !important; }
         a { color: ${primary} !important; }
         ::selection { background: rgba(250, 204, 21, 0.4) !important; }
@@ -2163,6 +2171,12 @@ a { color: ${primary} !important; }
       `;
       doc.head.appendChild(style);
       doc.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); return false; }, true);
+    }
+
+    function isImageOnlyAnchor(anchor) {
+      if (!anchor || !anchor.matches || !anchor.matches('a[href]')) return false;
+      if ((anchor.textContent || '').trim().length > 0) return false;
+      return !!anchor.querySelector('img, picture, svg, image, canvas');
     }
 
     // ─── Tap detection ───
@@ -2255,8 +2269,11 @@ a { color: ${primary} !important; }
         }
 
         const target = e.target || state.target;
-        if (target && target.closest && target.closest('a[href], audio, video, button, input, select, textarea')) {
-          if (!target.closest('a[href]')) hideFootnoteTip();
+        const interactiveTarget = target && target.closest
+          ? target.closest('a[href], audio, video, button, input, select, textarea')
+          : null;
+        if (interactiveTarget && !isImageOnlyAnchor(interactiveTarget)) {
+          if (!interactiveTarget.closest('a[href]')) hideFootnoteTip();
           return;
         }
 
