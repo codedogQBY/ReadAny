@@ -2463,6 +2463,9 @@ a { color: ${primary} !important; }
       let preventScroll = null;
       let pointerUpCleanup = null;
       let selectionDragPoint = null;
+      let selectionChangeVersion = 0;
+      let selectionChangedAt = 0;
+      let lastAdvanceSelectionVersion = -1;
       let pageAdvanceLockUntil = 0;
       let lockedContainer = null;
       let lockedContainerStyles = null;
@@ -2625,7 +2628,7 @@ a { color: ${primary} !important; }
         startSelectionMonitor();
       });
 
-      function scheduleSelectionPageAdvance(direction) {
+      function scheduleSelectionPageAdvance(direction, selectionVersion) {
         if (!direction || !supportsCrossPageSelection()) return;
         if (Date.now() < pageAdvanceLockUntil) return;
         if (pendingAdvanceDirection === direction && pageDebounceTimer) return;
@@ -2636,6 +2639,7 @@ a { color: ${primary} !important; }
         pageDebounceTimer = setTimeout(async () => {
           const advanceDirection = pendingAdvanceDirection;
           cancelPendingPageAdvance();
+          lastAdvanceSelectionVersion = selectionVersion;
           pageAdvanceLockUntil = Date.now() + 420;
           releasePreventScroll();
           try {
@@ -2687,10 +2691,15 @@ a { color: ${primary} !important; }
           selectionRange,
           lastLocation.range,
           selectionDragPoint,
+          {
+            allowSelectionEdgeFallback:
+              selectionChangeVersion !== lastAdvanceSelectionVersion &&
+              Date.now() - selectionChangedAt < 1400,
+          },
         );
 
         if (advanceDirection) {
-          scheduleSelectionPageAdvance(advanceDirection);
+          scheduleSelectionPageAdvance(advanceDirection, selectionChangeVersion);
           return true;
         }
 
@@ -2728,6 +2737,8 @@ a { color: ${primary} !important; }
       doc.addEventListener('selectionchange', () => {
         if (doc.__readany_isJiggling) return;
         if (iosHackPending) return;
+        selectionChangeVersion += 1;
+        selectionChangedAt = Date.now();
         if (!supportsCrossPageSelection()) return;
         evaluateCrossPageSelection();
       });
@@ -2818,13 +2829,35 @@ a { color: ${primary} !important; }
       return (fallback || '').trim();
     }
 
-    function getSelectionAdvanceIntent(selectionRange, lastLocationRange, dragPoint) {
+    function getCollapsedRangeRect(range, collapseToStart) {
+      if (!range) return null;
+      try {
+        const caretRange = range.cloneRange();
+        caretRange.collapse(!!collapseToStart);
+        const rects = Array.from(caretRange.getClientRects()).filter(r => r.width >= 0 && r.height > 0);
+        return rects[collapseToStart ? 0 : rects.length - 1] || null;
+      } catch {
+        return null;
+      }
+    }
+
+    function getSelectionEdgeRects(range) {
+      if (!range) return { start: null, end: null };
+      const rects = Array.from(range.getClientRects()).filter(r => r.width > 0 && r.height > 0);
+      const bounding = range.getBoundingClientRect();
+      return {
+        start: getCollapsedRangeRect(range, true) || rects[0] || bounding,
+        end: getCollapsedRangeRect(range, false) || rects[rects.length - 1] || bounding,
+      };
+    }
+
+    function getSelectionAdvanceIntent(selectionRange, lastLocationRange, dragPoint, options) {
       if (!selectionRange || !lastLocationRange) return null;
 
+      const opts = options || {};
       const point = dragPoint && Date.now() - dragPoint.updatedAt < 700
         ? dragPoint
         : null;
-      if (!point) return null;
 
       let atNextBoundary = false;
       let atPrevBoundary = false;
@@ -2836,9 +2869,9 @@ a { color: ${primary} !important; }
           atPrevBoundary = true;
         }
       } catch {}
-      if (!atNextBoundary && !atPrevBoundary) return null;
 
       try {
+        const edgeRects = getSelectionEdgeRects(selectionRange);
         const doc = selectionRange.endContainer && selectionRange.endContainer.ownerDocument
           ? selectionRange.endContainer.ownerDocument
           : null;
@@ -2854,20 +2887,86 @@ a { color: ${primary} !important; }
         if (viewportWidth <= 0 || viewportHeight <= 0) return null;
 
         const isRtl = !!(view.book && view.book.dir === 'rtl');
-        const horizontalInset = Math.max(48, Math.min(96, viewportWidth * 0.12));
-        const verticalInset = Math.max(56, Math.min(120, viewportHeight * 0.14));
-        const inBottomBand = point.y >= viewportHeight - verticalInset;
+        const edgeInset = Math.max(28, Math.min(72, viewportWidth * 0.08));
+        const verticalEdgeInset = Math.max(36, Math.min(96, viewportHeight * 0.10));
+        const horizontalInset = Math.max(64, Math.min(128, viewportWidth * 0.16));
+        const verticalInset = Math.max(80, Math.min(160, viewportHeight * 0.18));
+
+        const reachesNextVisualEdge = rect => !!rect && (
+          isRtl
+            ? rect.left <= edgeInset || rect.bottom >= viewportHeight - verticalEdgeInset
+            : rect.right >= viewportWidth - edgeInset || rect.bottom >= viewportHeight - verticalEdgeInset
+        );
+        const reachesPrevVisualEdge = rect => !!rect && (
+          isRtl
+            ? rect.right >= viewportWidth - edgeInset || rect.top <= verticalEdgeInset
+            : rect.left <= edgeInset || rect.top <= verticalEdgeInset
+        );
+
+        atNextBoundary = atNextBoundary || reachesNextVisualEdge(edgeRects.end);
+        atPrevBoundary = atPrevBoundary || reachesPrevVisualEdge(edgeRects.start);
+        if (!atNextBoundary && !atPrevBoundary) return null;
+
+        const fallbackPoint = (rect, direction) => {
+          if (!opts.allowSelectionEdgeFallback || !rect) return null;
+          if (direction === 'next') {
+            if (!reachesNextVisualEdge(rect)) return null;
+            if (isRtl) {
+              return {
+                x: rect.left <= edgeInset ? Math.max(0, rect.left) : 0,
+                y: rect.bottom >= viewportHeight - verticalEdgeInset ? viewportHeight : Math.min(viewportHeight, rect.bottom),
+              };
+            }
+            return {
+              x: rect.right >= viewportWidth - edgeInset ? Math.min(viewportWidth, rect.right) : viewportWidth,
+              y: rect.bottom >= viewportHeight - verticalEdgeInset ? viewportHeight : Math.min(viewportHeight, rect.bottom),
+            };
+          }
+          if (!reachesPrevVisualEdge(rect)) return null;
+          if (isRtl) {
+            return {
+              x: rect.right >= viewportWidth - edgeInset ? Math.min(viewportWidth, rect.right) : viewportWidth,
+              y: rect.top <= verticalEdgeInset ? 0 : Math.max(0, rect.top),
+            };
+          }
+          return {
+            x: rect.left <= edgeInset ? Math.max(0, rect.left) : 0,
+            y: rect.top <= verticalEdgeInset ? 0 : Math.max(0, rect.top),
+          };
+        };
+
+        const isInBottomBand = candidate => candidate && candidate.y >= viewportHeight - verticalInset;
+        const isInTopBand = candidate => candidate && candidate.y <= verticalInset;
+        const isInNextZone = candidate => {
+          if (!candidate) return false;
+          if (isRtl) {
+            return candidate.x <= horizontalInset ||
+              (isInBottomBand(candidate) && candidate.x <= viewportWidth * 0.40);
+          }
+          return candidate.x >= viewportWidth - horizontalInset ||
+            (isInBottomBand(candidate) && candidate.x >= viewportWidth * 0.40);
+        };
+        const isInPrevZone = candidate => {
+          if (!candidate) return false;
+          if (isRtl) {
+            return candidate.x >= viewportWidth - horizontalInset ||
+              (isInTopBand(candidate) && candidate.x >= viewportWidth * 0.60) ||
+              (isInBottomBand(candidate) && candidate.x >= viewportWidth * 0.60);
+          }
+          return candidate.x <= horizontalInset ||
+            (isInTopBand(candidate) && candidate.x <= viewportWidth * 0.40) ||
+            (isInBottomBand(candidate) && candidate.x <= viewportWidth * 0.40);
+        };
+
+        const nextPoint = point || fallbackPoint(edgeRects.end, 'next');
+        const prevPoint = point || fallbackPoint(edgeRects.start, 'prev');
 
         if (isRtl) {
-          if (atNextBoundary && point.x <= horizontalInset) return 'next';
-          if (atPrevBoundary && point.x >= viewportWidth - horizontalInset) return 'prev';
-          if (atNextBoundary && inBottomBand && point.x <= viewportWidth * 0.20) return 'next';
-          if (atPrevBoundary && inBottomBand && point.x >= viewportWidth * 0.80) return 'prev';
+          if (atNextBoundary && isInNextZone(nextPoint)) return 'next';
+          if (atPrevBoundary && isInPrevZone(prevPoint)) return 'prev';
         } else {
-          if (atNextBoundary && point.x >= viewportWidth - horizontalInset) return 'next';
-          if (atPrevBoundary && point.x <= horizontalInset) return 'prev';
-          if (atNextBoundary && inBottomBand && point.x >= viewportWidth * 0.80) return 'next';
-          if (atPrevBoundary && inBottomBand && point.x <= viewportWidth * 0.20) return 'prev';
+          if (atNextBoundary && isInNextZone(nextPoint)) return 'next';
+          if (atPrevBoundary && isInPrevZone(prevPoint)) return 'prev';
         }
 
         return null;
