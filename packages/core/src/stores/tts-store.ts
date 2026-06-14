@@ -11,6 +11,7 @@
  * (e.g. React Native) can override via `setTTSPlayerFactories()`.
  */
 import { create } from "zustand";
+import { VOICE_RESPEAK_DEBOUNCE_MS, isActivePlay, shouldRespeakForSynthChange } from "../tts/respeak";
 import { BrowserTTSPlayer, DashScopeTTSPlayer, EdgeTTSPlayer } from "../tts/tts-players";
 import type { ITTSPlayer, TTSConfig } from "../tts/types";
 import { DEFAULT_TTS_CONFIG, normalizeTTSConfig } from "../tts/types";
@@ -90,6 +91,26 @@ function clearSleepTimerHandle(): void {
   }
 }
 
+let _respeakTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearRespeakTimer(): void {
+  if (_respeakTimer) {
+    clearTimeout(_respeakTimer);
+    _respeakTimer = null;
+  }
+}
+
+function scheduleRespeak(): void {
+  clearRespeakTimer();
+  _respeakTimer = setTimeout(() => {
+    _respeakTimer = null;
+    const { playState, jumpToChunk } = useTTSStore.getState();
+    if (isActivePlay(playState)) {
+      jumpToChunk(_sessionCurrentIndex);
+    }
+  }, VOICE_RESPEAK_DEBOUNCE_MS);
+}
+
 export interface TTSState {
   /** Current playback state */
   playState: TTSPlayState;
@@ -150,6 +171,7 @@ export const useTTSStore = create<TTSState>()(
     sleepTimerDurationMinutes: null,
 
     play: (text: string | string[]) => {
+      clearRespeakTimer();
       const config = normalizeTTSConfig(get().config);
       _dashscopeActiveVoice = config.dashscopeVoice;
       const segments = Array.isArray(text) ? text.map((item) => item.trim()).filter(Boolean) : [text.trim()].filter(Boolean);
@@ -204,6 +226,7 @@ export const useTTSStore = create<TTSState>()(
     },
 
     pause: () => {
+      clearRespeakTimer();
       const config = normalizeTTSConfig(get().config);
       const { playState } = get();
       if (playState !== "playing") return;
@@ -293,6 +316,7 @@ export const useTTSStore = create<TTSState>()(
 
     stop: () => {
       clearSleepTimerHandle();
+      clearRespeakTimer();
       const system = getSystemTTS();
       const edge = getEdgeTTS();
       const dashscope = getDashScopeTTS();
@@ -333,10 +357,18 @@ export const useTTSStore = create<TTSState>()(
       }
     },
 
-    updateConfig: (updates) =>
-      set((s) => ({
-        config: normalizeTTSConfig({ ...s.config, ...updates }),
-      })),
+    updateConfig: (updates) => {
+      const previousConfig = normalizeTTSConfig(get().config);
+      const nextConfig = normalizeTTSConfig({ ...previousConfig, ...updates });
+      set({ config: nextConfig });
+
+      // [占位 · #427/#349] engine 变化 + 播放中 → 停播。合并 #427 时在此插入，
+      // 并在该分支内调用 clearRespeakTimer()。
+
+      if (shouldRespeakForSynthChange(previousConfig, nextConfig) && isActivePlay(get().playState)) {
+        scheduleRespeak();
+      }
+    },
 
     setPlayState: (playState) => set({ playState }),
 
@@ -350,6 +382,7 @@ export const useTTSStore = create<TTSState>()(
     setChunkProgress: (index, total) => set({ currentChunkIndex: index, totalChunks: total }),
 
     jumpToChunk: (index: number) => {
+      clearRespeakTimer();
       if (index < 0 || index >= _sessionSegments.length) return;
       const config = normalizeTTSConfig(get().config);
       _dashscopeActiveVoice = config.dashscopeVoice;
