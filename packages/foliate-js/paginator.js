@@ -39,6 +39,8 @@ const throttle = (f, wait) => {
     }
 }
 
+const SELECTION_EDGE_TURN_DWELL_MS = 500
+
 // Transforms ALL children of the container so multi-view layouts
 // animate as a unified whole. Extra elements (e.g. background) are
 // also transformed so they slide in sync with the content.
@@ -1278,21 +1280,55 @@ export class Paginator extends HTMLElement {
             }
         })
         let pointerSelectionTurn = null
+        let pointerSelectionEdgeCandidate = null
+        const clearPointerSelectionEdgeCandidate = () => {
+            if (pointerSelectionEdgeCandidate?.timer) clearTimeout(pointerSelectionEdgeCandidate.timer)
+            pointerSelectionEdgeCandidate = null
+        }
+        const runPointerSelectionTurn = direction => {
+            if (pointerSelectionTurn || !direction) return
+            const turn = direction < 0 ? this.prev() : this.next()
+            pointerSelectionTurn = Promise.resolve(turn)
+                .finally(() => setTimeout(() => {
+                    pointerSelectionTurn = null
+                }, 80))
+        }
         const checkPointerSelection = throttle((range, sel, allowEdgeTurn) => {
             if (this.#navigationLocked) return
             if (pointerSelectionTurn) return
             if (!sel.rangeCount) return
             const selRange = sel.getRangeAt(0)
             const backward = selectionIsBackward(sel)
-            const turnDirection = this.#getPointerSelectionTurn(range, selRange, backward, allowEdgeTurn)
-            const turn = turnDirection < 0 ? this.prev() : turnDirection > 0 ? this.next() : null
-            if (turn) {
-                pointerSelectionTurn = Promise.resolve(turn)
-                    .finally(() => setTimeout(() => {
-                        pointerSelectionTurn = null
-                    }, 80))
+            const turnIntent = this.#getPointerSelectionTurn(range, selRange, backward, allowEdgeTurn)
+            if (!turnIntent.direction) {
+                clearPointerSelectionEdgeCandidate()
+                return
             }
-        }, 220)
+            if (!turnIntent.edge) {
+                clearPointerSelectionEdgeCandidate()
+                runPointerSelectionTurn(turnIntent.direction)
+                return
+            }
+
+            const direction = turnIntent.direction
+            if (pointerSelectionEdgeCandidate?.direction === direction) return
+
+            clearPointerSelectionEdgeCandidate()
+            const doc = sel.anchorNode?.ownerDocument ?? sel.focusNode?.ownerDocument
+            pointerSelectionEdgeCandidate = {
+                direction,
+                timer: setTimeout(() => {
+                    pointerSelectionEdgeCandidate = null
+                    const currentSel = doc?.getSelection?.()
+                    if (!currentSel || currentSel.type !== 'Range' || !currentSel.rangeCount) return
+                    const currentRange = currentSel.getRangeAt(0)
+                    const currentBackward = selectionIsBackward(currentSel)
+                    const currentIntent = this.#getPointerSelectionTurn(range, currentRange, currentBackward, true)
+                    if (currentIntent.edge && currentIntent.direction === direction)
+                        runPointerSelectionTurn(direction)
+                }, SELECTION_EDGE_TURN_DWELL_MS),
+            }
+        }, 120)
         this.addEventListener('load', ({ detail: { doc } }) => {
             let isPointerSelecting = false
             let pointerSelectionActiveUntil = 0
@@ -1303,10 +1339,14 @@ export class Paginator extends HTMLElement {
             }
             const beginPointerSelecting = () => {
                 pointerSelectionChangeCount = 0
+                clearPointerSelectionEdgeCandidate()
                 markPointerSelecting()
             }
             const clearPointerSelecting = () => setTimeout(() => {
-                if (Date.now() >= pointerSelectionActiveUntil) isPointerSelecting = false
+                if (Date.now() >= pointerSelectionActiveUntil) {
+                    isPointerSelecting = false
+                    clearPointerSelectionEdgeCandidate()
+                }
             }, 160)
             doc.addEventListener('selectstart', beginPointerSelecting)
             doc.addEventListener('pointerdown', beginPointerSelecting)
@@ -1995,21 +2035,21 @@ export class Paginator extends HTMLElement {
     #getPointerSelectionTurn(visibleRange, selectionRange, backward, allowEdgeTurn) {
         try {
             if (backward && selectionRange.compareBoundaryPoints(Range.START_TO_START, visibleRange) < 0)
-                return -1
+                return { direction: -1, edge: false }
             if (!backward && selectionRange.compareBoundaryPoints(Range.END_TO_END, visibleRange) > 0)
-                return 1
+                return { direction: 1, edge: false }
         } catch {}
-        if (!allowEdgeTurn) return 0
+        if (!allowEdgeTurn) return { direction: 0, edge: false }
 
         const doc = selectionRange.commonAncestorContainer?.ownerDocument
             ?? selectionRange.startContainer?.ownerDocument
             ?? selectionRange.endContainer?.ownerDocument
         const entry = [...this.#views].find(([, view]) => view.document === doc)
-        if (!entry) return 0
+        if (!entry) return { direction: 0, edge: false }
 
         const [index, view] = entry
         const rect = getRangeEdgeRect(selectionRange, backward)
-        if (!rect) return 0
+        if (!rect) return { direction: 0, edge: false }
 
         const viewOffset = this.#getViewOffset(index)
         const visibleStart = this.#renderedStart - viewOffset
@@ -2017,17 +2057,21 @@ export class Paginator extends HTMLElement {
         const mapped = this.#getRectMapper(view)(rect)
         const edgeInset = Math.max(32, Math.min(96, this.size * 0.12))
 
-        if (backward && mapped.left <= visibleStart + edgeInset) return -1
-        if (!backward && mapped.right >= visibleEnd - edgeInset) return 1
+        if (backward && mapped.left <= visibleStart + edgeInset)
+            return { direction: -1, edge: true }
+        if (!backward && mapped.right >= visibleEnd - edgeInset)
+            return { direction: 1, edge: true }
 
         if (!this.#vertical) {
             const blockSize = this.#container.getBoundingClientRect().height
             const verticalInset = Math.max(48, Math.min(140, blockSize * 0.16))
-            if (backward && rect.top <= verticalInset) return -1
-            if (!backward && rect.bottom >= blockSize - verticalInset) return 1
+            if (backward && rect.top <= verticalInset)
+                return { direction: -1, edge: true }
+            if (!backward && rect.bottom >= blockSize - verticalInset)
+                return { direction: 1, edge: true }
         }
 
-        return 0
+        return { direction: 0, edge: false }
     }
     async #scrollToRect(rect, reason) {
         if (this.scrolled) {
