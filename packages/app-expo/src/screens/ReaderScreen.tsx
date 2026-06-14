@@ -1334,12 +1334,6 @@ export function ReaderScreen({ route, navigation }: Props) {
     };
   }, [bookId, currentCfi, goToCFISafely, loading, navigation, openTTS, webViewReady]);
 
-  // Lock navigation when selection is active
-  useEffect(() => {
-    if (!webViewReady) return;
-    bridge.setNavigationLocked(!!selection);
-  }, [webViewReady, selection]);
-
   if (loading && !webViewReady && !readerHtmlUri) {
     return (
       <SafeAreaView style={[s.container, { backgroundColor: colors.background }]}>
