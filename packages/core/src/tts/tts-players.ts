@@ -438,7 +438,6 @@ export class EdgeTTSPlayer implements ITTSPlayer {
   private chunks: string[] = [];
   private _playing = false;
   private _paused = false;
-  private aborted = false;
   private hasAudioData = false;
   private playingNotified = false;
   private checkEndTimer: ReturnType<typeof setInterval> | null = null;
@@ -448,6 +447,9 @@ export class EdgeTTSPlayer implements ITTSPlayer {
   private producerWake: (() => void) | null = null;
   private chunkStartTimers = new Set<ReturnType<typeof setTimeout>>();
   private pausedAt = 0; // Date.now() when suspended (wall-clock ms)
+  /** Monotonic per-run token, bumped on every speak() to invalidate the previous
+   *  run's in-flight async continuations (mirrors DashScopeTTSPlayer). */
+  private runId = 0;
   private static readonly BUFFER_SIZE = 4;
 
   onStateChange?: (state: "playing" | "paused" | "stopped") => void;
@@ -461,11 +463,21 @@ export class EdgeTTSPlayer implements ITTSPlayer {
     return this._paused;
   }
 
+  /** Clear the producer's wake resolver. Extracted into a method so callers'
+   *  control-flow analysis keeps producerWake's declared (() => void) | null
+   *  type — runProducer reassigns it across an un-awaited call TS can't track. */
+  private resetProducerWake() {
+    this.producerWake = null;
+  }
+
   async speak(text: string | string[], config: TTSConfig) {
-    this.aborted = true;
+    // Invalidate any in-flight run immediately: its captured myRun no longer
+    // equals this.runId, so every continuation/timer below bails on its guard.
+    const myRun = ++this.runId;
     this.cleanupAudio();
     this.fetchBuffer.clear();
     this.producerWake?.();
+    this.resetProducerWake();
     if (this.checkEndTimer) {
       clearInterval(this.checkEndTimer);
       this.checkEndTimer = null;
@@ -474,7 +486,6 @@ export class EdgeTTSPlayer implements ITTSPlayer {
     this.chunks = Array.isArray(text) ? text.filter(Boolean) : splitIntoChunks(text, 800);
     this._playing = true;
     this._paused = false;
-    this.aborted = false;
     this.allChunksDone = false;
     this.hasAudioData = false;
     this.playingNotified = false;
@@ -488,8 +499,11 @@ export class EdgeTTSPlayer implements ITTSPlayer {
     if (this.audioCtx.state === "suspended") {
       await this.audioCtx.resume();
     }
+    // A newer run may have superseded us during the resume() await.
+    if (myRun !== this.runId) return;
 
     this.checkEndTimer = setInterval(() => {
+      if (myRun !== this.runId) return;
       if (!this._playing || this._paused) return;
       // Also guard against the AudioContext being auto-suspended by the OS
       // (e.g. iOS background / lock-screen) without us explicitly pausing.
@@ -513,12 +527,12 @@ export class EdgeTTSPlayer implements ITTSPlayer {
     this.producerIndex = 0;
     this.fetchBuffer.clear();
 
-    this.runProducer(base);
+    this.runProducer(base, myRun);
 
     const prewarmCount = Math.min(EdgeTTSPlayer.BUFFER_SIZE, this.chunks.length);
     for (let p = 0; p < prewarmCount; p++) {
       if (this.fetchBuffer.has(p)) continue;
-      if (!this._playing || this.aborted) return;
+      if (!this._playing || myRun !== this.runId) return;
       const promise = fetchEdgeTTSAudio({ text: this.chunks[p], ...base });
       promise.catch(() => {});
       this.fetchBuffer.set(p, promise);
@@ -526,12 +540,15 @@ export class EdgeTTSPlayer implements ITTSPlayer {
     }
 
     for (let i = 0; i < this.chunks.length; i++) {
-      if (!this._playing || this.aborted) return;
+      if (!this._playing || myRun !== this.runId) return;
       try {
-        const audioData = await this.waitForChunk(i);
-        if (!this._playing || this.aborted) return;
-        await this.decodeAndSchedule(audioData, i);
+        const audioData = await this.waitForChunk(i, myRun);
+        if (!this._playing || myRun !== this.runId) return;
+        await this.decodeAndSchedule(audioData, i, myRun);
+        // Old run resuming here must not delete/wake the new run's buffer.
+        if (!this._playing || myRun !== this.runId) return;
       } catch (err) {
+        if (myRun !== this.runId) return;
         if ((err as Error)?.message === "aborted") return;
         console.error("[Edge TTS] chunk error:", err);
       }
@@ -540,22 +557,28 @@ export class EdgeTTSPlayer implements ITTSPlayer {
       this.producerWake?.();
     }
 
+    if (myRun !== this.runId) return;
     this.allChunksDone = true;
   }
 
-  private async runProducer(base: { voice: string; lang: string; rate: number; pitch: number }) {
+  private async runProducer(
+    base: { voice: string; lang: string; rate: number; pitch: number },
+    myRun: number,
+  ) {
     while (this.producerIndex < this.chunks.length) {
-      if (!this._playing || this.aborted) return;
+      if (!this._playing || myRun !== this.runId) return;
 
       while (this.fetchBuffer.size >= EdgeTTSPlayer.BUFFER_SIZE) {
-        if (!this._playing || this.aborted) return;
+        if (!this._playing || myRun !== this.runId) return;
         await new Promise<void>((resolve) => {
           this.producerWake = resolve;
         });
+        // Old producer resuming here must not clobber the new run's producerWake.
+        if (myRun !== this.runId) return;
         this.producerWake = null;
       }
 
-      if (!this._playing || this.aborted) return;
+      if (!this._playing || myRun !== this.runId) return;
 
       const idx = this.producerIndex++;
       const promise = fetchEdgeTTSAudio({ text: this.chunks[idx], ...base });
@@ -564,9 +587,9 @@ export class EdgeTTSPlayer implements ITTSPlayer {
     }
   }
 
-  private async waitForChunk(index: number): Promise<ArrayBuffer> {
+  private async waitForChunk(index: number, myRun: number): Promise<ArrayBuffer> {
     while (!this.fetchBuffer.has(index)) {
-      if (!this._playing || this.aborted) {
+      if (!this._playing || myRun !== this.runId) {
         throw new Error("aborted");
       }
       await new Promise<void>((r) => setTimeout(r, 50));
@@ -574,22 +597,30 @@ export class EdgeTTSPlayer implements ITTSPlayer {
     return this.fetchBuffer.get(index)!;
   }
 
-  private async decodeAndSchedule(mp3Data: ArrayBuffer, index: number): Promise<void> {
-    if (!this.audioCtx || !this.gainNode || !this._playing || this.aborted) return;
+  private async decodeAndSchedule(
+    mp3Data: ArrayBuffer,
+    index: number,
+    myRun: number,
+  ): Promise<void> {
+    const ctx = this.audioCtx;
+    const gain = this.gainNode;
+    if (!ctx || !gain || !this._playing || myRun !== this.runId) return;
 
-    const audioBuffer = await this.audioCtx.decodeAudioData(mp3Data.slice(0));
-    if (!this._playing || this.aborted || !this.audioCtx || !this.gainNode) return;
+    const audioBuffer = await ctx.decodeAudioData(mp3Data.slice(0));
+    // Bail if superseded, or if a new run swapped in a different AudioContext —
+    // never schedule into a ctx that isn't this run's.
+    if (!this._playing || myRun !== this.runId || this.audioCtx !== ctx || !this.gainNode) return;
 
-    const source = this.audioCtx.createBufferSource();
+    const source = ctx.createBufferSource();
     source.buffer = audioBuffer;
-    source.connect(this.gainNode);
+    source.connect(gain);
 
-    const startAt = Math.max(this.audioCtx.currentTime, this.scheduledEnd);
+    const startAt = Math.max(ctx.currentTime, this.scheduledEnd);
     const notifyChunkStart = () => {
-      if (!this._playing || this.aborted) return;
+      if (!this._playing || myRun !== this.runId) return;
       this.onChunkChange?.(index, this.chunks.length);
     };
-    const startDelayMs = Math.max(0, (startAt - this.audioCtx.currentTime) * 1000);
+    const startDelayMs = Math.max(0, (startAt - ctx.currentTime) * 1000);
     if (startDelayMs <= 16) {
       notifyChunkStart();
     } else {
@@ -650,7 +681,6 @@ export class EdgeTTSPlayer implements ITTSPlayer {
   }
 
   stop() {
-    this.aborted = true;
     if (this.checkEndTimer) {
       clearInterval(this.checkEndTimer);
       this.checkEndTimer = null;
@@ -658,6 +688,7 @@ export class EdgeTTSPlayer implements ITTSPlayer {
     this.cleanupAudio();
     this.fetchBuffer.clear();
     this.producerWake?.();
+    this.producerWake = null;
     this.chunks = [];
     this._playing = false;
     this._paused = false;
