@@ -1309,9 +1309,10 @@ export class Paginator extends HTMLElement {
                 // ignore bridge failures outside React Native WebView
             }
         }
-        const clearPointerSelectionEdgeCandidate = () => {
+        const clearPointerSelectionEdgeCandidate = reason => {
             if (pointerSelectionEdgeCandidate)
                 debugSelectionPaging('candidate-clear', {
+                    reason,
                     direction: pointerSelectionEdgeCandidate.direction,
                     age: Math.round(Date.now() - pointerSelectionEdgeCandidate.stableSince),
                 })
@@ -1341,7 +1342,7 @@ export class Paginator extends HTMLElement {
                     current: candidate.direction,
                     next: direction,
                 })
-                clearPointerSelectionEdgeCandidate()
+                clearPointerSelectionEdgeCandidate('direction-mismatch')
                 return null
             }
             const point = lastPointerSelectionPoint
@@ -1443,11 +1444,47 @@ export class Paginator extends HTMLElement {
                 visibleEnd: turnIntent.visibleEnd,
             })
             if (!turnIntent.direction) {
-                clearPointerSelectionEdgeCandidate()
+                if (pointerSelectionEdgeCandidate &&
+                    (turnIntent.reason === 'not-at-edge' || turnIntent.reason === 'range-edge-not-found')) {
+                    const direction = pointerSelectionEdgeCandidate.direction
+                    const edgeSlop = Math.max(24, Math.min(56, this.size * 0.14))
+                    const stillNearTrailingEdge = direction > 0 &&
+                        typeof turnIntent.mappedRight === 'number' &&
+                        turnIntent.mappedRight >= turnIntent.visibleEnd - turnIntent.edgeInset - edgeSlop
+                    const stillNearLeadingEdge = direction < 0 &&
+                        typeof turnIntent.mappedLeft === 'number' &&
+                        turnIntent.mappedLeft <= turnIntent.visibleStart + turnIntent.edgeInset + edgeSlop
+                    if (stillNearTrailingEdge || stillNearLeadingEdge) {
+                        debugSelectionPaging('candidate-keep-near-edge', {
+                            direction,
+                            stableAge: Math.round(Date.now() - pointerSelectionEdgeCandidate.stableSince),
+                            edgeSlop: Math.round(edgeSlop),
+                            mappedLeft: turnIntent.mappedLeft,
+                            mappedRight: turnIntent.mappedRight,
+                            visibleStart: turnIntent.visibleStart,
+                            visibleEnd: turnIntent.visibleEnd,
+                            edgeInset: turnIntent.edgeInset,
+                        })
+                        return
+                    }
+                }
+                clearPointerSelectionEdgeCandidate('no-direction')
                 return
             }
             if (!turnIntent.edge) {
-                clearPointerSelectionEdgeCandidate()
+                if (pointerSelectionEdgeCandidate && pointerSelectionEdgeCandidate.direction === turnIntent.direction) {
+                    debugSelectionPaging('candidate-keep-not-edge', {
+                        direction: turnIntent.direction,
+                        stableAge: Math.round(Date.now() - pointerSelectionEdgeCandidate.stableSince),
+                        reason: turnIntent.reason,
+                        mappedLeft: turnIntent.mappedLeft,
+                        mappedRight: turnIntent.mappedRight,
+                        visibleStart: turnIntent.visibleStart,
+                        visibleEnd: turnIntent.visibleEnd,
+                    })
+                    return
+                }
+                clearPointerSelectionEdgeCandidate('crossed-visible-range')
                 runPointerSelectionTurn(turnIntent.direction)
                 return
             }
@@ -1460,7 +1497,7 @@ export class Paginator extends HTMLElement {
                     direction,
                     remaining: Math.round(SELECTION_EDGE_TURN_COOLDOWN_MS - (Date.now() - lastPointerSelectionTurnAt)),
                 })
-                clearPointerSelectionEdgeCandidate()
+                clearPointerSelectionEdgeCandidate('cooldown')
                 return
             }
             const existingCandidate = refreshPointerSelectionEdgeCandidate(direction)
@@ -1472,7 +1509,7 @@ export class Paginator extends HTMLElement {
                 return
             }
 
-            clearPointerSelectionEdgeCandidate()
+            clearPointerSelectionEdgeCandidate('new-candidate')
             const doc = sel.anchorNode?.ownerDocument ?? sel.focusNode?.ownerDocument
             const point = lastPointerSelectionPoint
             pointerSelectionEdgeCandidate = {
@@ -1547,12 +1584,12 @@ export class Paginator extends HTMLElement {
             }
             const beginPointerSelecting = e => {
                 pointerSelectionChangeCount = 0
-                clearPointerSelectionEdgeCandidate()
+                clearPointerSelectionEdgeCandidate('selection-start')
                 markPointerSelecting(e)
             }
             const clearPointerSelecting = () => {
                 lastPointerSelectionPoint = null
-                clearPointerSelectionEdgeCandidate()
+                clearPointerSelectionEdgeCandidate('selection-end')
                 setTimeout(() => {
                     if (Date.now() >= pointerSelectionActiveUntil) isPointerSelecting = false
                 }, 160)
@@ -2292,7 +2329,11 @@ export class Paginator extends HTMLElement {
         const visibleStart = this.#renderedStart - viewOffset
         const visibleEnd = this.#renderedEnd - viewOffset
         const mapped = this.#getRectMapper(view)(rect)
-        const edgeInset = Math.max(48, Math.min(120, this.size * 0.18))
+        // Android selection handles can report the range edge 60-80px inside
+        // the visual page edge while the handle itself is being held at the
+        // boundary. Use a wider range edge band, then rely on the 1s dwell
+        // candidate to avoid accidental page turns.
+        const edgeInset = Math.max(72, Math.min(140, this.size * 0.24))
         const pointerEdgeInset = Math.max(edgeInset, Math.min(140, this.size * 0.3))
         const base = {
             edgeInset: Math.round(edgeInset),
