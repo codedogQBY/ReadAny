@@ -41,6 +41,7 @@ const throttle = (f, wait) => {
 
 const SELECTION_EDGE_TURN_DWELL_MS = 1000
 const SELECTION_EDGE_POINTER_MOVE_TOLERANCE = 18
+const SELECTION_EDGE_RANGE_MOVE_TOLERANCE = 24
 const SELECTION_EDGE_TURN_COOLDOWN_MS = 900
 
 // Transforms ALL children of the container so multi-view layouts
@@ -1361,7 +1362,7 @@ export class Paginator extends HTMLElement {
                     schedulePointerSelectionPoll()
             }, 240)
         }
-        const refreshPointerSelectionEdgeCandidate = direction => {
+        const refreshPointerSelectionEdgeCandidate = (direction, turnIntent = null) => {
             const candidate = pointerSelectionEdgeCandidate
             if (!candidate) return null
             if (direction && candidate.direction !== direction) {
@@ -1384,6 +1385,20 @@ export class Paginator extends HTMLElement {
                     candidate.stableSince = Date.now()
                 }
                 candidate.pointUpdatedAt = point.updatedAt
+            }
+            if (turnIntent && Number.isFinite(turnIntent.edgePosition)) {
+                if (Number.isFinite(candidate.edgePosition) &&
+                    Math.abs(candidate.edgePosition - turnIntent.edgePosition) > SELECTION_EDGE_RANGE_MOVE_TOLERANCE) {
+                    debugSelectionPaging('candidate-reset-moving-edge', {
+                        direction: candidate.direction,
+                        from: Math.round(candidate.edgePosition),
+                        to: Math.round(turnIntent.edgePosition),
+                    })
+                    candidate.edgePosition = turnIntent.edgePosition
+                    candidate.stableSince = Date.now()
+                } else if (!Number.isFinite(candidate.edgePosition)) {
+                    candidate.edgePosition = turnIntent.edgePosition
+                }
             }
             return candidate
         }
@@ -1467,41 +1482,15 @@ export class Paginator extends HTMLElement {
                 pointerMapped: turnIntent.pointerMapped,
                 mappedLeft: turnIntent.mappedLeft,
                 mappedRight: turnIntent.mappedRight,
+                edgePosition: turnIntent.edgePosition,
                 visibleStart: turnIntent.visibleStart,
                 visibleEnd: turnIntent.visibleEnd,
             })
             if (!turnIntent.direction) {
-                if (pointerSelectionEdgeCandidate &&
-                    keepEdgeCandidate &&
-                    (turnIntent.reason === 'not-at-edge' || turnIntent.reason === 'range-edge-not-found')) {
-                    const direction = pointerSelectionEdgeCandidate.direction
-                    debugSelectionPaging('candidate-keep-range-drift', {
-                        direction,
-                        stableAge: Math.round(Date.now() - pointerSelectionEdgeCandidate.stableSince),
-                        mappedLeft: turnIntent.mappedLeft,
-                        mappedRight: turnIntent.mappedRight,
-                        visibleStart: turnIntent.visibleStart,
-                        visibleEnd: turnIntent.visibleEnd,
-                        edgeInset: turnIntent.edgeInset,
-                    })
-                    return
-                }
                 clearPointerSelectionEdgeCandidate('no-direction')
                 return
             }
             if (!turnIntent.edge) {
-                if (pointerSelectionEdgeCandidate && pointerSelectionEdgeCandidate.direction === turnIntent.direction) {
-                    debugSelectionPaging('candidate-keep-not-edge', {
-                        direction: turnIntent.direction,
-                        stableAge: Math.round(Date.now() - pointerSelectionEdgeCandidate.stableSince),
-                        reason: turnIntent.reason,
-                        mappedLeft: turnIntent.mappedLeft,
-                        mappedRight: turnIntent.mappedRight,
-                        visibleStart: turnIntent.visibleStart,
-                        visibleEnd: turnIntent.visibleEnd,
-                    })
-                    return
-                }
                 clearPointerSelectionEdgeCandidate('crossed-visible-range')
                 runPointerSelectionTurn(turnIntent.direction)
                 return
@@ -1518,11 +1507,12 @@ export class Paginator extends HTMLElement {
                 clearPointerSelectionEdgeCandidate('cooldown')
                 return
             }
-            const existingCandidate = refreshPointerSelectionEdgeCandidate(direction)
+            const existingCandidate = refreshPointerSelectionEdgeCandidate(direction, turnIntent)
             if (existingCandidate) {
                 debugSelectionPaging('candidate-existing', {
                     direction,
                     stableAge: Math.round(Date.now() - existingCandidate.stableSince),
+                    edgePosition: Math.round(existingCandidate.edgePosition),
                 })
                 return
             }
@@ -1534,6 +1524,7 @@ export class Paginator extends HTMLElement {
                 direction,
                 point: point ? { x: point.x, y: point.y } : null,
                 pointUpdatedAt: point?.updatedAt ?? 0,
+                edgePosition: turnIntent.edgePosition,
                 stableSince: Date.now(),
                 run: () => {
                     const currentSel = doc?.getSelection?.()
@@ -1561,6 +1552,8 @@ export class Paginator extends HTMLElement {
                 direction,
                 point: pointerSelectionEdgeCandidate.point,
                 pointUpdatedAt: pointerSelectionEdgeCandidate.pointUpdatedAt,
+                edgePosition: Math.round(pointerSelectionEdgeCandidate.edgePosition),
+                edgeSource: turnIntent.edgeSource,
             })
             schedulePointerSelectionEdgeCandidate(pointerSelectionEdgeCandidate)
         }, 120)
@@ -2327,12 +2320,12 @@ export class Paginator extends HTMLElement {
         const visibleStart = this.#renderedStart - viewOffset
         const visibleEnd = this.#renderedEnd - viewOffset
         const mapped = this.#getRectMapper(view)(rect)
-        // Android selection handles can report the range edge 60-80px inside
-        // the visual page edge while the handle itself is being held at the
-        // boundary. Use a wider range edge band, then rely on the 1s dwell
-        // candidate to avoid accidental page turns.
-        const edgeInset = Math.max(72, Math.min(140, this.size * 0.24))
-        const pointerEdgeInset = Math.max(edgeInset, Math.min(140, this.size * 0.3))
+        // Android WebView does not reliably emit pointermove/touchmove while
+        // dragging native text-selection handles. The range edge can lag well
+        // inside the visual page edge, so use a generous handle band and require
+        // a stable 1s dwell before turning the page.
+        const edgeInset = Math.max(112, Math.min(180, this.size * 0.34))
+        const pointerEdgeInset = Math.max(edgeInset, Math.min(180, this.size * 0.38))
         const base = {
             edgeInset: Math.round(edgeInset),
             pointerEdgeInset: Math.round(pointerEdgeInset),
@@ -2343,9 +2336,9 @@ export class Paginator extends HTMLElement {
         }
 
         if (backward && mapped.left <= visibleStart + edgeInset)
-            return { ...base, direction: -1, edge: true, edgeSource: 'range' }
+            return { ...base, direction: -1, edge: true, edgeSource: 'range', edgePosition: mapped.left }
         if (!backward && mapped.right >= visibleEnd - edgeInset)
-            return { ...base, direction: 1, edge: true, edgeSource: 'range' }
+            return { ...base, direction: 1, edge: true, edgeSource: 'range', edgePosition: mapped.right }
 
         if (pointerPoint?.doc === doc && typeof pointerPoint.x === 'number' && typeof pointerPoint.y === 'number') {
             const pointerMapped = this.#getRectMapper(view)({
@@ -2359,9 +2352,9 @@ export class Paginator extends HTMLElement {
                 pointerMapped: Math.round(pointerMapped.left),
             }
             if (backward && pointerMapped.left <= visibleStart + pointerEdgeInset)
-                return { ...pointerDetail, direction: -1, edge: true, edgeSource: 'pointer' }
+                return { ...pointerDetail, direction: -1, edge: true, edgeSource: 'pointer', edgePosition: pointerMapped.left }
             if (!backward && pointerMapped.right >= visibleEnd - pointerEdgeInset)
-                return { ...pointerDetail, direction: 1, edge: true, edgeSource: 'pointer' }
+                return { ...pointerDetail, direction: 1, edge: true, edgeSource: 'pointer', edgePosition: pointerMapped.right }
 
             return {
                 ...pointerDetail,
