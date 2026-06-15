@@ -104,4 +104,38 @@ describe("EdgeTTSPlayer — per-run runId isolation (#372 reentrancy slice)", ()
 
     expect(onChunk).not.toHaveBeenCalled();
   });
+
+  it("resume() 在重入下 reject 不会从 speak() 抛出未处理拒绝", async () => {
+    class SuspendedRejectingCtx {
+      state = "suspended";
+      currentTime = 0;
+      destination = {};
+      createGain() {
+        return { connect: vi.fn(), gain: { value: 1 } };
+      }
+      createBufferSource() {
+        return { buffer: null, connect: vi.fn(), start: vi.fn() };
+      }
+      decodeAudioData() {
+        return new Promise(() => {}); // 永不 resolve
+      }
+      resume() {
+        return Promise.reject(new Error("InvalidStateError"));
+      }
+      suspend() {
+        return Promise.resolve();
+      }
+      close() {
+        return Promise.resolve();
+      }
+    }
+    (globalThis as unknown as { AudioContext: unknown }).AudioContext = SuspendedRejectingCtx;
+
+    const player = new EdgeTTSPlayer();
+    const p1 = player.speak(["a0"], cfg); // 停在 await resume()（reject）
+    player.speak(["b0"], cfg); // 取代 run A，bump runId
+    await flush();
+    await expect(p1).resolves.toBeUndefined(); // run A 干净返回，未 reject
+    player.stop();
+  });
 });
