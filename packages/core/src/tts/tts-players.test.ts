@@ -83,4 +83,25 @@ describe("EdgeTTSPlayer — per-run runId isolation (#372 reentrancy slice)", ()
     // 旧 run 必须完全失活——不得有进度回调泄漏。
     expect(onChunk).not.toHaveBeenCalled();
   });
+
+  it("stop() 后旧 run 的在途解码完成不再触发 onChunkChange 或排程音频", async () => {
+    const player = new EdgeTTSPlayer();
+    const onChunk = vi.fn();
+    player.onChunkChange = onChunk;
+
+    // run 停在 decodeAudioData（resolver[0]）。
+    player.speak(["a0"], cfg);
+    await flush();
+    expect(decodeResolvers.length).toBe(1);
+
+    // stop() 不 bump runId，仅置 _playing=false。
+    player.stop();
+    await flush();
+
+    // 在 stop() 之后才让解码完成——续体须靠 _playing=false 在守卫处 bail。
+    decodeResolvers[0]({ duration: 1 });
+    await flush();
+
+    expect(onChunk).not.toHaveBeenCalled();
+  });
 });
