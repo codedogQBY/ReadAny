@@ -1420,14 +1420,23 @@ export class Paginator extends HTMLElement {
             }
             const selRange = sel.getRangeAt(0)
             const backward = selectionIsBackward(sel)
-            const turnIntent = this.#getPointerSelectionTurn(range, selRange, backward, allowEdgeTurn)
+            const turnIntent = this.#getPointerSelectionTurn(
+                range,
+                selRange,
+                backward,
+                allowEdgeTurn,
+                lastPointerSelectionPoint,
+            )
             debugSelectionPaging('check', {
                 allowEdgeTurn,
                 backward,
                 direction: turnIntent.direction,
                 edge: turnIntent.edge,
                 reason: turnIntent.reason,
+                edgeSource: turnIntent.edgeSource,
                 edgeInset: turnIntent.edgeInset,
+                pointerEdgeInset: turnIntent.pointerEdgeInset,
+                pointerMapped: turnIntent.pointerMapped,
                 mappedLeft: turnIntent.mappedLeft,
                 mappedRight: turnIntent.mappedRight,
                 visibleStart: turnIntent.visibleStart,
@@ -1484,13 +1493,22 @@ export class Paginator extends HTMLElement {
                     }
                     const currentRange = currentSel.getRangeAt(0)
                     const currentBackward = selectionIsBackward(currentSel)
-                    const currentIntent = this.#getPointerSelectionTurn(range, currentRange, currentBackward, true)
+                    const currentIntent = this.#getPointerSelectionTurn(
+                        range,
+                        currentRange,
+                        currentBackward,
+                        true,
+                        lastPointerSelectionPoint,
+                    )
                     debugSelectionPaging('run-check', {
                         direction,
                         currentDirection: currentIntent.direction,
                         currentEdge: currentIntent.edge,
                         reason: currentIntent.reason,
+                        edgeSource: currentIntent.edgeSource,
                         edgeInset: currentIntent.edgeInset,
+                        pointerEdgeInset: currentIntent.pointerEdgeInset,
+                        pointerMapped: currentIntent.pointerMapped,
                         mappedLeft: currentIntent.mappedLeft,
                         mappedRight: currentIntent.mappedRight,
                         visibleStart: currentIntent.visibleStart,
@@ -2251,37 +2269,70 @@ export class Paginator extends HTMLElement {
                 ? ({ top, bottom }) => ({ left: top, right: bottom })
                 : f => f
     }
-    #getPointerSelectionTurn(visibleRange, selectionRange, backward, allowEdgeTurn) {
+    #getPointerSelectionTurn(visibleRange, selectionRange, backward, allowEdgeTurn, pointerPoint = null) {
         try {
             if (backward && selectionRange.compareBoundaryPoints(Range.START_TO_START, visibleRange) < 0)
                 return { direction: -1, edge: false }
             if (!backward && selectionRange.compareBoundaryPoints(Range.END_TO_END, visibleRange) > 0)
                 return { direction: 1, edge: false }
         } catch {}
-        if (!allowEdgeTurn) return { direction: 0, edge: false }
+        if (!allowEdgeTurn) return { direction: 0, edge: false, reason: 'edge-turn-disabled' }
 
         const doc = selectionRange.commonAncestorContainer?.ownerDocument
             ?? selectionRange.startContainer?.ownerDocument
             ?? selectionRange.endContainer?.ownerDocument
         const entry = [...this.#views].find(([, view]) => view.document === doc)
-        if (!entry) return { direction: 0, edge: false }
+        if (!entry) return { direction: 0, edge: false, reason: 'view-not-found' }
 
         const [index, view] = entry
         const rect = getRangeEdgeRect(selectionRange, backward)
-        if (!rect) return { direction: 0, edge: false }
+        if (!rect) return { direction: 0, edge: false, reason: 'range-edge-not-found' }
 
         const viewOffset = this.#getViewOffset(index)
         const visibleStart = this.#renderedStart - viewOffset
         const visibleEnd = this.#renderedEnd - viewOffset
         const mapped = this.#getRectMapper(view)(rect)
         const edgeInset = Math.max(24, Math.min(96, this.size * 0.12))
+        const pointerEdgeInset = Math.max(edgeInset, Math.min(96, this.size * 0.22))
+        const base = {
+            edgeInset: Math.round(edgeInset),
+            pointerEdgeInset: Math.round(pointerEdgeInset),
+            mappedLeft: Math.round(mapped.left),
+            mappedRight: Math.round(mapped.right),
+            visibleStart: Math.round(visibleStart),
+            visibleEnd: Math.round(visibleEnd),
+        }
 
         if (backward && mapped.left <= visibleStart + edgeInset)
-            return { direction: -1, edge: true }
+            return { ...base, direction: -1, edge: true, edgeSource: 'range' }
         if (!backward && mapped.right >= visibleEnd - edgeInset)
-            return { direction: 1, edge: true }
+            return { ...base, direction: 1, edge: true, edgeSource: 'range' }
 
-        return { direction: 0, edge: false }
+        if (pointerPoint?.doc === doc && typeof pointerPoint.x === 'number' && typeof pointerPoint.y === 'number') {
+            const pointerMapped = this.#getRectMapper(view)({
+                left: pointerPoint.x,
+                right: pointerPoint.x,
+                top: pointerPoint.y,
+                bottom: pointerPoint.y,
+            })
+            const pointerDetail = {
+                ...base,
+                pointerMapped: Math.round(pointerMapped.left),
+            }
+            if (backward && pointerMapped.left <= visibleStart + pointerEdgeInset)
+                return { ...pointerDetail, direction: -1, edge: true, edgeSource: 'pointer' }
+            if (!backward && pointerMapped.right >= visibleEnd - pointerEdgeInset)
+                return { ...pointerDetail, direction: 1, edge: true, edgeSource: 'pointer' }
+
+            return {
+                ...pointerDetail,
+                direction: 0,
+                edge: false,
+                reason: 'not-at-edge',
+            }
+        }
+
+        return { ...base, direction: 0, edge: false, reason: 'not-at-edge' }
     }
     async #scrollToRect(rect, reason) {
         if (this.scrolled) {
