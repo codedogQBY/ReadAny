@@ -1287,10 +1287,26 @@ export class Paginator extends HTMLElement {
         let lastPointerSelectionTurnDirection = 0
         let lastPointerSelectionPoint = null
         const debugSelectionPaging = (event, detail = {}) => {
+            const serialize = value => {
+                try {
+                    return JSON.stringify(value)
+                } catch {
+                    return String(value)
+                }
+            }
+            const message = `[SelectionPaging] ${event} ${serialize(detail)}`
             try {
-                console.log('[SelectionPaging]', event, JSON.stringify(detail))
+                console.log(message)
             } catch {
-                console.log('[SelectionPaging]', event, detail)
+                // ignore console failures in embedded WebViews
+            }
+            try {
+                globalThis.ReactNativeWebView?.postMessage(JSON.stringify({
+                    type: 'debug',
+                    message,
+                }))
+            } catch {
+                // ignore bridge failures outside React Native WebView
             }
         }
         const clearPointerSelectionEdgeCandidate = () => {

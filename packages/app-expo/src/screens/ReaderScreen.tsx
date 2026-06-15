@@ -1496,6 +1496,7 @@ export function ReaderScreen({ route, navigation }: Props) {
             }}
             javaScriptEnabled
             domStorageEnabled
+            cacheEnabled={false}
             allowFileAccess
             allowFileAccessFromFileURLs
             allowUniversalAccessFromFileURLs
