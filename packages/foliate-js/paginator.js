@@ -518,6 +518,7 @@ class View {
         setStylesImportant(doc.documentElement, {
             'box-sizing': 'border-box',
             'column-width': 'auto',
+            '-webkit-column-width': 'auto',
             'height': 'auto',
             'width': 'auto',
         })
@@ -562,6 +563,9 @@ class View {
             'column-width': `${Math.trunc(columnWidth)}px`,
             'column-gap': vertical ? `${(marginTop + marginBottom) * 1.5}px` : `${horizontalColumnGap}px`,
             'column-fill': 'auto',
+            '-webkit-column-width': `${Math.trunc(columnWidth)}px`,
+            '-webkit-column-gap': vertical ? `${(marginTop + marginBottom) * 1.5}px` : `${horizontalColumnGap}px`,
+            '-webkit-column-fill': 'auto',
             ...(vertical
                 ? { 'width': `${width}px` }
                 : { 'height': `${height}px` }),
@@ -889,7 +893,7 @@ class View {
 
         // Cut a capsule-shaped hole in the overlayer so highlights don't paint
         // over the loupe.
-        if (this.#overlayer) {
+        if (typeof this.#overlayer?.setHole === 'function') {
             const overlayerRect = this.#overlayer.element.getBoundingClientRect()
             const dx = frameRect.left - overlayerRect.left
             const dy = frameRect.top - overlayerRect.top
@@ -907,7 +911,7 @@ class View {
         if (this.#loupeEl) {
             this.#loupeEl.style.display = 'none'
         }
-        if (this.#overlayer)
+        if (typeof this.#overlayer?.clearHole === 'function')
             this.#overlayer.clearHole()
     }
     destroyLoupe() {
@@ -917,7 +921,7 @@ class View {
             this.#loupeScaler = null
             this.#loupeCursor = null
         }
-        if (this.#overlayer)
+        if (typeof this.#overlayer?.clearHole === 'function')
             this.#overlayer.clearHole()
     }
     destroy() {
@@ -2211,7 +2215,7 @@ export class Paginator extends HTMLElement {
                         prop => doc.documentElement.setAttribute('data-' + prop, ''))
                     this.#styleMap.set(doc, [$styleBefore, $style])
                 }
-                onLoad?.({ doc, index })
+                onLoad?.({ doc, index, primary: true })
             }
             const beforeRender = this.#beforeRender.bind(this)
             await view.load(src, data, afterLoad, beforeRender)
@@ -2292,7 +2296,7 @@ export class Paginator extends HTMLElement {
                     this.#styleMap.set(doc, [$styleBefore, $style])
                 }
                 this.setStyles(this.#styles)
-                this.dispatchEvent(new CustomEvent('load', { detail: { doc, index } }))
+                this.dispatchEvent(new CustomEvent('load', { detail: { doc, index, primary: false } }))
             }
             // Adjacent sections reuse the primary view's cached layout
             // — they must NOT call #beforeRender, which would modify

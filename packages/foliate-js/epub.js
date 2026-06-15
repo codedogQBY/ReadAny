@@ -98,10 +98,39 @@ const childGetter = (doc, ns) => {
   };
 };
 
+const decodePath = (path) =>
+  path
+    .split("/")
+    .map((segment) => {
+      // Keep encoded separators that would change URL structure after decoding.
+      const protectedSegment = segment
+        .replace(/%2f/gi, "__READANY_ENCODED_SLASH__")
+        .replace(/%23/gi, "__READANY_ENCODED_HASH__");
+      try {
+        return decodeURIComponent(protectedSegment)
+          .replace(/__READANY_ENCODED_SLASH__/g, "%2F")
+          .replace(/__READANY_ENCODED_HASH__/g, "%23");
+      } catch {
+        try {
+          return decodeURI(segment);
+        } catch {
+          return segment;
+        }
+      }
+    })
+    .join("/");
+
+const decodeHash = (hash) => {
+  if (!hash) return "";
+  try {
+    return decodeURI(hash);
+  } catch {
+    return hash;
+  }
+};
+
 const resolveURL = (url, relativeTo) => {
   try {
-    // Pre-decode common percent-encoded characters that tools like Calibre may introduce
-    url = url.replace(/%2c/gi, ",").replace(/%3a/gi, ":");
     // Only treat relativeTo as a URL if it contains a scheme (e.g. https://)
     // Don't mistake file paths with ':' in filenames (e.g. Duokan obfuscated names) for URLs
     if (relativeTo.includes("://")) return new URL(url, relativeTo);
@@ -109,7 +138,8 @@ const resolveURL = (url, relativeTo) => {
     const root = "https://invalid.invalid/";
     const obj = new URL(url, root + relativeTo);
     obj.search = "";
-    return decodeURI(obj.href.replace(root, ""));
+    if (!obj.href.startsWith(root)) return obj.href;
+    return decodePath(obj.pathname.replace(/^\//, "")) + decodeHash(obj.hash);
   } catch (e) {
     console.warn(e);
     return url;
@@ -1159,6 +1189,7 @@ ${doc.querySelector("parsererror").innerText}`);
           size: this.getSize(item.href),
           cfi: this.resources.cfis[index],
           linear,
+          spineProperties: properties,
           pageSpread: getPageSpread(properties),
           resolveHref: (href) => resolveURL(href, item.href),
           mediaOverlay: item.mediaOverlay ? this.resources.getItemByID(item.mediaOverlay) : null,
@@ -1217,10 +1248,10 @@ ${doc.querySelector("parsererror").innerText}`);
   }
   resolveHref(href) {
     const [path, hash] = href.split("#");
-    const item = this.resources.getItemByHref(decodeURI(path));
+    const item = this.resources.getItemByHref(decodePath(path));
     if (!item) return null;
     const index = this.resources.spine.findIndex(({ idref }) => idref === item.id);
-    const anchor = hash ? (doc) => getHTMLFragment(doc, hash) : () => 0;
+    const anchor = hash ? (doc) => getHTMLFragment(doc, decodeHash(hash)) : () => 0;
     return { index, anchor };
   }
   splitTOCHref(href) {

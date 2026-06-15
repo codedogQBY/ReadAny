@@ -5,17 +5,11 @@ import { useTheme } from "@/styles/theme";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { VectorModelConfig } from "@readany/core/types";
+import { normalizeEmbeddingEndpointUrl, testEmbeddingEndpoint } from "@readany/core/utils/api";
 import { Check, Cloud, Plus, Trash2, X } from "lucide-react-native";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Animated, { SlideInRight } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import SearchSvg from "../../../../assets/illustrations/search.svg";
@@ -26,13 +20,14 @@ type NavProp = NativeStackNavigationProp<OnboardingStackParamList, "Embedding">;
 export function EmbeddingPage() {
   const { t } = useTranslation();
   const navigation = useNavigation<NavProp>();
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
   const {
     vectorModels,
     addVectorModel,
     deleteVectorModel,
+    updateVectorModel,
     setSelectedVectorModelId,
   } = useVectorModelStore();
 
@@ -44,7 +39,10 @@ export function EmbeddingPage() {
     if (!formData.name.trim() || !formData.url.trim() || !formData.modelId.trim()) return;
     const newModel: VectorModelConfig = {
       id: `vm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      ...formData,
+      name: formData.name.trim(),
+      url: normalizeEmbeddingEndpointUrl(formData.url),
+      modelId: formData.modelId.trim(),
+      apiKey: formData.apiKey.trim(),
     };
     addVectorModel(newModel);
     setFormData({ name: "", url: "", modelId: "", apiKey: "" });
@@ -54,23 +52,13 @@ export function EmbeddingPage() {
   const testRemoteModel = async (model: VectorModelConfig) => {
     setTestingId(model.id);
     try {
-      const testUrl = model.url.replace(/\/$/, "");
-      const isOllama = testUrl.endsWith("/api/embed");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (model.apiKey?.trim()) headers.Authorization = `Bearer ${model.apiKey}`;
-
-      const requestBody = isOllama
-        ? { model: model.modelId, input: "test" }
-        : { input: ["test"], model: model.modelId, encoding_format: "float" };
-
-      const res = await fetch(testUrl, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(requestBody),
+      const result = await testEmbeddingEndpoint({
+        url: model.url,
+        modelId: model.modelId,
+        apiKey: model.apiKey,
       });
-      if (res.ok) {
-        setSelectedVectorModelId(model.id);
-      }
+      updateVectorModel(model.id, { dimension: result.dimension, url: result.url });
+      setSelectedVectorModelId(model.id);
     } catch (err) {
       console.warn("[Onboarding] Embedding model test failed:", err);
     } finally {
@@ -218,10 +206,13 @@ export function EmbeddingPage() {
                     ]}
                     value={formData.url}
                     onChangeText={(text) => setFormData({ ...formData, url: text })}
-                    placeholder="https://api.openai.com/v1/embeddings"
+                    placeholder="https://api.openai.com/v1"
                     placeholderTextColor={colors.mutedForeground}
                     autoCapitalize="none"
                   />
+                  <Text style={[styles.fieldHint, { color: colors.mutedForeground }]}>
+                    {t("settings.vm_urlHint")}
+                  </Text>
                 </View>
 
                 <View style={styles.formField}>
@@ -273,9 +264,7 @@ export function EmbeddingPage() {
                 ]}
               >
                 <View style={styles.modelItemInfo}>
-                  <Text style={[styles.modelItemName, { color: colors.foreground }]}>
-                    {m.name}
-                  </Text>
+                  <Text style={[styles.modelItemName, { color: colors.foreground }]}>{m.name}</Text>
                   <Text style={[styles.modelItemMeta, { color: colors.mutedForeground }]}>
                     {m.modelId}
                   </Text>
@@ -415,6 +404,7 @@ const styles = StyleSheet.create({
   formTitle: { fontSize: 16, fontWeight: "600" },
   formField: { gap: 6 },
   fieldLabel: { fontSize: 12, fontWeight: "500" },
+  fieldHint: { fontSize: 11, lineHeight: 15 },
   fieldInput: {
     padding: 12,
     borderRadius: 10,

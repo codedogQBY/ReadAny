@@ -322,9 +322,12 @@ export class FixedLayout extends HTMLElement {
   async goTo(target) {
     const { book } = this;
     const resolved = await target;
+    if (!resolved || typeof resolved.index !== "number") return;
     const section = book.sections[resolved.index];
     if (!section) return;
-    const { index, side } = this.getSpreadOf(section);
+    const spread = this.getSpreadOf(section);
+    if (!spread) return;
+    const { index, side } = spread;
     await this.goToSpread(index, side);
   }
   async next() {

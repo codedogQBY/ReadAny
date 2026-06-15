@@ -44,6 +44,16 @@ export interface VisibleTTSContext {
   after: VisibleTTSSegment[];
 }
 
+export interface ReaderInitialSettings {
+  fontSize?: number;
+  lineHeight?: number;
+  paragraphSpacing?: number;
+  pageMargin?: number;
+  fontTheme?: string;
+  viewMode?: "paginated" | "scroll";
+  paginatedLayout?: "single" | "double";
+}
+
 export interface ReaderBridgeCallbacks {
   onRelocate?: (detail: RelocateEvent) => void;
   onBookTextMetrics?: (detail: { totalCharacters: number }) => void;
@@ -121,6 +131,7 @@ export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
       lastLocation?: string;
       pageMargin?: number;
       paginatedLayout?: "single" | "double";
+      settings?: ReaderInitialSettings;
     }) => {
       const msg = JSON.stringify({ type: "openBook", ...params });
       inject(`handleCommand(${msg})`);

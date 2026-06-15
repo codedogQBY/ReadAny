@@ -788,7 +788,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         void view.next(getScrollNavigationDistance());
         return;
       }
-      void view.goRight();
+      void view.next();
     }, [getScrollNavigationDistance]);
 
     const goPrevByMode = useCallback(() => {
@@ -806,7 +806,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         void view.prev(getScrollNavigationDistance());
         return;
       }
-      void view.goLeft();
+      void view.prev();
     }, [getScrollNavigationDistance]);
 
     const ensureDesktopTTS = useCallback(async () => {
@@ -2671,7 +2671,9 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           setViewReady(true);
 
           // Navigate to last location or start
-          if (lastLocation && !isFixedLayout) {
+          if (isFixedLayout) {
+            await view.init({});
+          } else if (lastLocation) {
             try {
               await view.init({ lastLocation });
             } catch (initErr) {
@@ -2904,6 +2906,7 @@ function applyDocumentStyles(doc: Document, settings: ViewSettings, isFixedLayou
     return;
   }
 
+  normalizeBrOnlyParagraphs(doc);
   syncRemoteFontStylesInDocument(doc, settings.customFontCssUrls);
 
   // Basic styles for images
@@ -2912,6 +2915,140 @@ function applyDocumentStyles(doc: Document, settings: ViewSettings, isFixedLayou
     img.style.maxWidth = "100%";
     img.style.height = "auto";
   }
+}
+
+function normalizeBrOnlyParagraphs(doc: Document) {
+  const docWithMarker = doc as Document & { __readanyBrParagraphsNormalized?: boolean };
+  if (docWithMarker.__readanyBrParagraphsNormalized) return;
+  docWithMarker.__readanyBrParagraphsNormalized = true;
+
+  const body = doc.body;
+  if (!body || body.querySelectorAll("p").length > 2) return;
+
+  const containers: Element[] = Array.from(body.querySelectorAll("div, section, article, main"));
+  if (shouldNormalizeBrParagraphContainer(body)) containers.push(body);
+
+  for (const container of containers) {
+    if (normalizeBrParagraphContainer(doc, container)) return;
+  }
+}
+
+function shouldNormalizeBrParagraphContainer(container: Element) {
+  if (container.querySelector("p")) return false;
+
+  const inlineTags = new Set([
+    "a",
+    "abbr",
+    "b",
+    "bdi",
+    "bdo",
+    "br",
+    "cite",
+    "code",
+    "em",
+    "font",
+    "i",
+    "img",
+    "kbd",
+    "mark",
+    "q",
+    "ruby",
+    "rb",
+    "rp",
+    "rt",
+    "s",
+    "small",
+    "span",
+    "strong",
+    "sub",
+    "sup",
+    "time",
+    "u",
+    "var",
+  ]);
+  let brCount = 0;
+  let textLength = 0;
+
+  for (const node of Array.from(container.childNodes)) {
+    if (isBrNode(node)) {
+      brCount += 1;
+    } else if (node.nodeType === Node.TEXT_NODE) {
+      textLength += node.nodeValue?.trim().length ?? 0;
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const tag = (node as Element).localName.toLowerCase();
+      if (!inlineTags.has(tag) && (node.textContent || "").trim()) return false;
+    }
+  }
+
+  return brCount >= 4 && textLength >= 80;
+}
+
+function normalizeBrParagraphContainer(doc: Document, container: Element) {
+  const fragment = doc.createDocumentFragment();
+  let pending: Node[] = [];
+  let breakNodes: Node[] = [];
+  let breakCount = 0;
+  let paragraphCount = 0;
+
+  const flushPending = () => {
+    while (pending.length && isBlankTextNode(pending[0])) pending.shift();
+    while (pending.length && isBlankTextNode(pending[pending.length - 1])) pending.pop();
+    if (!pending.some(hasParagraphContent)) {
+      pending = [];
+      return;
+    }
+
+    const paragraph = doc.createElement("p");
+    paragraph.className = "__readany_br_paragraph";
+    for (const node of pending) paragraph.appendChild(node);
+    fragment.appendChild(paragraph);
+    pending = [];
+    paragraphCount += 1;
+  };
+
+  const commitBreak = () => {
+    if (!breakNodes.length) return;
+    if (breakCount >= 2) flushPending();
+    else pending.push(...breakNodes);
+    breakNodes = [];
+    breakCount = 0;
+  };
+
+  for (const node of Array.from(container.childNodes)) {
+    if (isBrNode(node)) {
+      breakNodes.push(node);
+      breakCount += 1;
+    } else if (isBlankTextNode(node) && breakCount > 0) {
+      breakNodes.push(node);
+    } else {
+      commitBreak();
+      pending.push(node);
+    }
+  }
+
+  commitBreak();
+  flushPending();
+
+  if (paragraphCount < 2) return false;
+  container.replaceChildren(fragment);
+  container.setAttribute("data-readany-br-paragraphs", "");
+  return true;
+}
+
+function isBrNode(node: Node) {
+  return node.nodeType === Node.ELEMENT_NODE && (node as Element).localName.toLowerCase() === "br";
+}
+
+function isBlankTextNode(node: Node) {
+  return node.nodeType === Node.TEXT_NODE && !node.nodeValue?.trim();
+}
+
+function hasParagraphContent(node: Node) {
+  if (node.nodeType === Node.TEXT_NODE) return Boolean(node.nodeValue?.trim());
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    return !isBrNode(node) && Boolean(node.textContent?.trim());
+  }
+  return false;
 }
 
 /** Apply renderer-level settings (layout, columns, margins) */

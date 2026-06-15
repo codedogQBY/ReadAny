@@ -34,13 +34,21 @@ export {
   resolveProviderBaseUrl,
   buildProviderModelsUrl,
   buildOpenAICompatibleUrl,
+  normalizeEmbeddingEndpointUrl,
+  isOllamaEmbeddingEndpointUrl,
+  testEmbeddingEndpoint,
+  EmbeddingEndpointTestError,
   getProviderConfig,
   getDefaultBaseUrl,
   detectProviderFromUrl,
   providerRequiresApiKey,
   PROVIDER_CONFIGS,
 } from "./api";
-export type { ProviderConfig } from "./api";
+export type {
+  ProviderConfig,
+  TestEmbeddingEndpointOptions,
+  TestEmbeddingEndpointResult,
+} from "./api";
 export { encodeConfig, decodeConfig } from "./config-transfer";
 export {
   buildBookMetadataUpdate,

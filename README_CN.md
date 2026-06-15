@@ -235,12 +235,28 @@ git clone https://github.com/codedogQBY/ReadAny.git
 cd ReadAny
 pnpm install
 
-# 运行 iOS
+# 安装/运行 iOS 开发构建
 pnpm expo:ios
 
-# 运行 Android
+# 安装/运行 iOS 模拟器开发构建
+pnpm expo:ios:simulator
+
+# 安装/运行 Android 开发构建
+# 先启动 Android 模拟器，或连接真机。
 pnpm expo:android
+
+# 为已安装的开发构建启动 Metro
+pnpm expo:start
 ```
+
+移动端开发使用带 `expo-dev-client` 的 Expo development build，不再使用
+Expo Go。Expo Go 无法加载 ReadAny 当前依赖的原生模块和应用配置。首次调试，
+或原生依赖/配置发生变化时，先运行 `pnpm expo:ios`、`pnpm expo:ios:simulator`
+或 `pnpm expo:android` 安装开发版 App；日常 JS 调试再运行 `pnpm expo:start`，
+用已安装的 ReadAny 开发版 App 连接 Metro。
+
+模拟器调试时，iOS 使用 `pnpm expo:ios:simulator`；Android 先启动 Android
+模拟器，再运行 `pnpm expo:android`。
 
 移动端源码位于 [`packages/app-expo`](packages/app-expo)。
 
@@ -286,14 +302,25 @@ pnpm install
 # 开发模式（桌面端）
 pnpm tauri dev
 
-# 开发模式（移动端 - Expo）
+# 开发模式（移动端 - Expo development build，不是 Expo Go）
+# 首次先安装/运行原生开发构建：
+pnpm expo:ios
+pnpm expo:ios:simulator
+pnpm expo:android
+
+# 然后为已安装的开发版 App 启动 Metro：
 pnpm expo:start
 
 # 构建
 pnpm tauri build
 ```
 
-**环境要求：** Node.js ≥18, pnpm ≥9, Rust（Tauri 需要）
+移动端使用 `expo-dev-client`，不支持 Expo Go。修改原生依赖、`app.config.js`、
+权限、scheme 或 Expo plugins 后，需要重新运行 `pnpm expo:ios`、
+`pnpm expo:ios:simulator` 或 `pnpm expo:android` 生成/安装开发构建。
+
+**环境要求：** Node.js ≥18, pnpm ≥9, Rust（Tauri 需要）；移动端开发还需要
+iOS 的 Xcode 或 Android 的 Android Studio/SDK。
 
 ---
 

@@ -183,6 +183,7 @@
     let currentThemeColors = { bg: '#1c1c1e', fg: '#e8e8ed', muted: '#7c7c82', primary: '#3b82f6' };
     let lastRendererStyles = '';
     let currentViewMode = 'paginated';
+    let currentSectionUsesVerticalWriting = false;
     let currentPaginatedLayout = 'double';
     let currentFontSize = 16;
     let currentLineHeight = 1.6;
@@ -275,6 +276,223 @@
       if (host && host.book && host.book.rendition) {
         host.book.rendition.spread = spreadMode;
       }
+    }
+
+    function getMobileReflowMaxInlineSize() {
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 720;
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 393;
+      return Math.ceil(Math.max(720, viewportHeight, viewportWidth));
+    }
+
+    function applyMobileReflowRendererSizing(renderer) {
+      if (!renderer) return;
+      renderer.setAttribute('max-column-count', '1');
+      renderer.setAttribute('max-block-size', '1440px');
+      renderer.setAttribute('max-inline-size', getMobileReflowMaxInlineSize() + 'px');
+    }
+
+    function applyRendererFlowMode(renderer) {
+      if (!renderer || !view) return;
+
+      if (view.isFixedLayout) {
+        renderer.removeAttribute('no-continuous-scroll');
+        return;
+      }
+
+      if (currentViewMode === 'scroll') {
+        renderer.removeAttribute('no-continuous-scroll');
+        renderer.setAttribute('flow', 'scrolled');
+        renderer.setAttribute('max-inline-size', '9999px');
+        return;
+      }
+
+      applyMobileReflowRendererSizing(renderer);
+      if (currentSectionUsesVerticalWriting) {
+        renderer.setAttribute('flow', 'scrolled');
+        renderer.setAttribute('no-continuous-scroll', '');
+      } else {
+        renderer.removeAttribute('no-continuous-scroll');
+        renderer.removeAttribute('flow');
+      }
+    }
+
+    function getTransformViewportSize() {
+      const root = document.documentElement;
+      const viewport = window.visualViewport;
+      return {
+        width: Math.max(1, Math.round(viewport?.width || window.innerWidth || root.clientWidth || 393)),
+        height: Math.max(1, Math.round(viewport?.height || window.innerHeight || root.clientHeight || 720)),
+      };
+    }
+
+    function getVerticalWritingCompatibilityStyles() {
+      return `
+        :root.vrtl {
+          -webkit-writing-mode: vertical-rl;
+          writing-mode: vertical-rl;
+        }
+        :root.vltr {
+          -webkit-writing-mode: vertical-lr;
+          writing-mode: vertical-lr;
+        }
+        :root:is(.vrtl, .vltr),
+        :root:is(.vrtl, .vltr) body {
+          -webkit-text-size-adjust: none;
+          text-size-adjust: none;
+        }
+        :root:is(.vrtl, .vltr) body {
+          line-height: normal;
+          -webkit-line-break: strict;
+          line-break: strict;
+          overflow-wrap: normal;
+          word-break: normal;
+        }
+        :root:is(.vrtl, .vltr) p,
+        :root:is(.vrtl, .vltr) div,
+        :root:is(.vrtl, .vltr) span {
+          max-width: none;
+        }
+        :root:is(.vrtl, .vltr) .koboSpan {
+          line-height: inherit;
+          -webkit-text-combine: none;
+          -webkit-text-combine-upright: none;
+          text-combine-upright: none;
+        }
+        :root:is(.vrtl, .vltr) .tcy,
+        :root:is(.vrtl, .vltr) .tcy .koboSpan {
+          -webkit-text-combine: horizontal;
+          -webkit-text-combine-upright: all;
+          text-combine-upright: all;
+        }
+        :root:is(.vrtl, .vltr) ruby,
+        :root:is(.vrtl, .vltr) rb,
+        :root:is(.vrtl, .vltr) rt {
+          line-height: 1;
+        }
+        :root:is(.vrtl, .vltr) rt {
+          font-size: 0.5em;
+          -webkit-text-combine: none;
+          -webkit-text-combine-upright: none;
+          text-combine-upright: none;
+        }
+      `;
+    }
+
+    function normalizeWritingModeValue(value) {
+      const trimmed = String(value || '').trim();
+      return /^vertical-(?:rl|lr)$/i.test(trimmed) ? 'horizontal-tb' : trimmed;
+    }
+
+    function normalizeVerticalWritingClasses(className) {
+      const classes = String(className || '')
+        .split(/\s+/)
+        .filter(Boolean);
+      let changed = false;
+      const normalized = classes.map((name) => {
+        if (name === 'vrtl' || name === 'vltr') {
+          changed = true;
+          return 'hltr';
+        }
+        return name;
+      });
+      if (!changed) return className;
+      return Array.from(new Set(normalized)).join(' ');
+    }
+
+    function transformBookStylesheet(css) {
+      if (typeof css !== 'string' || !css) return css;
+      const { width, height } = getTransformViewportSize();
+      const ruleRegex = /([^{]+)({[^}]+})/g;
+
+      css = css.replace(ruleRegex, (match, selector, block) => {
+        if (/white-space\s*:\s*nowrap\s*[;$]/i.test(block) && !/overflow\s*:/i.test(block)) {
+          return selector + block.replace(/}$/, ' overflow: clip !important; }');
+        }
+        return match;
+      });
+
+      css = css.replace(ruleRegex, (match, selector, block) => {
+        const widthMatch = /(?:^|[^a-z-])width\s*:\s*(\d+(?:\.\d+)?)px/i.exec(block);
+        const pxWidth = widthMatch ? parseFloat(widthMatch[1] || '0') : 0;
+        if (pxWidth > width && !/max-width\s*:/i.test(block)) {
+          return selector + block.replace(
+            /}$/,
+            ' width: 100%; max-width: 100%; box-sizing: border-box; }',
+          );
+        }
+        return match;
+      });
+
+      return css
+        .replace(/-webkit-writing-mode\s*:\s*([^;}{]+)/gi, (_, value) => {
+          const normalized = normalizeWritingModeValue(value);
+          return `-webkit-writing-mode: ${normalized}; writing-mode: ${normalized}`;
+        })
+        .replace(/-epub-writing-mode\s*:\s*([^;}{]+)/gi, (_, value) => `writing-mode: ${normalizeWritingModeValue(value)}`)
+        .replace(/([{\s;])writing-mode\s*:\s*([^;}{]+)/gi, (_, prefix, value) => `${prefix}writing-mode: ${normalizeWritingModeValue(value)}`)
+        .replace(/-webkit-line-break\s*:\s*([^;}{]+)/gi, '-webkit-line-break: $1; line-break: $1')
+        .replace(/-epub-line-break\s*:\s*([^;}{]+)/gi, 'line-break: $1')
+        .replace(/-webkit-word-break\s*:\s*([^;}{]+)/gi, '-webkit-word-break: $1; word-break: $1')
+        .replace(/-epub-word-break\s*:\s*([^;}{]+)/gi, 'word-break: $1')
+        .replace(/-webkit-text-orientation\s*:\s*([^;}{]+)/gi, '-webkit-text-orientation: $1; text-orientation: $1')
+        .replace(/-epub-text-orientation\s*:\s*([^;}{]+)/gi, 'text-orientation: $1')
+        .replace(/-webkit-text-combine-upright\s*:\s*([^;}{]+)/gi, '-webkit-text-combine-upright: $1; text-combine-upright: $1')
+        .replace(/-webkit-text-combine\s*:\s*([^;}{]+)/gi, (_, value) => {
+          const trimmed = String(value).trim();
+          const upright = trimmed.toLowerCase() === 'horizontal' ? 'all' : trimmed;
+          return `-webkit-text-combine: ${trimmed}; text-combine-upright: ${upright}`;
+        })
+        .replace(/-epub-text-combine\s*:\s*([^;}{]+)/gi, (_, value) => {
+          const trimmed = String(value).trim();
+          return `text-combine-upright: ${trimmed.toLowerCase() === 'horizontal' ? 'all' : trimmed}`;
+        })
+        .replace(/(\d*\.?\d+)vw/gi, (_, d) => `${parseFloat(d) * width / 100}px`)
+        .replace(/(\d*\.?\d+)vh/gi, (_, d) => `${parseFloat(d) * height / 100}px`)
+        .replace(/page-break-(after|before|inside)\s*:/gi, (_, x) => `-webkit-column-break-${x}:`)
+        .replace(/break-(after|before|inside)\s*:\s*(avoid-)?page/gi, (_, x, y) => `break-${x}: ${y || ''}column`)
+        .replace(/([{\s;])-epub-/gi, '$1');
+    }
+
+    function transformBookContentMarkup(markup) {
+      if (typeof markup !== 'string' || !markup) return markup;
+      const withoutScripts = markup
+        .replace(/<script\b[^>]*\/\s*>/gi, '')
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+      const normalizedMarkup = withoutScripts
+        .replace(/\bclass\s*=\s*(['"])([^'"]*)\1/gi, (match, quote, className) => {
+          const normalized = normalizeVerticalWritingClasses(className);
+          return normalized === className ? match : `class=${quote}${normalized}${quote}`;
+        })
+        .replace(/\bstyle\s*=\s*(['"])([^'"]*)\1/gi, (_, quote, css) => `style=${quote}${transformBookStylesheet(css)}${quote}`);
+      if (!/<style[\s>]/i.test(normalizedMarkup)) return normalizedMarkup;
+      return normalizedMarkup.replace(/<style\b([^>]*)>([\s\S]*?)<\/style>/gi, (_, attrs, css) => {
+        return `<style${attrs}>${transformBookStylesheet(css)}</style>`;
+      });
+    }
+
+    function attachBookTransformHandler(book) {
+      if (!book || !book.transformTarget || book.__readany_mobile_transform_attached) return;
+      book.__readany_mobile_transform_attached = true;
+      book.transformTarget.addEventListener('load', ({ detail }) => {
+        if (detail && detail.isScript) detail.allow = false;
+      });
+      book.transformTarget.addEventListener('data', ({ detail }) => {
+        if (!detail || !detail.type) return;
+        const type = String(detail.type).toLowerCase();
+        const isStylesheet = type === 'text/css';
+        const isHtml = type === 'application/xhtml+xml' || type === 'text/html';
+        if (!isStylesheet && !isHtml) return;
+
+        detail.data = Promise.resolve(detail.data)
+          .then((data) => {
+            if (typeof data !== 'string') return data;
+            return isStylesheet ? transformBookStylesheet(data) : transformBookContentMarkup(data);
+          })
+          .catch((error) => {
+            console.warn('[Reader] Failed to transform book resource:', detail.name, error);
+            return '';
+          });
+      });
     }
 
     function getPullBookmarkElements() {
@@ -1249,6 +1467,7 @@
 
         const book = (file && file.sections) ? file : await makeBook(file);
         currentBook = book;
+        attachBookTransformHandler(book);
 
         const el = document.createElement('foliate-view');
         readerElement = el;
@@ -1257,8 +1476,13 @@
         resetPullBookmarkUI(false);
 
         el.addEventListener('load', (e) => {
-          const { doc, index } = e.detail;
+          const { doc, index, primary } = e.detail;
           markLoaded();
+          normalizeBrOnlyParagraphs(doc);
+          if (primary !== false) {
+            currentSectionUsesVerticalWriting = !el.isFixedLayout && isVerticalDoc(doc);
+            applyRendererFlowMode(el.renderer);
+          }
           applyDocStyles(doc);
           attachTapListener(doc);
           attachPullBookmarkListener(doc);
@@ -1415,6 +1639,7 @@
 
         container.appendChild(el);
         view = el;
+        currentSectionUsesVerticalWriting = false;
 
         await el.open(book);
 
@@ -1436,9 +1661,7 @@
 
         const renderer = el.renderer;
         if (renderer && !el.isFixedLayout) {
-          renderer.setAttribute('max-column-count', '1');
-          renderer.setAttribute('max-block-size', '100%');
-          renderer.setAttribute('max-inline-size', '100%');
+          applyMobileReflowRendererSizing(renderer);
           // Default gap/margin
           const margin = msg.pageMargin || 16;
           const gapPercent = Math.max(1, Math.round((margin / 393) * 100));
@@ -1453,7 +1676,13 @@
           applyFixedLayoutRendererSettings(renderer, currentPaginatedLayout);
         }
 
-        if (msg.lastLocation) {
+        if (msg.settings) {
+          applySettings(msg.settings);
+        }
+
+        if (el.isFixedLayout) {
+          await el.init({});
+        } else if (msg.lastLocation) {
           try {
             await el.init({ lastLocation: msg.lastLocation });
           } catch (err) {
@@ -1587,22 +1816,46 @@
           :root {
             --readany-font-family: ${fontFamily};
           }
-          html, body {
+          :root:not(.vrtl):not(.vltr),
+          :root:not(.vrtl):not(.vltr) body {
             font-family: var(--readany-font-family) !important;
             font-size: ${fSize}px !important;
             -webkit-text-size-adjust: none;
+            text-size-adjust: none;
           }
-          body *:not(svg):not(svg *):not(code):not(pre):not(kbd):not(samp) {
-            font-family: var(--readany-font-family) !important;
+          :root:is(.vrtl, .vltr),
+          :root:is(.vrtl, .vltr) body {
+            font-family: var(--readany-font-family);
+            font-size: ${fSize}px;
+            -webkit-text-size-adjust: none;
+            text-size-adjust: none;
           }
-          p, div, blockquote, li, span, h1, h2, h3, h4, h5, h6 {
+          :root:not(.vrtl):not(.vltr) p,
+          :root:not(.vrtl):not(.vltr) div,
+          :root:not(.vrtl):not(.vltr) blockquote,
+          :root:not(.vrtl):not(.vltr) li,
+          :root:not(.vrtl):not(.vltr) span,
+          :root:not(.vrtl):not(.vltr) h1,
+          :root:not(.vrtl):not(.vltr) h2,
+          :root:not(.vrtl):not(.vltr) h3,
+          :root:not(.vrtl):not(.vltr) h4,
+          :root:not(.vrtl):not(.vltr) h5,
+          :root:not(.vrtl):not(.vltr) h6 {
             line-height: ${lh} !important;
           }
           pre, code, kbd, samp {
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
           }
-          p { margin-top: ${ps}px !important; margin-bottom: ${ps}px !important; }
-          img, svg { max-width: 100% !important; height: auto !important; }
+          :root:not(.vrtl):not(.vltr) p {
+            margin-top: ${ps}px !important;
+            margin-bottom: ${ps}px !important;
+          }
+          :root:not(.vrtl):not(.vltr) img,
+          :root:not(.vrtl):not(.vltr) svg {
+            max-width: 100% !important;
+            height: auto !important;
+          }
+          ${getVerticalWritingCompatibilityStyles()}
         `;
         lastRendererStyles = baseStyles;
         const themedStyles = injectThemeIntoStyles(
@@ -1611,7 +1864,9 @@
           currentThemeColors.fg,
           currentThemeColors.primary,
         );
-        renderer.setStyles(themedStyles);
+        if (typeof renderer.setStyles === 'function') {
+          renderer.setStyles(themedStyles);
+        }
         syncCustomFontStylesForAllDocs(currentCustomFontFaceCSS);
       }
 
@@ -1633,13 +1888,7 @@
 
       if (settings.viewMode) {
         currentViewMode = settings.viewMode;
-        if (settings.viewMode === 'scroll') {
-          renderer.setAttribute('flow', 'scrolled');
-          renderer.setAttribute('max-inline-size', '9999px');
-        } else {
-          renderer.removeAttribute('flow');
-          renderer.setAttribute('max-inline-size', '100%');
-        }
+        applyRendererFlowMode(renderer);
       }
     }
 
@@ -1774,23 +2023,160 @@ a { color: ${primary} !important; }
     }
 
     // ─── Document styles ───
+    function normalizeBrOnlyParagraphs(doc) {
+      if (!doc || doc.__readany_br_paragraphs_normalized) return;
+      doc.__readany_br_paragraphs_normalized = true;
+
+      const body = doc.body;
+      if (!body || body.querySelectorAll('p').length > 2) return;
+
+      const containers = Array.from(body.querySelectorAll('div, section, article, main'));
+      if (shouldNormalizeBrParagraphContainer(body)) containers.push(body);
+
+      for (const container of containers) {
+        if (normalizeBrParagraphContainer(doc, container)) return;
+      }
+    }
+
+    function shouldNormalizeBrParagraphContainer(container) {
+      if (!container || container.querySelector('p')) return false;
+
+      const inlineTags = new Set([
+        'a', 'abbr', 'b', 'bdi', 'bdo', 'br', 'cite', 'code', 'em', 'font',
+        'i', 'img', 'kbd', 'mark', 'q', 'ruby', 'rb', 'rp', 'rt', 's', 'small',
+        'span', 'strong', 'sub', 'sup', 'time', 'u', 'var',
+      ]);
+      let brCount = 0;
+      let textLength = 0;
+
+      for (const node of Array.from(container.childNodes)) {
+        if (isBrNode(node)) {
+          brCount += 1;
+        } else if (node.nodeType === 3) {
+          textLength += node.nodeValue.trim().length;
+        } else if (node.nodeType === 1) {
+          const tag = node.localName && node.localName.toLowerCase();
+          if (!inlineTags.has(tag) && node.textContent.trim()) return false;
+        }
+      }
+
+      return brCount >= 4 && textLength >= 80;
+    }
+
+    function normalizeBrParagraphContainer(doc, container) {
+      const fragment = doc.createDocumentFragment();
+      let pending = [];
+      let breakNodes = [];
+      let breakCount = 0;
+      let paragraphCount = 0;
+
+      const flushPending = () => {
+        while (pending.length && isBlankTextNode(pending[0])) pending.shift();
+        while (pending.length && isBlankTextNode(pending[pending.length - 1])) pending.pop();
+        if (!pending.some(hasParagraphContent)) {
+          pending = [];
+          return;
+        }
+
+        const p = doc.createElement('p');
+        p.className = '__readany_br_paragraph';
+        for (const node of pending) p.appendChild(node);
+        fragment.appendChild(p);
+        pending = [];
+        paragraphCount += 1;
+      };
+
+      const commitBreak = () => {
+        if (!breakNodes.length) return;
+        if (breakCount >= 2) flushPending();
+        else pending.push(...breakNodes);
+        breakNodes = [];
+        breakCount = 0;
+      };
+
+      for (const node of Array.from(container.childNodes)) {
+        if (isBrNode(node)) {
+          breakNodes.push(node);
+          breakCount += 1;
+        } else if (isBlankTextNode(node) && breakCount > 0) {
+          breakNodes.push(node);
+        } else {
+          commitBreak();
+          pending.push(node);
+        }
+      }
+
+      commitBreak();
+      flushPending();
+
+      if (paragraphCount < 2) return false;
+      container.replaceChildren(fragment);
+      container.setAttribute('data-readany-br-paragraphs', '');
+      return true;
+    }
+
+    function isBrNode(node) {
+      return node && node.nodeType === 1 && node.localName && node.localName.toLowerCase() === 'br';
+    }
+
+    function isBlankTextNode(node) {
+      return node && node.nodeType === 3 && !node.nodeValue.trim();
+    }
+
+    function hasParagraphContent(node) {
+      if (!node) return false;
+      if (node.nodeType === 3) return !!node.nodeValue.trim();
+      if (node.nodeType === 1) return !isBrNode(node) && !!node.textContent.trim();
+      return false;
+    }
+
+    function isVerticalDoc(doc) {
+      const root = doc && doc.documentElement;
+      if (!root) return false;
+      if (root.classList.contains('vrtl') || root.classList.contains('vltr')) return true;
+      const body = doc.body;
+      if (!body || !doc.defaultView) return false;
+      const style = doc.defaultView.getComputedStyle(body);
+      if (style.writingMode === 'vertical-rl' || style.writingMode === 'vertical-lr') return true;
+      const firstChild = body.querySelector(':scope > :not([cfi-inert])');
+      if (!firstChild) return false;
+      const childStyle = doc.defaultView.getComputedStyle(firstChild);
+      return childStyle.writingMode === 'vertical-rl' || childStyle.writingMode === 'vertical-lr';
+    }
+
     function applyDocStyles(doc) {
       syncCustomFontStylesForDoc(doc, currentCustomFontFaceCSS);
-      for (const img of doc.querySelectorAll('img')) {
-        img.style.maxWidth = '100%';
-        img.style.height = 'auto';
+      const verticalDoc = isVerticalDoc(doc);
+      if (!verticalDoc) {
+        for (const img of doc.querySelectorAll('img')) {
+          img.style.maxWidth = '100%';
+          img.style.height = 'auto';
+          img.style.webkitUserDrag = 'none';
+          img.style.touchAction = 'manipulation';
+        }
       }
       const style = doc.createElement('style');
       const { bg, fg, primary } = currentThemeColors;
       style.textContent = `
         * { -webkit-touch-callout: none !important; -webkit-user-select: text !important; user-select: text !important; }
         html, body { background-color: ${bg} !important; color: ${fg} !important; }
+        img, picture, svg, image, canvas {
+          -webkit-user-drag: none !important;
+          touch-action: manipulation !important;
+        }
         p, div, span, blockquote, li, dd, dt, h1, h2, h3, h4, h5, h6, td, th, caption, figcaption, label { color: inherit !important; }
         a { color: ${primary} !important; }
         ::selection { background: rgba(250, 204, 21, 0.4) !important; }
+        ${verticalDoc ? getVerticalWritingCompatibilityStyles() : ''}
       `;
       doc.head.appendChild(style);
       doc.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); return false; }, true);
+    }
+
+    function isImageOnlyAnchor(anchor) {
+      if (!anchor || !anchor.matches || !anchor.matches('a[href]')) return false;
+      if ((anchor.textContent || '').trim().length > 0) return false;
+      return !!anchor.querySelector('img, picture, svg, image, canvas');
     }
 
     // ─── Tap detection ───
@@ -1883,8 +2269,11 @@ a { color: ${primary} !important; }
         }
 
         const target = e.target || state.target;
-        if (target && target.closest && target.closest('a[href], audio, video, button, input, select, textarea')) {
-          if (!target.closest('a[href]')) hideFootnoteTip();
+        const interactiveTarget = target && target.closest
+          ? target.closest('a[href], audio, video, button, input, select, textarea')
+          : null;
+        if (interactiveTarget && !isImageOnlyAnchor(interactiveTarget)) {
+          if (!interactiveTarget.closest('a[href]')) hideFootnoteTip();
           return;
         }
 
@@ -1921,18 +2310,11 @@ a { color: ${primary} !important; }
         armTapNavigationLock();
         e.preventDefault();
         e.stopPropagation();
-        const dir = currentBook && currentBook.dir === 'rtl' ? 'rtl' : 'ltr';
 
         if (normalizedX < centerStart) {
-          if (view) {
-            if (dir === 'rtl') view.next();
-            else view.prev();
-          }
+          if (view) goPrevByMode();
         } else {
-          if (view) {
-            if (dir === 'rtl') view.prev();
-            else view.next();
-          }
+          if (view) goNextByMode();
         }
       }, { passive: false, capture: true });
     }
