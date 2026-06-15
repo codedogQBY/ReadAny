@@ -41,6 +41,7 @@ const throttle = (f, wait) => {
 
 const SELECTION_EDGE_TURN_DWELL_MS = 1000
 const SELECTION_EDGE_POINTER_MOVE_TOLERANCE = 12
+const SELECTION_EDGE_TURN_COOLDOWN_MS = 1200
 
 // Transforms ALL children of the container so multi-view layouts
 // animate as a unified whole. Extra elements (e.g. background) are
@@ -1282,7 +1283,8 @@ export class Paginator extends HTMLElement {
         })
         let pointerSelectionTurn = null
         let pointerSelectionEdgeCandidate = null
-        let lastPointerSelectionTurn = null
+        let lastPointerSelectionTurnAt = 0
+        let lastPointerSelectionTurnDirection = 0
         let lastPointerSelectionPoint = null
         const clearPointerSelectionEdgeCandidate = () => {
             if (pointerSelectionEdgeCandidate?.timer) clearTimeout(pointerSelectionEdgeCandidate.timer)
@@ -1338,9 +1340,6 @@ export class Paginator extends HTMLElement {
                 doc,
                 updatedAt: Date.now(),
             }
-            if (lastPointerSelectionTurn &&
-                lastPointerSelectionTurn.pointUpdatedAt !== lastPointerSelectionPoint.updatedAt)
-                lastPointerSelectionTurn = null
             refreshPointerSelectionEdgeCandidate()
         }
         const checkPointerSelection = throttle((range, sel, allowEdgeTurn) => {
@@ -1351,21 +1350,18 @@ export class Paginator extends HTMLElement {
             const backward = selectionIsBackward(sel)
             const turnIntent = this.#getPointerSelectionTurn(range, selRange, backward, allowEdgeTurn)
             if (!turnIntent.direction) {
-                lastPointerSelectionTurn = null
                 clearPointerSelectionEdgeCandidate()
                 return
             }
             if (!turnIntent.edge) {
-                lastPointerSelectionTurn = null
                 clearPointerSelectionEdgeCandidate()
                 runPointerSelectionTurn(turnIntent.direction)
                 return
             }
 
             const direction = turnIntent.direction
-            if (lastPointerSelectionTurn &&
-                lastPointerSelectionTurn.direction === direction &&
-                lastPointerSelectionTurn.pointUpdatedAt === (lastPointerSelectionPoint?.updatedAt ?? 0)) {
+            if (lastPointerSelectionTurnDirection === direction &&
+                Date.now() - lastPointerSelectionTurnAt < SELECTION_EDGE_TURN_COOLDOWN_MS) {
                 clearPointerSelectionEdgeCandidate()
                 return
             }
@@ -1389,10 +1385,8 @@ export class Paginator extends HTMLElement {
                     const currentBackward = selectionIsBackward(currentSel)
                     const currentIntent = this.#getPointerSelectionTurn(range, currentRange, currentBackward, true)
                     if (currentIntent.edge && currentIntent.direction === direction) {
-                        lastPointerSelectionTurn = {
-                            direction,
-                            pointUpdatedAt: lastPointerSelectionPoint?.updatedAt ?? 0,
-                        }
+                        lastPointerSelectionTurnDirection = direction
+                        lastPointerSelectionTurnAt = Date.now()
                         runPointerSelectionTurn(direction)
                     }
                 },
