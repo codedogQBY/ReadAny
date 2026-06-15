@@ -1286,6 +1286,10 @@ export class Paginator extends HTMLElement {
         let lastPointerSelectionTurnAt = 0
         let lastPointerSelectionTurnDirection = 0
         let lastPointerSelectionPoint = null
+        let isPointerSelecting = false
+        let pointerSelectionActiveUntil = 0
+        let pointerSelectionChangeCount = 0
+        const touchSelectionHandles = globalThis.navigator?.maxTouchPoints > 0
         const debugSelectionPaging = (event, detail = {}) => {
             const serialize = value => {
                 try {
@@ -1334,6 +1338,29 @@ export class Paginator extends HTMLElement {
         }
         const pointerPointMoved = (a, b) => !a || !b ||
             Math.hypot(a.x - b.x, a.y - b.y) > SELECTION_EDGE_POINTER_MOVE_TOLERANCE
+        let pointerSelectionPollTimer = null
+        const clearPointerSelectionPoll = () => {
+            if (pointerSelectionPollTimer) clearTimeout(pointerSelectionPollTimer)
+            pointerSelectionPollTimer = null
+        }
+        const schedulePointerSelectionPoll = () => {
+            clearPointerSelectionPoll()
+            pointerSelectionPollTimer = setTimeout(() => {
+                pointerSelectionPollTimer = null
+                const sel = this.#primaryView?.document?.getSelection?.()
+                const range = this.#lastVisibleRange
+                if (!sel || !range || sel.type !== 'Range' || !sel.rangeCount) return
+                if (!isPointerSelecting && Date.now() >= pointerSelectionActiveUntil && !touchSelectionHandles) return
+                checkPointerSelection(
+                    range,
+                    sel,
+                    pointerSelectionChangeCount > 1 || touchSelectionHandles,
+                    isPointerSelecting || Date.now() < pointerSelectionActiveUntil || touchSelectionHandles,
+                )
+                if (pointerSelectionEdgeCandidate || isPointerSelecting || Date.now() < pointerSelectionActiveUntil || touchSelectionHandles)
+                    schedulePointerSelectionPoll()
+            }, 240)
+        }
         const refreshPointerSelectionEdgeCandidate = direction => {
             const candidate = pointerSelectionEdgeCandidate
             if (!candidate) return null
@@ -1406,7 +1433,7 @@ export class Paginator extends HTMLElement {
             })
             refreshPointerSelectionEdgeCandidate()
         }
-        const checkPointerSelection = throttle((range, sel, allowEdgeTurn) => {
+        const checkPointerSelection = throttle((range, sel, allowEdgeTurn, keepEdgeCandidate) => {
             if (this.#navigationLocked) {
                 debugSelectionPaging('check-skip', { reason: 'navigation-locked' })
                 return
@@ -1445,28 +1472,19 @@ export class Paginator extends HTMLElement {
             })
             if (!turnIntent.direction) {
                 if (pointerSelectionEdgeCandidate &&
+                    keepEdgeCandidate &&
                     (turnIntent.reason === 'not-at-edge' || turnIntent.reason === 'range-edge-not-found')) {
                     const direction = pointerSelectionEdgeCandidate.direction
-                    const edgeSlop = Math.max(24, Math.min(56, this.size * 0.14))
-                    const stillNearTrailingEdge = direction > 0 &&
-                        typeof turnIntent.mappedRight === 'number' &&
-                        turnIntent.mappedRight >= turnIntent.visibleEnd - turnIntent.edgeInset - edgeSlop
-                    const stillNearLeadingEdge = direction < 0 &&
-                        typeof turnIntent.mappedLeft === 'number' &&
-                        turnIntent.mappedLeft <= turnIntent.visibleStart + turnIntent.edgeInset + edgeSlop
-                    if (stillNearTrailingEdge || stillNearLeadingEdge) {
-                        debugSelectionPaging('candidate-keep-near-edge', {
-                            direction,
-                            stableAge: Math.round(Date.now() - pointerSelectionEdgeCandidate.stableSince),
-                            edgeSlop: Math.round(edgeSlop),
-                            mappedLeft: turnIntent.mappedLeft,
-                            mappedRight: turnIntent.mappedRight,
-                            visibleStart: turnIntent.visibleStart,
-                            visibleEnd: turnIntent.visibleEnd,
-                            edgeInset: turnIntent.edgeInset,
-                        })
-                        return
-                    }
+                    debugSelectionPaging('candidate-keep-range-drift', {
+                        direction,
+                        stableAge: Math.round(Date.now() - pointerSelectionEdgeCandidate.stableSince),
+                        mappedLeft: turnIntent.mappedLeft,
+                        mappedRight: turnIntent.mappedRight,
+                        visibleStart: turnIntent.visibleStart,
+                        visibleEnd: turnIntent.visibleEnd,
+                        edgeInset: turnIntent.edgeInset,
+                    })
+                    return
                 }
                 clearPointerSelectionEdgeCandidate('no-direction')
                 return
@@ -1528,41 +1546,15 @@ export class Paginator extends HTMLElement {
                         })
                         return
                     }
-                    const currentRange = currentSel.getRangeAt(0)
-                    const currentBackward = selectionIsBackward(currentSel)
-                    const currentIntent = this.#getPointerSelectionTurn(
-                        range,
-                        currentRange,
-                        currentBackward,
-                        true,
-                        lastPointerSelectionPoint,
-                    )
                     debugSelectionPaging('run-check', {
                         direction,
-                        currentDirection: currentIntent.direction,
-                        currentEdge: currentIntent.edge,
-                        reason: currentIntent.reason,
-                        edgeSource: currentIntent.edgeSource,
-                        edgeInset: currentIntent.edgeInset,
-                        pointerEdgeInset: currentIntent.pointerEdgeInset,
-                        pointerMapped: currentIntent.pointerMapped,
-                        mappedLeft: currentIntent.mappedLeft,
-                        mappedRight: currentIntent.mappedRight,
-                        visibleStart: currentIntent.visibleStart,
-                        visibleEnd: currentIntent.visibleEnd,
+                        reason: 'candidate-dwelled',
+                        type: currentSel.type,
+                        rangeCount: currentSel.rangeCount,
                     })
-                    if (currentIntent.edge && currentIntent.direction === direction) {
-                        lastPointerSelectionTurnDirection = direction
-                        lastPointerSelectionTurnAt = Date.now()
-                        runPointerSelectionTurn(direction)
-                    } else {
-                        debugSelectionPaging('run-abort', {
-                            reason: 'edge-or-direction-changed',
-                            direction,
-                            currentDirection: currentIntent.direction,
-                            currentEdge: currentIntent.edge,
-                        })
-                    }
+                    lastPointerSelectionTurnDirection = direction
+                    lastPointerSelectionTurnAt = Date.now()
+                    runPointerSelectionTurn(direction)
                 },
             }
             debugSelectionPaging('candidate-create', {
@@ -1573,10 +1565,6 @@ export class Paginator extends HTMLElement {
             schedulePointerSelectionEdgeCandidate(pointerSelectionEdgeCandidate)
         }, 120)
         this.addEventListener('load', ({ detail: { doc } }) => {
-            let isPointerSelecting = false
-            let pointerSelectionActiveUntil = 0
-            let pointerSelectionChangeCount = 0
-            const touchSelectionHandles = globalThis.navigator?.maxTouchPoints > 0
             const markPointerSelecting = e => {
                 rememberPointerSelectionPoint(e, doc)
                 isPointerSelecting = true
@@ -1586,10 +1574,12 @@ export class Paginator extends HTMLElement {
                 pointerSelectionChangeCount = 0
                 clearPointerSelectionEdgeCandidate('selection-start')
                 markPointerSelecting(e)
+                schedulePointerSelectionPoll()
             }
             const clearPointerSelecting = () => {
                 lastPointerSelectionPoint = null
                 clearPointerSelectionEdgeCandidate('selection-end')
+                clearPointerSelectionPoll()
                 setTimeout(() => {
                     if (Date.now() >= pointerSelectionActiveUntil) isPointerSelecting = false
                 }, 160)
@@ -1643,7 +1633,15 @@ export class Paginator extends HTMLElement {
                 else if (sel.type === 'Range' &&
                     (isPointerSelecting || Date.now() < pointerSelectionActiveUntil || touchSelectionHandles)) {
                     pointerSelectionChangeCount += 1
-                    checkPointerSelection(range, sel, pointerSelectionChangeCount > 1 || touchSelectionHandles)
+                    checkPointerSelection(
+                        range,
+                        sel,
+                        pointerSelectionChangeCount > 1 || touchSelectionHandles,
+                        isPointerSelecting
+                            || Date.now() < pointerSelectionActiveUntil
+                            || touchSelectionHandles,
+                    )
+                    schedulePointerSelectionPoll()
                 } else {
                     debugSelectionPaging('selectionchange-skip', {
                         reason: 'not-pointer-selection',
