@@ -2292,8 +2292,8 @@ export class Paginator extends HTMLElement {
         const visibleStart = this.#renderedStart - viewOffset
         const visibleEnd = this.#renderedEnd - viewOffset
         const mapped = this.#getRectMapper(view)(rect)
-        const edgeInset = Math.max(24, Math.min(96, this.size * 0.12))
-        const pointerEdgeInset = Math.max(edgeInset, Math.min(96, this.size * 0.22))
+        const edgeInset = Math.max(48, Math.min(120, this.size * 0.18))
+        const pointerEdgeInset = Math.max(edgeInset, Math.min(140, this.size * 0.3))
         const base = {
             edgeInset: Math.round(edgeInset),
             pointerEdgeInset: Math.round(pointerEdgeInset),
