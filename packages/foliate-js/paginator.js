@@ -1282,9 +1282,8 @@ export class Paginator extends HTMLElement {
         })
         let pointerSelectionTurn = null
         let pointerSelectionEdgeCandidate = null
+        let lastPointerSelectionTurn = null
         let lastPointerSelectionPoint = null
-        let pointerSelectionNodeId = 0
-        const pointerSelectionNodeIds = new WeakMap()
         const clearPointerSelectionEdgeCandidate = () => {
             if (pointerSelectionEdgeCandidate?.timer) clearTimeout(pointerSelectionEdgeCandidate.timer)
             pointerSelectionEdgeCandidate = null
@@ -1297,20 +1296,6 @@ export class Paginator extends HTMLElement {
                     pointerSelectionTurn = null
                 }, 80))
         }
-        const getPointerSelectionNodeId = node => {
-            if (!node) return 0
-            if (!pointerSelectionNodeIds.has(node))
-                pointerSelectionNodeIds.set(node, ++pointerSelectionNodeId)
-            return pointerSelectionNodeIds.get(node)
-        }
-        const getPointerSelectionRangeKey = range => range
-            ? [
-                getPointerSelectionNodeId(range.startContainer),
-                range.startOffset,
-                getPointerSelectionNodeId(range.endContainer),
-                range.endOffset,
-            ].join(':')
-            : ''
         const pointerPointMoved = (a, b) => !a || !b ||
             Math.hypot(a.x - b.x, a.y - b.y) > SELECTION_EDGE_POINTER_MOVE_TOLERANCE
         const refreshPointerSelectionEdgeCandidate = direction => {
@@ -1353,6 +1338,9 @@ export class Paginator extends HTMLElement {
                 doc,
                 updatedAt: Date.now(),
             }
+            if (lastPointerSelectionTurn &&
+                lastPointerSelectionTurn.pointUpdatedAt !== lastPointerSelectionPoint.updatedAt)
+                lastPointerSelectionTurn = null
             refreshPointerSelectionEdgeCandidate()
         }
         const checkPointerSelection = throttle((range, sel, allowEdgeTurn) => {
@@ -1363,24 +1351,26 @@ export class Paginator extends HTMLElement {
             const backward = selectionIsBackward(sel)
             const turnIntent = this.#getPointerSelectionTurn(range, selRange, backward, allowEdgeTurn)
             if (!turnIntent.direction) {
+                lastPointerSelectionTurn = null
                 clearPointerSelectionEdgeCandidate()
                 return
             }
             if (!turnIntent.edge) {
+                lastPointerSelectionTurn = null
                 clearPointerSelectionEdgeCandidate()
                 runPointerSelectionTurn(turnIntent.direction)
                 return
             }
 
             const direction = turnIntent.direction
-            const rangeKey = getPointerSelectionRangeKey(selRange)
+            if (lastPointerSelectionTurn &&
+                lastPointerSelectionTurn.direction === direction &&
+                lastPointerSelectionTurn.pointUpdatedAt === (lastPointerSelectionPoint?.updatedAt ?? 0)) {
+                clearPointerSelectionEdgeCandidate()
+                return
+            }
             const existingCandidate = refreshPointerSelectionEdgeCandidate(direction)
             if (existingCandidate) {
-                if (existingCandidate.rangeKey !== rangeKey) {
-                    existingCandidate.rangeKey = rangeKey
-                    existingCandidate.stableSince = Date.now()
-                    schedulePointerSelectionEdgeCandidate(existingCandidate)
-                }
                 return
             }
 
@@ -1391,7 +1381,6 @@ export class Paginator extends HTMLElement {
                 direction,
                 point: point ? { x: point.x, y: point.y } : null,
                 pointUpdatedAt: point?.updatedAt ?? 0,
-                rangeKey,
                 stableSince: Date.now(),
                 run: () => {
                     const currentSel = doc?.getSelection?.()
@@ -1399,8 +1388,13 @@ export class Paginator extends HTMLElement {
                     const currentRange = currentSel.getRangeAt(0)
                     const currentBackward = selectionIsBackward(currentSel)
                     const currentIntent = this.#getPointerSelectionTurn(range, currentRange, currentBackward, true)
-                    if (currentIntent.edge && currentIntent.direction === direction)
+                    if (currentIntent.edge && currentIntent.direction === direction) {
+                        lastPointerSelectionTurn = {
+                            direction,
+                            pointUpdatedAt: lastPointerSelectionPoint?.updatedAt ?? 0,
+                        }
                         runPointerSelectionTurn(direction)
+                    }
                 },
             }
             schedulePointerSelectionEdgeCandidate(pointerSelectionEdgeCandidate)
