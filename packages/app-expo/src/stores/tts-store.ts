@@ -441,6 +441,10 @@ export const useTTSStore = create<TTSState>()(
           isActivePlay(get().playState)
         ) {
           scheduleRespeak();
+        } else {
+          // 非重读变更（切引擎、或改了当前引擎不关心的字段）必须取消上一次合成变更排下的
+          // 待执行 respeak，否则陈旧防抖定时器会 fire 并强制重启播放。
+          clearRespeakTimer();
         }
       },
 

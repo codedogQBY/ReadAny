@@ -191,4 +191,15 @@ describe("useTTSStore — re-speak on synth change (#370)", () => {
     vi.advanceTimersByTime(250);
     expect(dashscopePlayer.speak).toHaveBeenCalledTimes(1);
   });
+
+  it("[cleanup] 非重读配置变更取消待执行的 respeak（不残留重启）", () => {
+    startEdge();
+    useTTSStore.getState().updateConfig({ edgeVoice: "zh-CN-YunxiNeural" }); // 排下 respeak 定时器
+    vi.advanceTimersByTime(100); // 防抖窗口内
+    useTTSStore.getState().updateConfig({ engine: "system" }); // 非重读变更 → 应取消定时器
+    vi.clearAllMocks();
+    vi.advanceTimersByTime(250); // 让任何残留定时器有机会 fire
+    expect(edgePlayer.speak).not.toHaveBeenCalled();
+    expect(systemPlayer.speak).not.toHaveBeenCalled();
+  });
 });
