@@ -14,36 +14,6 @@ const debounce = (f, wait, immediate) => {
     }
 }
 
-const throttle = (f, wait) => {
-    let timeout
-    let lastArgs
-    let lastCall = 0
-    const invoke = args => {
-        lastCall = Date.now()
-        timeout = null
-        lastArgs = null
-        f(...args)
-    }
-    return (...args) => {
-        lastArgs = args
-        const remaining = wait - (Date.now() - lastCall)
-        if (remaining <= 0 || remaining > wait) {
-            if (timeout) {
-                clearTimeout(timeout)
-                timeout = null
-            }
-            invoke(lastArgs)
-        } else if (!timeout) {
-            timeout = setTimeout(() => invoke(lastArgs), remaining)
-        }
-    }
-}
-
-const SELECTION_EDGE_TURN_DWELL_MS = 1000
-const SELECTION_EDGE_POINTER_MOVE_TOLERANCE = 18
-const SELECTION_EDGE_RANGE_MOVE_TOLERANCE = 24
-const SELECTION_EDGE_TURN_COOLDOWN_MS = 900
-
 // Transforms ALL children of the container so multi-view layouts
 // animate as a unified whole. Extra elements (e.g. background) are
 // also transformed so they slide in sync with the content.
@@ -268,31 +238,10 @@ const getVisibleRange = (doc, start, end, mapRect) => {
 }
 
 const selectionIsBackward = sel => {
-    try {
-        const doc = sel.anchorNode?.ownerDocument ?? sel.focusNode?.ownerDocument ?? document
-        const range = doc.createRange()
-        range.setStart(sel.anchorNode, sel.anchorOffset)
-        range.setEnd(sel.focusNode, sel.focusOffset)
-        return range.collapsed
-    } catch {
-        return false
-    }
-}
-
-const getRangeEdgeRect = (range, atStart) => {
-    if (!range) return null
-    try {
-        const edge = range.cloneRange()
-        edge.collapse(atStart)
-        const rects = [...edge.getClientRects()].filter(r => r.width >= 0 && r.height > 0)
-        if (rects.length) return rects[atStart ? 0 : rects.length - 1]
-    } catch {}
-    try {
-        const rects = [...range.getClientRects()].filter(r => r.width > 0 && r.height > 0)
-        return rects[atStart ? 0 : rects.length - 1] ?? range.getBoundingClientRect()
-    } catch {
-        return null
-    }
+    const range = document.createRange()
+    range.setStart(sel.anchorNode, sel.anchorOffset)
+    range.setEnd(sel.focusNode, sel.focusOffset)
+    return range.collapsed
 }
 
 const setSelectionTo = (target, collapse) => {
@@ -1282,367 +1231,36 @@ export class Paginator extends HTMLElement {
                 else setSelectionTo(this.#anchor, -1)
             }
         })
-        let pointerSelectionTurn = null
-        let pointerSelectionEdgeCandidate = null
-        let lastPointerSelectionTurnAt = 0
-        let lastPointerSelectionTurnDirection = 0
-        let lastPointerSelectionPoint = null
-        let isPointerSelecting = false
-        let pointerSelectionActiveUntil = 0
-        let pointerSelectionChangeCount = 0
-        const touchSelectionHandles = globalThis.navigator?.maxTouchPoints > 0
-        const debugSelectionPaging = (event, detail = {}) => {
-            const serialize = value => {
-                try {
-                    return JSON.stringify(value)
-                } catch {
-                    return String(value)
-                }
-            }
-            const message = `[SelectionPaging] ${event} ${serialize(detail)}`
-            try {
-                console.log(message)
-            } catch {
-                // ignore console failures in embedded WebViews
-            }
-            try {
-                globalThis.ReactNativeWebView?.postMessage(JSON.stringify({
-                    type: 'debug',
-                    message,
-                }))
-            } catch {
-                // ignore bridge failures outside React Native WebView
-            }
-        }
-        const clearPointerSelectionEdgeCandidate = reason => {
-            if (pointerSelectionEdgeCandidate)
-                debugSelectionPaging('candidate-clear', {
-                    reason,
-                    direction: pointerSelectionEdgeCandidate.direction,
-                    age: Math.round(Date.now() - pointerSelectionEdgeCandidate.stableSince),
-                })
-            if (pointerSelectionEdgeCandidate?.timer) clearTimeout(pointerSelectionEdgeCandidate.timer)
-            pointerSelectionEdgeCandidate = null
-        }
-        const runPointerSelectionTurn = direction => {
-            if (pointerSelectionTurn || !direction) {
-                debugSelectionPaging('turn-skip', { direction, reason: pointerSelectionTurn ? 'in-flight' : 'no-direction' })
-                return
-            }
-            debugSelectionPaging('turn-run', { direction })
-            const turn = direction < 0 ? this.prev() : this.next()
-            pointerSelectionTurn = Promise.resolve(turn)
-                .finally(() => setTimeout(() => {
-                    debugSelectionPaging('turn-ready', { direction })
-                    pointerSelectionTurn = null
-                }, 80))
-        }
-        const pointerPointMoved = (a, b) => !a || !b ||
-            Math.hypot(a.x - b.x, a.y - b.y) > SELECTION_EDGE_POINTER_MOVE_TOLERANCE
-        let pointerSelectionPollTimer = null
-        const clearPointerSelectionPoll = () => {
-            if (pointerSelectionPollTimer) clearTimeout(pointerSelectionPollTimer)
-            pointerSelectionPollTimer = null
-        }
-        const schedulePointerSelectionPoll = () => {
-            clearPointerSelectionPoll()
-            pointerSelectionPollTimer = setTimeout(() => {
-                pointerSelectionPollTimer = null
-                const sel = this.#primaryView?.document?.getSelection?.()
-                const range = this.#lastVisibleRange
-                if (!sel || !range || sel.type !== 'Range' || !sel.rangeCount) return
-                if (!isPointerSelecting && Date.now() >= pointerSelectionActiveUntil && !touchSelectionHandles) return
-                checkPointerSelection(
-                    range,
-                    sel,
-                    pointerSelectionChangeCount > 1 || touchSelectionHandles,
-                    isPointerSelecting || Date.now() < pointerSelectionActiveUntil || touchSelectionHandles,
-                )
-                if (pointerSelectionEdgeCandidate || isPointerSelecting || Date.now() < pointerSelectionActiveUntil || touchSelectionHandles)
-                    schedulePointerSelectionPoll()
-            }, 240)
-        }
-        const refreshPointerSelectionEdgeCandidate = (direction, turnIntent = null) => {
-            const candidate = pointerSelectionEdgeCandidate
-            if (!candidate) return null
-            if (direction && candidate.direction !== direction) {
-                debugSelectionPaging('candidate-direction-mismatch', {
-                    current: candidate.direction,
-                    next: direction,
-                })
-                clearPointerSelectionEdgeCandidate('direction-mismatch')
-                return null
-            }
-            const point = lastPointerSelectionPoint
-            if (point && point.updatedAt !== candidate.pointUpdatedAt) {
-                if (pointerPointMoved(candidate.point, point)) {
-                    debugSelectionPaging('candidate-reset-moving-point', {
-                        direction: candidate.direction,
-                        from: candidate.point,
-                        to: { x: point.x, y: point.y },
-                    })
-                    candidate.point = { x: point.x, y: point.y }
-                    candidate.stableSince = Date.now()
-                }
-                candidate.pointUpdatedAt = point.updatedAt
-            }
-            if (turnIntent && Number.isFinite(turnIntent.edgePosition)) {
-                if (Number.isFinite(candidate.edgePosition) &&
-                    Math.abs(candidate.edgePosition - turnIntent.edgePosition) > SELECTION_EDGE_RANGE_MOVE_TOLERANCE) {
-                    debugSelectionPaging('candidate-reset-moving-edge', {
-                        direction: candidate.direction,
-                        from: Math.round(candidate.edgePosition),
-                        to: Math.round(turnIntent.edgePosition),
-                    })
-                    candidate.edgePosition = turnIntent.edgePosition
-                    candidate.stableSince = Date.now()
-                } else if (!Number.isFinite(candidate.edgePosition)) {
-                    candidate.edgePosition = turnIntent.edgePosition
-                }
-            }
-            return candidate
-        }
-        const schedulePointerSelectionEdgeCandidate = candidate => {
-            if (candidate.timer) clearTimeout(candidate.timer)
-            const delay = Math.max(0, SELECTION_EDGE_TURN_DWELL_MS - (Date.now() - candidate.stableSince))
-            debugSelectionPaging('candidate-schedule', {
-                direction: candidate.direction,
-                delay: Math.round(delay),
-                stableAge: Math.round(Date.now() - candidate.stableSince),
-            })
-            candidate.timer = setTimeout(() => {
-                const currentCandidate = refreshPointerSelectionEdgeCandidate(candidate.direction)
-                if (currentCandidate !== candidate) {
-                    debugSelectionPaging('candidate-abort-replaced', { direction: candidate.direction })
-                    return
-                }
-                if (Date.now() - candidate.stableSince < SELECTION_EDGE_TURN_DWELL_MS) {
-                    debugSelectionPaging('candidate-reschedule-not-stable', {
-                        direction: candidate.direction,
-                        stableAge: Math.round(Date.now() - candidate.stableSince),
-                    })
-                    schedulePointerSelectionEdgeCandidate(candidate)
-                    return
-                }
-                pointerSelectionEdgeCandidate = null
-                debugSelectionPaging('candidate-fire', {
-                    direction: candidate.direction,
-                    stableAge: Math.round(Date.now() - candidate.stableSince),
-                })
-                candidate.run()
-            }, delay)
-        }
-        const rememberPointerSelectionPoint = (e, doc) => {
-            const point = e?.touches?.[0] ?? e?.changedTouches?.[0] ?? e
-            if (typeof point?.clientX !== 'number' || typeof point?.clientY !== 'number') return
-            lastPointerSelectionPoint = {
-                x: point.clientX,
-                y: point.clientY,
-                doc,
-                updatedAt: Date.now(),
-            }
-            debugSelectionPaging('point', {
-                type: e?.type,
-                x: Math.round(lastPointerSelectionPoint.x),
-                y: Math.round(lastPointerSelectionPoint.y),
-            })
-            refreshPointerSelectionEdgeCandidate()
-        }
-        const checkPointerSelection = throttle((range, sel, allowEdgeTurn, keepEdgeCandidate) => {
-            if (this.#navigationLocked) {
-                debugSelectionPaging('check-skip', { reason: 'navigation-locked' })
-                return
-            }
-            if (pointerSelectionTurn) {
-                debugSelectionPaging('check-skip', { reason: 'turn-in-flight' })
-                return
-            }
-            if (!sel.rangeCount) {
-                debugSelectionPaging('check-skip', { reason: 'no-range' })
-                return
-            }
+        const checkPointerSelection = debounce((range, sel) => {
+            if (this.#navigationLocked) return
+            if (!sel.rangeCount) return
             const selRange = sel.getRangeAt(0)
             const backward = selectionIsBackward(sel)
-            const turnIntent = this.#getPointerSelectionTurn(
-                range,
-                selRange,
-                backward,
-                allowEdgeTurn,
-                lastPointerSelectionPoint,
-            )
-            debugSelectionPaging('check', {
-                allowEdgeTurn,
-                backward,
-                direction: turnIntent.direction,
-                edge: turnIntent.edge,
-                reason: turnIntent.reason,
-                edgeSource: turnIntent.edgeSource,
-                edgeInset: turnIntent.edgeInset,
-                pointerEdgeInset: turnIntent.pointerEdgeInset,
-                pointerMapped: turnIntent.pointerMapped,
-                mappedLeft: turnIntent.mappedLeft,
-                mappedRight: turnIntent.mappedRight,
-                edgePosition: turnIntent.edgePosition,
-                visibleStart: turnIntent.visibleStart,
-                visibleEnd: turnIntent.visibleEnd,
-            })
-            if (!turnIntent.direction) {
-                clearPointerSelectionEdgeCandidate('no-direction')
-                return
-            }
-            if (!turnIntent.edge) {
-                clearPointerSelectionEdgeCandidate('crossed-visible-range')
-                runPointerSelectionTurn(turnIntent.direction)
-                return
-            }
-
-            const direction = turnIntent.direction
-            if (lastPointerSelectionTurnDirection === direction &&
-                Date.now() - lastPointerSelectionTurnAt < SELECTION_EDGE_TURN_COOLDOWN_MS) {
-                debugSelectionPaging('check-skip', {
-                    reason: 'cooldown',
-                    direction,
-                    remaining: Math.round(SELECTION_EDGE_TURN_COOLDOWN_MS - (Date.now() - lastPointerSelectionTurnAt)),
-                })
-                clearPointerSelectionEdgeCandidate('cooldown')
-                return
-            }
-            const existingCandidate = refreshPointerSelectionEdgeCandidate(direction, turnIntent)
-            if (existingCandidate) {
-                debugSelectionPaging('candidate-existing', {
-                    direction,
-                    stableAge: Math.round(Date.now() - existingCandidate.stableSince),
-                    edgePosition: Math.round(existingCandidate.edgePosition),
-                })
-                return
-            }
-
-            clearPointerSelectionEdgeCandidate('new-candidate')
-            const doc = sel.anchorNode?.ownerDocument ?? sel.focusNode?.ownerDocument
-            const point = lastPointerSelectionPoint
-            pointerSelectionEdgeCandidate = {
-                direction,
-                point: point ? { x: point.x, y: point.y } : null,
-                pointUpdatedAt: point?.updatedAt ?? 0,
-                edgePosition: turnIntent.edgePosition,
-                stableSince: Date.now(),
-                run: () => {
-                    const currentSel = doc?.getSelection?.()
-                    if (!currentSel || currentSel.type !== 'Range' || !currentSel.rangeCount) {
-                        debugSelectionPaging('run-abort', {
-                            reason: 'selection-invalid',
-                            hasSelection: !!currentSel,
-                            type: currentSel?.type,
-                            rangeCount: currentSel?.rangeCount,
-                        })
-                        return
-                    }
-                    debugSelectionPaging('run-check', {
-                        direction,
-                        reason: 'candidate-dwelled',
-                        type: currentSel.type,
-                        rangeCount: currentSel.rangeCount,
-                    })
-                    lastPointerSelectionTurnDirection = direction
-                    lastPointerSelectionTurnAt = Date.now()
-                    runPointerSelectionTurn(direction)
-                },
-            }
-            debugSelectionPaging('candidate-create', {
-                direction,
-                point: pointerSelectionEdgeCandidate.point,
-                pointUpdatedAt: pointerSelectionEdgeCandidate.pointUpdatedAt,
-                edgePosition: Math.round(pointerSelectionEdgeCandidate.edgePosition),
-                edgeSource: turnIntent.edgeSource,
-            })
-            schedulePointerSelectionEdgeCandidate(pointerSelectionEdgeCandidate)
-        }, 120)
+            if (backward && selRange.compareBoundaryPoints(Range.START_TO_START, range) < 0)
+                this.prev()
+            else if (!backward && selRange.compareBoundaryPoints(Range.END_TO_END, range) > 0)
+                this.next()
+        }, 700)
         this.addEventListener('load', ({ detail: { doc } }) => {
-            const markPointerSelecting = e => {
-                rememberPointerSelectionPoint(e, doc)
-                isPointerSelecting = true
-                pointerSelectionActiveUntil = Date.now() + 1200
-            }
-            const beginPointerSelecting = e => {
-                pointerSelectionChangeCount = 0
-                clearPointerSelectionEdgeCandidate('selection-start')
-                markPointerSelecting(e)
-                schedulePointerSelectionPoll()
-            }
-            const clearPointerSelecting = () => {
-                lastPointerSelectionPoint = null
-                clearPointerSelectionEdgeCandidate('selection-end')
-                clearPointerSelectionPoll()
-                setTimeout(() => {
-                    if (Date.now() >= pointerSelectionActiveUntil) isPointerSelecting = false
-                }, 160)
-            }
-            doc.addEventListener('selectstart', beginPointerSelecting)
-            doc.addEventListener('pointerdown', beginPointerSelecting)
-            doc.addEventListener('pointermove', e => {
-                if (doc.getSelection()?.type === 'Range') markPointerSelecting(e)
-            })
-            doc.addEventListener('pointerup', clearPointerSelecting)
-            doc.addEventListener('touchstart', beginPointerSelecting)
-            doc.addEventListener('touchmove', e => {
-                if (doc.getSelection()?.type === 'Range') markPointerSelecting(e)
-            }, { passive: true })
-            doc.addEventListener('touchend', clearPointerSelecting)
-            doc.addEventListener('touchcancel', clearPointerSelecting)
+            let isPointerSelecting = false
+            doc.addEventListener('pointerdown', () => isPointerSelecting = true)
+            doc.addEventListener('pointerup', () => isPointerSelecting = false)
             let isKeyboardSelecting = false
             doc.addEventListener('keydown', () => isKeyboardSelecting = true)
             doc.addEventListener('keyup', () => isKeyboardSelecting = false)
             doc.addEventListener('selectionchange', () => {
-                if (this.scrolled) {
-                    debugSelectionPaging('selectionchange-skip', { reason: 'scrolled' })
-                    return
-                }
+                if (this.scrolled) return
                 const range = this.#lastVisibleRange
-                if (!range) {
-                    debugSelectionPaging('selectionchange-skip', { reason: 'no-last-visible-range' })
-                    return
-                }
+                if (!range) return
                 const sel = doc.getSelection()
-                if (!sel.rangeCount) {
-                    debugSelectionPaging('selectionchange-skip', { reason: 'no-range-count', type: sel.type })
-                    return
-                }
-                debugSelectionPaging('selectionchange', {
-                    type: sel.type,
-                    rangeCount: sel.rangeCount,
-                    isPointerSelecting,
-                    activeFor: Math.round(pointerSelectionActiveUntil - Date.now()),
-                    touchSelectionHandles,
-                    changeCount: pointerSelectionChangeCount,
-                    isKeyboardSelecting,
-                    textLength: sel.toString?.()?.trim?.()?.length,
-                })
-                if (isKeyboardSelecting) {
+                if (!sel.rangeCount) return
+                if (isPointerSelecting && sel.type === 'Range')
+                    checkPointerSelection(range, sel)
+                else if (isKeyboardSelecting) {
                     const selRange = sel.getRangeAt(0).cloneRange()
                     const backward = selectionIsBackward(sel)
                     if (!backward) selRange.collapse()
                     this.#scrollToAnchor(selRange)
-                }
-                else if (sel.type === 'Range' &&
-                    (isPointerSelecting || Date.now() < pointerSelectionActiveUntil || touchSelectionHandles)) {
-                    pointerSelectionChangeCount += 1
-                    checkPointerSelection(
-                        range,
-                        sel,
-                        pointerSelectionChangeCount > 1 || touchSelectionHandles,
-                        isPointerSelecting
-                            || Date.now() < pointerSelectionActiveUntil
-                            || touchSelectionHandles,
-                    )
-                    schedulePointerSelectionPoll()
-                } else {
-                    debugSelectionPaging('selectionchange-skip', {
-                        reason: 'not-pointer-selection',
-                        type: sel.type,
-                        isPointerSelecting,
-                        activeFor: Math.round(pointerSelectionActiveUntil - Date.now()),
-                        touchSelectionHandles,
-                    })
                 }
             })
             doc.addEventListener('focusin', e => {
@@ -2296,75 +1914,6 @@ export class Paginator extends HTMLElement {
             : this.#vertical
                 ? ({ top, bottom }) => ({ left: top, right: bottom })
                 : f => f
-    }
-    #getPointerSelectionTurn(visibleRange, selectionRange, backward, allowEdgeTurn, pointerPoint = null) {
-        try {
-            if (backward && selectionRange.compareBoundaryPoints(Range.START_TO_START, visibleRange) < 0)
-                return { direction: -1, edge: false }
-            if (!backward && selectionRange.compareBoundaryPoints(Range.END_TO_END, visibleRange) > 0)
-                return { direction: 1, edge: false }
-        } catch {}
-        if (!allowEdgeTurn) return { direction: 0, edge: false, reason: 'edge-turn-disabled' }
-
-        const doc = selectionRange.commonAncestorContainer?.ownerDocument
-            ?? selectionRange.startContainer?.ownerDocument
-            ?? selectionRange.endContainer?.ownerDocument
-        const entry = [...this.#views].find(([, view]) => view.document === doc)
-        if (!entry) return { direction: 0, edge: false, reason: 'view-not-found' }
-
-        const [index, view] = entry
-        const rect = getRangeEdgeRect(selectionRange, backward)
-        if (!rect) return { direction: 0, edge: false, reason: 'range-edge-not-found' }
-
-        const viewOffset = this.#getViewOffset(index)
-        const visibleStart = this.#renderedStart - viewOffset
-        const visibleEnd = this.#renderedEnd - viewOffset
-        const mapped = this.#getRectMapper(view)(rect)
-        // Android WebView does not reliably emit pointermove/touchmove while
-        // dragging native text-selection handles. The range edge can lag well
-        // inside the visual page edge, so use a generous handle band and require
-        // a stable 1s dwell before turning the page.
-        const edgeInset = Math.max(112, Math.min(180, this.size * 0.34))
-        const pointerEdgeInset = Math.max(edgeInset, Math.min(180, this.size * 0.38))
-        const base = {
-            edgeInset: Math.round(edgeInset),
-            pointerEdgeInset: Math.round(pointerEdgeInset),
-            mappedLeft: Math.round(mapped.left),
-            mappedRight: Math.round(mapped.right),
-            visibleStart: Math.round(visibleStart),
-            visibleEnd: Math.round(visibleEnd),
-        }
-
-        if (backward && mapped.left <= visibleStart + edgeInset)
-            return { ...base, direction: -1, edge: true, edgeSource: 'range', edgePosition: mapped.left }
-        if (!backward && mapped.right >= visibleEnd - edgeInset)
-            return { ...base, direction: 1, edge: true, edgeSource: 'range', edgePosition: mapped.right }
-
-        if (pointerPoint?.doc === doc && typeof pointerPoint.x === 'number' && typeof pointerPoint.y === 'number') {
-            const pointerMapped = this.#getRectMapper(view)({
-                left: pointerPoint.x,
-                right: pointerPoint.x,
-                top: pointerPoint.y,
-                bottom: pointerPoint.y,
-            })
-            const pointerDetail = {
-                ...base,
-                pointerMapped: Math.round(pointerMapped.left),
-            }
-            if (backward && pointerMapped.left <= visibleStart + pointerEdgeInset)
-                return { ...pointerDetail, direction: -1, edge: true, edgeSource: 'pointer', edgePosition: pointerMapped.left }
-            if (!backward && pointerMapped.right >= visibleEnd - pointerEdgeInset)
-                return { ...pointerDetail, direction: 1, edge: true, edgeSource: 'pointer', edgePosition: pointerMapped.right }
-
-            return {
-                ...pointerDetail,
-                direction: 0,
-                edge: false,
-                reason: 'not-at-edge',
-            }
-        }
-
-        return { ...base, direction: 0, edge: false, reason: 'not-at-edge' }
     }
     async #scrollToRect(rect, reason) {
         if (this.scrolled) {
