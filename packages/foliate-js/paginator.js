@@ -40,7 +40,8 @@ const throttle = (f, wait) => {
 }
 
 const SELECTION_EDGE_TURN_DWELL_MS = 1000
-const SELECTION_EDGE_POINTER_MOVE_TOLERANCE = 12
+const SELECTION_EDGE_POINTER_MOVE_TOLERANCE = 18
+const SELECTION_EDGE_TURN_COOLDOWN_MS = 900
 
 // Transforms ALL children of the container so multi-view layouts
 // animate as a unified whole. Extra elements (e.g. background) are
@@ -1282,13 +1283,9 @@ export class Paginator extends HTMLElement {
         })
         let pointerSelectionTurn = null
         let pointerSelectionEdgeCandidate = null
+        let lastPointerSelectionTurnAt = 0
         let lastPointerSelectionTurnDirection = 0
-        let lastPointerSelectionTurnNeedsExit = false
         let lastPointerSelectionPoint = null
-        const resetPointerSelectionTurnLock = () => {
-            lastPointerSelectionTurnDirection = 0
-            lastPointerSelectionTurnNeedsExit = false
-        }
         const clearPointerSelectionEdgeCandidate = () => {
             if (pointerSelectionEdgeCandidate?.timer) clearTimeout(pointerSelectionEdgeCandidate.timer)
             pointerSelectionEdgeCandidate = null
@@ -1353,20 +1350,18 @@ export class Paginator extends HTMLElement {
             const backward = selectionIsBackward(sel)
             const turnIntent = this.#getPointerSelectionTurn(range, selRange, backward, allowEdgeTurn)
             if (!turnIntent.direction) {
-                resetPointerSelectionTurnLock()
                 clearPointerSelectionEdgeCandidate()
                 return
             }
             if (!turnIntent.edge) {
-                resetPointerSelectionTurnLock()
                 clearPointerSelectionEdgeCandidate()
                 runPointerSelectionTurn(turnIntent.direction)
                 return
             }
 
             const direction = turnIntent.direction
-            if (lastPointerSelectionTurnNeedsExit &&
-                lastPointerSelectionTurnDirection === direction) {
+            if (lastPointerSelectionTurnDirection === direction &&
+                Date.now() - lastPointerSelectionTurnAt < SELECTION_EDGE_TURN_COOLDOWN_MS) {
                 clearPointerSelectionEdgeCandidate()
                 return
             }
@@ -1391,7 +1386,7 @@ export class Paginator extends HTMLElement {
                     const currentIntent = this.#getPointerSelectionTurn(range, currentRange, currentBackward, true)
                     if (currentIntent.edge && currentIntent.direction === direction) {
                         lastPointerSelectionTurnDirection = direction
-                        lastPointerSelectionTurnNeedsExit = true
+                        lastPointerSelectionTurnAt = Date.now()
                         runPointerSelectionTurn(direction)
                     }
                 },
@@ -1410,7 +1405,6 @@ export class Paginator extends HTMLElement {
             }
             const beginPointerSelecting = e => {
                 pointerSelectionChangeCount = 0
-                resetPointerSelectionTurnLock()
                 clearPointerSelectionEdgeCandidate()
                 markPointerSelecting(e)
             }
@@ -1452,9 +1446,6 @@ export class Paginator extends HTMLElement {
                     (isPointerSelecting || Date.now() < pointerSelectionActiveUntil || touchSelectionHandles)) {
                     pointerSelectionChangeCount += 1
                     checkPointerSelection(range, sel, pointerSelectionChangeCount > 1 || touchSelectionHandles)
-                }
-                else if (sel.type !== 'Range' || sel.isCollapsed) {
-                    resetPointerSelectionTurnLock()
                 }
             })
             doc.addEventListener('focusin', e => {
@@ -2132,7 +2123,7 @@ export class Paginator extends HTMLElement {
         const visibleStart = this.#renderedStart - viewOffset
         const visibleEnd = this.#renderedEnd - viewOffset
         const mapped = this.#getRectMapper(view)(rect)
-        const edgeInset = Math.max(18, Math.min(44, this.size * 0.07))
+        const edgeInset = Math.max(24, Math.min(96, this.size * 0.12))
 
         if (backward && mapped.left <= visibleStart + edgeInset)
             return { direction: -1, edge: true }
