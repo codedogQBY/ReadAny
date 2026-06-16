@@ -1243,6 +1243,7 @@ export class Paginator extends HTMLElement {
         }
         const canSelectWithTouchHandles = globalThis.navigator?.maxTouchPoints > 0
         let lastSelectionPoint = null
+        let edgeSelectionGrowth = null
         const updateSelectionPoint = event => {
             const touch = event.changedTouches?.[0]
             const clientX = touch?.clientX ?? event.clientX
@@ -1275,6 +1276,29 @@ export class Paginator extends HTMLElement {
                 type: lastSelectionPoint.type,
                 backward,
             }
+        }
+        const getSelectionTextLength = sel => sel.toString?.()?.trim?.()?.length ?? 0
+        const getEdgeGrowth = (backward, mapped) => {
+            const now = performance.now()
+            const edgePosition = Math.round(backward ? mapped.left : mapped.right)
+            const direction = backward ? 'backward' : 'forward'
+            if (!edgeSelectionGrowth
+                || edgeSelectionGrowth.direction !== direction
+                || Math.abs(edgeSelectionGrowth.edgePosition - edgePosition) > 4
+                || now - edgeSelectionGrowth.updatedAt > 2500) {
+                edgeSelectionGrowth = {
+                    direction,
+                    edgePosition,
+                    baseLength: null,
+                    currentLength: 0,
+                    updatedAt: now,
+                }
+            }
+            edgeSelectionGrowth.updatedAt = now
+            return edgeSelectionGrowth
+        }
+        const resetEdgeGrowth = () => {
+            edgeSelectionGrowth = null
         }
         const checkPointerSelection = debounce((range, sel) => {
             if (this.#navigationLocked) {
@@ -1328,6 +1352,10 @@ export class Paginator extends HTMLElement {
                     return
                 }
                 const mapped = this.#getRectMapper()(rect)
+                const textLength = getSelectionTextLength(sel)
+                const growth = getEdgeGrowth(backward, mapped)
+                if (growth.baseLength == null) growth.baseLength = textLength
+                growth.currentLength = textLength
                 debugSelectionPaging('edge-check', {
                     backward,
                     mappedLeft: Math.round(mapped.left),
@@ -1335,14 +1363,32 @@ export class Paginator extends HTMLElement {
                     visibleLeft: Math.round(visible.left),
                     visibleRight: Math.round(visible.right),
                     edgeInset: Math.round(edgeInset),
+                    textLength,
+                    growth: textLength - growth.baseLength,
                 })
                 if (backward && mapped.left <= visible.left + edgeInset) {
                     debugSelectionPaging('prev-edge')
+                    resetEdgeGrowth()
                     this.prev()
                 }
                 else if (!backward && mapped.right >= visible.right - edgeInset) {
                     debugSelectionPaging('next-edge')
+                    resetEdgeGrowth()
                     this.next()
+                }
+                else if (!backward && mapped.left <= visible.left + 2
+                    && mapped.right < visible.right - edgeInset
+                    && textLength - growth.baseLength >= 40) {
+                    debugSelectionPaging('next-edge', { source: 'growth', textLength, growth: textLength - growth.baseLength })
+                    resetEdgeGrowth()
+                    this.next()
+                }
+                else if (backward && mapped.right >= visible.right - 2
+                    && mapped.left > visible.left + edgeInset
+                    && textLength - growth.baseLength >= 40) {
+                    debugSelectionPaging('prev-edge', { source: 'growth', textLength, growth: textLength - growth.baseLength })
+                    resetEdgeGrowth()
+                    this.prev()
                 }
             }
             else debugSelectionPaging('skip', { reason: 'not-touch-handles' })
@@ -1351,8 +1397,14 @@ export class Paginator extends HTMLElement {
             let isPointerSelecting = false
             doc.addEventListener('pointerdown', () => isPointerSelecting = true)
             doc.addEventListener('pointermove', updateSelectionPoint)
-            doc.addEventListener('pointerup', () => isPointerSelecting = false)
-            doc.addEventListener('pointercancel', () => isPointerSelecting = false)
+            doc.addEventListener('pointerup', () => {
+                isPointerSelecting = false
+                resetEdgeGrowth()
+            })
+            doc.addEventListener('pointercancel', () => {
+                isPointerSelecting = false
+                resetEdgeGrowth()
+            })
             doc.addEventListener('touchstart', updateSelectionPoint, { passive: true })
             doc.addEventListener('touchmove', updateSelectionPoint, { passive: true })
             let isKeyboardSelecting = false
