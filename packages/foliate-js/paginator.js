@@ -1362,6 +1362,8 @@ export class Paginator extends HTMLElement {
                     ? textLength
                     : Math.min(growth.baseLength, textLength)
                 growth.currentLength = textLength
+                const selectionGrowth = textLength - growth.baseLength
+                const growthInset = Math.min(128, this.size * 0.35)
                 debugSelectionPaging('edge-check', {
                     backward,
                     mappedLeft: Math.round(mapped.left),
@@ -1370,7 +1372,8 @@ export class Paginator extends HTMLElement {
                     visibleRight: Math.round(visible.right),
                     edgeInset: Math.round(edgeInset),
                     textLength,
-                    growth: textLength - growth.baseLength,
+                    growth: selectionGrowth,
+                    growthInset: Math.round(growthInset),
                 })
                 if (backward && mapped.left <= visible.left + edgeInset) {
                     debugSelectionPaging('prev-edge')
@@ -1382,17 +1385,17 @@ export class Paginator extends HTMLElement {
                     resetEdgeGrowth()
                     this.next()
                 }
-                else if (!backward && mapped.left <= visible.left + 2
-                    && mapped.right < visible.right - edgeInset
-                    && textLength - growth.baseLength >= 40) {
-                    debugSelectionPaging('next-edge', { source: 'growth', textLength, growth: textLength - growth.baseLength })
+                else if (!backward
+                    && mapped.right >= visible.right - growthInset
+                    && selectionGrowth >= 40) {
+                    debugSelectionPaging('next-edge', { source: 'growth', textLength, growth: selectionGrowth })
                     resetEdgeGrowth()
                     this.next()
                 }
-                else if (backward && mapped.right >= visible.right - 2
-                    && mapped.left > visible.left + edgeInset
-                    && textLength - growth.baseLength >= 40) {
-                    debugSelectionPaging('prev-edge', { source: 'growth', textLength, growth: textLength - growth.baseLength })
+                else if (backward
+                    && mapped.left <= visible.left + growthInset
+                    && selectionGrowth >= 40) {
+                    debugSelectionPaging('prev-edge', { source: 'growth', textLength, growth: selectionGrowth })
                     resetEdgeGrowth()
                     this.prev()
                 }
