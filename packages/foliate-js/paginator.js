@@ -1426,10 +1426,26 @@ export class Paginator extends HTMLElement {
                     lockSelectionPaging(direction, textLength)
                     this.next()
                 }
+                else if (!backward
+                    && mapped.left <= visible.left + 2
+                    && selectionGrowth >= 80) {
+                    debugSelectionPaging('next-edge', { source: 'page-start-growth', textLength, growth: selectionGrowth })
+                    resetEdgeGrowth()
+                    lockSelectionPaging(direction, textLength)
+                    this.next()
+                }
                 else if (backward
                     && mapped.left <= visible.left + growthInset
                     && selectionGrowth >= 40) {
                     debugSelectionPaging('prev-edge', { source: 'growth', textLength, growth: selectionGrowth })
+                    resetEdgeGrowth()
+                    lockSelectionPaging(direction, textLength)
+                    this.prev()
+                }
+                else if (backward
+                    && mapped.right >= visible.right - 2
+                    && selectionGrowth >= 80) {
+                    debugSelectionPaging('prev-edge', { source: 'page-end-growth', textLength, growth: selectionGrowth })
                     resetEdgeGrowth()
                     lockSelectionPaging(direction, textLength)
                     this.prev()
