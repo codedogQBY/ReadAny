@@ -171,7 +171,7 @@
     function postToRN(type, data) {
       if (RN) RN.postMessage(JSON.stringify({ type, ...data }));
     }
-    window.__READANY_READER_BUILD_ID = 'selection-paging-debug';
+    window.__READANY_READER_BUILD_ID = 'selection-paging-rn-debug';
     postToRN('debug', { message: '[ReaderBuild] ' + window.__READANY_READER_BUILD_ID });
 
     // State

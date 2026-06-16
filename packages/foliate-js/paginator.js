@@ -1231,36 +1231,64 @@ export class Paginator extends HTMLElement {
                 else setSelectionTo(this.#anchor, -1)
             }
         })
+        const debugSelectionPaging = (event, detail = {}) => {
+            const message = `[SelectionPaging] ${event} ${JSON.stringify(detail)}`
+            console.log(message)
+            try {
+                globalThis.ReactNativeWebView?.postMessage(JSON.stringify({
+                    type: 'debug',
+                    message,
+                }))
+            } catch {}
+        }
         const canSelectWithTouchHandles = globalThis.navigator?.maxTouchPoints > 0
         const checkPointerSelection = debounce((range, sel) => {
-            if (this.#navigationLocked) return
-            if (!sel.rangeCount) return
+            if (this.#navigationLocked) {
+                debugSelectionPaging('skip', { reason: 'navigation-locked' })
+                return
+            }
+            if (!sel.rangeCount) {
+                debugSelectionPaging('skip', { reason: 'no-range' })
+                return
+            }
             const selRange = sel.getRangeAt(0)
             const backward = selectionIsBackward(sel)
             if (backward && selRange.compareBoundaryPoints(Range.START_TO_START, range) < 0) {
-                console.log('[SelectionPaging] prev')
+                debugSelectionPaging('prev')
                 this.prev()
             }
             else if (!backward && selRange.compareBoundaryPoints(Range.END_TO_END, range) > 0) {
-                console.log('[SelectionPaging] next')
+                debugSelectionPaging('next')
                 this.next()
             }
             else if (canSelectWithTouchHandles) {
                 const rects = selRange.getClientRects()
                 const rect = backward ? rects[0] : rects[rects.length - 1]
-                if (!rect) return
+                if (!rect) {
+                    debugSelectionPaging('skip', { reason: 'no-edge-rect' })
+                    return
+                }
                 const mapped = this.#getRectMapper()(rect)
                 const visible = this.#getRectMapper()(range.getBoundingClientRect())
                 const edgeInset = Math.min(96, this.size * 0.2)
+                debugSelectionPaging('edge-check', {
+                    backward,
+                    mappedLeft: Math.round(mapped.left),
+                    mappedRight: Math.round(mapped.right),
+                    visibleLeft: Math.round(visible.left),
+                    visibleRight: Math.round(visible.right),
+                    edgeInset: Math.round(edgeInset),
+                })
                 if (backward && mapped.left <= visible.left + edgeInset) {
-                    console.log('[SelectionPaging] prev-edge')
+                    debugSelectionPaging('prev-edge')
                     this.prev()
                 }
                 else if (!backward && mapped.right >= visible.right - edgeInset) {
-                    console.log('[SelectionPaging] next-edge')
+                    debugSelectionPaging('next-edge')
                     this.next()
                 }
             }
+            else debugSelectionPaging('skip', { reason: 'not-touch-handles' })
         }, 700)
         this.addEventListener('load', ({ detail: { doc } }) => {
             let isPointerSelecting = false
@@ -1271,11 +1299,20 @@ export class Paginator extends HTMLElement {
             doc.addEventListener('keydown', () => isKeyboardSelecting = true)
             doc.addEventListener('keyup', () => isKeyboardSelecting = false)
             doc.addEventListener('selectionchange', () => {
-                if (this.scrolled) return
+                if (this.scrolled) {
+                    debugSelectionPaging('selectionchange-skip', { reason: 'scrolled' })
+                    return
+                }
                 const range = this.#lastVisibleRange
-                if (!range) return
+                if (!range) {
+                    debugSelectionPaging('selectionchange-skip', { reason: 'no-last-visible-range' })
+                    return
+                }
                 const sel = doc.getSelection()
-                if (!sel.rangeCount) return
+                if (!sel.rangeCount) {
+                    debugSelectionPaging('selectionchange-skip', { reason: 'no-range-count', type: sel.type })
+                    return
+                }
                 if (isKeyboardSelecting) {
                     const selRange = sel.getRangeAt(0).cloneRange()
                     const backward = selectionIsBackward(sel)
@@ -1283,12 +1320,20 @@ export class Paginator extends HTMLElement {
                     this.#scrollToAnchor(selRange)
                 }
                 else if ((isPointerSelecting || canSelectWithTouchHandles) && sel.type === 'Range') {
-                    console.log('[SelectionPaging] check', {
+                    debugSelectionPaging('check', {
                         isPointerSelecting,
                         canSelectWithTouchHandles,
                         textLength: sel.toString?.()?.trim?.()?.length,
                     })
                     checkPointerSelection(range, sel)
+                }
+                else {
+                    debugSelectionPaging('selectionchange-skip', {
+                        reason: 'not-pointer-or-touch',
+                        type: sel.type,
+                        isPointerSelecting,
+                        canSelectWithTouchHandles,
+                    })
                 }
             })
             doc.addEventListener('focusin', e => {
