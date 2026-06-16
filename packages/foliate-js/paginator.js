@@ -1242,6 +1242,40 @@ export class Paginator extends HTMLElement {
             } catch {}
         }
         const canSelectWithTouchHandles = globalThis.navigator?.maxTouchPoints > 0
+        let lastSelectionPoint = null
+        const updateSelectionPoint = event => {
+            const touch = event.changedTouches?.[0]
+            const clientX = touch?.clientX ?? event.clientX
+            const clientY = touch?.clientY ?? event.clientY
+            if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return
+            lastSelectionPoint = {
+                clientX,
+                clientY,
+                time: performance.now(),
+                type: event.type,
+            }
+        }
+        const getMappedSelectionPoint = (range, backward) => {
+            if (!lastSelectionPoint) return null
+            const view = range.commonAncestorContainer?.ownerDocument?.defaultView
+            const viewportSize = this.#vertical
+                ? view?.innerHeight || view?.document?.documentElement?.clientHeight || 0
+                : view?.innerWidth || view?.document?.documentElement?.clientWidth || 0
+            if (!viewportSize) return null
+            const visible = this.#getRectMapper()(range.getBoundingClientRect())
+            const axisPoint = this.#vertical ? lastSelectionPoint.clientY : lastSelectionPoint.clientX
+            const ratio = Math.max(0, Math.min(1, axisPoint / viewportSize))
+            const logicalRatio = this.#rtl && !this.#vertical ? 1 - ratio : ratio
+            const mappedPoint = visible.left + (visible.right - visible.left) * logicalRatio
+            return {
+                mappedPoint,
+                visible,
+                ratio,
+                age: performance.now() - lastSelectionPoint.time,
+                type: lastSelectionPoint.type,
+                backward,
+            }
+        }
         const checkPointerSelection = debounce((range, sel) => {
             if (this.#navigationLocked) {
                 debugSelectionPaging('skip', { reason: 'navigation-locked' })
@@ -1264,13 +1298,36 @@ export class Paginator extends HTMLElement {
             else if (canSelectWithTouchHandles) {
                 const rects = selRange.getClientRects()
                 const rect = backward ? rects[0] : rects[rects.length - 1]
+                const visible = this.#getRectMapper()(range.getBoundingClientRect())
+                const edgeInset = Math.min(96, this.size * 0.2)
+                const point = getMappedSelectionPoint(range, backward)
+                if (point && point.age < 1500) {
+                    debugSelectionPaging('pointer-edge-check', {
+                        backward,
+                        mappedPoint: Math.round(point.mappedPoint),
+                        visibleLeft: Math.round(point.visible.left),
+                        visibleRight: Math.round(point.visible.right),
+                        edgeInset: Math.round(edgeInset),
+                        ratio: Number(point.ratio.toFixed(3)),
+                        age: Math.round(point.age),
+                        type: point.type,
+                    })
+                    if (backward && point.mappedPoint <= point.visible.left + edgeInset) {
+                        debugSelectionPaging('prev-edge', { source: 'pointer' })
+                        this.prev()
+                        return
+                    }
+                    if (!backward && point.mappedPoint >= point.visible.right - edgeInset) {
+                        debugSelectionPaging('next-edge', { source: 'pointer' })
+                        this.next()
+                        return
+                    }
+                }
                 if (!rect) {
                     debugSelectionPaging('skip', { reason: 'no-edge-rect' })
                     return
                 }
                 const mapped = this.#getRectMapper()(rect)
-                const visible = this.#getRectMapper()(range.getBoundingClientRect())
-                const edgeInset = Math.min(96, this.size * 0.2)
                 debugSelectionPaging('edge-check', {
                     backward,
                     mappedLeft: Math.round(mapped.left),
@@ -1293,8 +1350,11 @@ export class Paginator extends HTMLElement {
         this.addEventListener('load', ({ detail: { doc } }) => {
             let isPointerSelecting = false
             doc.addEventListener('pointerdown', () => isPointerSelecting = true)
+            doc.addEventListener('pointermove', updateSelectionPoint)
             doc.addEventListener('pointerup', () => isPointerSelecting = false)
             doc.addEventListener('pointercancel', () => isPointerSelecting = false)
+            doc.addEventListener('touchstart', updateSelectionPoint, { passive: true })
+            doc.addEventListener('touchmove', updateSelectionPoint, { passive: true })
             let isKeyboardSelecting = false
             doc.addEventListener('keydown', () => isKeyboardSelecting = true)
             doc.addEventListener('keyup', () => isKeyboardSelecting = false)
