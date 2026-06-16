@@ -1231,20 +1231,42 @@ export class Paginator extends HTMLElement {
                 else setSelectionTo(this.#anchor, -1)
             }
         })
+        const canSelectWithTouchHandles = globalThis.navigator?.maxTouchPoints > 0
         const checkPointerSelection = debounce((range, sel) => {
             if (this.#navigationLocked) return
             if (!sel.rangeCount) return
             const selRange = sel.getRangeAt(0)
             const backward = selectionIsBackward(sel)
-            if (backward && selRange.compareBoundaryPoints(Range.START_TO_START, range) < 0)
+            if (backward && selRange.compareBoundaryPoints(Range.START_TO_START, range) < 0) {
+                console.log('[SelectionPaging] prev')
                 this.prev()
-            else if (!backward && selRange.compareBoundaryPoints(Range.END_TO_END, range) > 0)
+            }
+            else if (!backward && selRange.compareBoundaryPoints(Range.END_TO_END, range) > 0) {
+                console.log('[SelectionPaging] next')
                 this.next()
+            }
+            else if (canSelectWithTouchHandles) {
+                const rects = selRange.getClientRects()
+                const rect = backward ? rects[0] : rects[rects.length - 1]
+                if (!rect) return
+                const mapped = this.#getRectMapper()(rect)
+                const visible = this.#getRectMapper()(range.getBoundingClientRect())
+                const edgeInset = Math.min(96, this.size * 0.2)
+                if (backward && mapped.left <= visible.left + edgeInset) {
+                    console.log('[SelectionPaging] prev-edge')
+                    this.prev()
+                }
+                else if (!backward && mapped.right >= visible.right - edgeInset) {
+                    console.log('[SelectionPaging] next-edge')
+                    this.next()
+                }
+            }
         }, 700)
         this.addEventListener('load', ({ detail: { doc } }) => {
             let isPointerSelecting = false
             doc.addEventListener('pointerdown', () => isPointerSelecting = true)
             doc.addEventListener('pointerup', () => isPointerSelecting = false)
+            doc.addEventListener('pointercancel', () => isPointerSelecting = false)
             let isKeyboardSelecting = false
             doc.addEventListener('keydown', () => isKeyboardSelecting = true)
             doc.addEventListener('keyup', () => isKeyboardSelecting = false)
@@ -1254,13 +1276,19 @@ export class Paginator extends HTMLElement {
                 if (!range) return
                 const sel = doc.getSelection()
                 if (!sel.rangeCount) return
-                if (isPointerSelecting && sel.type === 'Range')
-                    checkPointerSelection(range, sel)
-                else if (isKeyboardSelecting) {
+                if (isKeyboardSelecting) {
                     const selRange = sel.getRangeAt(0).cloneRange()
                     const backward = selectionIsBackward(sel)
                     if (!backward) selRange.collapse()
                     this.#scrollToAnchor(selRange)
+                }
+                else if ((isPointerSelecting || canSelectWithTouchHandles) && sel.type === 'Range') {
+                    console.log('[SelectionPaging] check', {
+                        isPointerSelecting,
+                        canSelectWithTouchHandles,
+                        textLength: sel.toString?.()?.trim?.()?.length,
+                    })
+                    checkPointerSelection(range, sel)
                 }
             })
             doc.addEventListener('focusin', e => {
