@@ -2,6 +2,7 @@ import { BUILTIN_EMBEDDING_MODELS } from "../ai/builtin-embedding-models";
 import { generateLocalEmbeddings, loadEmbeddingPipeline } from "../ai/local-embedding-service";
 import { deleteChunks, insertChunks } from "../db/database";
 import type { VectorizeProgress } from "../types";
+import { isOllamaEmbeddingEndpointUrl, normalizeEmbeddingEndpointUrl } from "../utils/api";
 /**
  * Vectorize Trigger — high-level service that orchestrates book vectorization.
  * Connects: chapter data → chunking → embedding → database indexing → state update.
@@ -166,13 +167,17 @@ export async function triggerVectorizeBook(
         if (vectorDB && (await vectorDB.isReady())) {
           await vectorDB.deleteByBookId(bookId);
 
-          const vectorRecords: VectorRecord[] = allChunks
-            .filter((c) => c.embedding && c.embedding.length > 0)
-            .map((c) => ({
-              id: c.id,
-              bookId: c.bookId,
-              embedding: c.embedding!,
-            }));
+          const vectorRecords: VectorRecord[] = allChunks.flatMap((c) => {
+            const embedding = c.embedding;
+            if (!embedding || embedding.length === 0) return [];
+            return [
+              {
+                id: c.id,
+                bookId: c.bookId,
+                embedding,
+              },
+            ];
+          });
 
           if (vectorRecords.length > 0) {
             // Detect actual embedding dimension and reinit vector DB if needed
@@ -283,7 +288,8 @@ async function generateRemoteEmbeddings(
     );
   }
 
-  const isOllama = selectedModel.url.endsWith("/api/embed");
+  const requestUrl = normalizeEmbeddingEndpointUrl(selectedModel.url);
+  const isOllama = isOllamaEmbeddingEndpointUrl(requestUrl);
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
@@ -300,7 +306,9 @@ async function generateRemoteEmbeddings(
 
   const callEmbeddingApi = async (
     inputTexts: string[],
-  ): Promise<{ ok: true; embeddings: number[][] } | { ok: false; status: number; errorText: string }> => {
+  ): Promise<
+    { ok: true; embeddings: number[][] } | { ok: false; status: number; errorText: string }
+  > => {
     const safeTexts = inputTexts.map((t) =>
       t.length > MAX_CHARS_PER_CHUNK ? t.slice(0, MAX_CHARS_PER_CHUNK) : t,
     );
@@ -312,7 +320,7 @@ async function generateRemoteEmbeddings(
           encoding_format: "float",
         };
 
-    const res = await fetch(selectedModel.url, {
+    const res = await fetch(requestUrl, {
       method: "POST",
       headers,
       body: JSON.stringify(requestBody),
@@ -324,16 +332,13 @@ async function generateRemoteEmbeddings(
     }
 
     const json = await res.json();
+    const embeddingData = (json?.data ?? []) as Array<{
+      embedding: number[];
+      index: number;
+    }>;
     const embeddings: number[][] = isOllama
       ? (json?.embeddings ?? [])
-      : (
-          (json?.data ?? []) as Array<{
-            embedding: number[];
-            index: number;
-          }>
-        )
-          .sort((a: any, b: any) => a.index - b.index)
-          .map((d: any) => d.embedding);
+      : embeddingData.sort((a, b) => a.index - b.index).map((d) => d.embedding);
     return { ok: true, embeddings };
   };
 
