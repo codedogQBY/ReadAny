@@ -1278,22 +1278,26 @@ export class Paginator extends HTMLElement {
             }
         }
         const getSelectionTextLength = sel => sel.toString?.()?.trim?.()?.length ?? 0
-        const getEdgeGrowth = (backward, mapped) => {
+        const getEdgeGrowth = (backward, mapped, visible) => {
             const now = performance.now()
             const edgePosition = Math.round(backward ? mapped.left : mapped.right)
             const direction = backward ? 'backward' : 'forward'
             if (!edgeSelectionGrowth
                 || edgeSelectionGrowth.direction !== direction
-                || Math.abs(edgeSelectionGrowth.edgePosition - edgePosition) > 4
+                || Math.abs(edgeSelectionGrowth.visibleLeft - visible.left) > 4
+                || Math.abs(edgeSelectionGrowth.visibleRight - visible.right) > 4
                 || now - edgeSelectionGrowth.updatedAt > 2500) {
                 edgeSelectionGrowth = {
                     direction,
                     edgePosition,
+                    visibleLeft: visible.left,
+                    visibleRight: visible.right,
                     baseLength: null,
                     currentLength: 0,
                     updatedAt: now,
                 }
             }
+            edgeSelectionGrowth.edgePosition = edgePosition
             edgeSelectionGrowth.updatedAt = now
             return edgeSelectionGrowth
         }
@@ -1353,8 +1357,10 @@ export class Paginator extends HTMLElement {
                 }
                 const mapped = this.#getRectMapper()(rect)
                 const textLength = getSelectionTextLength(sel)
-                const growth = getEdgeGrowth(backward, mapped)
-                if (growth.baseLength == null) growth.baseLength = textLength
+                const growth = getEdgeGrowth(backward, mapped, visible)
+                growth.baseLength = growth.baseLength == null
+                    ? textLength
+                    : Math.min(growth.baseLength, textLength)
                 growth.currentLength = textLength
                 debugSelectionPaging('edge-check', {
                     backward,
