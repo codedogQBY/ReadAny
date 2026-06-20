@@ -283,9 +283,11 @@ export function HomePage() {
 
   const handleDeleteGroup = useCallback(
     async (group: BookGroup) => {
+      const confirmed = window.confirm(`${group.name}\n\n${t("sidebar.deleteGroupConfirm")}`);
+      if (!confirmed) return;
       await removeGroup(group.id);
     },
-    [removeGroup],
+    [removeGroup, t],
   );
 
   const toggleBookSelection = useCallback((bookId: string) => {

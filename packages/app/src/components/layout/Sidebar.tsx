@@ -60,6 +60,7 @@ export function HomeSidebar() {
     removeTag,
     renameTag,
     removeGroup,
+    renameGroup,
   } = useLibraryStore();
   const setShowSettings = useAppStore((s) => s.setShowSettings);
   const showSettings = useAppStore((s) => s.showSettings);
@@ -71,7 +72,22 @@ export function HomeSidebar() {
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [isTagsExpanded, setIsTagsExpanded] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<string | null>(null);
+  const [editingGroupName, setEditingGroupName] = useState("");
+  const [groupMenu, setGroupMenu] = useState<{ groupId: string; x: number; y: number } | null>(null);
   const newTagInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDeleteGroup = (group: (typeof groups)[number]) => {
+    const confirmed = window.confirm(`${group.name}\n\n${t("sidebar.deleteGroupConfirm")}`);
+    if (confirmed) void removeGroup(group.id);
+  };
+
+  const handleRenameGroup = (groupId: string) => {
+    const name = editingGroupName.trim();
+    if (name) renameGroup(groupId, name);
+    setEditingGroup(null);
+    setEditingGroupName("");
+  };
 
   // Refresh unread feedback count on mount and whenever the settings dialog
   // closes (the user may have marked replies as seen inside it). Depends on
@@ -218,28 +234,93 @@ export function HomeSidebar() {
                   {groups.length > 0 && (
                     <div className="flex flex-wrap gap-1 pt-1">
                       {groups.map((group) => (
-                        <button
-                          key={group.id}
-                          type="button"
-                          className={`rounded-full px-2.5 py-0.5 text-[11px] transition-colors ${
-                            activeGroupId === group.id
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
-                          }`}
-                          onClick={() => {
-                            setActiveGroupId(group.id);
-                            handleNavClick("home");
-                          }}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            const action = window.confirm(
-                              `${group.name}\n\n${t("sidebar.deleteGroupConfirm")}`,
-                            );
-                            if (action) void removeGroup(group.id);
-                          }}
-                        >
-                          {group.name}
-                        </button>
+                        <div key={group.id} className="group/group relative">
+                          {editingGroup === group.id ? (
+                            <input
+                              type="text"
+                              className="w-24 rounded-full border border-primary/40 bg-background px-2.5 py-0.5 text-[11px] outline-none"
+                              value={editingGroupName}
+                              onChange={(e) => setEditingGroupName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  handleRenameGroup(group.id);
+                                } else if (e.key === "Escape") {
+                                  setEditingGroup(null);
+                                  setEditingGroupName("");
+                                }
+                              }}
+                              onBlur={() => handleRenameGroup(group.id)}
+                              autoFocus
+                            />
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                className={`rounded-full px-2.5 py-0.5 text-[11px] transition-colors ${
+                                  activeGroupId === group.id
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+                                }`}
+                                onClick={() => {
+                                  setActiveGroupId(group.id);
+                                  handleNavClick("home");
+                                }}
+                                onContextMenu={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  setGroupMenu({
+                                    groupId: group.id,
+                                    x: event.clientX,
+                                    y: event.clientY,
+                                  });
+                                }}
+                              >
+                                {group.name}
+                              </button>
+                              {groupMenu?.groupId === group.id && (
+                                <>
+                                  <div
+                                    className="fixed inset-0 z-50"
+                                    onClick={() => setGroupMenu(null)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Escape") setGroupMenu(null);
+                                    }}
+                                  />
+                                  <div
+                                    className="fixed z-50 min-w-28 rounded-lg border bg-popover p-1 shadow-lg"
+                                    style={{ top: groupMenu.y + 4, left: groupMenu.x }}
+                                    onClick={(event) => event.stopPropagation()}
+                                    onKeyDown={(event) => event.stopPropagation()}
+                                  >
+                                    <button
+                                      type="button"
+                                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-foreground hover:bg-muted"
+                                      onClick={() => {
+                                        setGroupMenu(null);
+                                        setEditingGroup(group.id);
+                                        setEditingGroupName(group.name);
+                                      }}
+                                    >
+                                      <Pencil size={12} />
+                                      {t("common.rename", "Rename")}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10"
+                                      onClick={() => {
+                                        setGroupMenu(null);
+                                        handleDeleteGroup(group);
+                                      }}
+                                    >
+                                      <Trash2 size={12} />
+                                      {t("common.delete", "Delete")}
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </>
+                          )}
+                        </div>
                       ))}
                     </div>
                   )}

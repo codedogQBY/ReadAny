@@ -94,6 +94,15 @@ export const GroupCard = memo(function GroupCard({
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const openMenu = useCallback((x: number, y: number) => {
+    setMenuPos({ x, y });
+    setShowMenu(true);
+  }, []);
+
+  const closeMenu = useCallback(() => {
+    setShowMenu(false);
+    setMenuPos(null);
+  }, []);
 
   const previewBooks = useMemo(
     () =>
@@ -107,10 +116,9 @@ export const GroupCard = memo(function GroupCard({
   const handleStartRename = useCallback(() => {
     setRenameValue(group.name);
     setIsRenaming(true);
-    setShowMenu(false);
-    setMenuPos(null);
+    closeMenu();
     requestAnimationFrame(() => inputRef.current?.focus());
-  }, [group.name]);
+  }, [group.name, closeMenu]);
 
   const commitRename = useCallback(() => {
     const name = renameValue.trim();
@@ -126,6 +134,11 @@ export const GroupCard = memo(function GroupCard({
           className="book-cover-shadow relative h-full w-full overflow-hidden rounded bg-muted/70 transition-all duration-200 group-hover/card:book-cover-shadow"
           onClick={() => {
             if (!isRenaming) onOpen(group.id);
+          }}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!isRenaming) openMenu(event.clientX, event.clientY);
           }}
         >
           {previewBooks.length > 0 ? (
@@ -145,12 +158,10 @@ export const GroupCard = memo(function GroupCard({
           onClick={(event) => {
             event.stopPropagation();
             if (showMenu) {
-              setShowMenu(false);
-              setMenuPos(null);
+              closeMenu();
             } else {
               const rect = event.currentTarget.getBoundingClientRect();
-              setMenuPos({ x: rect.right, y: rect.top });
-              setShowMenu(true);
+              openMenu(rect.right, rect.top);
             }
           }}
         >
@@ -163,13 +174,11 @@ export const GroupCard = memo(function GroupCard({
           <div
             className="fixed inset-0 z-50"
             onClick={() => {
-              setShowMenu(false);
-              setMenuPos(null);
+              closeMenu();
             }}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
-                setShowMenu(false);
-                setMenuPos(null);
+                closeMenu();
               }
             }}
           />
@@ -191,8 +200,7 @@ export const GroupCard = memo(function GroupCard({
               type="button"
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10"
               onClick={() => {
-                setShowMenu(false);
-                setMenuPos(null);
+                closeMenu();
                 onDelete(group);
               }}
             >
