@@ -3,8 +3,10 @@ import {
   type EmbeddingEndpointTestError,
   buildOpenAICompatibleUrl,
   buildProviderModelsUrl,
+  detectProviderFromUrl,
   ensureUrlProtocol,
   formatApiHost,
+  getDefaultBaseUrl,
   isOllamaEmbeddingEndpointUrl,
   normalizeEmbeddingEndpointUrl,
   providerSupportsExactRequestUrl,
@@ -67,6 +69,19 @@ describe("AI API URL helpers", () => {
     );
     expect(resolveProviderBaseUrl("perplexity", "https://api.perplexity.ai")).toBe(
       "https://api.perplexity.ai",
+    );
+    // Atlas Cloud's default base URL already includes /v1, so it must not be doubled.
+    expect(resolveProviderBaseUrl("atlascloud", "https://api.atlascloud.ai/v1")).toBe(
+      "https://api.atlascloud.ai/v1",
+    );
+  });
+
+  it("resolves Atlas Cloud as an OpenAI-compatible provider", () => {
+    expect(getDefaultBaseUrl("atlascloud")).toBe("https://api.atlascloud.ai/v1");
+    expect(detectProviderFromUrl("https://api.atlascloud.ai/v1")).toBe("atlascloud");
+    expect(buildProviderModelsUrl("atlascloud")).toBe("https://api.atlascloud.ai/v1/models");
+    expect(buildOpenAICompatibleUrl("https://api.atlascloud.ai/v1", "chat/completions")).toBe(
+      "https://api.atlascloud.ai/v1/chat/completions",
     );
   });
 

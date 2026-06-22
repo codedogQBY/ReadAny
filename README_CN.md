@@ -34,6 +34,44 @@
 
 ---
 
+<p align="center">
+  <a href="https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ReadAny">
+    <img src="assets/atlas-cloud-logo.png" alt="Atlas Cloud" width="200">
+  </a>
+</p>
+
+> 🎁 由 **[Atlas Cloud](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ReadAny)** 提供支持 —— 一个全模态、OpenAI 兼容的 AI 推理平台。在 ReadAny 中可作为即插即用的对话后端，通过单个 `/v1/chat/completions` 接口访问 DeepSeek、Qwen、GLM、Kimi、MiniMax 等模型，无需逐家厂商对接。预算友好，提供 [coding plan](https://www.atlascloud.ai/console/coding-plan)。
+
+在 ReadAny 的 AI 服务商下拉框（设置或引导页）中选择 **Atlas Cloud**，然后填写：
+
+```env
+# Base URL 已自带版本号（无需再追加 /v1）
+Base URL = https://api.atlascloud.ai/v1
+API Key   = <你的 atlascloud-api-key>
+Model     = deepseek-ai/deepseek-v4-pro
+```
+
+`deepseek-ai/deepseek-v4-pro` 是推理（reasoning）模型 —— 请给足 `max_tokens`（≥ 512），否则 token 会先消耗在思维链上，导致返回的 `content` 为空且 `finish_reason=length`。
+
+<details>
+<summary>Atlas Cloud 全部对话模型（59 个，OpenAI 兼容）</summary>
+
+- **Anthropic (Claude)：** `anthropic/claude-haiku-4.5-20251001`, `anthropic/claude-opus-4.8`, `anthropic/claude-sonnet-4.6`
+- **OpenAI (GPT)：** `openai/gpt-5.4`, `openai/gpt-5.5`
+- **Google (Gemini)：** `google/gemini-3.1-flash-lite`, `google/gemini-3.1-pro-preview`, `google/gemini-3.5-flash`
+- **阿里 (Qwen)：** `qwen/qwen2.5-7b-instruct`, `Qwen/Qwen3-235B-A22B-Instruct-2507`, `qwen/qwen3-235b-a22b-thinking-2507`, `qwen/qwen3-30b-a3b`, `Qwen/Qwen3-30B-A3B-Instruct-2507`, `qwen/qwen3-30b-a3b-thinking-2507`, `qwen/qwen3-32b`, `qwen/qwen3-8b`, `Qwen/Qwen3-Coder`, `qwen/qwen3-coder-next`, `qwen/qwen3-max-2026-01-23`, `Qwen/Qwen3-Next-80B-A3B-Instruct`, `Qwen/Qwen3-Next-80B-A3B-Thinking`, `Qwen/Qwen3-VL-235B-A22B-Instruct`, `qwen/qwen3-vl-235b-a22b-thinking`, `qwen/qwen3-vl-30b-a3b-instruct`, `qwen/qwen3-vl-30b-a3b-thinking`, `qwen/qwen3-vl-8b-instruct`, `qwen/qwen3.5-122b-a10b`, `qwen/qwen3.5-27b`, `qwen/qwen3.5-35b-a3b`, `qwen/qwen3.5-397b-a17b`, `qwen/qwen3.6-35b-a3b`, `qwen/qwen3.6-plus`
+- **DeepSeek：** `deepseek-ai/deepseek-ocr`, `deepseek-ai/deepseek-r1-0528`, `deepseek-ai/DeepSeek-V3-0324`, `deepseek-ai/DeepSeek-V3.1`, `deepseek-ai/DeepSeek-V3.1-Terminus`, `deepseek-ai/deepseek-v3.2`, `deepseek-ai/DeepSeek-V3.2-Exp`, `deepseek-ai/deepseek-v4-flash`, `deepseek-ai/deepseek-v4-pro`
+- **Moonshot (Kimi)：** `moonshotai/Kimi-K2-Instruct`, `moonshotai/Kimi-K2-Instruct-0905`, `moonshotai/Kimi-K2-Thinking`, `moonshotai/kimi-k2.5`, `moonshotai/kimi-k2.6`
+- **智谱 (GLM)：** `zai-org/GLM-4.6`, `zai-org/glm-4.7`, `zai-org/glm-5`, `zai-org/glm-5-turbo`, `zai-org/glm-5.1`, `zai-org/glm-5v-turbo`
+- **MiniMax：** `MiniMaxAI/MiniMax-M2`, `minimaxai/minimax-m2.1`, `minimaxai/minimax-m2.5`, `minimaxai/minimax-m2.7`
+- **xAI：** `xai/grok-4.3`
+- **快手 (KAT)：** `kwaipilot/kat-coder-pro-v2`
+- **其他：** `owl`
+
+</details>
+
+---
+
 > 🚀 **v2.0 更新**: 移动端应用（iOS/Android）现已上线！详见下方 [移动端](#移动端应用) 章节。
 
 ## 为什么选择 ReadAny？
@@ -115,7 +153,7 @@
 - **智能对话** - 针对书籍内容提问，AI 知道你的位置、选中文字、高亮笔记
 - **语义搜索** - 超越关键词，向量检索 + BM25 混合搜索
 - **即时翻译** - AI 翻译或 DeepL，支持 19 种语言
-- **多模型支持** - OpenAI、Claude、Gemini、Ollama、DeepSeek
+- **多模型支持** - OpenAI、Claude、Gemini、Ollama、DeepSeek、Atlas Cloud
 - **技能系统** - 内置技能（摘要、概念解释、角色追踪等）+ 自定义技能
 
 ### 📝 标注与知识管理
@@ -229,6 +267,7 @@ Expo Go。Expo Go 无法加载 ReadAny 当前依赖的原生模块和应用配�
 | OpenAI | [platform.openai.com](https://platform.openai.com/) |
 | Anthropic Claude | [console.anthropic.com](https://console.anthropic.com/) |
 | Google Gemini | [aistudio.google.com](https://aistudio.google.com/) |
+| Atlas Cloud | [atlascloud.ai](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=ReadAny)（OpenAI 兼容；推荐模型 `deepseek-ai/deepseek-v4-pro`）|
 | Ollama / DeepSeek | 本地或自定义端点 |
 
 ---

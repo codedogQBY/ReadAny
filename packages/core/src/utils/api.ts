@@ -191,6 +191,14 @@ export const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
     placeholder: "https://aihubmix.com",
     keyPlaceholder: "sk-...",
   },
+  atlascloud: {
+    id: "atlascloud",
+    name: "Atlas Cloud",
+    defaultBaseUrl: "https://api.atlascloud.ai/v1",
+    needsV1Suffix: false,
+    placeholder: "https://api.atlascloud.ai/v1",
+    keyPlaceholder: "apikey-...",
+  },
   custom: {
     id: "custom",
     name: "Custom (OpenAI Compatible)",
@@ -546,6 +554,7 @@ export function detectProviderFromUrl(url: string): string {
   if (urlLower.includes("mistral.ai")) return "mistral";
   if (urlLower.includes("perplexity.ai")) return "perplexity";
   if (urlLower.includes("aihubmix.com")) return "aihubmix";
+  if (urlLower.includes("atlascloud.ai")) return "atlascloud";
 
   return "custom";
 }

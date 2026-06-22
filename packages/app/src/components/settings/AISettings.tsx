@@ -44,6 +44,7 @@ function useProviderOptions(): { value: AIProviderType; label: string }[] {
     { value: "moonshot", label: "Moonshot (Kimi)" },
     { value: "zhipu", label: t("settings.ai_provider_zhipu") },
     { value: "aliyun", label: t("settings.ai_provider_aliyun") },
+    { value: "atlascloud", label: "Atlas Cloud" },
     { value: "custom", label: t("settings.ai_provider_custom") },
   ], [t]);
 }
