@@ -944,6 +944,7 @@ class Resources {
 
 class Loader {
   #cache = new Map();
+  #cacheXHTMLContent = new Map();
   #children = new Map();
   #refCount = new Map();
   eventTarget = new EventTarget();
@@ -967,6 +968,9 @@ class Loader {
     const url = URL.createObjectURL(new Blob([newData], { type: newType }));
     this.#cache.set(href, url);
     this.#refCount.set(href, 1);
+    if (newType === MIME.XHTML || newType === MIME.HTML) {
+      this.#cacheXHTMLContent.set(url, { href, type: newType, data: newData });
+    }
     if (parent) {
       const childList = this.#children.get(parent);
       if (childList) childList.push(href);
@@ -990,8 +994,10 @@ class Loader {
     //console.log(`unreferencing ${href}, now ${count}`)
     if (count < 1) {
       //console.log(`unloading ${href}`)
-      URL.revokeObjectURL(this.#cache.get(href));
+      const url = this.#cache.get(href);
+      URL.revokeObjectURL(url);
       this.#cache.delete(href);
+      this.#cacheXHTMLContent.delete(url);
       this.#refCount.delete(href);
       // unref children
       const childList = this.#children.get(href);
@@ -1022,6 +1028,13 @@ class Loader {
     // NOTE: this can be replaced with `Promise.try()`
     const tryLoadBlob = Promise.resolve().then(() => this.loadBlob(href));
     return this.createURL(href, tryLoadBlob, mediaType, parent);
+  }
+  async loadItemXHTMLContent(item, parents = []) {
+    if (this.#cache.has(item?.href)) {
+      return this.#cacheXHTMLContent.get(this.#cache.get(item.href))?.data;
+    }
+    const url = await this.loadItem(item, parents);
+    if (url) return this.#cacheXHTMLContent.get(url)?.data;
   }
   getEntryItem(path) {
     const extension = path.toLowerCase().split(".").pop();
@@ -1276,6 +1289,7 @@ ${doc.querySelector("parsererror").innerText}`);
           id: item.href,
           load: () => this.#loader.loadItem(item),
           unload: () => this.#loader.unloadItem(item),
+          loadContent: () => this.#loader.loadItemXHTMLContent(item),
           createDocument: () => this.loadDocument(item),
           size: this.getSize(item.href),
           cfi: this.resources.cfis[index],
