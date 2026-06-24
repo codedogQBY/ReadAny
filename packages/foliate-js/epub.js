@@ -489,6 +489,26 @@ const parseClock = (str) => {
   return n * f;
 };
 
+const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "svg"];
+const FONT_EXTENSIONS = ["woff", "woff2", "ttf", "otf"];
+
+const getMediaTypeForExtension = (path, fallback) => {
+  const extension = path.toLowerCase().split(".").pop();
+  const mediaTypeMap = {
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    gif: "image/gif",
+    webp: "image/webp",
+    svg: "image/svg+xml",
+    woff: "font/woff",
+    woff2: "font/woff2",
+    ttf: "font/ttf",
+    otf: "font/otf",
+  };
+  return mediaTypeMap[extension] || fallback;
+};
+
 class MediaOverlay extends EventTarget {
   #entries;
   #lastMediaOverlayItem;
@@ -927,11 +947,12 @@ class Loader {
   #children = new Map();
   #refCount = new Map();
   eventTarget = new EventTarget();
-  constructor({ loadText, loadBlob, resources }) {
+  constructor({ loadText, loadBlob, resources, entries }) {
     this.loadText = loadText;
     this.loadBlob = loadBlob;
     this.manifest = resources.manifest;
     this.assets = resources.manifest;
+    this.entries = entries;
     // needed only when replacing in (X)HTML w/o parsing (see below)
     //.filter(({ mediaType }) => ![MIME.XHTML, MIME.HTML].includes(mediaType))
   }
@@ -1002,12 +1023,22 @@ class Loader {
     const tryLoadBlob = Promise.resolve().then(() => this.loadBlob(href));
     return this.createURL(href, tryLoadBlob, mediaType, parent);
   }
+  getEntryItem(path) {
+    const extension = path.toLowerCase().split(".").pop();
+    if (IMAGE_EXTENSIONS.includes(extension) && this.entries?.has(path))
+      return { href: path, mediaType: getMediaTypeForExtension(path, "image/jpeg") };
+    if (!FONT_EXTENSIONS.includes(extension)) return null;
+    const fontPath = this.entries?.has(path) ? path : `fonts/${path.split("/").pop()}`;
+    return this.entries?.has(fontPath)
+      ? { href: fontPath, mediaType: getMediaTypeForExtension(fontPath, "font/ttf") }
+      : null;
+  }
   async loadHref(href, base, parents = []) {
     if (!href || href.startsWith("#")) return href;
     if (isExternal(href)) return href;
     const resolved = resolveURL(href, base);
     const [path, hash = ""] = resolved.split(/(#.*)/s);
-    const item = this.manifest.find((item) => item.href === path);
+    const item = this.manifest.find((item) => item.href === path) ?? this.getEntryItem(path);
     if (!item) return href;
     const url = await this.loadItem(item, parents.concat(base));
     return url ? url + hash : href;
@@ -1179,7 +1210,14 @@ export class EPUB {
   parser = new DOMParser();
   #loader;
   #encryption;
-  constructor({ loadText, loadBlob, getSize, sha1 }) {
+  constructor({ entries, loadText, loadBlob, getSize, sha1 }) {
+    this.entries = entries
+      ? new Map(
+          entries
+            .map((entry) => [entry.filename ?? entry.fullPath, entry])
+            .filter(([name]) => name),
+        )
+      : new Map();
     this.loadText = loadText;
     this.loadBlob = loadBlob;
     this.getSize = getSize;
@@ -1223,6 +1261,7 @@ ${doc.querySelector("parsererror").innerText}`);
       loadText: this.loadText,
       loadBlob: (uri) => Promise.resolve(this.loadBlob(uri)).then(this.#encryption.getDecoder(uri)),
       resources: this.resources,
+      entries: this.entries,
     });
     this.transformTarget = this.#loader.eventTarget;
     this.sections = this.resources.spine
