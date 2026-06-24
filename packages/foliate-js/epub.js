@@ -11,6 +11,7 @@ const NS = {
   NCX: "http://www.daisy.org/z3986/2005/ncx/",
   XLINK: "http://www.w3.org/1999/xlink",
   SMIL: "http://www.w3.org/ns/SMIL",
+  SVG: "http://www.w3.org/2000/svg",
 };
 
 const MIME = {
@@ -1002,11 +1003,14 @@ class Loader {
     return this.createURL(href, tryLoadBlob, mediaType, parent);
   }
   async loadHref(href, base, parents = []) {
+    if (!href || href.startsWith("#")) return href;
     if (isExternal(href)) return href;
-    const path = resolveURL(href, base);
+    const resolved = resolveURL(href, base);
+    const [path, hash = ""] = resolved.split(/(#.*)/s);
     const item = this.manifest.find((item) => item.href === path);
     if (!item) return href;
-    return this.loadItem(item, parents.concat(base));
+    const url = await this.loadItem(item, parents.concat(base));
+    return url ? url + hash : href;
   }
   async loadReplaced(item, parents = []) {
     const { href, mediaType } = item;
@@ -1068,7 +1072,10 @@ class Loader {
         await replaceSrcset(el, "imagesrcset");
       for (const el of doc.querySelectorAll("[poster]")) await replace(el, "poster");
       for (const el of doc.querySelectorAll("object[data]")) await replace(el, "data");
-      for (const el of doc.querySelectorAll("image[href], use[href]")) await replace(el, "href");
+      for (const el of doc.querySelectorAll("[href]")) {
+        if (el.namespaceURI === NS.SVG && ["image", "use"].includes(el.localName))
+          await replace(el, "href");
+      }
       for (const el of doc.querySelectorAll("[*|href]:not([href])"))
         el.setAttributeNS(
           NS.XLINK,
