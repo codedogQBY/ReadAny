@@ -2925,7 +2925,9 @@ function normalizeBrOnlyParagraphs(doc: Document) {
   const body = doc.body;
   if (!body || body.querySelectorAll("p").length > 2) return;
 
-  const containers: Element[] = Array.from(body.querySelectorAll("div, section, article, main"));
+  const containers: Element[] = Array.from(body.querySelectorAll("div, section, article, main")).filter(
+    shouldNormalizeBrParagraphContainer,
+  );
   if (shouldNormalizeBrParagraphContainer(body)) containers.push(body);
 
   for (const container of containers) {
@@ -2984,6 +2986,7 @@ function shouldNormalizeBrParagraphContainer(container: Element) {
 }
 
 function normalizeBrParagraphContainer(doc: Document, container: Element) {
+  const originalNodes = Array.from(container.childNodes);
   const fragment = doc.createDocumentFragment();
   let pending: Node[] = [];
   let breakNodes: Node[] = [];
@@ -3029,7 +3032,10 @@ function normalizeBrParagraphContainer(doc: Document, container: Element) {
   commitBreak();
   flushPending();
 
-  if (paragraphCount < 2) return false;
+  if (paragraphCount < 2) {
+    container.replaceChildren(...originalNodes);
+    return false;
+  }
   container.replaceChildren(fragment);
   container.setAttribute("data-readany-br-paragraphs", "");
   return true;
