@@ -3924,10 +3924,14 @@ a { color: ${primary} !important; }
         walkToc(toc);
 
         const chapters = [];
+        let skippedNoCreateDocument = 0;
 
         for (let i = 0; i < sections.length; i++) {
           const section = sections[i];
-          if (!section.createDocument) continue;
+          if (!section.createDocument) {
+            skippedNoCreateDocument += 1;
+            continue;
+          }
 
           try {
             const doc = await section.createDocument();
@@ -3956,6 +3960,13 @@ a { color: ${primary} !important; }
             console.warn(`[WebView] Failed to extract section ${i}:`, err);
           }
         }
+
+        console.log('[WebView] Chapter extraction summary:', {
+          sections: sections.length,
+          chapters: chapters.length,
+          segments: chapters.reduce((sum, chapter) => sum + (chapter.segments?.length || 0), 0),
+          skippedNoCreateDocument
+        });
 
         postToRN('chaptersExtracted', { chapters });
       } catch (err) {
