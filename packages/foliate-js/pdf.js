@@ -4,9 +4,21 @@
  * Uses PDF.js TextLayer for text selection support.
  */
 import * as pdfjsLib from "pdfjs-dist";
+import { WorkerMessageHandler } from "pdfjs-dist/build/pdf.worker.mjs";
+
+globalThis.pdfjsWorker ??= { WorkerMessageHandler };
 
 // Configure PDF.js worker — always set to match the API version
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+const PDFJS_CDN_BASE = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}`;
+const PDFJS_DOCUMENT_OPTIONS = {
+  useWorkerFetch: false,
+  isEvalSupported: false,
+  useSystemFonts: true,
+  cMapUrl: `${PDFJS_CDN_BASE}/cmaps/`,
+  cMapPacked: true,
+  standardFontDataUrl: `${PDFJS_CDN_BASE}/standard_fonts/`,
+};
 
 // Inline text_layer_builder CSS
 const TEXT_LAYER_CSS = `
@@ -381,6 +393,25 @@ const createPageTextDocument = async (page, pageNumber) => {
   return doc;
 };
 
+const fakePageCfi = (pageIndex) => `epubcfi(/6/${(pageIndex + 1) * 2})`;
+
+const loadPDFFromFile = async (file) => {
+  const arrayBuffer = await file.arrayBuffer();
+  return pdfjsLib.getDocument({
+    ...PDFJS_DOCUMENT_OPTIONS,
+    data: new Uint8Array(arrayBuffer),
+  }).promise;
+};
+
+const loadPDFFromURL = async (url) =>
+  pdfjsLib.getDocument({
+    ...PDFJS_DOCUMENT_OPTIONS,
+    url,
+    rangeChunkSize: 65536,
+    disableAutoFetch: true,
+    disableStream: false,
+  }).promise;
+
 const makeTOCItem = async (item, pdf) => {
   let pageIndex = undefined;
   if (item.dest) {
@@ -405,17 +436,7 @@ const makeTOCItem = async (item, pdf) => {
  * Create a foliate-js compatible book object from a PDF file
  */
 export const makePDF = async (file) => {
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({
-    data: new Uint8Array(arrayBuffer),
-    useWorkerFetch: false,
-    isEvalSupported: false,
-    useSystemFonts: true,
-    cMapUrl: "/vendor/pdfjs/cmaps/",
-    cMapPacked: true,
-    standardFontDataUrl: "/vendor/pdfjs/standard_fonts/",
-  }).promise;
-
+  const pdf = await loadPDFFromFile(file);
   return _buildPDFBook(pdf, file.name);
 };
 
@@ -425,20 +446,40 @@ export const makePDF = async (file) => {
  * avoiding loading the entire file into memory upfront.
  */
 export const makePDFFromURL = async (url, fileName) => {
-  const pdf = await pdfjsLib.getDocument({
-    url,
-    rangeChunkSize: 65536,
-    disableAutoFetch: true,
-    disableStream: false,
-    useWorkerFetch: false,
-    isEvalSupported: false,
-    useSystemFonts: true,
-    cMapUrl: "/vendor/pdfjs/cmaps/",
-    cMapPacked: true,
-    standardFontDataUrl: "/vendor/pdfjs/standard_fonts/",
-  }).promise;
-
+  const pdf = await loadPDFFromURL(url);
   return _buildPDFBook(pdf, fileName);
+};
+
+export const extractPDFChapters = async (file, options = {}) => {
+  const pdf = await loadPDFFromFile(file);
+  const chapters = [];
+
+  try {
+    for (let i = 0; i < pdf.numPages; i++) {
+      const pageNumber = i + 1;
+      const page = await pdf.getPage(pageNumber);
+      const text = await extractPageText(page);
+      const normalized = text.replace(/\n{3,}/g, "\n\n").trim();
+      options.onProgress?.({
+        page: pageNumber,
+        totalPages: pdf.numPages,
+        textLength: normalized.length,
+      });
+      if (!normalized) continue;
+
+      const cfi = fakePageCfi(i);
+      chapters.push({
+        index: i,
+        title: `Page ${pageNumber}`,
+        content: normalized,
+        segments: [{ text: normalized, cfi }],
+      });
+    }
+  } finally {
+    await pdf.destroy();
+  }
+
+  return chapters;
 };
 
 async function _buildPDFBook(pdf, fileName) {

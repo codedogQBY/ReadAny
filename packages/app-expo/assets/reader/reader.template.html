@@ -171,8 +171,17 @@
     function postToRN(type, data) {
       if (RN) RN.postMessage(JSON.stringify({ type, ...data }));
     }
-    window.__READANY_READER_BUILD_ID = 'selection-paging-page-growth';
+    window.__READANY_READER_BUILD_ID = 'pdf-vectorization-direct-extract';
     postToRN('debug', { message: '[ReaderBuild] ' + window.__READANY_READER_BUILD_ID });
+    Promise.withResolvers ??= function () {
+      let resolve;
+      let reject;
+      const promise = new Promise((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    };
 
     // State
     let view = null;
@@ -1334,6 +1343,9 @@
           break;
         case 'extractChapters':
           await handleExtractChapters();
+          break;
+        case 'extractBookChapters':
+          await handleExtractBookChapters(msg);
           break;
         case 'getChapterParagraphs':
           handleGetChapterParagraphs();
@@ -3894,6 +3906,76 @@ a { color: ${primary} !important; }
     };
 
     // ─── Chapter Extraction for Vectorization ───
+    function isPDFBookMessage(msg) {
+      const mimeType = (msg.mimeType || '').split(';')[0].trim().toLowerCase();
+      return mimeType === 'application/pdf' || /\.pdf$/i.test(msg.fileName || '');
+    }
+
+    async function createBookFileFromMessage(msg) {
+      if (msg.base64) {
+        const binary = atob(msg.base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return new File([bytes], msg.fileName || 'book.epub', {
+          type: msg.mimeType || 'application/epub+zip'
+        });
+      }
+
+      if (msg.uri) {
+        const res = await fetch(msg.uri);
+        const isLocalFileStatus = res.status === 0 && /^file:\/\//i.test(msg.uri);
+        if (!res.ok && !isLocalFileStatus) throw new Error(`Failed to fetch: ${res.status}`);
+        const blob = await res.blob();
+        return new File([blob], msg.fileName || 'book.epub', {
+          type: msg.mimeType || blob.type || 'application/octet-stream'
+        });
+      }
+
+      throw new Error('No book data provided');
+    }
+
+    async function handleExtractBookChapters(msg) {
+      try {
+        if (isPDFBookMessage(msg)) {
+          if (typeof window._extractPDFChapters !== 'function') {
+            throw new Error('PDF extraction is not available in this reader build');
+          }
+
+          postToRN('debug', {
+            message: `[PDFExtract] start ${JSON.stringify({
+              fileName: msg.fileName || '',
+              mimeType: msg.mimeType || '',
+              base64Length: msg.base64 ? msg.base64.length : 0
+            })}`
+          });
+
+          const file = await createBookFileFromMessage(msg);
+          const chapters = await window._extractPDFChapters(file, {
+            onProgress: (detail) => {
+              postToRN('debug', { message: `[PDFExtract] page ${JSON.stringify(detail)}` });
+            }
+          });
+
+          postToRN('debug', {
+            message: `[PDFExtract] done ${JSON.stringify({
+              chapters: chapters.length,
+              segments: chapters.reduce((sum, chapter) => sum + (chapter.segments?.length || 0), 0),
+              contentLength: chapters.reduce((sum, chapter) => sum + (chapter.content?.length || 0), 0)
+            })}`
+          });
+
+          postToRN('chaptersExtracted', { chapters });
+          return;
+        }
+
+        currentBook = await makeBook(await createBookFileFromMessage(msg));
+        await handleExtractChapters();
+      } catch (err) {
+        console.error('[WebView] Error extracting book chapters:', err);
+        postToRN('chaptersExtracted', { error: String(err) });
+      }
+    }
+
     async function handleExtractChapters() {
       if (!currentBook) {
         postToRN('chaptersExtracted', { error: 'No book loaded' });
