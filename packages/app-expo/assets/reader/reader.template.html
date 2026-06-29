@@ -171,6 +171,17 @@
     function postToRN(type, data) {
       if (RN) RN.postMessage(JSON.stringify({ type, ...data }));
     }
+    window.__READANY_READER_BUILD_ID = 'pdf-vectorization-direct-extract';
+    postToRN('debug', { message: '[ReaderBuild] ' + window.__READANY_READER_BUILD_ID });
+    Promise.withResolvers ??= function () {
+      let resolve;
+      let reject;
+      const promise = new Promise((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    };
 
     // State
     let view = null;
@@ -1333,6 +1344,9 @@
         case 'extractChapters':
           await handleExtractChapters();
           break;
+        case 'extractBookChapters':
+          await handleExtractBookChapters(msg);
+          break;
         case 'getChapterParagraphs':
           handleGetChapterParagraphs();
           break;
@@ -1560,6 +1574,7 @@
             green: 'rgba(74, 222, 128, 0.4)',
             blue: 'rgba(96, 165, 250, 0.4)',
             pink: 'rgba(236, 72, 153, 0.4)',
+            purple: 'rgba(192, 132, 252, 0.4)',
             violet: 'rgba(167, 139, 250, 0.4)',
             orange: 'rgba(251, 146, 60, 0.5)',
           };
@@ -2030,7 +2045,8 @@ a { color: ${primary} !important; }
       const body = doc.body;
       if (!body || body.querySelectorAll('p').length > 2) return;
 
-      const containers = Array.from(body.querySelectorAll('div, section, article, main'));
+      const containers = Array.from(body.querySelectorAll('div, section, article, main'))
+        .filter(shouldNormalizeBrParagraphContainer);
       if (shouldNormalizeBrParagraphContainer(body)) containers.push(body);
 
       for (const container of containers) {
@@ -2064,6 +2080,7 @@ a { color: ${primary} !important; }
     }
 
     function normalizeBrParagraphContainer(doc, container) {
+      const originalNodes = Array.from(container.childNodes);
       const fragment = doc.createDocumentFragment();
       let pending = [];
       let breakNodes = [];
@@ -2109,7 +2126,10 @@ a { color: ${primary} !important; }
       commitBreak();
       flushPending();
 
-      if (paragraphCount < 2) return false;
+      if (paragraphCount < 2) {
+        container.replaceChildren(...originalNodes);
+        return false;
+      }
       container.replaceChildren(fragment);
       container.setAttribute('data-readany-br-paragraphs', '');
       return true;
@@ -2456,127 +2476,31 @@ a { color: ${primary} !important; }
 
       let selTimer = null;
       let iosHackPending = false;
-      let originalScrollLeft = 0;
-      let pageDebounceTimer = null;
-      let pendingAdvanceDirection = null;
-      let selectionMonitorTimer = null;
-      let preventScroll = null;
-      let pointerUpCleanup = null;
-      let selectionDragPoint = null;
-      let pageAdvanceLockUntil = 0;
-      let lockedContainer = null;
-      let lockedContainerStyles = null;
+      let selectionClearTimer = null;
+      const isIOSLike = (() => {
+        try {
+          return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        } catch {
+          return false;
+        }
+      })();
 
       function markSelectionInteraction(active) {
         doc.__readany_selection_interaction = !!active;
       }
 
-      function setSelectionDragPoint(x, y) {
-        selectionDragPoint = {
-          x,
-          y,
-          updatedAt: Date.now(),
-        };
-      }
-
-      function clearSelectionDragPoint() {
-        selectionDragPoint = null;
-      }
-
-      function cancelPendingPageAdvance() {
-        if (pageDebounceTimer) {
-          clearTimeout(pageDebounceTimer);
-          pageDebounceTimer = null;
-        }
-        pendingAdvanceDirection = null;
-      }
-
-      function startSelectionMonitor() {
-        if (selectionMonitorTimer || !supportsCrossPageSelection()) return;
-        selectionMonitorTimer = setInterval(() => {
-          try {
-            evaluateCrossPageSelection();
-          } catch {}
+      function scheduleClearSelectionInteraction() {
+        if (selectionClearTimer) clearTimeout(selectionClearTimer);
+        selectionClearTimer = setTimeout(() => {
+          if (!getSelectionRange(doc.getSelection())) {
+            markSelectionInteraction(false);
+          }
         }, 120);
       }
 
-      function stopSelectionMonitor() {
-        if (!selectionMonitorTimer) return;
-        clearInterval(selectionMonitorTimer);
-        selectionMonitorTimer = null;
-      }
-
-      function releasePreventScroll() {
-        const container = getPaginatedContainer();
-        if (container && preventScroll) {
-          container.removeEventListener('scroll', preventScroll);
-        }
-        preventScroll = null;
-
-        if (pointerUpCleanup) {
-          doc.removeEventListener('pointerup', pointerUpCleanup);
-        }
-        pointerUpCleanup = null;
-      }
-
-      function applySelectionContainerLock(container) {
-        if (!container || lockedContainer === container) return;
-
-        if (lockedContainer && lockedContainerStyles) {
-          lockedContainer.style.scrollSnapType = lockedContainerStyles.scrollSnapType;
-          lockedContainer.style.scrollBehavior = lockedContainerStyles.scrollBehavior;
-          lockedContainer.style.overscrollBehaviorX = lockedContainerStyles.overscrollBehaviorX;
-        }
-
-        lockedContainer = container;
-        lockedContainerStyles = {
-          scrollSnapType: container.style.scrollSnapType,
-          scrollBehavior: container.style.scrollBehavior,
-          overscrollBehaviorX: container.style.overscrollBehaviorX,
-          overflowX: container.style.overflowX,
-        };
-
-        container.style.scrollSnapType = 'none';
-        container.style.scrollBehavior = 'auto';
-        container.style.overscrollBehaviorX = 'contain';
-        container.style.overflowX = 'hidden';
-      }
-
-      function releaseSelectionContainerLock() {
-        if (!lockedContainer || !lockedContainerStyles) return;
-        lockedContainer.style.scrollSnapType = lockedContainerStyles.scrollSnapType;
-        lockedContainer.style.scrollBehavior = lockedContainerStyles.scrollBehavior;
-        lockedContainer.style.overscrollBehaviorX = lockedContainerStyles.overscrollBehaviorX;
-        lockedContainer.style.overflowX = lockedContainerStyles.overflowX;
-        lockedContainer = null;
-        lockedContainerStyles = null;
-      }
-
-      function clearCrossPageSelectionState(options) {
-        const opts = options || {};
-        cancelPendingPageAdvance();
-        stopSelectionMonitor();
-        releasePreventScroll();
-        if (!opts.keepContainerLock) {
-          releaseSelectionContainerLock();
-        }
-        clearSelectionDragPoint();
-        if (!opts.keepInteraction) {
-          markSelectionInteraction(false);
-        }
-      }
-
-      function supportsCrossPageSelection() {
-        return !!(
-          view &&
-          !view.isFixedLayout &&
-          view.renderer &&
-          view.renderer.getAttribute &&
-          view.renderer.getAttribute('flow') === 'paginated'
-        );
-      }
-
       doc.addEventListener('touchend', () => {
+        if (!isIOSLike) return;
         setTimeout(() => {
           if (iosHackPending) return;
           const sel = doc.getSelection();
@@ -2602,147 +2526,35 @@ a { color: ${primary} !important; }
         selTimer = setTimeout(() => {
           const sel = doc.getSelection();
           if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-            if (!pendingAdvanceDirection && Date.now() >= pageAdvanceLockUntil) {
-              clearCrossPageSelectionState();
-            }
+            scheduleClearSelectionInteraction();
             postToRN('selectionCleared', {});
             return;
           }
           if (!sel.rangeCount) return;
           const range = sel.getRangeAt(0);
+          markSelectionInteraction(true);
           emitSelection(doc, sel, range);
         }, 300);
       });
 
       doc.addEventListener('selectstart', () => {
-        if (!supportsCrossPageSelection()) return;
-        const container = getPaginatedContainer();
-        if (!container) return;
-        originalScrollLeft = container.scrollLeft;
-        clearCrossPageSelectionState({ keepInteraction: true, keepContainerLock: true });
-        applySelectionContainerLock(container);
         markSelectionInteraction(true);
-        startSelectionMonitor();
       });
 
-      function scheduleSelectionPageAdvance(direction) {
-        if (!direction || !supportsCrossPageSelection()) return;
-        if (Date.now() < pageAdvanceLockUntil) return;
-        if (pendingAdvanceDirection === direction && pageDebounceTimer) return;
-
-        cancelPendingPageAdvance();
-        pendingAdvanceDirection = direction;
-        markSelectionInteraction(true);
-        pageDebounceTimer = setTimeout(async () => {
-          const advanceDirection = pendingAdvanceDirection;
-          cancelPendingPageAdvance();
-          pageAdvanceLockUntil = Date.now() + 420;
-          releasePreventScroll();
-          try {
-            if (advanceDirection === 'prev') await view.prev();
-            else await view.next();
-            await new Promise(resolve => setTimeout(resolve, 180));
-            const nextContainer = getPaginatedContainer();
-            if (nextContainer) {
-              originalScrollLeft = nextContainer.scrollLeft;
-            }
-          } catch {}
-          finally {
-            const activeSelectionRange = getSelectionRange(doc.getSelection());
-            if (!activeSelectionRange) {
-              clearCrossPageSelectionState();
-            } else {
-              clearSelectionDragPoint();
-              releaseSelectionContainerLock();
-              markSelectionInteraction(false);
-            }
-          }
-        }, 260);
-      }
-
-      function evaluateCrossPageSelection() {
-        const lastLocation = view && view.lastLocation;
-        const selectionRange = getSelectionRange(doc.getSelection());
-        const container = getPaginatedContainer();
-        if (!container) {
-          clearCrossPageSelectionState();
-          return false;
-        }
-        if (!lastLocation || !lastLocation.range) return false;
-        if (!selectionRange) {
-          if (!pendingAdvanceDirection && Date.now() >= pageAdvanceLockUntil) {
-            clearCrossPageSelectionState();
-          }
-          return false;
-        }
-
-        applySelectionContainerLock(container);
-        markSelectionInteraction(true);
-
-        if (Date.now() < pageAdvanceLockUntil) {
-          return false;
-        }
-
-        const advanceDirection = getSelectionAdvanceIntent(
-          selectionRange,
-          lastLocation.range,
-          selectionDragPoint,
-        );
-
-        if (advanceDirection) {
-          scheduleSelectionPageAdvance(advanceDirection);
-          return true;
-        }
-
-        cancelPendingPageAdvance();
-        releasePreventScroll();
-        preventScroll = () => {
-          const activeSelectionRange = getSelectionRange(doc.getSelection());
-          if (!activeSelectionRange) return;
-          container.scrollLeft = originalScrollLeft;
-        };
-
-        container.addEventListener('scroll', preventScroll);
-        pointerUpCleanup = () => {
-          clearCrossPageSelectionState();
-        };
-        doc.addEventListener('pointerup', pointerUpCleanup);
-        return false;
-      }
-
-      doc.addEventListener('pointermove', (e) => {
-        if (!supportsCrossPageSelection()) return;
-        if (!doc.__readany_selection_interaction && !getSelectionRange(doc.getSelection())) return;
-        setSelectionDragPoint(e.clientX, e.clientY);
-        evaluateCrossPageSelection();
+      doc.addEventListener('pointermove', () => {
+        if (getSelectionRange(doc.getSelection())) markSelectionInteraction(true);
       }, { passive: true });
 
-      doc.addEventListener('touchmove', (e) => {
-        if (!supportsCrossPageSelection() || !e.touches || !e.touches.length) return;
-        if (!doc.__readany_selection_interaction && !getSelectionRange(doc.getSelection())) return;
-        const touch = e.touches[0];
-        setSelectionDragPoint(touch.clientX, touch.clientY);
-        evaluateCrossPageSelection();
+      doc.addEventListener('touchmove', () => {
+        if (getSelectionRange(doc.getSelection())) markSelectionInteraction(true);
       }, { passive: true, capture: true });
 
-      doc.addEventListener('selectionchange', () => {
-        if (doc.__readany_isJiggling) return;
-        if (iosHackPending) return;
-        if (!supportsCrossPageSelection()) return;
-        evaluateCrossPageSelection();
-      });
-
       doc.addEventListener('touchend', () => {
-        setTimeout(() => {
-          if (!getSelectionRange(doc.getSelection())) {
-            markSelectionInteraction(false);
-            clearCrossPageSelectionState();
-          }
-        }, 80);
+        scheduleClearSelectionInteraction();
       }, { passive: true });
 
       doc.addEventListener('touchcancel', () => {
-        clearCrossPageSelectionState();
+        scheduleClearSelectionInteraction();
       }, { passive: true });
     }
 
@@ -2816,88 +2628,6 @@ a { color: ${primary} !important; }
         if (text) return text;
       } catch {}
       return (fallback || '').trim();
-    }
-
-    function getSelectionEndRect(range) {
-      if (!range) return null;
-      try {
-        const caretRange = range.cloneRange();
-        caretRange.collapse(false);
-        const caretRects = Array.from(caretRange.getClientRects()).filter(r => r.width >= 0 && r.height > 0);
-        if (caretRects.length) return caretRects[caretRects.length - 1];
-      } catch {}
-
-      const rects = Array.from(range.getClientRects()).filter(r => r.width > 0 && r.height > 0);
-      return rects[rects.length - 1] || range.getBoundingClientRect();
-    }
-
-    function getSelectionAdvanceIntent(selectionRange, lastLocationRange, dragPoint) {
-      if (!selectionRange || !lastLocationRange) return null;
-
-      try {
-        if (selectionRange.compareBoundaryPoints(Range.END_TO_END, lastLocationRange) >= 0) {
-          return 'next';
-        }
-        if (selectionRange.compareBoundaryPoints(Range.START_TO_START, lastLocationRange) <= 0) {
-          return 'prev';
-        }
-      } catch {}
-
-      try {
-        const edgeRect = getSelectionEndRect(selectionRange);
-        const doc = selectionRange.endContainer && selectionRange.endContainer.ownerDocument
-          ? selectionRange.endContainer.ownerDocument
-          : null;
-        const win = doc ? doc.defaultView : null;
-        const viewportWidth = Math.max(
-          (win && win.innerWidth) || 0,
-          (doc && doc.documentElement && doc.documentElement.clientWidth) || 0
-        );
-        const viewportHeight = Math.max(
-          (win && win.innerHeight) || 0,
-          (doc && doc.documentElement && doc.documentElement.clientHeight) || 0
-        );
-        if (viewportWidth <= 0 || viewportHeight <= 0) return null;
-
-        const point = dragPoint && Date.now() - dragPoint.updatedAt < 1000
-          ? dragPoint
-          : edgeRect
-            ? { x: edgeRect.right, y: edgeRect.bottom }
-            : null;
-        if (!point) return null;
-
-        const isRtl = !!(view.book && view.book.dir === 'rtl');
-        const horizontalInset = Math.max(132, Math.min(420, viewportWidth * 0.30));
-        const verticalInset = Math.max(140, Math.min(360, viewportHeight * 0.28));
-        const inBottomBand = point.y >= viewportHeight - verticalInset;
-
-        if (isRtl) {
-          if (point.x <= horizontalInset) return 'next';
-          if (dragPoint && point.x >= viewportWidth - horizontalInset) return 'prev';
-          if (inBottomBand && point.x <= viewportWidth * 0.74) return 'next';
-          if (dragPoint && inBottomBand && point.x >= viewportWidth * 0.88) return 'prev';
-        } else {
-          if (point.x >= viewportWidth - horizontalInset) return 'next';
-          if (dragPoint && point.x <= horizontalInset) return 'prev';
-          if (inBottomBand && point.x >= viewportWidth * 0.26) return 'next';
-          if (dragPoint && inBottomBand && point.x <= viewportWidth * 0.12) return 'prev';
-        }
-
-        return null;
-      } catch {
-        return null;
-      }
-    }
-
-    function getPaginatedContainer() {
-      try {
-        if (!view || !view.shadowRoot) return null;
-        const paginator = view.shadowRoot.querySelector('foliate-paginator');
-        if (!paginator || !paginator.shadowRoot) return null;
-        return paginator.shadowRoot.querySelector('#container');
-      } catch {
-        return null;
-      }
     }
 
     function getVisibleTextSnippet(maxLen) {
@@ -4176,6 +3906,76 @@ a { color: ${primary} !important; }
     };
 
     // ─── Chapter Extraction for Vectorization ───
+    function isPDFBookMessage(msg) {
+      const mimeType = (msg.mimeType || '').split(';')[0].trim().toLowerCase();
+      return mimeType === 'application/pdf' || /\.pdf$/i.test(msg.fileName || '');
+    }
+
+    async function createBookFileFromMessage(msg) {
+      if (msg.base64) {
+        const binary = atob(msg.base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return new File([bytes], msg.fileName || 'book.epub', {
+          type: msg.mimeType || 'application/epub+zip'
+        });
+      }
+
+      if (msg.uri) {
+        const res = await fetch(msg.uri);
+        const isLocalFileStatus = res.status === 0 && /^file:\/\//i.test(msg.uri);
+        if (!res.ok && !isLocalFileStatus) throw new Error(`Failed to fetch: ${res.status}`);
+        const blob = await res.blob();
+        return new File([blob], msg.fileName || 'book.epub', {
+          type: msg.mimeType || blob.type || 'application/octet-stream'
+        });
+      }
+
+      throw new Error('No book data provided');
+    }
+
+    async function handleExtractBookChapters(msg) {
+      try {
+        if (isPDFBookMessage(msg)) {
+          if (typeof window._extractPDFChapters !== 'function') {
+            throw new Error('PDF extraction is not available in this reader build');
+          }
+
+          postToRN('debug', {
+            message: `[PDFExtract] start ${JSON.stringify({
+              fileName: msg.fileName || '',
+              mimeType: msg.mimeType || '',
+              base64Length: msg.base64 ? msg.base64.length : 0
+            })}`
+          });
+
+          const file = await createBookFileFromMessage(msg);
+          const chapters = await window._extractPDFChapters(file, {
+            onProgress: (detail) => {
+              postToRN('debug', { message: `[PDFExtract] page ${JSON.stringify(detail)}` });
+            }
+          });
+
+          postToRN('debug', {
+            message: `[PDFExtract] done ${JSON.stringify({
+              chapters: chapters.length,
+              segments: chapters.reduce((sum, chapter) => sum + (chapter.segments?.length || 0), 0),
+              contentLength: chapters.reduce((sum, chapter) => sum + (chapter.content?.length || 0), 0)
+            })}`
+          });
+
+          postToRN('chaptersExtracted', { chapters });
+          return;
+        }
+
+        currentBook = await makeBook(await createBookFileFromMessage(msg));
+        await handleExtractChapters();
+      } catch (err) {
+        console.error('[WebView] Error extracting book chapters:', err);
+        postToRN('chaptersExtracted', { error: String(err) });
+      }
+    }
+
     async function handleExtractChapters() {
       if (!currentBook) {
         postToRN('chaptersExtracted', { error: 'No book loaded' });
@@ -4206,10 +4006,14 @@ a { color: ${primary} !important; }
         walkToc(toc);
 
         const chapters = [];
+        let skippedNoCreateDocument = 0;
 
         for (let i = 0; i < sections.length; i++) {
           const section = sections[i];
-          if (!section.createDocument) continue;
+          if (!section.createDocument) {
+            skippedNoCreateDocument += 1;
+            continue;
+          }
 
           try {
             const doc = await section.createDocument();
@@ -4238,6 +4042,13 @@ a { color: ${primary} !important; }
             console.warn(`[WebView] Failed to extract section ${i}:`, err);
           }
         }
+
+        console.log('[WebView] Chapter extraction summary:', {
+          sections: sections.length,
+          chapters: chapters.length,
+          segments: chapters.reduce((sum, chapter) => sum + (chapter.segments?.length || 0), 0),
+          skippedNoCreateDocument
+        });
 
         postToRN('chaptersExtracted', { chapters });
       } catch (err) {

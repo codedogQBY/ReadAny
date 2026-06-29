@@ -7,6 +7,7 @@ export const MOBILE_AUTO_VECTORIZER_MAX_BYTES = 12 * 1024 * 1024;
 
 const MIME_TYPES: Record<string, string> = {
   epub: "application/epub+zip",
+  pdf: "application/pdf",
   txt: "text/plain",
   // Mobile UMD imports are converted and stored as EPUB before vectorization.
   umd: "application/epub+zip",

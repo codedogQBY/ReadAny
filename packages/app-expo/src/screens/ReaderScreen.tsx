@@ -844,23 +844,11 @@ export function ReaderScreen({ route, navigation }: Props) {
       suppressReaderTapUntilRef.current = Date.now() + 650;
       const highlight = highlights.find((h) => h.cfi === detail.value);
       if (!highlight) return;
-      if (highlight.note) {
-        setNoteViewHighlight({
-          id: highlight.id,
-          text: highlight.text,
-          note: highlight.note,
-          cfi: highlight.cfi,
-          color: highlight.color,
-        });
-        setNoteViewContent(highlight.note);
-        setNoteViewEditing(false);
-      } else {
-        setSelection({
-          text: highlight.text,
-          cfi: highlight.cfi,
-          position: detail.position,
-        });
-      }
+      setSelection({
+        text: highlight.text,
+        cfi: highlight.cfi,
+        position: detail.position,
+      });
     },
     onNoteTooltip: (detail) => {
       suppressReaderTapUntilRef.current = Date.now() + 900;
@@ -1334,12 +1322,6 @@ export function ReaderScreen({ route, navigation }: Props) {
     };
   }, [bookId, currentCfi, goToCFISafely, loading, navigation, openTTS, webViewReady]);
 
-  // Lock navigation when selection is active
-  useEffect(() => {
-    if (!webViewReady) return;
-    bridge.setNavigationLocked(!!selection);
-  }, [webViewReady, selection]);
-
   if (loading && !webViewReady && !readerHtmlUri) {
     return (
       <SafeAreaView style={[s.container, { backgroundColor: colors.background }]}>
@@ -1502,6 +1484,7 @@ export function ReaderScreen({ route, navigation }: Props) {
             }}
             javaScriptEnabled
             domStorageEnabled
+            cacheEnabled={false}
             allowFileAccess
             allowFileAccessFromFileURLs
             allowUniversalAccessFromFileURLs
