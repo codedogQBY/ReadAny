@@ -12,9 +12,15 @@ const { EdgeTTSPlayer } = await import("./tts-players");
 
 // 每次 decodeAudioData 调用都把 resolver 收集起来，便于手动控制某个 run 的解码完成时机。
 let decodeResolvers: Array<(buf: unknown) => void>;
+let createdSources: Array<{
+  stop: ReturnType<typeof vi.fn>;
+  disconnect: ReturnType<typeof vi.fn>;
+  start: ReturnType<typeof vi.fn>;
+}>;
 
 function installAudioMock() {
   decodeResolvers = [];
+  createdSources = [];
   class MockAudioContext {
     state = "running";
     currentTime = 0;
@@ -23,7 +29,16 @@ function installAudioMock() {
       return { connect: vi.fn(), gain: { value: 1 } };
     }
     createBufferSource() {
-      return { buffer: null, connect: vi.fn(), start: vi.fn() };
+      const source = {
+        buffer: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+        onended: null,
+      };
+      createdSources.push(source);
+      return source;
     }
     decodeAudioData() {
       return new Promise((resolve) => {
@@ -103,6 +118,23 @@ describe("EdgeTTSPlayer — per-run runId isolation (#372 reentrancy slice)", ()
     await flush();
 
     expect(onChunk).not.toHaveBeenCalled();
+  });
+
+  it("stop() immediately stops an already scheduled audio source", async () => {
+    const player = new EdgeTTSPlayer();
+
+    player.speak(["a0"], cfg);
+    await flush();
+    expect(decodeResolvers.length).toBe(1);
+
+    decodeResolvers[0]({ duration: 1 });
+    await flush();
+    expect(createdSources.length).toBe(1);
+
+    player.stop();
+
+    expect(createdSources[0].stop).toHaveBeenCalledTimes(1);
+    expect(createdSources[0].disconnect).toHaveBeenCalledTimes(1);
   });
 
   it("resume() 在重入下 reject 不会从 speak() 抛出未处理拒绝", async () => {

@@ -446,6 +446,7 @@ export class EdgeTTSPlayer implements ITTSPlayer {
   private producerIndex = 0;
   private producerWake: (() => void) | null = null;
   private chunkStartTimers = new Set<ReturnType<typeof setTimeout>>();
+  private activeSources = new Set<AudioBufferSourceNode>();
   private pausedAt = 0; // Date.now() when suspended (wall-clock ms)
   /** Monotonic per-run token, bumped on every speak() to invalidate the previous
    *  run's in-flight async continuations (mirrors DashScopeTTSPlayer). */
@@ -618,6 +619,10 @@ export class EdgeTTSPlayer implements ITTSPlayer {
     const source = ctx.createBufferSource();
     source.buffer = audioBuffer;
     source.connect(gain);
+    this.activeSources.add(source);
+    source.onended = () => {
+      this.activeSources.delete(source);
+    };
 
     const startAt = Math.max(ctx.currentTime, this.scheduledEnd);
     const notifyChunkStart = () => {
@@ -703,6 +708,19 @@ export class EdgeTTSPlayer implements ITTSPlayer {
   private cleanupAudio() {
     for (const timer of this.chunkStartTimers) clearTimeout(timer);
     this.chunkStartTimers.clear();
+    for (const source of this.activeSources) {
+      try {
+        source.stop();
+      } catch {
+        // Already stopped.
+      }
+      try {
+        source.disconnect();
+      } catch {
+        // Already disconnected.
+      }
+    }
+    this.activeSources.clear();
     if (this.audioCtx) {
       this.audioCtx.close().catch(() => {});
       this.audioCtx = null;
