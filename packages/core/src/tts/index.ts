@@ -7,7 +7,12 @@ export type {
   TTSConfig,
   TTSPlayState,
 } from "./types";
-export { DEFAULT_TTS_CONFIG, DASHSCOPE_VOICES, normalizeTTSConfig, normalizeTTSEngine } from "./types";
+export {
+  DEFAULT_TTS_CONFIG,
+  DASHSCOPE_VOICES,
+  normalizeTTSConfig,
+  normalizeTTSEngine,
+} from "./types";
 
 // Text utilities
 export {

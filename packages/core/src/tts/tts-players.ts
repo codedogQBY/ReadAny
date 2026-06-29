@@ -596,7 +596,9 @@ export class EdgeTTSPlayer implements ITTSPlayer {
       }
       await new Promise<void>((r) => setTimeout(r, 50));
     }
-    return this.fetchBuffer.get(index)!;
+    const chunk = this.fetchBuffer.get(index);
+    if (!chunk) throw new Error("aborted");
+    return chunk;
   }
 
   private async decodeAndSchedule(
