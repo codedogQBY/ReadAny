@@ -685,6 +685,7 @@ export class EdgeTTSPlayer implements ITTSPlayer {
   }
 
   stop() {
+    this.runId += 1;
     if (this.checkEndTimer) {
       clearInterval(this.checkEndTimer);
       this.checkEndTimer = null;

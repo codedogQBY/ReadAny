@@ -106,6 +106,39 @@ describe("useTTSStore — re-speak on synth change (#370)", () => {
     expect((edgePlayer.speak.mock.calls[1][1] as TTSConfig).edgeVoice).toBe("zh-CN-YunxiNeural");
   });
 
+  it("edge: re-speaks from current chunk with changed rate and does not leak stopped state", () => {
+    startEdge();
+    edgePlayer.onChunkChange?.(1, 2);
+    expect(useTTSStore.getState().currentChunkIndex).toBe(1);
+
+    useTTSStore.getState().updateConfig({ rate: 1.5 });
+    vi.advanceTimersByTime(250);
+
+    expect(edgePlayer.stop).toHaveBeenCalledTimes(1);
+    expect(edgePlayer.speak).toHaveBeenCalledTimes(2);
+    expect(edgePlayer.speak.mock.calls[1][0]).toEqual(["s1"]);
+    expect((edgePlayer.speak.mock.calls[1][1] as TTSConfig).rate).toBe(1.5);
+    expect(useTTSStore.getState().playState).toBe("playing");
+    expect(useTTSStore.getState().currentChunkIndex).toBe(1);
+  });
+
+  it("edge: rapid voice/rate changes collapse into one re-speak with latest config", () => {
+    startEdge();
+    useTTSStore.getState().updateConfig({ edgeVoice: "zh-CN-YunxiNeural" });
+    vi.advanceTimersByTime(100);
+    useTTSStore.getState().updateConfig({ rate: 1.3 });
+    vi.advanceTimersByTime(100);
+    useTTSStore.getState().updateConfig({ pitch: 1.2 });
+    vi.advanceTimersByTime(250);
+
+    expect(edgePlayer.stop).toHaveBeenCalledTimes(1);
+    expect(edgePlayer.speak).toHaveBeenCalledTimes(2);
+    const config = edgePlayer.speak.mock.calls[1][1] as TTSConfig;
+    expect(config.edgeVoice).toBe("zh-CN-YunxiNeural");
+    expect(config.rate).toBe(1.3);
+    expect(config.pitch).toBe(1.2);
+  });
+
   it("debounces rapid switches into one re-speak with the last voice", () => {
     startDashScope("Cherry");
     useTTSStore.getState().updateConfig({ dashscopeVoice: "Ethan" });
