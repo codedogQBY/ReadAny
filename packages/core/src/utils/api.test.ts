@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  type EmbeddingEndpointTestError,
   buildOpenAICompatibleUrl,
   buildProviderModelsUrl,
   ensureUrlProtocol,
@@ -197,7 +196,7 @@ describe("AI API URL helpers", () => {
           modelId: "Qwen/Qwen3-Embedding-4B",
           fetcher: async () => new Response("not found", { status: 404, statusText: "Not Found" }),
         }),
-      ).rejects.toMatchObject<Partial<EmbeddingEndpointTestError>>({
+      ).rejects.toMatchObject({
         name: "EmbeddingEndpointTestError",
         url: "https://api.siliconflow.cn/v1/embeddings",
         status: 404,
