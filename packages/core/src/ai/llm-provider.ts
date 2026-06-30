@@ -419,6 +419,17 @@ export async function createChatModelFromEndpoint(
           baseURL: geminiBaseUrl,
           fetch: endpointFetch,
         },
+        __includeRawResponse: true,
+        modelKwargs: {
+          extra_body: {
+            google: {
+              thinking_config: {
+                thinking_level: "low",
+                include_thoughts: true,
+              },
+            },
+          },
+        },
         temperature,
         maxTokens,
         streaming,
