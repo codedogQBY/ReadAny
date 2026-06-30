@@ -73,6 +73,12 @@ function isDirectFileTransferUnsupported(error: unknown): boolean {
   return /does not support direct file|Platform does not support direct file/i.test(message);
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+  return `${bytes} B`;
+}
+
 async function makeTempTransferPath(finalPath: string): Promise<string> {
   const adapter = getSyncAdapter();
   const tempDir = await adapter.getTempDir();
@@ -90,6 +96,7 @@ async function uploadFileToRemote(
   localPath: string,
   onProgress?: (loaded: number, total: number) => void,
 ): Promise<number | null> {
+  const adapter = getSyncAdapter();
   if (backend.putFile) {
     try {
       await backend.putFile(remotePath, localPath, onProgress);
@@ -102,7 +109,15 @@ async function uploadFileToRemote(
     }
   }
 
-  const adapter = getSyncAdapter();
+  if (adapter.maxBufferedTransferBytes != null) {
+    const fileSize = await adapter.getFileSize(localPath);
+    if (fileSize != null && fileSize > adapter.maxBufferedTransferBytes) {
+      throw new Error(
+        `Buffered upload would exceed platform memory limit for ${remotePath}: ${formatBytes(fileSize)} > ${formatBytes(adapter.maxBufferedTransferBytes)}`,
+      );
+    }
+  }
+
   const data = await adapter.readFileBytes(localPath);
   onProgress?.(0, data.length);
   await backend.put(remotePath, data);

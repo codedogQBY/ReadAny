@@ -201,36 +201,33 @@ export const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
   },
 };
 
-const SPECIAL_HOSTS = [
-  "volces.com/api/v3",
-  "anthropic.com",
-  "generativelanguage.googleapis.com",
-];
+const SPECIAL_HOSTS = ["volces.com/api/v3", "anthropic.com", "generativelanguage.googleapis.com"];
 
 const CONSOLE_PATH_SEGMENTS = new Set(["console", "playground", "dashboard", "studio"]);
 
-const VERSION_PATTERN = /\/(v[1-9]\d*|api\/v[1-9]\d*|api\/paas\/v[1-9]\d*|compatible-mode\/v[1-9]\d*|openai\/v[1-9]\d*)$/i;
+const VERSION_PATTERN =
+  /\/(v[1-9]\d*|api\/v[1-9]\d*|api\/paas\/v[1-9]\d*|compatible-mode\/v[1-9]\d*|openai\/v[1-9]\d*)$/i;
 
 export function formatApiHost(host: string): string {
   if (!host) return host;
 
-  host = ensureUrlProtocol(host.trim());
+  const normalizedHost = ensureUrlProtocol(host.trim());
 
-  if (host.endsWith("/")) {
-    return host;
+  if (normalizedHost.endsWith("/")) {
+    return normalizedHost;
   }
 
   for (const special of SPECIAL_HOSTS) {
-    if (host.includes(special)) {
-      return `${host}/`;
+    if (normalizedHost.includes(special)) {
+      return `${normalizedHost}/`;
     }
   }
 
-  if (VERSION_PATTERN.test(host)) {
-    return `${host}/`;
+  if (VERSION_PATTERN.test(normalizedHost)) {
+    return `${normalizedHost}/`;
   }
 
-  return `${host}/v1/`;
+  return `${normalizedHost}/v1/`;
 }
 
 export function trimApiUrl(url: string): string {
@@ -352,6 +349,167 @@ export function buildOpenAICompatibleUrl(
   if (!resolvedBaseUrl) return "";
   if (exactRequestUrl) return resolvedBaseUrl;
   return `${resolvedBaseUrl}/${path.replace(/^\/+/, "")}`;
+}
+
+function getPathSegments(url: string): string[] {
+  try {
+    return new URL(url).pathname.split("/").filter(Boolean);
+  } catch {
+    return trimApiUrl(url).split("/").filter(Boolean);
+  }
+}
+
+function trimParsedUrlPath(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const segments = getPathSegments(url);
+    parsed.pathname = segments.length > 0 ? `/${segments.join("/")}` : "/";
+    return trimApiUrl(parsed.toString());
+  } catch {
+    return trimApiUrl(url);
+  }
+}
+
+function getLowerPathSegments(url: string): string[] {
+  return getPathSegments(url).map((segment) => segment.toLowerCase());
+}
+
+export function isOllamaEmbeddingEndpointUrl(url: string): boolean {
+  const normalized = ensureUrlProtocol(url);
+  const segments = getLowerPathSegments(trimApiUrl(normalized));
+  return (
+    segments.length >= 2 &&
+    segments[segments.length - 2] === "api" &&
+    segments[segments.length - 1] === "embed"
+  );
+}
+
+function isOllamaBaseUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.port === "11434" && getPathSegments(url).length === 0;
+  } catch {
+    return /(^|:)11434(\/|$)/.test(url);
+  }
+}
+
+/**
+ * Accept either an embeddings request URL or an OpenAI-compatible API base URL.
+ * This keeps legacy saved root URLs working while preserving exact endpoints.
+ */
+export function normalizeEmbeddingEndpointUrl(
+  url?: string,
+  fallbackBaseUrl = "https://api.openai.com",
+): string {
+  const rawUrl = ensureUrlProtocol((url || fallbackBaseUrl).trim());
+  if (!rawUrl) return "";
+  const trimmedUrl = trimApiUrl(rawUrl);
+
+  if (isOllamaEmbeddingEndpointUrl(trimmedUrl)) {
+    return trimParsedUrlPath(trimmedUrl);
+  }
+
+  if (isOllamaBaseUrl(trimmedUrl)) {
+    return `${trimmedUrl}/api/embed`;
+  }
+
+  const segments = getLowerPathSegments(trimmedUrl);
+  if (segments[segments.length - 1] === "embeddings") {
+    return trimParsedUrlPath(trimmedUrl);
+  }
+
+  return buildOpenAICompatibleUrl(trimmedUrl, "embeddings");
+}
+
+type EmbeddingEndpointFetch = (input: string, init?: RequestInit) => Promise<Response>;
+
+export interface TestEmbeddingEndpointOptions {
+  url?: string;
+  modelId: string;
+  apiKey?: string;
+  input?: string;
+  fetcher?: EmbeddingEndpointFetch;
+}
+
+export interface TestEmbeddingEndpointResult {
+  url: string;
+  dimension: number;
+  isOllama: boolean;
+}
+
+export class EmbeddingEndpointTestError extends Error {
+  readonly url: string;
+  readonly status?: number;
+
+  constructor(message: string, url: string, status?: number) {
+    super(message);
+    this.name = "EmbeddingEndpointTestError";
+    this.url = url;
+    this.status = status;
+  }
+}
+
+export async function testEmbeddingEndpoint({
+  url,
+  modelId,
+  apiKey,
+  input = "test",
+  fetcher = globalThis.fetch,
+}: TestEmbeddingEndpointOptions): Promise<TestEmbeddingEndpointResult> {
+  const requestUrl = normalizeEmbeddingEndpointUrl(url);
+  const trimmedModelId = modelId.trim();
+
+  if (!requestUrl) {
+    throw new EmbeddingEndpointTestError("Missing endpoint URL", requestUrl);
+  }
+  if (!trimmedModelId) {
+    throw new EmbeddingEndpointTestError("Missing model ID", requestUrl);
+  }
+  if (!fetcher) {
+    throw new EmbeddingEndpointTestError("Fetch is not available in this environment", requestUrl);
+  }
+
+  const isOllama = isOllamaEmbeddingEndpointUrl(requestUrl);
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const trimmedApiKey = apiKey?.trim();
+  if (trimmedApiKey) {
+    headers.Authorization = `Bearer ${trimmedApiKey}`;
+  }
+
+  const requestBody = isOllama
+    ? { model: trimmedModelId, input }
+    : { input: [input], model: trimmedModelId, encoding_format: "float" };
+
+  const response = await fetcher(requestUrl, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    const statusText = response.statusText ? ` ${response.statusText}` : "";
+    const errorDetail = errorText ? `: ${errorText.slice(0, 200)}` : "";
+    throw new EmbeddingEndpointTestError(
+      `HTTP ${response.status}${statusText}${errorDetail}`,
+      requestUrl,
+      response.status,
+    );
+  }
+
+  const json = await response.json();
+  const dimension = isOllama
+    ? (json?.embeddings?.[0]?.length ?? 0)
+    : (json?.data?.[0]?.embedding?.length ?? 0);
+
+  if (!dimension) {
+    throw new EmbeddingEndpointTestError(
+      "Response did not include an embedding vector",
+      requestUrl,
+    );
+  }
+
+  return { url: requestUrl, dimension, isOllama };
 }
 
 export function getProviderConfig(providerId: string): ProviderConfig {
