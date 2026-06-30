@@ -65,6 +65,7 @@
     "thinking": "正在思考...",
     "toolCalling": "调用工具中...",
     "callingTool": "正在调用 {{toolName}}...",
+    "toolCallPreparing": "我先查看相关内容。",
     "responding": "正在回复...",
     "reasoningRunning": "正在思考...",
     "reasoningDone": "思考过程",

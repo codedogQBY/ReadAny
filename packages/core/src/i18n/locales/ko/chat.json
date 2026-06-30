@@ -65,6 +65,7 @@
     "thinking": "생각 중...",
     "toolCalling": "도구 호출 중...",
     "callingTool": "{{toolName}} 호출 중...",
+    "toolCallPreparing": "먼저 관련 내용을 확인할게요.",
     "responding": "응답 중...",
     "reasoningRunning": "생각 중...",
     "reasoningDone": "추론 완료",

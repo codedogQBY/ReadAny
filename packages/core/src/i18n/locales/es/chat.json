@@ -65,6 +65,7 @@
     "thinking": "Pensando...",
     "toolCalling": "Llamando herramienta...",
     "callingTool": "Llamando {{toolName}}...",
+    "toolCallPreparing": "Primero revisaré el contenido relevante.",
     "responding": "Respondiendo...",
     "reasoningRunning": "Pensando...",
     "reasoningDone": "Razonamiento",

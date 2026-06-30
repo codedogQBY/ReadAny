@@ -150,12 +150,14 @@ export function createToolCallPart(
   args: Record<string, unknown>,
   reasoning?: string,
 ): ToolCallPart {
+  const toolReasoning = typeof args.reasoning === "string" ? args.reasoning : reasoning;
+
   return {
     id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     type: "tool_call",
     name,
     args,
-    reasoning,
+    reasoning: toolReasoning,
     status: "running",
     createdAt: Date.now(),
   };

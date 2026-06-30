@@ -9,6 +9,7 @@ export function toolCallPartToMessageToolCall(part: ToolCallPart) {
     result: part.result,
     status: part.status,
     error: part.error,
+    reasoning: part.reasoning,
   };
 }
 

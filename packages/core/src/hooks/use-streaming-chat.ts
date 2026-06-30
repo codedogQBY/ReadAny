@@ -68,6 +68,14 @@ function buildPartsOrder(parts: Part[]) {
   });
 }
 
+function hasVisibleLeadIn(parts: Part[]): boolean {
+  return parts.some((part) => {
+    if (part.type === "text") return Boolean((part as TextPart).text.trim());
+    if (part.type === "reasoning") return Boolean((part as ReasoningPart).text.trim());
+    return false;
+  });
+}
+
 /** Type guard for mindmap tool result */
 function isMindmapResult(
   result: unknown,
@@ -442,6 +450,15 @@ export function useStreamingChat(options?: StreamingChatOptions) {
             setStreaming(false);
           },
           onToolCall: (name, args) => {
+            if (!hasVisibleLeadIn(currentParts)) {
+              const fallbackReasoningPart = createReasoningPart(
+                i18n.t("streaming.toolCallPreparing"),
+                "thinking",
+              );
+              fallbackReasoningPart.status = "completed";
+              fallbackReasoningPart.updatedAt = Date.now();
+              currentParts.push(fallbackReasoningPart);
+            }
             if (currentTextPart) {
               currentTextPart.status = "completed";
               currentTextPart.updatedAt = Date.now();
