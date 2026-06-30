@@ -1,21 +1,7 @@
 /**
  * Chat utility functions shared between ChatPage and ChatPanel
  */
-import type { PartsOrderEntry, ReasoningStep, ToolCall } from "../types/chat";
-import type { MessageV2, Part } from "../types/message";
-
-type ChatMessageLike = {
-  id: string;
-  threadId: string;
-  role: MessageV2["role"];
-  content?: string;
-  citations?: unknown[];
-  toolCalls?: ToolCall[];
-  reasoning?: ReasoningStep[];
-  partsOrder?: PartsOrderEntry[];
-  parts?: Part[];
-  createdAt: number;
-};
+import type { MessageV2 } from "../types/message";
 
 function parseToolResult(result: unknown): Record<string, unknown> | null {
   if (typeof result === "string") {
@@ -29,10 +15,7 @@ function parseToolResult(result: unknown): Record<string, unknown> | null {
   return result && typeof result === "object" ? (result as Record<string, unknown>) : null;
 }
 
-function findCitationIndexFromToolCalls(
-  entry: PartsOrderEntry,
-  toolCalls: ToolCall[] | undefined,
-): number | undefined {
+function findCitationIndexFromToolCalls(entry: any, toolCalls: any[] | undefined): number | undefined {
   if (!toolCalls) return undefined;
   for (const tc of toolCalls) {
     if (tc.name !== "addCitation") continue;
@@ -57,7 +40,7 @@ function findCitationIndexFromToolCalls(
  * 2. Format with partsOrder for reconstructing parts sequence
  * 3. Legacy format without partsOrder (fallback)
  */
-export function convertToMessageV2(messages: ChatMessageLike[]): MessageV2[] {
+export function convertToMessageV2(messages: any[]): MessageV2[] {
   return messages.map((m) => {
     // If message already has properly typed parts (new format), use them directly
     if (m.parts && Array.isArray(m.parts) && m.parts.length > 0 && m.parts[0]?.type) {
@@ -72,9 +55,9 @@ export function convertToMessageV2(messages: ChatMessageLike[]): MessageV2[] {
 
     // If partsOrder is available, use it to reconstruct parts in the correct order
     if (m.partsOrder && Array.isArray(m.partsOrder) && m.partsOrder.length > 0) {
-      const parts: Part[] = [];
-      const reasoningMap = new Map<string, ReasoningStep>();
-      const toolCallMap = new Map<string, ToolCall>();
+      const parts: any[] = [];
+      const reasoningMap = new Map<string, any>();
+      const toolCallMap = new Map<string, any>();
 
       if (m.reasoning) {
         for (const r of m.reasoning) {
@@ -93,7 +76,7 @@ export function convertToMessageV2(messages: ChatMessageLike[]): MessageV2[] {
             parts.push({
               id: entry.id,
               type: "text",
-              text: entry.text || m.content || "",
+              text: entry.text || m.content,
               status: "completed",
               createdAt: m.createdAt,
             });
@@ -132,7 +115,6 @@ export function convertToMessageV2(messages: ChatMessageLike[]): MessageV2[] {
                 args: tc.args,
                 result: tc.result,
                 error: tc.error,
-                reasoning: tc.reasoning,
                 status: tc.status || "completed",
                 createdAt: m.createdAt,
               });
@@ -143,11 +125,11 @@ export function convertToMessageV2(messages: ChatMessageLike[]): MessageV2[] {
             parts.push({
               id: entry.id,
               type: "citation",
-              bookId: entry.bookId || "",
-              chapterTitle: entry.chapterTitle || "",
-              chapterIndex: entry.chapterIndex ?? 0,
-              cfi: entry.cfi || "",
-              text: entry.text || "",
+              bookId: entry.bookId,
+              chapterTitle: entry.chapterTitle,
+              chapterIndex: entry.chapterIndex,
+              cfi: entry.cfi,
+              text: entry.text,
               citationIndex:
                 entry.citationIndex ?? findCitationIndexFromToolCalls(entry, m.toolCalls),
               status: "completed",
@@ -177,11 +159,11 @@ export function convertToMessageV2(messages: ChatMessageLike[]): MessageV2[] {
     }
 
     // Fallback: legacy format without partsOrder
-    const parts: Part[] = [];
+    const parts: any[] = [];
 
     // Add reasoning parts
     if (m.reasoning && m.reasoning.length > 0) {
-      for (const r of m.reasoning) {
+      m.reasoning.forEach((r: any) => {
         parts.push({
           id: r.id || `reasoning-${Date.now()}`,
           type: "reasoning",
@@ -190,12 +172,12 @@ export function convertToMessageV2(messages: ChatMessageLike[]): MessageV2[] {
           status: "completed",
           createdAt: r.timestamp || m.createdAt,
         });
-      }
+      });
     }
 
     // Add tool call parts
     if (m.toolCalls && m.toolCalls.length > 0) {
-      for (const tc of m.toolCalls) {
+      m.toolCalls.forEach((tc: any) => {
         parts.push({
           id: tc.id,
           type: "tool_call",
@@ -203,11 +185,10 @@ export function convertToMessageV2(messages: ChatMessageLike[]): MessageV2[] {
           args: tc.args,
           result: tc.result,
           error: tc.error,
-          reasoning: tc.reasoning,
           status: tc.status || "completed",
           createdAt: m.createdAt,
         });
-      }
+      });
     }
 
     // Add text part

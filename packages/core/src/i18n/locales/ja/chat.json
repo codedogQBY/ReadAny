@@ -65,7 +65,6 @@
     "thinking": "考え中...",
     "toolCalling": "ツールを呼び出し中...",
     "callingTool": "{{toolName}}を呼び出し中...",
-    "toolCallPreparing": "まず関連する内容を確認します。",
     "responding": "応答中...",
     "reasoningRunning": "思考中...",
     "reasoningDone": "推論完了",
