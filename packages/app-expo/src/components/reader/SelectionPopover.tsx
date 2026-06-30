@@ -99,9 +99,11 @@ export function SelectionPopover({
     }
   }, [selection.cfi, hasExistingHighlight]);
 
-  const buttonCount = hasExistingHighlight
-    ? 0
-    : 4 + (onNote ? 1 : 0) + (onTranslate ? 1 : 0) + (onSpeak ? 1 : 0);
+  const buttonCount =
+    4 +
+    (onNote ? 1 : 0) +
+    (onTranslate ? 1 : 0) +
+    (onSpeak ? 1 : 0);
   const colorRowItemCount = HIGHLIGHT_COLORS.length + (canRemoveHighlight ? 2 : 0);
   const colorRowWidth = showColors
     ? HIGHLIGHT_COLORS.length * COLOR_DOT_SIZE +
@@ -111,7 +113,7 @@ export function SelectionPopover({
     : 0;
   const actionRowWidth = buttonCount * (BUTTON_SIZE + GAP) + POPOVER_PADDING * 2;
   const colorRowHeight = showColors ? 40 : 0;
-  const actionRowHeight = hasExistingHighlight ? 0 : 44;
+  const actionRowHeight = 44;
   const popoverHeight =
     actionRowHeight +
     colorRowHeight +
@@ -235,42 +237,41 @@ export function SelectionPopover({
           </View>
         )}
 
-        {!hasExistingHighlight && (
-          <View style={s.actionRow}>
-            <TouchableOpacity
-              style={[s.iconBtn, showColors && s.iconBtnActive]}
-              onPress={handleHighlightPress}
-            >
-              <HighlighterIcon size={18} color={showColors ? colors.primary : colors.foreground} />
+        <View style={s.actionRow}>
+          <TouchableOpacity
+            style={[s.iconBtn, showColors && s.iconBtnActive]}
+            onPress={handleHighlightPress}
+          >
+            <HighlighterIcon size={18} color={showColors ? colors.primary : colors.foreground} />
+          </TouchableOpacity>
+
+          {onNote && (
+            <TouchableOpacity style={s.iconBtn} onPress={handleNote}>
+              <NotebookPenIcon size={18} color={colors.foreground} />
             </TouchableOpacity>
+          )}
 
-            {onNote && (
-              <TouchableOpacity style={s.iconBtn} onPress={handleNote}>
-                <NotebookPenIcon size={18} color={colors.foreground} />
-              </TouchableOpacity>
-            )}
+          <TouchableOpacity style={s.iconBtn} onPress={handleCopy}>
+            <CopyIcon size={18} color={colors.foreground} />
+          </TouchableOpacity>
 
-            <TouchableOpacity style={s.iconBtn} onPress={handleCopy}>
-              <CopyIcon size={18} color={colors.foreground} />
+          {onTranslate && (
+            <TouchableOpacity style={s.iconBtn} onPress={handleTranslate}>
+              <LanguagesIcon size={18} color={colors.foreground} />
             </TouchableOpacity>
+          )}
 
-            {onTranslate && (
-              <TouchableOpacity style={s.iconBtn} onPress={handleTranslate}>
-                <LanguagesIcon size={18} color={colors.foreground} />
-              </TouchableOpacity>
-            )}
+          <TouchableOpacity style={s.iconBtn} onPress={onAIChat}>
+            <SparklesIcon size={18} color={colors.foreground} />
+          </TouchableOpacity>
 
-            <TouchableOpacity style={s.iconBtn} onPress={onAIChat}>
-              <SparklesIcon size={18} color={colors.foreground} />
+          {onSpeak && (
+            <TouchableOpacity style={s.iconBtn} onPress={handleSpeak}>
+              <Volume2Icon size={18} color={colors.foreground} />
             </TouchableOpacity>
+          )}
 
-            {onSpeak && (
-              <TouchableOpacity style={s.iconBtn} onPress={handleSpeak}>
-                <Volume2Icon size={18} color={colors.foreground} />
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
+        </View>
       </View>
 
       <Modal

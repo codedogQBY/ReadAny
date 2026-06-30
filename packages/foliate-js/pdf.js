@@ -4,13 +4,21 @@
  * Uses PDF.js TextLayer for text selection support.
  */
 import * as pdfjsLib from "pdfjs-dist";
+import { WorkerMessageHandler } from "pdfjs-dist/build/pdf.worker.mjs";
+
+globalThis.pdfjsWorker ??= { WorkerMessageHandler };
 
 // Configure PDF.js worker — always set to match the API version
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-
-// CSS caches (loaded once)
-const textLayerCSS = null;
-const annotationLayerCSS = null;
+const PDFJS_CDN_BASE = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}`;
+const PDFJS_DOCUMENT_OPTIONS = {
+  useWorkerFetch: false,
+  isEvalSupported: false,
+  useSystemFonts: true,
+  cMapUrl: `${PDFJS_CDN_BASE}/cmaps/`,
+  cMapPacked: true,
+  standardFontDataUrl: `${PDFJS_CDN_BASE}/standard_fonts/`,
+};
 
 // Inline text_layer_builder CSS
 const TEXT_LAYER_CSS = `
@@ -156,11 +164,11 @@ const render = async (page, doc, zoom) => {
 
     // Panning + text selection cursor logic
     let isPanning = false;
-    let startX = 0,
-      startY = 0,
-      scrollLeft = 0,
-      scrollTop = 0,
-      scrollParent = null;
+    let startX = 0;
+    let startY = 0;
+    let scrollLeft = 0;
+    let scrollTop = 0;
+    let scrollParent = null;
 
     const findScrollableParent = (element) => {
       let current = element;
@@ -178,7 +186,7 @@ const render = async (page, doc, zoom) => {
           }
         }
         if (current.parentElement) current = current.parentElement;
-        else if (current.parentNode && current.parentNode.host) current = current.parentNode.host;
+        else if (current.parentNode?.host) current = current.parentNode.host;
         else break;
       }
       return window;
@@ -318,6 +326,92 @@ const renderPageAsBlob = async (page) => {
   return new Promise((resolve) => canvas.toBlob(resolve));
 };
 
+const CJK_CHAR = /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]/u;
+const OPEN_PUNCTUATION = /[\s([{"'“‘（《「『【]$/u;
+const CLOSE_PUNCTUATION = /^[\s,.;:!?)\]}'"”’。，、！？；：）》」』】]/u;
+
+const needsInsertedSpace = (previous, next) => {
+  if (!previous || !next) return false;
+  if (OPEN_PUNCTUATION.test(previous) || CLOSE_PUNCTUATION.test(next)) return false;
+
+  const previousChar = previous.at(-1);
+  const nextChar = next.at(0);
+  if (!previousChar || !nextChar) return false;
+  if (CJK_CHAR.test(previousChar) || CJK_CHAR.test(nextChar)) return false;
+
+  return true;
+};
+
+const joinPDFLine = (items) => {
+  let line = "";
+  for (const item of items) {
+    const text = item.str ?? "";
+    if (!text) continue;
+    if (needsInsertedSpace(line, text)) line += " ";
+    line += text;
+  }
+  return line.replace(/\s+/g, " ").trim();
+};
+
+const extractPageText = async (page) => {
+  const textContent = await page.getTextContent();
+  const lines = [];
+  let currentLine = [];
+  let currentY = null;
+  const yTolerance = 2.5;
+
+  const flushLine = () => {
+    const line = joinPDFLine(currentLine);
+    if (line) lines.push(line);
+    currentLine = [];
+    currentY = null;
+  };
+
+  for (const item of textContent.items ?? []) {
+    if (!item?.str && !item?.hasEOL) continue;
+
+    const y = item.transform?.[5];
+    if (currentY != null && typeof y === "number" && Math.abs(y - currentY) > yTolerance) {
+      flushLine();
+    }
+
+    if (typeof y === "number") currentY = y;
+    currentLine.push(item);
+
+    if (item.hasEOL) flushLine();
+  }
+
+  flushLine();
+  return lines.join("\n").trim();
+};
+
+const createPageTextDocument = async (page, pageNumber) => {
+  const text = await extractPageText(page);
+  const doc = document.implementation.createHTMLDocument(`Page ${pageNumber}`);
+  doc.documentElement.lang = "und";
+  doc.body.textContent = text;
+  return doc;
+};
+
+const fakePageCfi = (pageIndex) => `epubcfi(/6/${(pageIndex + 1) * 2})`;
+
+const loadPDFFromFile = async (file) => {
+  const arrayBuffer = await file.arrayBuffer();
+  return pdfjsLib.getDocument({
+    ...PDFJS_DOCUMENT_OPTIONS,
+    data: new Uint8Array(arrayBuffer),
+  }).promise;
+};
+
+const loadPDFFromURL = async (url) =>
+  pdfjsLib.getDocument({
+    ...PDFJS_DOCUMENT_OPTIONS,
+    url,
+    rangeChunkSize: 65536,
+    disableAutoFetch: true,
+    disableStream: false,
+  }).promise;
+
 const makeTOCItem = async (item, pdf) => {
   let pageIndex = undefined;
   if (item.dest) {
@@ -342,17 +436,7 @@ const makeTOCItem = async (item, pdf) => {
  * Create a foliate-js compatible book object from a PDF file
  */
 export const makePDF = async (file) => {
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({
-    data: new Uint8Array(arrayBuffer),
-    useWorkerFetch: false,
-    isEvalSupported: false,
-    useSystemFonts: true,
-    cMapUrl: "/vendor/pdfjs/cmaps/",
-    cMapPacked: true,
-    standardFontDataUrl: "/vendor/pdfjs/standard_fonts/",
-  }).promise;
-
+  const pdf = await loadPDFFromFile(file);
   return _buildPDFBook(pdf, file.name);
 };
 
@@ -362,20 +446,40 @@ export const makePDF = async (file) => {
  * avoiding loading the entire file into memory upfront.
  */
 export const makePDFFromURL = async (url, fileName) => {
-  const pdf = await pdfjsLib.getDocument({
-    url,
-    rangeChunkSize: 65536,
-    disableAutoFetch: true,
-    disableStream: false,
-    useWorkerFetch: false,
-    isEvalSupported: false,
-    useSystemFonts: true,
-    cMapUrl: "/vendor/pdfjs/cmaps/",
-    cMapPacked: true,
-    standardFontDataUrl: "/vendor/pdfjs/standard_fonts/",
-  }).promise;
-
+  const pdf = await loadPDFFromURL(url);
   return _buildPDFBook(pdf, fileName);
+};
+
+export const extractPDFChapters = async (file, options = {}) => {
+  const pdf = await loadPDFFromFile(file);
+  const chapters = [];
+
+  try {
+    for (let i = 0; i < pdf.numPages; i++) {
+      const pageNumber = i + 1;
+      const page = await pdf.getPage(pageNumber);
+      const text = await extractPageText(page);
+      const normalized = text.replace(/\n{3,}/g, "\n\n").trim();
+      options.onProgress?.({
+        page: pageNumber,
+        totalPages: pdf.numPages,
+        textLength: normalized.length,
+      });
+      if (!normalized) continue;
+
+      const cfi = fakePageCfi(i);
+      chapters.push({
+        index: i,
+        title: `Page ${pageNumber}`,
+        content: normalized,
+        segments: [{ text: normalized, cfi }],
+      });
+    }
+  } finally {
+    await pdf.destroy();
+  }
+
+  return chapters;
 };
 
 async function _buildPDFBook(pdf, fileName) {
@@ -415,6 +519,7 @@ async function _buildPDFBook(pdf, fileName) {
 
   // Sections - one per page
   const cache = new Map();
+  const textDocumentCache = new Map();
   book.sections = Array.from({ length: numPages }, (_, i) => ({
     id: i,
     load: async () => {
@@ -423,6 +528,14 @@ async function _buildPDFBook(pdf, fileName) {
       const result = await renderPage(await pdf.getPage(i + 1));
       cache.set(i, result);
       return result;
+    },
+    createDocument: async () => {
+      const cached = textDocumentCache.get(i);
+      if (cached) return cached.cloneNode(true);
+
+      const doc = await createPageTextDocument(await pdf.getPage(i + 1), i + 1);
+      textDocumentCache.set(i, doc);
+      return doc.cloneNode(true);
     },
     size: 1000,
   }));
