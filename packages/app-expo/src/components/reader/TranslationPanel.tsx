@@ -48,8 +48,10 @@ export function TranslationPanel({ text, onClose }: TranslationPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [showProviderPicker, setShowProviderPicker] = useState(false);
+  const [providerRevision, setProviderRevision] = useState(0);
 
   const translate = useCallback(async () => {
+    void providerRevision;
     setLoading(true);
     setError(null);
     setTranslation(null);
@@ -111,7 +113,7 @@ export function TranslationPanel({ text, onClose }: TranslationPanelProps) {
     } finally {
       setLoading(false);
     }
-  }, [text, targetLang, translationConfig, aiConfig, t]);
+  }, [text, targetLang, translationConfig, aiConfig, t, providerRevision]);
 
   useEffect(() => {
     translate();
@@ -135,6 +137,7 @@ export function TranslationPanel({ text, onClose }: TranslationPanelProps) {
           name: providerName,
         },
       });
+      setProviderRevision((revision) => revision + 1);
       setShowProviderPicker(false);
     },
     [translationConfig.provider, updateTranslationConfig],

@@ -37,6 +37,8 @@ export function TranslationPopover({ text, position, onClose }: TranslationPopov
   const [copied, setCopied] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [providerOpen, setProviderOpen] = useState(false);
+  const [providerRevision, setProviderRevision] = useState(0);
+  const translationRequestKey = `${targetLang}:${providerRevision}`;
 
   const { translate, loading, error, provider } = useTranslator({ targetLang });
 
@@ -137,8 +139,8 @@ export function TranslationPopover({ text, position, onClose }: TranslationPopov
   }, [onClose]);
 
   // Fetch translation
-  // biome-ignore lint/correctness/useExhaustiveDependencies: keep targetLang explicit so Fast Refresh does not change dependency arity during local verification.
   useEffect(() => {
+    void translationRequestKey;
     let cancelled = false;
     setTranslation(null);
 
@@ -158,7 +160,7 @@ export function TranslationPopover({ text, position, onClose }: TranslationPopov
     return () => {
       cancelled = true;
     };
-  }, [text, targetLang, translate]);
+  }, [text, translationRequestKey, translate]);
 
   const handleLangChange = (lang: TranslationTargetLang) => {
     setTargetLang(lang);
@@ -174,6 +176,7 @@ export function TranslationPopover({ text, position, onClose }: TranslationPopov
         name: providerName,
       },
     });
+    setProviderRevision((revision) => revision + 1);
     setProviderOpen(false);
   };
 
