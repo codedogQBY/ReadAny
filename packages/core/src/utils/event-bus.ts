@@ -19,6 +19,27 @@ type EventMap = {
   "sync:started": Record<string, never>;
   "sync:completed": { timestamp: number };
   "sync:error": { error: Error };
+  "knowledge:changed": {
+    action: "create" | "update" | "link";
+    documentId?: string;
+    linkId?: string;
+    bookId?: string;
+    timestamp: number;
+  };
+  "knowledge:open-document": {
+    documentId: string;
+    bookId?: string;
+    title?: string;
+    path?: string;
+    source?: "ai_result" | "ai_relation" | "ai_proposal" | "internal_link";
+    timestamp: number;
+    respond?: (handled: boolean) => void;
+  };
+  "knowledge:card-templates-changed": {
+    action: "upsert" | "disable";
+    templateId: string;
+    timestamp: number;
+  };
   "vectorize:started": { bookId: string };
   "vectorize:progress": { bookId: string; progress: number; status: string };
   "vectorize:completed": { bookId: string; chunksCount: number };
@@ -37,7 +58,7 @@ class EventBusImpl {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, new Set());
     }
-    this.listeners.get(event)!.add(callback as EventCallback<keyof EventMap>);
+    this.listeners.get(event)?.add(callback as EventCallback<keyof EventMap>);
 
     // Return unsubscribe function
     return () => {
@@ -61,13 +82,16 @@ class EventBusImpl {
 
   /** Emit an event */
   emit<K extends keyof EventMap>(event: K, data: EventMap[K]): void {
-    this.listeners.get(event)?.forEach((cb) => {
+    const callbacks = this.listeners.get(event);
+    if (!callbacks) return;
+
+    for (const cb of callbacks) {
       try {
         cb(data);
       } catch (err) {
         console.error(`EventBus error in handler for '${event}':`, err);
       }
-    });
+    }
   }
 
   /** Remove all listeners for an event (or all events) */

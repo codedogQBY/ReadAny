@@ -43,6 +43,8 @@
     "copyAll": "전체 복사",
     "exportSuccess": "내보내기 완료",
     "copiedSuccess": "클립보드에 복사됨",
+    "citationBookMissing": "이 인용은 책과 연결되어 있지 않아요",
+    "citationOpenedBook": "책을 열었어요. 이 인용에는 정확한 위치가 없어요.",
     "roleUser": "나",
     "roleAI": "AI",
     "askAboutBook": "이 책에 대해 무엇이든 물어보세요...",
@@ -72,6 +74,7 @@
     "loadingMindmap": "마인드맵 로딩 중...",
     "toolFailed": "호출 실패",
     "toolFailedDetail": "도구 호출 실패",
+    "toolFailedHint": "매개변수와 결과 세부 정보를 확인하세요. 실패한 도구는 지식 베이스에 쓰거나 데이터를 수정하지 않습니다.",
     "aborted": "사용자가 생성을 중단했어요"
   },
   "toolLabels": {
@@ -98,7 +101,144 @@
     "mindmap": "마인드맵 생성 중",
     "fallbackToc": "원본 목차 읽는 중",
     "fallbackSearch": "원본 파일 스캔 중",
-    "fallbackChapterContext": "챕터 내용 읽는 중"
+    "fallbackChapterContext": "챕터 내용 읽는 중",
+    "searchKnowledgeBase": "지식 베이스 검색 중",
+    "getKnowledgeDocument": "지식 문서 읽는 중",
+    "getBookKnowledge": "이 책의 지식 읽는 중",
+    "compressKnowledgeDocumentSummary": "지식 메모리 업데이트 중",
+    "proposeKnowledgeDocumentCreate": "지식 문서 초안 작성 중",
+    "proposeKnowledgeDocumentUpdate": "문서 업데이트 초안 작성 중",
+    "proposeKnowledgeDocumentTagsUpdate": "태그 업데이트 초안 작성 중",
+    "proposeKnowledgeLinkCreate": "지식 링크 초안 작성 중"
+  },
+  "knowledgeToolResult": {
+    "searchTitle": "지식 베이스 검색 결과",
+    "documentTitle": "지식 문서를 읽었어요",
+    "bookKnowledgeTitle": "이 책의 지식을 읽었어요",
+    "summaryTitle": "지식 메모리를 업데이트했어요",
+    "failureTitle": "{{tool}} 호출 실패",
+    "tool": "지식 베이스 도구",
+    "failureUnknown": "도구 실행 실패",
+    "failureSafeHint": "실패한 도구 호출은 지식 베이스에 쓰거나 문서를 변경하지 않습니다.",
+    "writeSafety": {
+      "read_only": {
+        "label": "읽기 전용",
+        "description": "이 도구는 지식 맥락만 읽었으며 저장하거나 변경하지 않았습니다."
+      },
+      "memory_persisted": {
+        "label": "메모리 업데이트됨",
+        "description": "이 도구는 압축 검색 메모리를 업데이트했습니다. 사용자가 작성한 본문은 다시 쓰지 않습니다."
+      },
+      "memory_skipped": {
+        "label": "쓰기 없음",
+        "description": "이 도구는 요약을 저장하지 않았고 사용자가 작성한 본문도 변경하지 않았습니다."
+      },
+      "no_write_failed": {
+        "label": "쓰기 없음",
+        "description": "실패한 이 도구 호출은 지식 문서나 링크를 저장하거나 변경하지 않았습니다."
+      }
+    },
+    "count": "{{showing}} / {{total}}개 문서 표시",
+    "status": "상태: {{status}}",
+    "persisted": "저장됨",
+    "notPersisted": "저장되지 않음",
+    "sourceChars": "{{count}}자",
+    "documentId": "문서: {{id}}",
+    "reason": "이유: {{reason}}",
+    "empty": "일치하는 지식 문서가 없어요",
+    "matchedIn": "일치 위치: {{fields}}",
+    "matchFields": {
+      "title": "제목",
+      "path": "경로",
+      "tags": "태그",
+      "excerpt": "발췌",
+      "summary": "요약",
+      "content": "본문"
+    },
+    "more": "{{count}}개 더 있음",
+    "relations": "연결된 경로",
+    "relationOutgoing": "연결 대상",
+    "relationBacklink": "연결 원본",
+    "moreRelations": "{{count}}개 관계 더 있음",
+    "open": "열기",
+    "openDocument": "문서 열기",
+    "openUnavailable": "이 문서를 보려면 먼저 이 책의 지식 베이스 탭을 열어 주세요.",
+    "types": {
+      "book_home": "책 홈",
+      "folder": "폴더",
+      "standalone_note": "독립 노트",
+      "highlight_note": "하이라이트 노트",
+      "review": "리뷰",
+      "summary": "요약",
+      "imported_markdown": "가져온 문서"
+    }
+  },
+  "knowledgeProposal": {
+    "title": "지식 베이스 쓰기 제안",
+    "create": "지식 문서 만들기",
+    "update": "지식 문서 업데이트",
+    "link": "지식 링크 만들기",
+    "pendingBadge": "확인 필요",
+    "savedBadge": "적용됨",
+    "failedBadge": "실패",
+    "safeHint": "AI는 초안만 만들었어요. 확인 후 지식 베이스에 저장됩니다.",
+    "writeSafety": {
+      "proposal_pending_confirmation": {
+        "label": "확인이 필요함",
+        "description": "AI는 이 제안을 준비만 했어요. 적용하기 전에는 지식 베이스에 기록되지 않습니다."
+      }
+    },
+    "changes": "변경 사항",
+    "location": "위치",
+    "contentPreview": "미리보기",
+    "apply": "지식 베이스에 적용",
+    "applying": "적용 중...",
+    "applied": "적용됨",
+    "applySuccess": "지식 베이스에 저장했어요",
+    "applyFailed": "지식 제안을 적용하지 못했어요",
+    "retry": "다시 시도",
+    "applyFailedSafeHint": "아무 내용도 저장되지 않았어요. 문서를 새로고침하거나 확인한 뒤 다시 시도해 주세요.",
+    "errors": {
+      "parent": {
+        "book_home_locked": "책 홈 문서는 폴더 안으로 이동할 수 없어요.",
+        "missing_parent": "대상 폴더가 더 이상 없어요. 지식 화면을 새로고침한 뒤 다시 시도해 주세요.",
+        "parent_not_folder": "선택한 대상이 폴더가 아니에요. 폴더를 선택한 뒤 다시 시도해 주세요.",
+        "book_mismatch": "대상 위치가 다른 책의 지식 보관함에 있어요. 같은 책의 폴더를 선택해 주세요.",
+        "missing_document": "이 문서가 더 이상 없어요. 지식 화면을 새로고침한 뒤 다시 시도해 주세요.",
+        "descendant_parent": "폴더를 자기 하위 폴더 안으로 이동할 수 없어요.",
+        "invalid_parent": "대상 폴더가 올바르지 않아요. 지식 화면을 새로고침한 뒤 다시 시도해 주세요."
+      },
+      "title": {
+        "duplicate_sibling_title": "그 폴더에 같은 제목의 문서가 이미 있어요. 먼저 둘 중 하나의 이름을 바꿔 주세요."
+      },
+      "create": {
+        "create_id_conflict": "이 초안이 이미 존재하는 다른 문서를 가리켜요. 제안을 새로고침한 뒤 적용해 주세요."
+      },
+      "update": {
+        "stale_document": "제안이 만들어진 뒤 이 문서가 변경됐어요. 최신 버전을 확인하거나 새로고침한 뒤 적용해 주세요."
+      },
+      "link": {
+        "missing_source_document": "원본 문서가 더 이상 없어요. 지식 화면을 새로고침한 뒤 다시 시도해 주세요.",
+        "missing_target_document": "대상 문서가 더 이상 없어요. 지식 화면을 새로고침한 뒤 다시 시도해 주세요."
+      }
+    },
+    "fields": {
+      "parentFolder": "폴더",
+      "title": "제목",
+      "content": "내용",
+      "tags": "태그"
+    },
+    "types": {
+      "knowledgeDocument": "지식 문서",
+      "bookHome": "책 홈",
+      "folder": "폴더",
+      "standaloneNote": "독립 노트",
+      "highlightNote": "하이라이트 노트",
+      "review": "리뷰",
+      "summary": "요약",
+      "importedMarkdown": "가져온 문서",
+      "knowledgeLink": "지식 링크"
+    }
   },
   "mindmap": {
     "title": "마인드맵",

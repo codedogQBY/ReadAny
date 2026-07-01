@@ -19,6 +19,24 @@ describe("tool call state helpers", () => {
     expect(part.updatedAt).toBe(456);
   });
 
+  it("marks success=false knowledge tool results as failed", () => {
+    const part = createToolCallPart("proposeKnowledgeDocumentUpdate", {
+      documentId: "doc-1",
+      parentId: "not-a-folder",
+    });
+
+    applyToolResultToParts(
+      [part],
+      "proposeKnowledgeDocumentUpdate",
+      { success: false, error: "Invalid parentId: parent_not_folder", documentId: "doc-1" },
+      567,
+    );
+
+    expect(part.status).toBe("error");
+    expect(part.error).toBe("Invalid parentId: parent_not_folder");
+    expect(part.updatedAt).toBe(567);
+  });
+
   it("marks a successful tool result as completed", () => {
     const part = createToolCallPart("fallbackSearch", { query: "confucius" });
 

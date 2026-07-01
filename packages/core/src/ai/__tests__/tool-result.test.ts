@@ -21,6 +21,16 @@ describe("tool result helpers", () => {
     );
   });
 
+  it("prefers explicit errors for success=false knowledge tool failures", () => {
+    expect(
+      getToolResultError({
+        success: false,
+        error: "Invalid parentId: parent_not_folder",
+        documentId: "doc-1",
+      }),
+    ).toBe("Invalid parentId: parent_not_folder");
+  });
+
   it("does not treat normal empty results as failures", () => {
     expect(getToolResultError("")).toBeNull();
     expect(getToolResultError(0)).toBeNull();

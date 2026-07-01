@@ -120,9 +120,11 @@
     "italic": "斜体 (Ctrl+I)",
     "strikethrough": "取り消し線",
     "inlineCode": "インラインコード",
+    "codeBlock": "コードブロック",
     "link": "リンク",
     "bulletList": "箇条書き",
     "orderedList": "番号付きリスト",
+    "taskList": "タスクリスト",
     "blockquote": "引用",
     "horizontalRule": "水平線"
   },

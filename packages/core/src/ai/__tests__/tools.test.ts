@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AIConfig } from "../../types";
 
 // ---- Mocks ----
 vi.mock("../../db/database", () => ({
@@ -7,6 +8,8 @@ vi.mock("../../db/database", () => ({
   getChunks: vi.fn(),
   getHighlights: vi.fn(),
   getNotes: vi.fn(),
+  getKnowledgeDocument: vi.fn(),
+  getKnowledgeDocuments: vi.fn(),
   getAllHighlights: vi.fn(),
   getAllNotes: vi.fn(),
   getSkills: vi.fn(),
@@ -16,6 +19,7 @@ vi.mock("../../db/database", () => ({
   insertGroup: vi.fn(),
   updateGroup: vi.fn(),
   deleteGroup: vi.fn(),
+  updateKnowledgeDocumentSummary: vi.fn(),
 }));
 
 vi.mock("../../rag/search", () => ({
@@ -110,6 +114,27 @@ function makeBook(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeAIConfig(): AIConfig {
+  return {
+    endpoints: [
+      {
+        id: "endpoint-1",
+        name: "Mock",
+        provider: "custom",
+        apiKey: "",
+        baseUrl: "https://example.com/v1",
+        models: ["mock-model"],
+        modelsFetched: true,
+      },
+    ],
+    activeEndpointId: "endpoint-1",
+    activeModel: "mock-model",
+    temperature: 0.7,
+    maxTokens: 1000,
+    slidingWindowSize: 8,
+  };
+}
+
 // ============================================
 // getAvailableTools — assembly logic
 // ============================================
@@ -125,6 +150,12 @@ describe("getAvailableTools", () => {
     expect(names).toContain("listBooks");
     expect(names).toContain("searchAllHighlights");
     expect(names).toContain("searchAllNotes");
+    expect(names).toContain("searchKnowledgeBase");
+    expect(names).toContain("getKnowledgeDocument");
+    expect(names).toContain("proposeKnowledgeDocumentCreate");
+    expect(names).toContain("proposeKnowledgeDocumentUpdate");
+    expect(names).toContain("proposeKnowledgeDocumentTagsUpdate");
+    expect(names).toContain("proposeKnowledgeLinkCreate");
     expect(names).toContain("getReadingStats");
     expect(names).toContain("getSkills");
     expect(names).toContain("mindmap");
@@ -133,9 +164,24 @@ describe("getAvailableTools", () => {
     expect(names).toContain("manageBookTags");
     expect(names).toContain("updateBookMetadata");
     expect(names).toContain("manageBookGroups");
+    expect(names).not.toContain("compressKnowledgeDocumentSummary");
     // Should NOT have book-specific tools
     expect(names).not.toContain("ragSearch");
     expect(names).not.toContain("getAnnotations");
+  });
+
+  it("should register knowledge summary compression only when AI config is available", () => {
+    const tools = getAvailableTools({
+      bookId: null,
+      isVectorized: false,
+      enabledSkills: [],
+      aiConfig: makeAIConfig(),
+    });
+    const tool = findTool(tools, "compressKnowledgeDocumentSummary");
+
+    expect(tool.parameters).toHaveProperty("documentId");
+    expect(tool.description).toContain("summary");
+    expect(tool.description).toContain("does not rewrite");
   });
 
   it("should register fallback exploration tools for non-vectorized books", () => {
@@ -663,10 +709,28 @@ describe("getAnnotations tool", () => {
 
   it("should return highlights and notes", async () => {
     vi.mocked(getHighlights).mockResolvedValue([
-      { text: "Important text", note: "My note", chapterTitle: "Ch 1", color: "yellow" },
+      {
+        id: "hl-1",
+        text: "Important text",
+        note: "My note",
+        chapterTitle: "Ch 1",
+        cfi: "epubcfi(/6/4)",
+        color: "yellow",
+        createdAt: 1,
+        updatedAt: 2,
+      },
     ] as any);
     vi.mocked(getNotes).mockResolvedValue([
-      { title: "Note 1", content: "Note content", chapterTitle: "Ch 1" },
+      {
+        id: "note-1",
+        title: "Note 1",
+        content: "Note content",
+        chapterTitle: "Ch 1",
+        cfi: "epubcfi(/6/8)",
+        tags: ["idea"],
+        createdAt: 3,
+        updatedAt: 4,
+      },
     ] as any);
 
     const tools = getAvailableTools({ bookId: "book-1", isVectorized: true, enabledSkills: [] });
@@ -675,8 +739,19 @@ describe("getAnnotations tool", () => {
 
     expect(result.highlights).toHaveLength(1);
     expect(result.highlights[0].text).toBe("Important text");
+    expect(result.highlights[0]).toMatchObject({
+      id: "hl-1",
+      cfi: "epubcfi(/6/4)",
+      updatedAt: 2,
+    });
     expect(result.notes).toHaveLength(1);
     expect(result.notes[0].title).toBe("Note 1");
+    expect(result.notes[0]).toMatchObject({
+      id: "note-1",
+      cfi: "epubcfi(/6/8)",
+      tags: ["idea"],
+      updatedAt: 4,
+    });
   });
 
   it("should return only highlights when type is 'highlights'", async () => {

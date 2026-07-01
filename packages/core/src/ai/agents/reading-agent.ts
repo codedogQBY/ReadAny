@@ -54,11 +54,14 @@ export interface ReadingAgentOptions {
   deepThinking?: boolean;
   spoilerFree?: boolean;
   memorySummary?: string;
+  annotationContext?: string;
+  knowledgeContext?: string;
   /** Injected tool provider — returns available tools for the agent */
   getAvailableTools: (options: {
     bookId: string | null;
     isVectorized: boolean;
     enabledSkills: Skill[];
+    aiConfig?: AIConfig;
   }) => ToolDefinition[];
   /** Abort signal for immediate cancellation */
   signal?: AbortSignal;
@@ -182,6 +185,8 @@ export async function* streamReadingAgent(
     deepThinking,
     spoilerFree,
     memorySummary,
+    annotationContext,
+    knowledgeContext,
     getAvailableTools,
     signal,
   } = options;
@@ -210,6 +215,7 @@ export async function* streamReadingAgent(
       bookId: effectiveBookId,
       isVectorized,
       enabledSkills,
+      aiConfig,
     });
 
     // Build system prompt
@@ -220,8 +226,11 @@ export async function* streamReadingAgent(
       enabledSkills,
       isVectorized,
       userLanguage: i18n.language || "en",
+      canCompressKnowledgeSummary: true,
       spoilerFree,
       memorySummary,
+      annotationContext,
+      knowledgeContext,
     });
 
     // Build input messages (history + user input, without system — handled by agent prompt)

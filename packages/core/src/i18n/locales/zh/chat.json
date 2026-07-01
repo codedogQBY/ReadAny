@@ -43,6 +43,8 @@
     "copyAll": "复制全部",
     "exportSuccess": "导出成功",
     "copiedSuccess": "已复制到剪贴板",
+    "citationBookMissing": "这个引用没有关联书籍",
+    "citationOpenedBook": "已打开书籍，当前引用没有精确位置",
     "roleUser": "你",
     "roleAI": "AI",
     "askAboutBook": "询问关于这本书的问题...",
@@ -72,6 +74,7 @@
     "loadingMindmap": "加载思维导图...",
     "toolFailed": "调用失败",
     "toolFailedDetail": "工具调用失败",
+    "toolFailedHint": "请检查参数和结果详情。失败的工具不会写入知识库或修改数据。",
     "aborted": "用户取消了生成"
   },
   "toolLabels": {
@@ -98,7 +101,144 @@
     "mindmap": "生成思维导图",
     "fallbackToc": "读取原始目录",
     "fallbackSearch": "扫描原始文件",
-    "fallbackChapterContext": "读取章节内容"
+    "fallbackChapterContext": "读取章节内容",
+    "searchKnowledgeBase": "搜索知识库",
+    "getKnowledgeDocument": "读取知识文档",
+    "getBookKnowledge": "读取本书知识",
+    "compressKnowledgeDocumentSummary": "更新知识记忆",
+    "proposeKnowledgeDocumentCreate": "草拟知识文档",
+    "proposeKnowledgeDocumentUpdate": "草拟文档更新",
+    "proposeKnowledgeDocumentTagsUpdate": "草拟标签更新",
+    "proposeKnowledgeLinkCreate": "草拟知识关联"
+  },
+  "knowledgeToolResult": {
+    "searchTitle": "知识库检索结果",
+    "documentTitle": "已读取知识文档",
+    "bookKnowledgeTitle": "已读取本书知识",
+    "summaryTitle": "知识记忆已更新",
+    "failureTitle": "{{tool}} 调用失败",
+    "tool": "知识库工具",
+    "failureUnknown": "工具调用失败",
+    "failureSafeHint": "失败的工具不会写入知识库或修改文档。",
+    "writeSafety": {
+      "read_only": {
+        "label": "只读",
+        "description": "这个工具只读取知识上下文，没有保存或修改任何内容。"
+      },
+      "memory_persisted": {
+        "label": "记忆已更新",
+        "description": "这个工具更新了压缩检索记忆，不会改写用户正文内容。"
+      },
+      "memory_skipped": {
+        "label": "未写入",
+        "description": "这个工具没有持久化摘要，也没有修改用户正文内容。"
+      },
+      "no_write_failed": {
+        "label": "未写入",
+        "description": "这次失败的工具调用没有保存或修改任何知识文档/关联。"
+      }
+    },
+    "count": "显示 {{showing}} / {{total}} 个文档",
+    "status": "状态：{{status}}",
+    "persisted": "已持久化",
+    "notPersisted": "未持久化",
+    "sourceChars": "{{count}} 字",
+    "documentId": "文档：{{id}}",
+    "reason": "原因：{{reason}}",
+    "empty": "没有匹配的知识文档",
+    "matchedIn": "命中：{{fields}}",
+    "matchFields": {
+      "title": "标题",
+      "path": "路径",
+      "tags": "标签",
+      "excerpt": "摘录",
+      "summary": "摘要",
+      "content": "正文"
+    },
+    "more": "还有 {{count}} 个",
+    "relations": "关联路径",
+    "relationOutgoing": "链接到",
+    "relationBacklink": "被引用自",
+    "moreRelations": "还有 {{count}} 条关联",
+    "open": "打开",
+    "openDocument": "打开文档",
+    "openUnavailable": "请先打开这本书的知识库页，再查看这个文档。",
+    "types": {
+      "book_home": "书籍主页",
+      "folder": "文件夹",
+      "standalone_note": "独立笔记",
+      "highlight_note": "高亮笔记",
+      "review": "书评",
+      "summary": "摘要",
+      "imported_markdown": "导入文档"
+    }
+  },
+  "knowledgeProposal": {
+    "title": "知识库写入提案",
+    "create": "创建知识文档",
+    "update": "更新知识文档",
+    "link": "建立知识关联",
+    "pendingBadge": "待确认",
+    "savedBadge": "已应用",
+    "failedBadge": "应用失败",
+    "safeHint": "AI 只生成了草稿，确认后才会写入你的知识库。",
+    "writeSafety": {
+      "proposal_pending_confirmation": {
+        "label": "需要确认",
+        "description": "AI 只是准备了这条提案，只有点击应用后才会写入知识库。"
+      }
+    },
+    "changes": "变更",
+    "location": "位置",
+    "contentPreview": "内容预览",
+    "apply": "应用到知识库",
+    "applying": "应用中...",
+    "applied": "已应用",
+    "applySuccess": "已保存到知识库",
+    "applyFailed": "应用知识库提案失败",
+    "retry": "重试",
+    "applyFailedSafeHint": "没有写入任何内容。请刷新或检查文档后再试一次。",
+    "errors": {
+      "parent": {
+        "book_home_locked": "书籍主页不能移动到文件夹里。",
+        "missing_parent": "目标文件夹已经不存在了。请刷新知识库后再试一次。",
+        "parent_not_folder": "选择的目标不是文件夹。请选择一个文件夹后再试。",
+        "book_mismatch": "目标位置属于另一本书的知识库。请选择同一本书里的文件夹。",
+        "missing_document": "这个文档已经不存在了。请刷新知识库后再试一次。",
+        "descendant_parent": "文件夹不能移动到自己的子文件夹里。",
+        "invalid_parent": "目标文件夹无效。请刷新知识库后再试一次。"
+      },
+      "title": {
+        "duplicate_sibling_title": "这个文件夹里已经有同名文档了。请先重命名其中一个。"
+      },
+      "create": {
+        "create_id_conflict": "这个草稿指向了另一个已存在的文档。请刷新提案后再应用。"
+      },
+      "update": {
+        "stale_document": "提案创建后，这个文档已经被修改过了。请刷新或检查最新版本后再应用。"
+      },
+      "link": {
+        "missing_source_document": "来源文档已经不存在了。请刷新知识库后再试一次。",
+        "missing_target_document": "目标文档已经不存在了。请刷新知识库后再试一次。"
+      }
+    },
+    "fields": {
+      "parentFolder": "所在文件夹",
+      "title": "标题",
+      "content": "内容",
+      "tags": "标签"
+    },
+    "types": {
+      "knowledgeDocument": "知识文档",
+      "bookHome": "书籍主页",
+      "folder": "文件夹",
+      "standaloneNote": "独立笔记",
+      "highlightNote": "高亮笔记",
+      "review": "书评",
+      "summary": "摘要",
+      "importedMarkdown": "导入文档",
+      "knowledgeLink": "知识关联"
+    }
   },
   "mindmap": {
     "title": "思维导图",

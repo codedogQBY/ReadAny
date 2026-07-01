@@ -120,9 +120,11 @@
     "italic": "Italic (Ctrl+I)",
     "strikethrough": "Strikethrough",
     "inlineCode": "Inline Code",
+    "codeBlock": "Code Block",
     "link": "Link",
     "bulletList": "Bullet List",
     "orderedList": "Ordered List",
+    "taskList": "Task List",
     "blockquote": "Blockquote",
     "horizontalRule": "Horizontal Rule"
   },

@@ -13,6 +13,13 @@ export interface FilePickerOptions {
   }>;
 }
 
+export interface PickedFile {
+  path: string;
+  name?: string;
+  mimeType?: string;
+  size?: number;
+}
+
 export interface WebSocketOptions {
   headers?: Record<string, string>;
 }
@@ -85,6 +92,8 @@ export interface IPlatformService {
 
   // ---- File picker ----
   pickFile(options?: FilePickerOptions): Promise<string | string[] | null>;
+  /** Rich file picker result for UI surfaces that need stable display names. */
+  pickFiles?(options?: FilePickerOptions): Promise<PickedFile[] | null>;
 
   // ---- Database ----
   loadDatabase(path: string): Promise<IDatabase>;
@@ -117,6 +126,8 @@ export interface IPlatformService {
   // Desktop: system save dialog, RN: expo-file-system + expo-sharing
   // Returns saved path if successful, null if cancelled.
   shareOrDownloadFile(content: string, filename: string, mimeType: string): Promise<string | null>;
+  /** Open an external URL or custom protocol URI, such as https:// or obsidian://. */
+  openExternalUrl?(url: string): Promise<void>;
 
   // ---- LAN Sync ----
   // Check if device is on WiFi (returns true on desktop)

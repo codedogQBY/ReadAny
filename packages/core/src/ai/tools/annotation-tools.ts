@@ -21,26 +21,53 @@ export function createGetAnnotationsTool(bookId: string): ToolDefinition {
       const type = (args.type as string) || "all";
 
       const result: {
-        highlights?: Array<{ text: string; note?: string; chapterTitle?: string; color: string }>;
-        notes?: Array<{ title: string; content: string; chapterTitle?: string }>;
+        highlights?: Array<{
+          id: string;
+          text: string;
+          note?: string;
+          chapterTitle?: string;
+          cfi: string;
+          color: string;
+          createdAt: number;
+          updatedAt: number;
+        }>;
+        notes?: Array<{
+          id: string;
+          title: string;
+          content: string;
+          chapterTitle?: string;
+          cfi?: string;
+          tags: string[];
+          createdAt: number;
+          updatedAt: number;
+        }>;
       } = {};
 
       if (type === "highlights" || type === "all") {
         const highlights = await getHighlights(bookId);
         result.highlights = highlights.slice(0, 20).map((h) => ({
+          id: h.id,
           text: h.text,
           note: h.note,
           chapterTitle: h.chapterTitle,
+          cfi: h.cfi,
           color: h.color,
+          createdAt: h.createdAt,
+          updatedAt: h.updatedAt,
         }));
       }
 
       if (type === "notes" || type === "all") {
         const notes = await getNotes(bookId);
         result.notes = notes.slice(0, 20).map((n) => ({
+          id: n.id,
           title: n.title,
           content: n.content,
           chapterTitle: n.chapterTitle,
+          cfi: n.cfi,
+          tags: n.tags,
+          createdAt: n.createdAt,
+          updatedAt: n.updatedAt,
         }));
       }
 

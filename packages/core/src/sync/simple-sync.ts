@@ -52,6 +52,15 @@ const SYNC_TABLES: SyncTableConfig[] = [
   },
   { name: "highlights", pk: "id", timestampCol: "updated_at" },
   { name: "notes", pk: "id", timestampCol: "updated_at" },
+  { name: "knowledge_documents", pk: "id", timestampCol: "updated_at" },
+  { name: "knowledge_links", pk: "id", timestampCol: "updated_at" },
+  {
+    name: "knowledge_attachments",
+    pk: "id",
+    timestampCol: "updated_at",
+    excludeColumns: ["local_path"],
+  },
+  { name: "knowledge_card_templates", pk: "id", timestampCol: "updated_at" },
   { name: "bookmarks", pk: "id", timestampCol: "updated_at" },
   { name: "threads", pk: "id", timestampCol: "updated_at" },
   { name: "messages", pk: "id", timestampCol: "created_at" },
@@ -332,6 +341,8 @@ export async function applyChanges(
           const localState = existingRecords.get(String(pkValue));
           if (!options.forceApply && !shouldApplyRemoteRecord(record, timestampCol, localState)) {
             skipped++;
+          } else if (!(await shouldApplyRemoteRecordIntegrity(db, tableName, safeRecord, pk))) {
+            skipped++;
           } else {
             try {
               await upsertRecord(db, tableName, safeRecord, pk);
@@ -400,6 +411,72 @@ export async function applyChanges(
       return { applied, skipped };
     }, "apply remote changes"),
   );
+}
+
+async function shouldApplyRemoteRecordIntegrity(
+  db: Awaited<ReturnType<typeof getDB>>,
+  tableName: string,
+  record: Record<string, unknown>,
+  pk: string,
+): Promise<boolean> {
+  if (tableName === "knowledge_attachments") {
+    const documentId = record.document_id;
+    if (!documentId) return true;
+
+    if (await knowledgeDocumentExists(db, String(documentId))) return true;
+
+    console.warn(
+      `[SimpleSync] Skipping orphaned knowledge_attachments/${String(record[pk])}: document ${String(documentId)} is missing`,
+    );
+    return false;
+  }
+
+  if (tableName !== "knowledge_links") {
+    return true;
+  }
+
+  const sourceDocumentId = record.from_document_id;
+  if (!sourceDocumentId) {
+    console.warn(
+      `[SimpleSync] Skipping orphaned knowledge_links/${String(record[pk])}: missing source document id`,
+    );
+    return false;
+  }
+
+  if (!(await knowledgeDocumentExists(db, String(sourceDocumentId)))) {
+    console.warn(
+      `[SimpleSync] Skipping orphaned knowledge_links/${String(record[pk])}: source document ${String(sourceDocumentId)} is missing`,
+    );
+    return false;
+  }
+
+  if (record.to_kind !== "document") return true;
+
+  const targetDocumentId = record.to_id;
+  if (!targetDocumentId) {
+    console.warn(
+      `[SimpleSync] Skipping orphaned knowledge_links/${String(record[pk])}: missing target document id`,
+    );
+    return false;
+  }
+
+  if (await knowledgeDocumentExists(db, String(targetDocumentId))) return true;
+
+  console.warn(
+    `[SimpleSync] Skipping orphaned knowledge_links/${String(record[pk])}: target document ${String(targetDocumentId)} is missing`,
+  );
+  return false;
+}
+
+async function knowledgeDocumentExists(
+  db: Awaited<ReturnType<typeof getDB>>,
+  documentId: string,
+): Promise<boolean> {
+  const rows = await db.select<{ id: string }>(
+    "SELECT id FROM knowledge_documents WHERE id = ? LIMIT 1",
+    [documentId],
+  );
+  return rows.length > 0;
 }
 
 async function upsertRecord(

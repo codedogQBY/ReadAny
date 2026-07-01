@@ -17,8 +17,11 @@ interface PromptContext {
   enabledSkills: Skill[];
   isVectorized: boolean;
   userLanguage: string;
+  canCompressKnowledgeSummary?: boolean;
   spoilerFree?: boolean;
   memorySummary?: string;
+  annotationContext?: string;
+  knowledgeContext?: string;
 }
 
 /** Build the full system prompt from context */
@@ -27,8 +30,15 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     buildRoleSection(),
     buildBookContextSection(ctx.book),
     buildMemorySection(ctx.memorySummary),
+    buildAnnotationContextSection(ctx.annotationContext),
+    buildKnowledgeContextSection(ctx.knowledgeContext),
     buildSemanticSection(ctx.semanticContext),
-    buildToolsSection(ctx.enabledSkills, ctx.isVectorized, !!(ctx.book?.id || ctx.bookId)),
+    buildToolsSection(
+      ctx.enabledSkills,
+      ctx.isVectorized,
+      !!(ctx.book?.id || ctx.bookId),
+      !!ctx.canCompressKnowledgeSummary,
+    ),
     buildWorkflowSection(ctx.isVectorized, !!(ctx.book?.id || ctx.bookId)),
     buildConstraintsSection(
       ctx.userLanguage,
@@ -45,6 +55,16 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 function buildMemorySection(memorySummary?: string): string {
   if (!memorySummary?.trim()) return "";
   return ["## Conversation Memory", memorySummary.trim()].join("\n");
+}
+
+function buildKnowledgeContextSection(knowledgeContext?: string): string {
+  if (!knowledgeContext?.trim()) return "";
+  return ["## Knowledge Base Context", knowledgeContext.trim()].join("\n");
+}
+
+function buildAnnotationContextSection(annotationContext?: string): string {
+  if (!annotationContext?.trim()) return "";
+  return ["## Annotation Context", annotationContext.trim()].join("\n");
 }
 
 function buildRoleSection(): string {
@@ -85,6 +105,7 @@ function buildToolsSection(
   skills: Skill[],
   isVectorized: boolean,
   hasBookContext: boolean,
+  canCompressKnowledgeSummary: boolean,
 ): string {
   const tools: string[] = [];
 
@@ -99,13 +120,45 @@ function buildToolsSection(
   tools.push(
     "- **searchAllNotes**: Get notes across all books (params: reasoning, days, bookTitle, limit)",
   );
+  tools.push(
+    "- **searchKnowledgeBase**: Search durable ReadAny knowledge documents, book home pages, reviews, summaries, and standalone notes (params: reasoning, query, bookId, type, limit)",
+  );
+  tools.push(
+    "- **getKnowledgeDocument**: Read one exact knowledge document by stable document id, including its vault path, children, outgoing links, backlinks, summary, and optional full Markdown content. Use after searchKnowledgeBase before quoting or drafting updates for a specific document (params: reasoning, documentId, includeContent)",
+  );
+  tools.push(
+    "- **proposeKnowledgeDocumentCreate**: Draft a new knowledge document for user confirmation only; it does NOT save anything. Use parentId to place it inside a vault folder when appropriate (params: reasoning, title, contentMd, type, bookId, parentId, tags)",
+  );
+  tools.push(
+    "- **proposeKnowledgeDocumentUpdate**: Draft a patch for an existing knowledge document for user confirmation only; it does NOT save anything. Use parentId to move a document between vault folders (params: reasoning, documentId, title, contentMd, parentId, tags)",
+  );
+  tools.push(
+    "- **proposeKnowledgeDocumentTagsUpdate**: Draft a tag-only update for an existing knowledge document for user confirmation only; it does NOT save anything. Use add/remove/set mode for safe knowledge organization (params: reasoning, documentId, mode, tags)",
+  );
+  tools.push(
+    "- **proposeKnowledgeLinkCreate**: Draft a link between knowledge documents, highlights, CFIs, books, URLs, Obsidian paths, or AI messages for user confirmation only; it does NOT save anything (params: reasoning, fromDocumentId, toKind, toId, relation, label, cfi)",
+  );
+  if (canCompressKnowledgeSummary) {
+    tools.push(
+      "- **compressKnowledgeDocumentSummary**: Update only the derived compact summary cache for a long knowledge document; it does NOT rewrite the user's document content (params: reasoning, documentId, minSourceChars, maxSourceChars, maxSummaryChars)",
+    );
+  }
   tools.push("- **getReadingStats**: Get reading statistics (params: reasoning, days)");
   tools.push("- **getSkills**: Query available skills/SOPs for guidance (params: reasoning, task)");
   tools.push(
     "- **mindmap**: Generate an interactive mindmap visualization (params: reasoning, title, markdown)",
   );
   tools.push(
+    "- **classifyBooks**: Inspect book metadata, TOC, and content samples before categorizing or tagging books (params: reasoning, bookId)",
+  );
+  tools.push(
+    "- **tagBooks**: Apply representative tags to one or more books after classifyBooks has returned concrete book ids (params: reasoning, assignments JSON)",
+  );
+  tools.push(
     "- **updateBookMetadata**: Edit a book's library metadata when the user explicitly asks to modify it (params: reasoning, bookId, updates JSON)",
+  );
+  tools.push(
+    "- **manageBookTags**: Create, rename, delete, remove, or replace book tags when the user explicitly asks to organize tags (params: reasoning, action, tag, newTag, bookId, tags JSON)",
   );
   tools.push(
     "- **manageBookGroups**: List/create/rename/delete groups or move books between groups (params: reasoning, action, groupId, name, bookIds)",
@@ -168,6 +221,9 @@ function buildToolsSection(
 
   if (hasBookContext) {
     tools.push("- **getAnnotations**: Get user's highlights and notes (params: type)");
+    tools.push(
+      "- **getBookKnowledge**: Get the current book's durable knowledge documents before answering from the user's own notes (params: reasoning, type, includeContent, limit)",
+    );
     if (isVectorized) {
       tools.push(
         "- **addCitation**: CRITICAL - Register a citation with CFI for precise navigation. You MUST extract the 'cfi' field from ragSearch/tool results and pass it here. The citationIndex param determines which [N] marker it maps to (params: citationIndex [REQUIRED - the number N for [N]], chapterTitle, chapterIndex, cfi [REQUIRED from tool results], quotedText, reasoning)",
@@ -177,6 +233,16 @@ function buildToolsSection(
         "- **addCitation**: Register a citation only when fallbackSearch/fallbackChapterContext returns a non-empty segment-level cfi for the exact text you cite. If no cfi is present, cite chapter titles/indices in plain text instead.",
       );
     }
+  }
+
+  tools.push("");
+  tools.push(
+    "Knowledge write safety: proposeKnowledgeDocumentCreate, proposeKnowledgeDocumentUpdate, proposeKnowledgeDocumentTagsUpdate, and proposeKnowledgeLinkCreate only return confirmation-required drafts. Never tell the user a knowledge document, tag, or link was saved or changed until the app has explicitly confirmed applying the proposal.",
+  );
+  if (canCompressKnowledgeSummary) {
+    tools.push(
+      "Knowledge memory safety: compressKnowledgeDocumentSummary may persist a derived summary cache for retrieval, but it must never be described as editing, replacing, or saving the user's note content.",
+    );
   }
 
   // Custom skills
@@ -219,6 +285,12 @@ function buildWorkflowSection(isVectorized: boolean, hasBookContext: boolean): s
   }
 
   steps.push("   - **getSurroundingContext**: for current page content");
+  steps.push(
+    "   - **getAnnotations/getRecentHighlights**: for the user's highlights, annotation notes, and saved reading reactions",
+  );
+  steps.push(
+    "   - **getBookKnowledge/searchKnowledgeBase/getKnowledgeDocument**: for the user's durable notes, reviews, summaries, and exact knowledge documents",
+  );
 
   steps.push("3. **Register citations before answering** — If your answer uses book content:");
   steps.push("   - Call **addCitation** before writing the final response body");

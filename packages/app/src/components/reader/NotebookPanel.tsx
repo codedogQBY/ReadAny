@@ -111,11 +111,7 @@ export function NotebookPanel({
       });
       if (mutation.kind === "update") {
         updateHighlight(mutation.id, mutation.updates);
-        onAddAnnotation?.(
-          editingHighlight.cfi,
-          editingHighlight.color,
-          mutation.updates.note,
-        );
+        onAddAnnotation?.(editingHighlight.cfi, editingHighlight.color, mutation.updates.note);
       }
       clearPending();
     }
@@ -234,6 +230,7 @@ export function NotebookPanel({
 
             {/* Note input */}
             <MarkdownEditor
+              tier="inline_note"
               value={noteContent}
               onChange={setNoteContent}
               placeholder={t("notebook.addNote")}
@@ -375,7 +372,11 @@ function HighlightNoteItem({
         isActive ? "bg-muted" : "hover:bg-muted/50",
       )}
     >
-      <div className="flex items-start gap-2" onClick={onClick}>
+      <button
+        type="button"
+        className="flex w-full cursor-pointer items-start gap-2 border-0 bg-transparent p-0 text-left"
+        onClick={onClick}
+      >
         <div
           className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
           style={{ backgroundColor: HIGHLIGHT_COLOR_HEX[highlight.color] }}
@@ -391,7 +392,7 @@ function HighlightNoteItem({
             <p className="mt-1 text-xs text-muted-foreground/70">{highlight.chapterTitle}</p>
           )}
         </div>
-      </div>
+      </button>
       <div className="mt-2 flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           type="button"
@@ -431,20 +432,23 @@ interface HighlightItemProps {
 function HighlightItem({ highlight, onClick, onAddNote, onDelete }: HighlightItemProps) {
   const { t } = useTranslation();
   return (
-    <div
-      className="group mt-2 flex items-start gap-2 rounded-md p-2 transition-colors cursor-pointer hover:bg-muted/50"
-      onClick={onClick}
-    >
-      <div
-        className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-        style={{ backgroundColor: HIGHLIGHT_COLOR_HEX[highlight.color] }}
-      />
-      <div className="flex-1 min-w-0">
-        <p className="text-sm text-foreground line-clamp-2">"{highlight.text}"</p>
-        {highlight.chapterTitle && (
-          <p className="mt-1 text-xs text-muted-foreground/70">{highlight.chapterTitle}</p>
-        )}
-      </div>
+    <div className="group mt-2 flex items-start gap-2 rounded-md p-2 transition-colors hover:bg-muted/50">
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 cursor-pointer items-start gap-2 border-0 bg-transparent p-0 text-left"
+        onClick={onClick}
+      >
+        <div
+          className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+          style={{ backgroundColor: HIGHLIGHT_COLOR_HEX[highlight.color] }}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="line-clamp-2 text-sm text-foreground">"{highlight.text}"</p>
+          {highlight.chapterTitle && (
+            <p className="mt-1 text-xs text-muted-foreground/70">{highlight.chapterTitle}</p>
+          )}
+        </div>
+      </button>
       <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           type="button"

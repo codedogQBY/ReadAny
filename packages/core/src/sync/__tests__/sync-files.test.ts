@@ -5,6 +5,7 @@ import {
   REMOTE_COVERS,
   REMOTE_FILES,
   REMOTE_FILE_MANIFEST,
+  REMOTE_KNOWLEDGE_ATTACHMENTS,
 } from "../sync-types";
 
 const mockAdapter = {
@@ -26,9 +27,10 @@ vi.mock("../sync-adapter", () => ({
 }));
 
 const mockSelect = vi.fn();
+const mockExecute = vi.fn();
 const mockSetBookSyncStatus = vi.fn();
 vi.mock("../../db/database", () => ({
-  getDB: vi.fn(async () => ({ select: mockSelect })),
+  getDB: vi.fn(async () => ({ select: mockSelect, execute: mockExecute })),
   setBookSyncStatus: mockSetBookSyncStatus,
 }));
 
@@ -378,6 +380,232 @@ describe("sync-files", () => {
             }),
           },
         }),
+      );
+    });
+
+    it("uploads local knowledge attachments and writes them into the manifest", async () => {
+      mockSelect.mockImplementation(async (sql: string) => {
+        if (sql.includes("FROM knowledge_attachments")) {
+          return [
+            {
+              id: "att-1",
+              document_id: "doc-1",
+              kind: "image",
+              file_name: "cover.png",
+              mime_type: "image/png",
+              local_path: "knowledge/attachments/att-1-cover.png",
+              remote_path: `${REMOTE_KNOWLEDGE_ATTACHMENTS}/att-1-cover.png`,
+              size: 3,
+              hash: "h1",
+              updated_at: 1000,
+            },
+          ];
+        }
+        return [];
+      });
+      mockAdapter.fileExists.mockImplementation(
+        async (path: string) => path === "/appdata/knowledge/attachments/att-1-cover.png",
+      );
+      mockAdapter.getFileSize.mockResolvedValue(3);
+
+      const backend = createMockBackend({
+        getJSON: vi.fn().mockResolvedValue({
+          version: 1,
+          generatedAt: 1000,
+          books: {},
+          knowledgeAttachments: {},
+        }),
+        listDir: vi.fn().mockResolvedValue([]),
+      });
+
+      const result = await syncFiles(backend);
+
+      expect(result.filesUploaded).toBe(1);
+      expect(backend.listDir).not.toHaveBeenCalled();
+      expect(backend.put).toHaveBeenCalledWith(
+        `${REMOTE_KNOWLEDGE_ATTACHMENTS}/att-1-cover.png`,
+        expect.any(Uint8Array),
+      );
+      expect(backend.putJSON).toHaveBeenCalledWith(
+        REMOTE_FILE_MANIFEST,
+        expect.objectContaining({
+          version: 1,
+          books: {},
+          knowledgeAttachments: {
+            "att-1": expect.objectContaining({
+              fileName: "att-1-cover.png",
+              remotePath: `${REMOTE_KNOWLEDGE_ATTACHMENTS}/att-1-cover.png`,
+              size: 3,
+            }),
+          },
+        }),
+      );
+    });
+
+    it("downloads missing local knowledge attachments from the manifest", async () => {
+      mockSelect.mockImplementation(async (sql: string) => {
+        if (sql.includes("FROM knowledge_attachments")) {
+          return [
+            {
+              id: "att-1",
+              document_id: "doc-1",
+              kind: "image",
+              file_name: "cover.png",
+              mime_type: "image/png",
+              local_path: null,
+              remote_path: `${REMOTE_KNOWLEDGE_ATTACHMENTS}/att-1-cover.png`,
+              size: 3,
+              hash: "h1",
+              updated_at: 1000,
+            },
+          ];
+        }
+        return [];
+      });
+      mockAdapter.fileExists.mockResolvedValue(false);
+
+      const backend = createMockBackend({
+        getJSON: vi.fn().mockResolvedValue({
+          version: 1,
+          generatedAt: 1000,
+          books: {},
+          knowledgeAttachments: {
+            "att-1": {
+              fileName: "att-1-cover.png",
+              remotePath: `${REMOTE_KNOWLEDGE_ATTACHMENTS}/att-1-cover.png`,
+              size: 3,
+              updatedAt: 1000,
+            },
+          },
+        }),
+        listDir: vi.fn().mockResolvedValue([]),
+      });
+
+      const result = await syncFiles(backend);
+
+      expect(result.filesDownloaded).toBe(1);
+      expect(backend.get).toHaveBeenCalledWith(`${REMOTE_KNOWLEDGE_ATTACHMENTS}/att-1-cover.png`);
+      expect(mockAdapter.writeFileBytes).toHaveBeenCalledWith(
+        "/appdata/knowledge/attachments/att-1-cover.png",
+        expect.any(Uint8Array),
+      );
+      expect(mockExecute).toHaveBeenCalledWith(
+        "UPDATE knowledge_attachments SET local_path = ? WHERE id = ?",
+        ["/appdata/knowledge/attachments/att-1-cover.png", "att-1"],
+      );
+    });
+
+    it("trusts manifest attachment paths when the local row has a stale remote path", async () => {
+      const manifestRemotePath = `${REMOTE_KNOWLEDGE_ATTACHMENTS}/legacy-att-1-cover.png`;
+      mockSelect.mockImplementation(async (sql: string) => {
+        if (sql.includes("FROM knowledge_attachments")) {
+          return [
+            {
+              id: "att-1",
+              document_id: "doc-1",
+              kind: "image",
+              file_name: "cover.png",
+              mime_type: "image/png",
+              local_path: "knowledge/attachments/att-1-cover.png",
+              remote_path: `${REMOTE_KNOWLEDGE_ATTACHMENTS}/stale-att-1-cover.png`,
+              size: 3,
+              hash: "h1",
+              updated_at: 1000,
+            },
+          ];
+        }
+        return [];
+      });
+      mockAdapter.fileExists.mockImplementation(
+        async (path: string) => path === "/appdata/knowledge/attachments/att-1-cover.png",
+      );
+      mockAdapter.getFileSize.mockResolvedValue(3);
+
+      const backend = createMockBackend({
+        getJSON: vi.fn().mockResolvedValue({
+          version: 1,
+          generatedAt: 1000,
+          books: {},
+          knowledgeAttachments: {
+            "att-1": {
+              fileName: "legacy-att-1-cover.png",
+              remotePath: manifestRemotePath,
+              size: 3,
+              updatedAt: 1000,
+            },
+          },
+        }),
+        listDir: vi.fn().mockResolvedValue([]),
+      });
+
+      const result = await syncFiles(backend);
+
+      expect(result.filesUploaded).toBe(0);
+      expect(result.filesDownloaded).toBe(0);
+      expect(backend.put).not.toHaveBeenCalled();
+      expect(backend.get).not.toHaveBeenCalled();
+      expect(mockExecute).toHaveBeenCalledWith(
+        "UPDATE knowledge_attachments SET remote_path = ? WHERE id = ?",
+        [manifestRemotePath, "att-1"],
+      );
+      expect(backend.putJSON).not.toHaveBeenCalled();
+    });
+
+    it("downloads knowledge attachments from manifest paths even when local remote_path is stale", async () => {
+      const manifestRemotePath = `${REMOTE_KNOWLEDGE_ATTACHMENTS}/legacy-att-1-cover.png`;
+      mockSelect.mockImplementation(async (sql: string) => {
+        if (sql.includes("FROM knowledge_attachments")) {
+          return [
+            {
+              id: "att-1",
+              document_id: "doc-1",
+              kind: "image",
+              file_name: "cover.png",
+              mime_type: "image/png",
+              local_path: null,
+              remote_path: `${REMOTE_KNOWLEDGE_ATTACHMENTS}/stale-att-1-cover.png`,
+              size: 3,
+              hash: "h1",
+              updated_at: 1000,
+            },
+          ];
+        }
+        return [];
+      });
+      mockAdapter.fileExists.mockResolvedValue(false);
+
+      const backend = createMockBackend({
+        getJSON: vi.fn().mockResolvedValue({
+          version: 1,
+          generatedAt: 1000,
+          books: {},
+          knowledgeAttachments: {
+            "att-1": {
+              fileName: "legacy-att-1-cover.png",
+              remotePath: manifestRemotePath,
+              size: 3,
+              updatedAt: 1000,
+            },
+          },
+        }),
+        listDir: vi.fn().mockResolvedValue([]),
+      });
+
+      const result = await syncFiles(backend);
+
+      expect(result.filesDownloaded).toBe(1);
+      expect(backend.get).toHaveBeenCalledWith(manifestRemotePath);
+      expect(mockAdapter.writeFileBytes).toHaveBeenCalledWith(
+        "/appdata/knowledge/attachments/legacy-att-1-cover.png",
+        expect.any(Uint8Array),
+      );
+      expect(mockExecute).toHaveBeenCalledWith(
+        "UPDATE knowledge_attachments SET remote_path = ? WHERE id = ?",
+        [manifestRemotePath, "att-1"],
+      );
+      expect(mockExecute).toHaveBeenCalledWith(
+        "UPDATE knowledge_attachments SET local_path = ? WHERE id = ?",
+        ["/appdata/knowledge/attachments/legacy-att-1-cover.png", "att-1"],
       );
     });
 

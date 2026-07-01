@@ -8,11 +8,15 @@
  * - Annotation Tools: getAnnotations, addCitation
  * - Library Tools: listBooks, searchAllHighlights, searchAllNotes, readingStats, classifyBooks,
  *   tagBooks, manageBookTags, updateBookMetadata, manageBookGroups
+ * - Knowledge Tools: searchKnowledgeBase, getKnowledgeDocument, getBookKnowledge,
+ *   proposeKnowledgeDocumentCreate, proposeKnowledgeDocumentUpdate,
+ *   proposeKnowledgeDocumentTagsUpdate, proposeKnowledgeLinkCreate,
+ *   compressKnowledgeDocumentSummary
  * - Skill Tools: getSkills, skillToTool
  * - Mindmap Tools: mindmap
  * - Context Tools: getCurrentChapter, getSelection, getReadingProgress, getRecentHighlights, getSurroundingContext
  */
-import type { Skill } from "../../types";
+import type { AIConfig, Skill } from "../../types";
 import {
   createAnalyzeArgumentsTool,
   createCompareSectionsTool,
@@ -27,6 +31,16 @@ import {
   createFallbackSearchTool,
   createFallbackTocTool,
 } from "./fallback-content-tools";
+import {
+  createCompressKnowledgeDocumentSummaryTool,
+  createGetBookKnowledgeTool,
+  createGetKnowledgeDocumentTool,
+  createProposeKnowledgeDocumentCreateTool,
+  createProposeKnowledgeDocumentTagsUpdateTool,
+  createProposeKnowledgeDocumentUpdateTool,
+  createProposeKnowledgeLinkCreateTool,
+  createSearchKnowledgeBaseTool,
+} from "./knowledge-tools";
 import {
   createClassifyBooksTool,
   createListBooksTool,
@@ -48,11 +62,17 @@ export type { ToolDefinition, ToolParameter } from "./tool-types";
 export { getContextTools } from "./context-tools";
 
 /** Get general (non-book-specific) tools */
-function getGeneralTools(): ToolDefinition[] {
-  return [
+function getGeneralTools(options: { aiConfig?: AIConfig } = {}): ToolDefinition[] {
+  const tools = [
     createListBooksTool(),
     createSearchAllHighlightsTool(),
     createSearchAllNotesTool(),
+    createSearchKnowledgeBaseTool(),
+    createGetKnowledgeDocumentTool(),
+    createProposeKnowledgeDocumentCreateTool(),
+    createProposeKnowledgeDocumentUpdateTool(),
+    createProposeKnowledgeDocumentTagsUpdateTool(),
+    createProposeKnowledgeLinkCreateTool(),
     createReadingStatsTool(),
     createGetSkillsTool(),
     createMindmapTool(),
@@ -62,6 +82,12 @@ function getGeneralTools(): ToolDefinition[] {
     createUpdateBookMetadataTool(),
     createManageBookGroupsTool(),
   ];
+
+  if (options.aiConfig) {
+    tools.push(createCompressKnowledgeDocumentSummaryTool(options.aiConfig));
+  }
+
+  return tools;
 }
 
 /** Get available tools based on current state */
@@ -69,11 +95,12 @@ export function getAvailableTools(options: {
   bookId?: string | null;
   isVectorized: boolean;
   enabledSkills: Skill[];
+  aiConfig?: AIConfig;
 }): ToolDefinition[] {
   const tools: ToolDefinition[] = [];
 
   // General tools are always available (no bookId required)
-  tools.push(...getGeneralTools());
+  tools.push(...getGeneralTools({ aiConfig: options.aiConfig }));
 
   if (options.bookId) {
     // Context tools (always available when book is loaded)
@@ -105,7 +132,11 @@ export function getAvailableTools(options: {
 
     // Citations are available for indexed chunks and for fallback sources that
     // can be validated against concrete reader segments.
-    tools.push(createGetAnnotationsTool(options.bookId), createAddCitationTool(options.bookId));
+    tools.push(
+      createGetAnnotationsTool(options.bookId),
+      createGetBookKnowledgeTool(options.bookId),
+      createAddCitationTool(options.bookId),
+    );
   }
 
   // Add custom skills

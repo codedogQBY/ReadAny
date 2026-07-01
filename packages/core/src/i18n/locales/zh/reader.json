@@ -120,9 +120,11 @@
     "italic": "斜体 (Ctrl+I)",
     "strikethrough": "删除线",
     "inlineCode": "行内代码",
+    "codeBlock": "代码块",
     "link": "链接",
     "bulletList": "无序列表",
     "orderedList": "有序列表",
+    "taskList": "任务列表",
     "blockquote": "引用",
     "horizontalRule": "分割线"
   },

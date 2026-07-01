@@ -19,7 +19,10 @@ interface PipelineContext {
   enabledSkills: Skill[];
   isVectorized: boolean;
   userLanguage: string;
+  canCompressKnowledgeSummary?: boolean;
   memorySummary?: string;
+  annotationContext?: string;
+  knowledgeContext?: string;
 }
 
 export interface ProcessedMessage {

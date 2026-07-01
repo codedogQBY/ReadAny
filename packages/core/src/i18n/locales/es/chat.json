@@ -43,6 +43,8 @@
     "copyAll": "Copiar todo",
     "exportSuccess": "Exportación exitosa",
     "copiedSuccess": "Copiado al portapapeles",
+    "citationBookMissing": "Esta cita no está vinculada a ningún libro",
+    "citationOpenedBook": "Libro abierto. Esta cita no tiene una ubicación precisa.",
     "roleUser": "Tú",
     "roleAI": "IA",
     "askAboutBook": "Pregunta lo que quieras sobre este libro...",
@@ -72,6 +74,7 @@
     "loadingMindmap": "Cargando mapa mental...",
     "toolFailed": "Llamada fallida",
     "toolFailedDetail": "La llamada de herramienta falló",
+    "toolFailedHint": "Revisa los parámetros y los detalles del resultado. Las herramientas fallidas no escriben en la base de conocimiento ni modifican datos.",
     "aborted": "Generación detenida por el usuario"
   },
   "toolLabels": {
@@ -98,7 +101,144 @@
     "mindmap": "Generando mapa mental",
     "fallbackToc": "Leyendo tabla de contenidos original",
     "fallbackSearch": "Escaneando archivo original",
-    "fallbackChapterContext": "Leyendo contenido del capítulo"
+    "fallbackChapterContext": "Leyendo contenido del capítulo",
+    "searchKnowledgeBase": "Buscando en la base de conocimiento",
+    "getKnowledgeDocument": "Leyendo documento de conocimiento",
+    "getBookKnowledge": "Leyendo conocimiento del libro",
+    "compressKnowledgeDocumentSummary": "Actualizando memoria de conocimiento",
+    "proposeKnowledgeDocumentCreate": "Redactando documento de conocimiento",
+    "proposeKnowledgeDocumentUpdate": "Redactando actualización del documento",
+    "proposeKnowledgeDocumentTagsUpdate": "Redactando actualización de etiquetas",
+    "proposeKnowledgeLinkCreate": "Redactando enlace de conocimiento"
+  },
+  "knowledgeToolResult": {
+    "searchTitle": "Resultados de la base de conocimiento",
+    "documentTitle": "Documento de conocimiento leído",
+    "bookKnowledgeTitle": "Conocimiento del libro leído",
+    "summaryTitle": "Memoria de conocimiento actualizada",
+    "failureTitle": "{{tool}} falló",
+    "tool": "Herramienta de conocimiento",
+    "failureUnknown": "La ejecución de la herramienta falló",
+    "failureSafeHint": "Esta llamada fallida no escribió en la base de conocimiento ni modificó tus documentos.",
+    "writeSafety": {
+      "read_only": {
+        "label": "Solo lectura",
+        "description": "Esta herramienta solo leyó contexto de conocimiento. No guardó ni cambió nada."
+      },
+      "memory_persisted": {
+        "label": "Memoria actualizada",
+        "description": "Esta herramienta actualizó la memoria compacta de recuperación. No reescribió contenido del usuario."
+      },
+      "memory_skipped": {
+        "label": "Sin escritura",
+        "description": "Esta herramienta no persistió un resumen ni cambió contenido del usuario."
+      },
+      "no_write_failed": {
+        "label": "Sin escritura",
+        "description": "Ningún documento ni enlace de conocimiento se guardó o cambió por esta llamada fallida."
+      }
+    },
+    "count": "Mostrando {{showing}} / {{total}} documentos",
+    "status": "Estado: {{status}}",
+    "persisted": "Persistido",
+    "notPersisted": "No persistido",
+    "sourceChars": "{{count}} caracteres",
+    "documentId": "Documento: {{id}}",
+    "reason": "Motivo: {{reason}}",
+    "empty": "No hay documentos de conocimiento coincidentes",
+    "matchedIn": "Coincide en {{fields}}",
+    "matchFields": {
+      "title": "título",
+      "path": "ruta",
+      "tags": "etiquetas",
+      "excerpt": "extracto",
+      "summary": "resumen",
+      "content": "contenido"
+    },
+    "more": "{{count}} más",
+    "relations": "Rutas relacionadas",
+    "relationOutgoing": "Enlaza con",
+    "relationBacklink": "Enlazado desde",
+    "moreRelations": "{{count}} relaciones más",
+    "open": "Abrir",
+    "openDocument": "Abrir documento",
+    "openUnavailable": "Abre primero la pestaña de conocimiento del libro para ver este documento.",
+    "types": {
+      "book_home": "Inicio del libro",
+      "folder": "Carpeta",
+      "standalone_note": "Nota independiente",
+      "highlight_note": "Nota de subrayado",
+      "review": "Reseña",
+      "summary": "Resumen",
+      "imported_markdown": "Documento importado"
+    }
+  },
+  "knowledgeProposal": {
+    "title": "Propuesta de escritura de conocimiento",
+    "create": "Crear documento de conocimiento",
+    "update": "Actualizar documento de conocimiento",
+    "link": "Crear enlace de conocimiento",
+    "pendingBadge": "Necesita confirmación",
+    "savedBadge": "Aplicado",
+    "failedBadge": "Error",
+    "safeHint": "La IA solo creó un borrador. Se escribirá en tu base de conocimiento tras confirmarlo.",
+    "writeSafety": {
+      "proposal_pending_confirmation": {
+        "label": "Requiere confirmación",
+        "description": "La IA solo preparó esta propuesta. No escribirá en la base de conocimiento hasta que la apliques."
+      }
+    },
+    "changes": "Cambios",
+    "location": "Ubicación",
+    "contentPreview": "Vista previa",
+    "apply": "Aplicar a la base de conocimiento",
+    "applying": "Aplicando...",
+    "applied": "Aplicado",
+    "applySuccess": "Guardado en la base de conocimiento",
+    "applyFailed": "No se pudo aplicar la propuesta",
+    "retry": "Reintentar",
+    "applyFailedSafeHint": "No se escribió nada. Actualiza o revisa el documento y vuelve a intentarlo.",
+    "errors": {
+      "parent": {
+        "book_home_locked": "Los documentos de inicio del libro no se pueden mover a una carpeta.",
+        "missing_parent": "La carpeta de destino ya no existe. Actualiza la vista de conocimiento y vuelve a intentarlo.",
+        "parent_not_folder": "El destino seleccionado no es una carpeta. Elige una carpeta y vuelve a intentarlo.",
+        "book_mismatch": "El destino pertenece a la base de otro libro. Elige una carpeta del mismo libro.",
+        "missing_document": "El documento ya no existe. Actualiza la vista de conocimiento y vuelve a intentarlo.",
+        "descendant_parent": "Una carpeta no se puede mover dentro de una de sus propias subcarpetas.",
+        "invalid_parent": "La carpeta de destino no es válida. Actualiza la vista de conocimiento y vuelve a intentarlo."
+      },
+      "title": {
+        "duplicate_sibling_title": "Ya existe un documento con el mismo título en esa carpeta. Cambia el nombre de uno primero."
+      },
+      "create": {
+        "create_id_conflict": "Este borrador apunta a otro documento existente. Actualiza la propuesta antes de aplicarla."
+      },
+      "update": {
+        "stale_document": "Este documento cambió después de crear la propuesta. Actualiza o revisa la última versión antes de aplicarla."
+      },
+      "link": {
+        "missing_source_document": "El documento de origen ya no existe. Actualiza la vista de conocimiento y vuelve a intentarlo.",
+        "missing_target_document": "El documento de destino ya no existe. Actualiza la vista de conocimiento y vuelve a intentarlo."
+      }
+    },
+    "fields": {
+      "parentFolder": "Carpeta",
+      "title": "Título",
+      "content": "Contenido",
+      "tags": "Etiquetas"
+    },
+    "types": {
+      "knowledgeDocument": "Documento de conocimiento",
+      "bookHome": "Inicio del libro",
+      "folder": "Carpeta",
+      "standaloneNote": "Nota independiente",
+      "highlightNote": "Nota de subrayado",
+      "review": "Reseña",
+      "summary": "Resumen",
+      "importedMarkdown": "Documento importado",
+      "knowledgeLink": "Enlace de conocimiento"
+    }
   },
   "mindmap": {
     "title": "Mapa mental",

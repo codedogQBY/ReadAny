@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { parseJSON, serializeEmbedding, deserializeEmbedding } from "../db-core";
+import { describe, expect, it, vi } from "vitest";
+import {
+  cleanupOrphanedSyncRows,
+  deserializeEmbedding,
+  parseJSON,
+  serializeEmbedding,
+} from "../db-core";
 
 describe("parseJSON", () => {
   it("parses valid JSON string", () => {
@@ -79,5 +84,35 @@ describe("serializeEmbedding / deserializeEmbedding", () => {
     for (let i = 0; i < 10; i++) {
       expect(deserialized![i]).toBeCloseTo(original[i], 5);
     }
+  });
+});
+
+describe("cleanupOrphanedSyncRows", () => {
+  it("cleans stale knowledge graph rows without flattening folder orphans", async () => {
+    const execute = vi.fn(async (_sql: string, _params?: unknown[]) => undefined);
+
+    await cleanupOrphanedSyncRows({
+      execute,
+      select: vi.fn(async () => []),
+      close: vi.fn(async () => undefined),
+    });
+
+    const sql = execute.mock.calls.map(([statement]) =>
+      String(statement).replace(/\s+/g, " ").trim(),
+    );
+
+    expect(sql).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("DELETE FROM knowledge_documents WHERE book_id IS NOT NULL"),
+        expect.stringContaining(
+          "DELETE FROM knowledge_links WHERE from_document_id NOT IN (SELECT id FROM knowledge_documents)",
+        ),
+        expect.stringContaining(
+          "DELETE FROM knowledge_links WHERE to_kind = 'document' AND to_id NOT IN",
+        ),
+        expect.stringContaining("UPDATE knowledge_attachments SET document_id = NULL"),
+      ]),
+    );
+    expect(sql.some((statement) => statement.includes("parent_id NOT IN"))).toBe(false);
   });
 });

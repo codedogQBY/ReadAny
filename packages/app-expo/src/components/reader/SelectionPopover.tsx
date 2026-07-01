@@ -300,6 +300,7 @@ export function SelectionPopover({
             </Text>
             <View style={s.editorContainer}>
               <RichTextEditor
+                tier="inline_note"
                 initialContent={noteContent}
                 onChange={setNoteContent}
                 placeholder={t("reader.notePlaceholder", "写下你的想法...")}

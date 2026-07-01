@@ -74,6 +74,61 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "created_at",
     "updated_at",
   ],
+  knowledge_documents: [
+    "id",
+    "book_id",
+    "parent_id",
+    "type",
+    "title",
+    "content_json",
+    "content_md",
+    "content_schema_version",
+    "excerpt",
+    "summary_md",
+    "summary_source_fingerprint",
+    "summary_source_updated_at",
+    "summary_updated_at",
+    "tags",
+    "source_kind",
+    "source_id",
+    "created_at",
+    "updated_at",
+    "deleted_at",
+  ],
+  knowledge_links: [
+    "id",
+    "from_document_id",
+    "to_kind",
+    "to_id",
+    "relation",
+    "label",
+    "cfi",
+    "created_at",
+    "updated_at",
+  ],
+  knowledge_attachments: [
+    "id",
+    "document_id",
+    "kind",
+    "file_name",
+    "mime_type",
+    "local_path",
+    "remote_path",
+    "size",
+    "hash",
+    "created_at",
+    "updated_at",
+  ],
+  knowledge_card_templates: [
+    "id",
+    "name",
+    "version",
+    "schema_json",
+    "built_in",
+    "enabled",
+    "created_at",
+    "updated_at",
+  ],
   bookmarks: ["id", "book_id", "cfi", "label", "chapter_title", "created_at", "updated_at"],
   threads: [
     "id",
@@ -162,6 +217,15 @@ class FakeSyncDb {
     if (normalized === "SELECT value FROM sync_metadata WHERE key = 'last_sync_at'") {
       const value = this.syncMetadata.get("last_sync_at");
       return (value === undefined ? [] : [{ value }]) as T[];
+    }
+
+    const existsMatch = normalized.match(/^SELECT (\w+) FROM (\w+) WHERE (\w+) = \? LIMIT 1$/);
+    if (existsMatch) {
+      const [, selectedColumn, table, pk] = existsMatch;
+      const row = this.tables.get(table)?.get(String(params[0]));
+      return row && String(row[pk]) === String(params[0])
+        ? ([{ [selectedColumn]: row[selectedColumn] }] as T[])
+        : [];
     }
 
     const changedRowsMatch = normalized.match(/^SELECT \* FROM (\w+) WHERE (\w+) > \?$/);
@@ -280,9 +344,40 @@ class FakeSyncDb {
 
   private assertForeignKeys(table: string, row: Row): void {
     if (
-      ["highlights", "notes", "bookmarks", "book_tags", "reading_sessions"].includes(table) &&
+      [
+        "highlights",
+        "notes",
+        "knowledge_documents",
+        "bookmarks",
+        "book_tags",
+        "reading_sessions",
+      ].includes(table) &&
       row.book_id &&
       !this.tables.get("books")?.has(String(row.book_id))
+    ) {
+      throw new Error("FOREIGN KEY constraint failed");
+    }
+
+    if (
+      table === "knowledge_documents" &&
+      row.parent_id &&
+      !this.tables.get("knowledge_documents")?.has(String(row.parent_id))
+    ) {
+      throw new Error("FOREIGN KEY constraint failed");
+    }
+
+    if (
+      table === "knowledge_links" &&
+      row.from_document_id &&
+      !this.tables.get("knowledge_documents")?.has(String(row.from_document_id))
+    ) {
+      throw new Error("FOREIGN KEY constraint failed");
+    }
+
+    if (
+      table === "knowledge_attachments" &&
+      row.document_id &&
+      !this.tables.get("knowledge_documents")?.has(String(row.document_id))
     ) {
       throw new Error("FOREIGN KEY constraint failed");
     }
@@ -301,10 +396,37 @@ class FakeSyncDb {
   }
 
   private deleteBookDependents(bookId: string): void {
-    for (const table of ["highlights", "notes", "bookmarks", "book_tags", "reading_sessions"]) {
+    for (const table of [
+      "highlights",
+      "notes",
+      "knowledge_documents",
+      "bookmarks",
+      "book_tags",
+      "reading_sessions",
+    ]) {
       const rows = this.tables.get(table);
       for (const [id, row] of rows ?? []) {
-        if (row.book_id === bookId) rows?.delete(id);
+        if (row.book_id === bookId) {
+          rows?.delete(id);
+          if (table === "knowledge_documents") {
+            this.deleteKnowledgeDocumentDependents(id);
+          }
+        }
+      }
+    }
+  }
+
+  private deleteKnowledgeDocumentDependents(documentId: string): void {
+    for (const table of ["knowledge_links", "knowledge_attachments"]) {
+      const rows = this.tables.get(table);
+      for (const [id, row] of rows ?? []) {
+        if (
+          row.from_document_id === documentId ||
+          (row.to_kind === "document" && row.to_id === documentId) ||
+          row.document_id === documentId
+        ) {
+          rows?.delete(id);
+        }
       }
     }
   }
@@ -429,6 +551,77 @@ function highlightRow(overrides: Row = {}): Row {
   };
 }
 
+function knowledgeDocumentRow(overrides: Row = {}): Row {
+  return {
+    id: "doc-1",
+    book_id: "book-1",
+    parent_id: null,
+    type: "book_home",
+    title: "Book home",
+    content_json: '{"type":"doc","content":[]}',
+    content_md: "# Book home",
+    content_schema_version: 1,
+    excerpt: "Book home",
+    summary_md: "Compact durable memory",
+    summary_source_fingerprint: "fnv1a32:12345678",
+    summary_source_updated_at: 900,
+    summary_updated_at: 950,
+    tags: "[]",
+    source_kind: "book",
+    source_id: "book-1",
+    created_at: 1000,
+    updated_at: 1000,
+    deleted_at: null,
+    ...overrides,
+  };
+}
+
+function knowledgeLinkRow(overrides: Row = {}): Row {
+  return {
+    id: "knowledge-link-1",
+    from_document_id: "doc-1",
+    to_kind: "highlight",
+    to_id: "hl-1",
+    relation: "source",
+    label: "Source highlight",
+    cfi: "epubcfi(/6/2)",
+    created_at: 1000,
+    updated_at: 1000,
+    ...overrides,
+  };
+}
+
+function knowledgeAttachmentRow(overrides: Row = {}): Row {
+  return {
+    id: "knowledge-attachment-1",
+    document_id: "doc-1",
+    kind: "image",
+    file_name: "quote.png",
+    mime_type: "image/png",
+    local_path: "knowledge/quote.png",
+    remote_path: "/readany/data/knowledge/quote.png",
+    size: 10,
+    hash: "hash-1",
+    created_at: 1000,
+    updated_at: 1000,
+    ...overrides,
+  };
+}
+
+function knowledgeCardTemplateRow(overrides: Row = {}): Row {
+  return {
+    id: "card-quote",
+    name: "Quote card",
+    version: 1,
+    schema_json: '{"type":"object"}',
+    built_in: 1,
+    enabled: 1,
+    created_at: 1000,
+    updated_at: 1000,
+    ...overrides,
+  };
+}
+
 async function syncDevice(
   deviceId: string,
   db: FakeSyncDb,
@@ -516,6 +709,555 @@ describe("simple sync convergence", () => {
     expect(result).toEqual({ applied: 2, skipped: 0 });
     expect(target.get("books", "book-1")).toBeTruthy();
     expect(target.get("highlights", "hl-1")).toBeTruthy();
+  });
+
+  it("skips knowledge links whose document target is missing", async () => {
+    const target = new FakeSyncDb();
+    target.insert("books", bookRow());
+    target.insert(
+      "knowledge_documents",
+      knowledgeDocumentRow({
+        id: "doc-source",
+        type: "standalone_note",
+        title: "Source",
+        source_kind: null,
+        source_id: null,
+      }),
+    );
+    dbMocks.currentDb = target;
+    dbMocks.currentDeviceId = "device-local";
+
+    const result = await applyChanges({
+      deviceId: "device-remote",
+      timestamp: now,
+      since: 0,
+      tables: {
+        knowledge_links: {
+          records: [
+            knowledgeLinkRow({
+              id: "stale-doc-link",
+              from_document_id: "doc-source",
+              to_kind: "document",
+              to_id: "doc-missing",
+              updated_at: 1500,
+            }),
+          ],
+          deletedIds: [],
+        },
+      },
+    });
+
+    expect(result).toEqual({ applied: 0, skipped: 1 });
+    expect(target.get("knowledge_links", "stale-doc-link")).toBeUndefined();
+  });
+
+  it("skips knowledge links whose source document is missing", async () => {
+    const target = new FakeSyncDb();
+    target.insert("books", bookRow());
+    dbMocks.currentDb = target;
+    dbMocks.currentDeviceId = "device-local";
+
+    const result = await applyChanges({
+      deviceId: "device-remote",
+      timestamp: now,
+      since: 0,
+      tables: {
+        knowledge_links: {
+          records: [
+            knowledgeLinkRow({
+              id: "stale-source-link",
+              from_document_id: "doc-missing",
+              to_kind: "highlight",
+              to_id: "hl-1",
+              updated_at: 1500,
+            }),
+          ],
+          deletedIds: [],
+        },
+      },
+    });
+
+    expect(result).toEqual({ applied: 0, skipped: 1 });
+    expect(target.get("knowledge_links", "stale-source-link")).toBeUndefined();
+  });
+
+  it("skips knowledge attachments whose document is missing", async () => {
+    const target = new FakeSyncDb();
+    target.insert("books", bookRow());
+    dbMocks.currentDb = target;
+    dbMocks.currentDeviceId = "device-local";
+
+    const result = await applyChanges({
+      deviceId: "device-remote",
+      timestamp: now,
+      since: 0,
+      tables: {
+        knowledge_attachments: {
+          records: [
+            knowledgeAttachmentRow({
+              id: "stale-attachment",
+              document_id: "doc-missing",
+              updated_at: 1500,
+            }),
+          ],
+          deletedIds: [],
+        },
+      },
+    });
+
+    expect(result).toEqual({ applied: 0, skipped: 1 });
+    expect(target.get("knowledge_attachments", "stale-attachment")).toBeUndefined();
+  });
+
+  it("syncs knowledge documents, links, attachments, and card templates", async () => {
+    const backend = new MemoryBackend();
+    const deviceA = new FakeSyncDb();
+    const deviceB = new FakeSyncDb();
+
+    deviceA.insert("books", bookRow());
+    deviceA.insert("highlights", highlightRow());
+    deviceA.insert("knowledge_documents", knowledgeDocumentRow());
+    deviceA.insert("knowledge_links", knowledgeLinkRow());
+    deviceA.insert("knowledge_attachments", knowledgeAttachmentRow());
+    deviceA.insert("knowledge_card_templates", knowledgeCardTemplateRow());
+
+    now = 1100;
+    await syncDevice("device-a", deviceA, backend);
+    const deviceASnapshot = backend.jsonFiles.get("/readany/sync/device-device-a.json") as {
+      tables?: Record<string, { records?: Row[] }>;
+    };
+    expect(deviceASnapshot.tables?.knowledge_attachments?.records?.[0]).not.toHaveProperty(
+      "local_path",
+    );
+
+    now = 1200;
+    const result = await syncDevice("device-b", deviceB, backend);
+
+    expect(result.success).toBe(true);
+    expect(deviceB.get("knowledge_documents", "doc-1")).toMatchObject({
+      title: "Book home",
+      summary_md: "Compact durable memory",
+      summary_source_fingerprint: "fnv1a32:12345678",
+      source_kind: "book",
+    });
+    expect(deviceB.get("knowledge_links", "knowledge-link-1")).toMatchObject({
+      from_document_id: "doc-1",
+      to_kind: "highlight",
+    });
+    expect(deviceB.get("knowledge_attachments", "knowledge-attachment-1")).toMatchObject({
+      document_id: "doc-1",
+      file_name: "quote.png",
+    });
+    expect(deviceB.get("knowledge_attachments", "knowledge-attachment-1")).not.toHaveProperty(
+      "local_path",
+    );
+    expect(deviceB.get("knowledge_card_templates", "card-quote")).toMatchObject({
+      name: "Quote card",
+      built_in: 1,
+    });
+  });
+
+  it("preserves rich knowledge editor JSON through sync apply", async () => {
+    const backend = new MemoryBackend();
+    const deviceA = new FakeSyncDb();
+    const deviceB = new FakeSyncDb();
+    const richContentJson = JSON.stringify({
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: "Reading thread" }],
+        },
+        {
+          type: "taskList",
+          content: [
+            {
+              type: "taskItem",
+              attrs: { checked: true },
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "Preserve the task" }],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Cite " },
+            {
+              type: "readanySourceReference",
+              attrs: {
+                label: "Chapter 1",
+                sourceId: "hl-1",
+                cfi: "epubcfi(/6/2)",
+              },
+            },
+          ],
+        },
+        {
+          type: "readanyCard",
+          attrs: {
+            cardType: "aiSummary",
+            version: 1,
+            title: "AI memory",
+            markdown: "Durable summary",
+            data: { citations: [{ cfi: "epubcfi(/6/2)", text: "Marked text" }] },
+          },
+        },
+        {
+          type: "image",
+          attrs: {
+            attachmentId: "knowledge-attachment-1",
+            src: "readany-attachment://knowledge-attachment-1",
+            alt: "quote.png",
+          },
+        },
+      ],
+    });
+    const richContentMd = [
+      "## Reading thread",
+      "",
+      "- [x] Preserve the task",
+      "",
+      "Cite [Chapter 1](readany://cfi/epubcfi%28%2F6%2F2%29?sourceId=hl-1)",
+      "",
+      ":::readany-card type=\"aiSummary\" version=\"1\" title=\"AI memory\" data=\"%7B%22citations%22%3A%5B%7B%22cfi%22%3A%22epubcfi(%2F6%2F2)%22%2C%22text%22%3A%22Marked%20text%22%7D%5D%7D\"",
+      "Durable summary",
+      ":::",
+      "",
+      "![quote.png](readany-attachment://knowledge-attachment-1)",
+    ].join("\n");
+
+    deviceA.insert("books", bookRow());
+    deviceA.insert("highlights", highlightRow());
+    deviceA.insert(
+      "knowledge_documents",
+      knowledgeDocumentRow({
+        content_json: richContentJson,
+        content_md: richContentMd,
+        excerpt: "Reading thread Preserve the task",
+        tags: '["source","ai"]',
+      }),
+    );
+    deviceA.insert("knowledge_attachments", knowledgeAttachmentRow());
+
+    now = 1100;
+    await syncDevice("device-a", deviceA, backend);
+
+    now = 1200;
+    const result = await syncDevice("device-b", deviceB, backend);
+
+    expect(result.success).toBe(true);
+    expect(deviceB.get("knowledge_documents", "doc-1")).toMatchObject({
+      content_json: richContentJson,
+      content_md: richContentMd,
+      tags: '["source","ai"]',
+    });
+  });
+
+  it("syncs custom card template updates without losing existing card documents", async () => {
+    const backend = new MemoryBackend();
+    const deviceA = new FakeSyncDb();
+    const deviceB = new FakeSyncDb();
+    const customTemplate = knowledgeCardTemplateRow({
+      id: "template-reading-question",
+      name: "Reading question",
+      version: 1,
+      schema_json: JSON.stringify({
+        cardType: "custom:template-reading-question",
+        title: "Reading question",
+      }),
+      built_in: 0,
+      enabled: 1,
+    });
+    const documentContentJson = JSON.stringify({
+      type: "doc",
+      content: [
+        {
+          type: "readanyCard",
+          attrs: {
+            cardType: "custom:template-reading-question",
+            version: 1,
+            title: "Question",
+            markdown: "What changed after the conflict?",
+            data: { kind: "prompt" },
+          },
+        },
+      ],
+    });
+    const documentContentMd = [
+      ':::readany-card type="custom:template-reading-question" version="1" title="Question" data="%7B%22kind%22%3A%22prompt%22%7D"',
+      "What changed after the conflict?",
+      ":::",
+    ].join("\n");
+
+    deviceA.insert("books", bookRow());
+    deviceA.insert(
+      "knowledge_documents",
+      knowledgeDocumentRow({
+        content_json: documentContentJson,
+        content_md: documentContentMd,
+        excerpt: "What changed after the conflict?",
+      }),
+    );
+    deviceA.insert("knowledge_card_templates", customTemplate);
+
+    now = 1100;
+    await syncDevice("device-a", deviceA, backend);
+
+    now = 1200;
+    await syncDevice("device-b", deviceB, backend);
+    expect(deviceB.get("knowledge_card_templates", "template-reading-question")).toMatchObject({
+      enabled: 1,
+      version: 1,
+    });
+
+    now = 1300;
+    deviceB.patch("knowledge_card_templates", "template-reading-question", {
+      name: "Reading question archive",
+      version: 2,
+      schema_json: JSON.stringify({
+        cardType: "custom:template-reading-question",
+        title: "Reading question archive",
+        fields: [{ key: "answer", label: "Answer" }],
+      }),
+      enabled: 0,
+      updated_at: now,
+    });
+
+    now = 1400;
+    await syncDevice("device-b", deviceB, backend);
+
+    now = 1500;
+    const result = await syncDevice("device-a", deviceA, backend);
+
+    expect(result.success).toBe(true);
+    expect(deviceA.get("knowledge_card_templates", "template-reading-question")).toMatchObject({
+      name: "Reading question archive",
+      version: 2,
+      enabled: 0,
+      updated_at: 1300,
+    });
+    expect(deviceA.get("knowledge_card_templates", "template-reading-question")?.schema_json).toBe(
+      JSON.stringify({
+        cardType: "custom:template-reading-question",
+        title: "Reading question archive",
+        fields: [{ key: "answer", label: "Answer" }],
+      }),
+    );
+    expect(deviceA.get("knowledge_documents", "doc-1")).toMatchObject({
+      content_json: documentContentJson,
+      content_md: documentContentMd,
+    });
+  });
+
+  it("syncs knowledge vault folder moves without flattening child documents", async () => {
+    const backend = new MemoryBackend();
+    const deviceA = new FakeSyncDb();
+    const deviceB = new FakeSyncDb();
+
+    deviceA.insert("books", bookRow());
+    deviceA.insert("knowledge_documents", knowledgeDocumentRow({ id: "home", title: "Home" }));
+    deviceA.insert(
+      "knowledge_documents",
+      knowledgeDocumentRow({
+        id: "folder-a",
+        parent_id: null,
+        type: "folder",
+        title: "Chapter Notes",
+        source_kind: null,
+        source_id: null,
+      }),
+    );
+    deviceA.insert(
+      "knowledge_documents",
+      knowledgeDocumentRow({
+        id: "folder-b",
+        parent_id: null,
+        type: "folder",
+        title: "Research",
+        source_kind: null,
+        source_id: null,
+      }),
+    );
+    deviceA.insert(
+      "knowledge_documents",
+      knowledgeDocumentRow({
+        id: "note-child",
+        parent_id: "folder-a",
+        type: "standalone_note",
+        title: "Question Log",
+        source_kind: null,
+        source_id: null,
+      }),
+    );
+
+    now = 1100;
+    await syncDevice("device-a", deviceA, backend);
+
+    now = 1200;
+    await syncDevice("device-b", deviceB, backend);
+    expect(deviceB.get("knowledge_documents", "note-child")).toMatchObject({
+      parent_id: "folder-a",
+    });
+
+    now = 1300;
+    deviceB.patch("knowledge_documents", "folder-a", {
+      parent_id: "folder-b",
+      updated_at: now,
+    });
+
+    now = 1400;
+    await syncDevice("device-b", deviceB, backend);
+
+    now = 1500;
+    const result = await syncDevice("device-a", deviceA, backend);
+
+    expect(result.success).toBe(true);
+    expect(deviceA.get("knowledge_documents", "folder-a")).toMatchObject({
+      parent_id: "folder-b",
+    });
+    expect(deviceA.get("knowledge_documents", "folder-b")).toMatchObject({
+      parent_id: null,
+    });
+    expect(deviceA.get("knowledge_documents", "note-child")).toMatchObject({
+      parent_id: "folder-a",
+      title: "Question Log",
+    });
+    expect(deviceA.exportRecords().knowledge_documents).toEqual(
+      deviceB.exportRecords().knowledge_documents,
+    );
+  });
+
+  it("keeps synced knowledge document dependency tombstones from being resurrected", async () => {
+    const backend = new MemoryBackend();
+    const deviceA = new FakeSyncDb();
+    const deviceB = new FakeSyncDb();
+
+    deviceA.insert("books", bookRow());
+    deviceA.insert("highlights", highlightRow());
+    deviceA.insert(
+      "knowledge_documents",
+      knowledgeDocumentRow({
+        id: "doc-delete",
+        type: "standalone_note",
+        title: "Delete Candidate",
+        source_kind: null,
+        source_id: null,
+        updated_at: 1100,
+      }),
+    );
+    deviceA.insert(
+      "knowledge_documents",
+      knowledgeDocumentRow({
+        id: "doc-source",
+        type: "standalone_note",
+        title: "Source Note",
+        source_kind: null,
+        source_id: null,
+        updated_at: 1100,
+      }),
+    );
+    deviceA.insert(
+      "knowledge_links",
+      knowledgeLinkRow({
+        id: "link-delete",
+        from_document_id: "doc-delete",
+      }),
+    );
+    deviceA.insert(
+      "knowledge_links",
+      knowledgeLinkRow({
+        id: "incoming-link-delete",
+        from_document_id: "doc-source",
+        to_kind: "document",
+        to_id: "doc-delete",
+      }),
+    );
+    deviceA.insert(
+      "knowledge_attachments",
+      knowledgeAttachmentRow({
+        id: "attachment-delete",
+        document_id: "doc-delete",
+      }),
+    );
+
+    now = 1100;
+    await syncDevice("device-a", deviceA, backend);
+
+    now = 1200;
+    await syncDevice("device-b", deviceB, backend);
+    expect(deviceB.get("knowledge_documents", "doc-delete")).toMatchObject({
+      title: "Delete Candidate",
+    });
+    expect(deviceB.get("knowledge_documents", "doc-source")).toMatchObject({
+      title: "Source Note",
+    });
+    expect(deviceB.get("knowledge_links", "link-delete")).toMatchObject({
+      from_document_id: "doc-delete",
+    });
+    expect(deviceB.get("knowledge_links", "incoming-link-delete")).toMatchObject({
+      from_document_id: "doc-source",
+      to_id: "doc-delete",
+    });
+    expect(deviceB.get("knowledge_attachments", "attachment-delete")).toMatchObject({
+      document_id: "doc-delete",
+    });
+
+    now = 1300;
+    deviceB.deleteWithTombstone("knowledge_links", "link-delete", now);
+    deviceB.deleteWithTombstone("knowledge_links", "incoming-link-delete", now);
+    deviceB.deleteWithTombstone("knowledge_attachments", "attachment-delete", now);
+    deviceB.deleteWithTombstone("knowledge_documents", "doc-delete", now);
+
+    now = 1400;
+    await syncDevice("device-b", deviceB, backend);
+
+    now = 1500;
+    const result = await syncDevice("device-a", deviceA, backend);
+
+    expect(result.success).toBe(true);
+    expect(deviceA.get("knowledge_documents", "doc-delete")).toBeUndefined();
+    expect(deviceA.get("knowledge_documents", "doc-source")).toMatchObject({
+      title: "Source Note",
+    });
+    expect(deviceA.get("knowledge_links", "link-delete")).toBeUndefined();
+    expect(deviceA.get("knowledge_links", "incoming-link-delete")).toBeUndefined();
+    expect(deviceA.get("knowledge_attachments", "attachment-delete")).toBeUndefined();
+    expect(deviceA.tombstones.get("knowledge_documents:doc-delete")?.deleted_at).toBe(1300);
+    expect(deviceA.tombstones.get("knowledge_links:link-delete")?.deleted_at).toBe(1300);
+    expect(deviceA.tombstones.get("knowledge_links:incoming-link-delete")?.deleted_at).toBe(1300);
+    expect(deviceA.tombstones.get("knowledge_attachments:attachment-delete")?.deleted_at).toBe(
+      1300,
+    );
+
+    now = 1600;
+    await syncDevice("device-b", deviceB, backend);
+
+    expect(deviceB.get("knowledge_documents", "doc-delete")).toBeUndefined();
+    expect(deviceB.get("knowledge_documents", "doc-source")).toMatchObject({
+      title: "Source Note",
+    });
+    expect(deviceB.get("knowledge_links", "link-delete")).toBeUndefined();
+    expect(deviceB.get("knowledge_links", "incoming-link-delete")).toBeUndefined();
+    expect(deviceB.get("knowledge_attachments", "attachment-delete")).toBeUndefined();
+    expect(deviceB.tombstones.get("knowledge_documents:doc-delete")?.deleted_at).toBe(1300);
+    expect(deviceB.tombstones.get("knowledge_links:link-delete")?.deleted_at).toBe(1300);
+    expect(deviceB.tombstones.get("knowledge_links:incoming-link-delete")?.deleted_at).toBe(1300);
+    expect(deviceB.tombstones.get("knowledge_attachments:attachment-delete")?.deleted_at).toBe(
+      1300,
+    );
+    expect(deviceA.exportRecords().knowledge_documents).toEqual(
+      deviceB.exportRecords().knowledge_documents,
+    );
+    expect(deviceA.exportRecords().knowledge_links).toEqual(deviceB.exportRecords().knowledge_links);
+    expect(deviceA.exportRecords().knowledge_attachments).toEqual(
+      deviceB.exportRecords().knowledge_attachments,
+    );
   });
 
   it("keeps a newer local record when an older remote tombstone arrives", async () => {

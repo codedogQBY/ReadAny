@@ -1,4 +1,11 @@
+import {
+  type KnowledgeEditorFeature,
+  type KnowledgeEditorTier,
+  getKnowledgeEditorProfile,
+  hasKnowledgeEditorFeature,
+} from "@readany/core/knowledge";
 import { cn } from "@readany/core/utils";
+import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Markdown } from "@tiptap/markdown";
 import { EditorContent, useEditor } from "@tiptap/react";
@@ -21,9 +28,9 @@ import {
 } from "lucide-react";
 /**
  * MarkdownEditor — Refined WYSIWYG markdown editor
- * Editorial design with elegant toolbar and rich formatting support
+ * Editorial design with elegant toolbar and tiered formatting support.
  */
-import { useCallback, useEffect, useRef } from "react";
+import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 interface MarkdownEditorProps {
@@ -31,7 +38,9 @@ interface MarkdownEditorProps {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  contentClassName?: string;
   autoFocus?: boolean;
+  tier?: KnowledgeEditorTier;
 }
 
 export function MarkdownEditor({
@@ -39,11 +48,18 @@ export function MarkdownEditor({
   onChange,
   placeholder,
   className,
+  contentClassName,
   autoFocus = false,
+  tier = "knowledge_doc",
 }: MarkdownEditorProps) {
   const { t } = useTranslation();
   // Track internal updates to prevent sync loop
   const isInternalUpdate = useRef(false);
+  const editorProfile = useMemo(() => getKnowledgeEditorProfile(tier), [tier]);
+  const canUse = useCallback(
+    (feature: KnowledgeEditorFeature) => hasKnowledgeEditorFeature(editorProfile, feature),
+    [editorProfile],
+  );
 
   const editor = useEditor({
     extensions: [
@@ -51,6 +67,10 @@ export function MarkdownEditor({
         heading: { levels: [1, 2, 3] },
         dropcursor: false,
         gapcursor: false,
+      }),
+      Link.configure({
+        autolink: true,
+        openOnClick: false,
       }),
       Markdown.configure({
         markedOptions: {
@@ -114,7 +134,7 @@ export function MarkdownEditor({
   }, [editor, autoFocus]);
 
   const setLink = useCallback(() => {
-    if (!editor) return;
+    if (!editor || !canUse("link")) return;
     const previousUrl = editor.getAttributes("link").href;
     const url = window.prompt(t("editor.enterLink"), previousUrl);
     if (url === null) return;
@@ -123,11 +143,179 @@ export function MarkdownEditor({
       return;
     }
     editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
-  }, [editor]);
+  }, [canUse, editor, t]);
 
   if (!editor) {
     return null;
   }
+
+  const toolbarGroupCandidates: ({ key: string; node: ReactNode } | null)[] = [
+    canUse("undo") || canUse("redo")
+      ? {
+          key: "history",
+          node: (
+            <ToolbarGroup>
+              {canUse("undo") ? (
+                <ToolbarButton
+                  onClick={() => editor.chain().focus().undo().run()}
+                  disabled={!editor.can().undo()}
+                  title={t("editor.undo")}
+                >
+                  <Undo2 className="h-3.5 w-3.5" />
+                </ToolbarButton>
+              ) : null}
+              {canUse("redo") ? (
+                <ToolbarButton
+                  onClick={() => editor.chain().focus().redo().run()}
+                  disabled={!editor.can().redo()}
+                  title={t("editor.redo")}
+                >
+                  <Redo2 className="h-3.5 w-3.5" />
+                </ToolbarButton>
+              ) : null}
+            </ToolbarGroup>
+          ),
+        }
+      : null,
+    canUse("heading1") || canUse("heading2") || canUse("heading3")
+      ? {
+          key: "headings",
+          node: (
+            <ToolbarGroup>
+              {canUse("heading1") ? (
+                <ToolbarButton
+                  onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+                  isActive={editor.isActive("heading", { level: 1 })}
+                  title={t("editor.heading1")}
+                >
+                  <Heading1 className="h-3.5 w-3.5" />
+                </ToolbarButton>
+              ) : null}
+              {canUse("heading2") ? (
+                <ToolbarButton
+                  onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+                  isActive={editor.isActive("heading", { level: 2 })}
+                  title={t("editor.heading2")}
+                >
+                  <Heading2 className="h-3.5 w-3.5" />
+                </ToolbarButton>
+              ) : null}
+              {canUse("heading3") ? (
+                <ToolbarButton
+                  onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+                  isActive={editor.isActive("heading", { level: 3 })}
+                  title={t("editor.heading3")}
+                >
+                  <Heading3 className="h-3.5 w-3.5" />
+                </ToolbarButton>
+              ) : null}
+            </ToolbarGroup>
+          ),
+        }
+      : null,
+    {
+      key: "inline",
+      node: (
+        <ToolbarGroup>
+          {canUse("bold") ? (
+            <ToolbarButton
+              onClick={() => editor.chain().focus().toggleBold().run()}
+              isActive={editor.isActive("bold")}
+              title={t("editor.bold")}
+            >
+              <Bold className="h-3.5 w-3.5" />
+            </ToolbarButton>
+          ) : null}
+          {canUse("italic") ? (
+            <ToolbarButton
+              onClick={() => editor.chain().focus().toggleItalic().run()}
+              isActive={editor.isActive("italic")}
+              title={t("editor.italic")}
+            >
+              <Italic className="h-3.5 w-3.5" />
+            </ToolbarButton>
+          ) : null}
+          {canUse("strike") ? (
+            <ToolbarButton
+              onClick={() => editor.chain().focus().toggleStrike().run()}
+              isActive={editor.isActive("strike")}
+              title={t("editor.strikethrough")}
+            >
+              <Strikethrough className="h-3.5 w-3.5" />
+            </ToolbarButton>
+          ) : null}
+          {canUse("inlineCode") ? (
+            <ToolbarButton
+              onClick={() => editor.chain().focus().toggleCode().run()}
+              isActive={editor.isActive("code")}
+              title={t("editor.inlineCode")}
+            >
+              <Code className="h-3.5 w-3.5" />
+            </ToolbarButton>
+          ) : null}
+          {canUse("link") ? (
+            <ToolbarButton
+              onClick={setLink}
+              isActive={editor.isActive("link")}
+              title={t("editor.link")}
+            >
+              <Link2 className="h-3.5 w-3.5" />
+            </ToolbarButton>
+          ) : null}
+        </ToolbarGroup>
+      ),
+    },
+    canUse("bulletList") ||
+    canUse("orderedList") ||
+    canUse("blockquote") ||
+    canUse("horizontalRule")
+      ? {
+          key: "blocks",
+          node: (
+            <ToolbarGroup>
+              {canUse("bulletList") ? (
+                <ToolbarButton
+                  onClick={() => editor.chain().focus().toggleBulletList().run()}
+                  isActive={editor.isActive("bulletList")}
+                  title={t("editor.bulletList")}
+                >
+                  <List className="h-3.5 w-3.5" />
+                </ToolbarButton>
+              ) : null}
+              {canUse("orderedList") ? (
+                <ToolbarButton
+                  onClick={() => editor.chain().focus().toggleOrderedList().run()}
+                  isActive={editor.isActive("orderedList")}
+                  title={t("editor.orderedList")}
+                >
+                  <ListOrdered className="h-3.5 w-3.5" />
+                </ToolbarButton>
+              ) : null}
+              {canUse("blockquote") ? (
+                <ToolbarButton
+                  onClick={() => editor.chain().focus().toggleBlockquote().run()}
+                  isActive={editor.isActive("blockquote")}
+                  title={t("editor.blockquote")}
+                >
+                  <Quote className="h-3.5 w-3.5" />
+                </ToolbarButton>
+              ) : null}
+              {canUse("horizontalRule") ? (
+                <ToolbarButton
+                  onClick={() => editor.chain().focus().setHorizontalRule().run()}
+                  title={t("editor.horizontalRule")}
+                >
+                  <Minus className="h-3.5 w-3.5" />
+                </ToolbarButton>
+              ) : null}
+            </ToolbarGroup>
+          ),
+        }
+      : null,
+  ];
+  const toolbarGroups = toolbarGroupCandidates.filter(
+    (group): group is { key: string; node: ReactNode } => group !== null,
+  );
 
   return (
     <div
@@ -140,124 +328,12 @@ export function MarkdownEditor({
     >
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-0.5 border-b border-border/40 bg-muted/20 px-2 py-1.5">
-        {/* History */}
-        <ToolbarGroup>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().undo().run()}
-            disabled={!editor.can().undo()}
-            title={t("editor.undo")}
-          >
-            <Undo2 className="h-3.5 w-3.5" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().redo().run()}
-            disabled={!editor.can().redo()}
-            title={t("editor.redo")}
-          >
-            <Redo2 className="h-3.5 w-3.5" />
-          </ToolbarButton>
-        </ToolbarGroup>
-
-        <ToolbarDivider />
-
-        {/* Headings */}
-        <ToolbarGroup>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-            isActive={editor.isActive("heading", { level: 1 })}
-            title={t("editor.heading1")}
-          >
-            <Heading1 className="h-3.5 w-3.5" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-            isActive={editor.isActive("heading", { level: 2 })}
-            title={t("editor.heading2")}
-          >
-            <Heading2 className="h-3.5 w-3.5" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-            isActive={editor.isActive("heading", { level: 3 })}
-            title={t("editor.heading3")}
-          >
-            <Heading3 className="h-3.5 w-3.5" />
-          </ToolbarButton>
-        </ToolbarGroup>
-
-        <ToolbarDivider />
-
-        {/* Text formatting */}
-        <ToolbarGroup>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleBold().run()}
-            isActive={editor.isActive("bold")}
-            title={t("editor.bold")}
-          >
-            <Bold className="h-3.5 w-3.5" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleItalic().run()}
-            isActive={editor.isActive("italic")}
-            title={t("editor.italic")}
-          >
-            <Italic className="h-3.5 w-3.5" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleStrike().run()}
-            isActive={editor.isActive("strike")}
-            title={t("editor.strikethrough")}
-          >
-            <Strikethrough className="h-3.5 w-3.5" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleCode().run()}
-            isActive={editor.isActive("code")}
-            title={t("editor.inlineCode")}
-          >
-            <Code className="h-3.5 w-3.5" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={setLink}
-            isActive={editor.isActive("link")}
-            title={t("editor.link")}
-          >
-            <Link2 className="h-3.5 w-3.5" />
-          </ToolbarButton>
-        </ToolbarGroup>
-
-        <ToolbarDivider />
-
-        {/* Blocks */}
-        <ToolbarGroup>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleBulletList().run()}
-            isActive={editor.isActive("bulletList")}
-            title={t("editor.bulletList")}
-          >
-            <List className="h-3.5 w-3.5" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleOrderedList().run()}
-            isActive={editor.isActive("orderedList")}
-            title={t("editor.orderedList")}
-          >
-            <ListOrdered className="h-3.5 w-3.5" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleBlockquote().run()}
-            isActive={editor.isActive("blockquote")}
-            title={t("editor.blockquote")}
-          >
-            <Quote className="h-3.5 w-3.5" />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().setHorizontalRule().run()}
-            title={t("editor.horizontalRule")}
-          >
-            <Minus className="h-3.5 w-3.5" />
-          </ToolbarButton>
-        </ToolbarGroup>
+        {toolbarGroups.map((group, index) => (
+          <Fragment key={group.key}>
+            {index > 0 ? <ToolbarDivider /> : null}
+            {group.node}
+          </Fragment>
+        ))}
       </div>
 
       {/* Editor Content */}
@@ -271,6 +347,7 @@ export function MarkdownEditor({
           "[&_.is-editor-empty:first-child::before]:float-left",
           "[&_.is-editor-empty:first-child::before]:h-0",
           "[&_.is-editor-empty:first-child::before]:text-[13px]",
+          contentClassName,
         )}
       />
     </div>

@@ -17,6 +17,7 @@ import type {
   IDatabase,
   IPlatformService,
   IWebSocket,
+  PickedFile,
   WebSocketOptions,
 } from "@readany/core/services";
 import * as Clipboard from "expo-clipboard";
@@ -112,7 +113,7 @@ export class ExpoPlatformService implements IPlatformService {
 
   // ---- File picker (expo-document-picker) ----
 
-  async pickFile(options?: FilePickerOptions): Promise<string | string[] | null> {
+  async pickFiles(options?: FilePickerOptions): Promise<PickedFile[] | null> {
     try {
       // Convert extension-based filters to MIME types for expo-document-picker
       const mimeTypes: string[] = [];
@@ -137,13 +138,23 @@ export class ExpoPlatformService implements IPlatformService {
         return null;
       }
 
-      if (options?.multiple) {
-        return result.assets.map((a) => a.uri);
-      }
-      return result.assets[0].uri;
+      const files = result.assets.map((asset) => ({
+        path: asset.uri,
+        name: asset.name,
+        mimeType: asset.mimeType,
+        size: asset.size,
+      }));
+      return files.length > 0 ? files : null;
     } catch {
       return null;
     }
+  }
+
+  async pickFile(options?: FilePickerOptions): Promise<string | string[] | null> {
+    const files = await this.pickFiles(options);
+    if (!files || files.length === 0) return null;
+    if (options?.multiple) return files.map((file) => file.path);
+    return files[0].path;
   }
 
   // ---- Database (expo-sqlite) ----
@@ -721,6 +732,11 @@ export class ExpoPlatformService implements IPlatformService {
     return null;
   }
 
+  async openExternalUrl(url: string): Promise<void> {
+    const { Linking } = await import("react-native");
+    await Linking.openURL(url);
+  }
+
   // ---- LAN Sync ----
 
   async isOnWifi(): Promise<boolean> {
@@ -759,6 +775,7 @@ export class ExpoPlatformService implements IPlatformService {
     let BufferMod: any;
     try {
       TcpSocket = (await import("react-native-tcp-socket")).default;
+      // biome-ignore lint/style/useNodejsImportProtocol: React Native needs the buffer polyfill package, not the Node builtin.
       BufferMod = (await import("buffer")).Buffer;
     } catch (e) {
       throw new Error(`Native TCP Socket unavailable: ${e instanceof Error ? e.message : e}`);
@@ -850,6 +867,8 @@ function extensionToMime(ext: string): string {
     fb2: "application/x-fictionbook+xml",
     fbz: "application/x-zip-compressed-fb2",
     txt: "text/plain",
+    md: "text/markdown",
+    markdown: "text/markdown",
     umd: "application/octet-stream",
     zip: "application/zip",
   };

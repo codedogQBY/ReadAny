@@ -26,6 +26,101 @@ function makeBook(): Book {
 }
 
 describe("buildSystemPrompt citations", () => {
+  it("injects bounded annotation context when provided", () => {
+    const prompt = buildSystemPrompt({
+      book: makeBook(),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: false,
+      userLanguage: "en",
+      annotationContext:
+        "- [highlight] Learning without thought is labor lost.\n  id: hl-1\n  cfi: epubcfi(/6/4)",
+    });
+
+    expect(prompt).toContain("Annotation Context");
+    expect(prompt).toContain("id: hl-1");
+    expect(prompt).toContain("epubcfi(/6/4)");
+    expect(prompt).toContain("getAnnotations/getRecentHighlights");
+  });
+
+  it("injects bounded knowledge-base context when provided", () => {
+    const prompt = buildSystemPrompt({
+      book: makeBook(),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: false,
+      userLanguage: "en",
+      knowledgeContext:
+        "- [summary] Memory Map\n  id: summary-1\n  path: Knowledge base / Themes / Memory Map",
+    });
+
+    expect(prompt).toContain("Knowledge Base Context");
+    expect(prompt).toContain("id: summary-1");
+    expect(prompt).toContain("Knowledge base / Themes / Memory Map");
+    expect(prompt).toContain("getKnowledgeDocument");
+  });
+
+  it("lists every knowledge write tool in the confirmation-only safety rule", () => {
+    const prompt = buildSystemPrompt({
+      book: makeBook(),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: false,
+      userLanguage: "en",
+    });
+
+    expect(prompt).toContain("Knowledge write safety");
+    expect(prompt).toContain("proposeKnowledgeDocumentCreate");
+    expect(prompt).toContain("proposeKnowledgeDocumentUpdate");
+    expect(prompt).toContain("proposeKnowledgeDocumentTagsUpdate");
+    expect(prompt).toContain("proposeKnowledgeLinkCreate");
+    expect(prompt).toContain("only return confirmation-required drafts");
+    expect(prompt).toContain("knowledge document, tag, or link");
+  });
+
+  it("lists knowledge summary compression only when that tool is available", () => {
+    const baseContext = {
+      book: makeBook(),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: false,
+      userLanguage: "en",
+    };
+
+    const promptWithoutCompression = buildSystemPrompt(baseContext);
+    expect(promptWithoutCompression).not.toContain("compressKnowledgeDocumentSummary");
+    expect(promptWithoutCompression).not.toContain("Knowledge memory safety");
+
+    const promptWithCompression = buildSystemPrompt({
+      ...baseContext,
+      canCompressKnowledgeSummary: true,
+    });
+    expect(promptWithCompression).toContain("compressKnowledgeDocumentSummary");
+    expect(promptWithCompression).toContain("Knowledge memory safety");
+    expect(promptWithCompression).toContain("must never be described as editing");
+  });
+
+  it("lists all always-registered library management tools", () => {
+    const prompt = buildSystemPrompt({
+      book: makeBook(),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: false,
+      userLanguage: "en",
+    });
+
+    expect(prompt).toContain("- **listBooks**");
+    expect(prompt).toContain("- **searchAllHighlights**");
+    expect(prompt).toContain("- **searchAllNotes**");
+    expect(prompt).toContain("- **getReadingStats**");
+    expect(prompt).toContain("- **mindmap**");
+    expect(prompt).toContain("- **classifyBooks**");
+    expect(prompt).toContain("- **tagBooks**");
+    expect(prompt).toContain("- **updateBookMetadata**");
+    expect(prompt).toContain("- **manageBookTags**");
+    expect(prompt).toContain("- **manageBookGroups**");
+  });
+
   it("allows fallback citations only when a returned CFI can be validated", () => {
     const prompt = buildSystemPrompt({
       book: makeBook(),

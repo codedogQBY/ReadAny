@@ -120,9 +120,11 @@
     "italic": "斜體 (Ctrl+I)",
     "strikethrough": "刪除線",
     "inlineCode": "行內程式碼",
+    "codeBlock": "程式碼區塊",
     "link": "連結",
     "bulletList": "無序清單",
     "orderedList": "有序清單",
+    "taskList": "任務清單",
     "blockquote": "引用",
     "horizontalRule": "分隔線"
   },

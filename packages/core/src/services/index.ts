@@ -5,6 +5,7 @@ export type {
   FetchOptions,
   FileTransferOptions,
   FilePickerOptions,
+  PickedFile,
   WebSocketOptions,
   UpdateInfo,
 } from "./platform";

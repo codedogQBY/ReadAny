@@ -43,6 +43,8 @@
     "copyAll": "複製全部",
     "exportSuccess": "匯出成功",
     "copiedSuccess": "已複製到剪貼簿",
+    "citationBookMissing": "這個引用沒有關聯書籍",
+    "citationOpenedBook": "已開啟書籍，這個引用沒有精確位置",
     "roleUser": "你",
     "roleAI": "AI",
     "askAboutBook": "詢問關於這本書的問題...",
@@ -72,6 +74,7 @@
     "loadingMindmap": "載入心智圖...",
     "toolFailed": "呼叫失敗",
     "toolFailedDetail": "工具呼叫失敗",
+    "toolFailedHint": "請檢查參數與結果詳情。失敗的工具不會寫入知識庫或修改資料。",
     "aborted": "使用者取消了產生"
   },
   "toolLabels": {
@@ -98,7 +101,144 @@
     "mindmap": "產生心智圖",
     "fallbackToc": "讀取原始目錄",
     "fallbackSearch": "掃描原始檔案",
-    "fallbackChapterContext": "讀取章節內容"
+    "fallbackChapterContext": "讀取章節內容",
+    "searchKnowledgeBase": "搜尋知識庫",
+    "getKnowledgeDocument": "讀取知識文件",
+    "getBookKnowledge": "讀取本書知識",
+    "compressKnowledgeDocumentSummary": "更新知識記憶",
+    "proposeKnowledgeDocumentCreate": "草擬知識文件",
+    "proposeKnowledgeDocumentUpdate": "草擬文件更新",
+    "proposeKnowledgeDocumentTagsUpdate": "草擬標籤更新",
+    "proposeKnowledgeLinkCreate": "草擬知識關聯"
+  },
+  "knowledgeToolResult": {
+    "searchTitle": "知識庫搜尋結果",
+    "documentTitle": "已讀取知識文件",
+    "bookKnowledgeTitle": "已讀取本書知識",
+    "summaryTitle": "知識記憶已更新",
+    "failureTitle": "{{tool}} 呼叫失敗",
+    "tool": "知識庫工具",
+    "failureUnknown": "工具呼叫失敗",
+    "failureSafeHint": "失敗的工具不會寫入知識庫或修改文件。",
+    "writeSafety": {
+      "read_only": {
+        "label": "唯讀",
+        "description": "這個工具只讀取知識脈絡，沒有儲存或修改任何內容。"
+      },
+      "memory_persisted": {
+        "label": "記憶已更新",
+        "description": "這個工具更新了壓縮檢索記憶，不會改寫使用者正文內容。"
+      },
+      "memory_skipped": {
+        "label": "未寫入",
+        "description": "這個工具沒有持久化摘要，也沒有修改使用者正文內容。"
+      },
+      "no_write_failed": {
+        "label": "未寫入",
+        "description": "這次失敗的工具呼叫沒有儲存或修改任何知識文件/關聯。"
+      }
+    },
+    "count": "顯示 {{showing}} / {{total}} 個文件",
+    "status": "狀態：{{status}}",
+    "persisted": "已持久化",
+    "notPersisted": "未持久化",
+    "sourceChars": "{{count}} 字",
+    "documentId": "文件：{{id}}",
+    "reason": "原因：{{reason}}",
+    "empty": "沒有符合的知識文件",
+    "matchedIn": "命中：{{fields}}",
+    "matchFields": {
+      "title": "標題",
+      "path": "路徑",
+      "tags": "標籤",
+      "excerpt": "摘錄",
+      "summary": "摘要",
+      "content": "正文"
+    },
+    "more": "還有 {{count}} 個",
+    "relations": "關聯路徑",
+    "relationOutgoing": "連結到",
+    "relationBacklink": "被引用自",
+    "moreRelations": "還有 {{count}} 條關聯",
+    "open": "打開",
+    "openDocument": "打開文件",
+    "openUnavailable": "請先打開這本書的知識庫頁，再查看這個文件。",
+    "types": {
+      "book_home": "書籍主頁",
+      "folder": "資料夾",
+      "standalone_note": "獨立筆記",
+      "highlight_note": "標註筆記",
+      "review": "書評",
+      "summary": "摘要",
+      "imported_markdown": "匯入文件"
+    }
+  },
+  "knowledgeProposal": {
+    "title": "知識庫寫入提案",
+    "create": "建立知識文件",
+    "update": "更新知識文件",
+    "link": "建立知識關聯",
+    "pendingBadge": "待確認",
+    "savedBadge": "已套用",
+    "failedBadge": "套用失敗",
+    "safeHint": "AI 只產生了草稿，確認後才會寫入你的知識庫。",
+    "writeSafety": {
+      "proposal_pending_confirmation": {
+        "label": "需要確認",
+        "description": "AI 只是準備了這則提案，只有點擊套用後才會寫入知識庫。"
+      }
+    },
+    "changes": "變更",
+    "location": "位置",
+    "contentPreview": "內容預覽",
+    "apply": "套用到知識庫",
+    "applying": "套用中...",
+    "applied": "已套用",
+    "applySuccess": "已儲存到知識庫",
+    "applyFailed": "套用知識庫提案失敗",
+    "retry": "重試",
+    "applyFailedSafeHint": "沒有寫入任何內容。請重新整理或檢查文件後再試一次。",
+    "errors": {
+      "parent": {
+        "book_home_locked": "書籍首頁不能移動到資料夾裡。",
+        "missing_parent": "目標資料夾已不存在。請重新整理知識庫後再試一次。",
+        "parent_not_folder": "選擇的目標不是資料夾。請選擇資料夾後再試。",
+        "book_mismatch": "目標位置屬於另一本書的知識庫。請選擇同一本書裡的資料夾。",
+        "missing_document": "這份文件已不存在。請重新整理知識庫後再試一次。",
+        "descendant_parent": "資料夾不能移動到自己的子資料夾裡。",
+        "invalid_parent": "目標資料夾無效。請重新整理知識庫後再試一次。"
+      },
+      "title": {
+        "duplicate_sibling_title": "這個資料夾裡已經有同名文件。請先重新命名其中一份。"
+      },
+      "create": {
+        "create_id_conflict": "這份草稿指向另一份已存在的文件。請重新整理提案後再套用。"
+      },
+      "update": {
+        "stale_document": "提案建立後，這份文件已被修改。請重新整理或檢查最新版本後再套用。"
+      },
+      "link": {
+        "missing_source_document": "來源文件已不存在。請重新整理知識庫後再試一次。",
+        "missing_target_document": "目標文件已不存在。請重新整理知識庫後再試一次。"
+      }
+    },
+    "fields": {
+      "parentFolder": "所在資料夾",
+      "title": "標題",
+      "content": "內容",
+      "tags": "標籤"
+    },
+    "types": {
+      "knowledgeDocument": "知識文件",
+      "bookHome": "書籍首頁",
+      "folder": "資料夾",
+      "standaloneNote": "獨立筆記",
+      "highlightNote": "劃線筆記",
+      "review": "書評",
+      "summary": "摘要",
+      "importedMarkdown": "匯入文件",
+      "knowledgeLink": "知識關聯"
+    }
   },
   "mindmap": {
     "title": "心智圖",

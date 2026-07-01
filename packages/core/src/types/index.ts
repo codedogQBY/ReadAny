@@ -5,6 +5,7 @@ export * from "./annotation";
 export * from "./book";
 export * from "./chat";
 export * from "./font";
+export * from "./knowledge";
 // message.ts has StreamEvent/StreamEventType that conflict with chat.ts
 // The message.ts versions are the V2 ones — export them with explicit names
 export {

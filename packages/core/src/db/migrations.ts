@@ -121,6 +121,16 @@ const migrations: Migration[] = [
       "ALTER TABLE threads ADD COLUMN memory_message_count INTEGER DEFAULT 0",
     ],
   },
+  {
+    version: 14,
+    description: "Add compact summary state to knowledge documents",
+    up: [
+      "ALTER TABLE knowledge_documents ADD COLUMN summary_md TEXT",
+      "ALTER TABLE knowledge_documents ADD COLUMN summary_source_fingerprint TEXT",
+      "ALTER TABLE knowledge_documents ADD COLUMN summary_source_updated_at INTEGER",
+      "ALTER TABLE knowledge_documents ADD COLUMN summary_updated_at INTEGER",
+    ],
+  },
 ];
 
 /** Run pending migrations */

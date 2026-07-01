@@ -210,6 +210,39 @@
   border-radius: 0.5rem;
 }
 
+/* ── Knowledge editor task lists ─────────────────────────────── */
+.readany-knowledge-editor ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.readany-knowledge-editor li[data-type="taskItem"] {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.25rem 0;
+}
+
+.readany-knowledge-editor li[data-type="taskItem"] > label {
+  flex: 0 0 auto;
+  margin-top: 0.23rem;
+}
+
+.readany-knowledge-editor li[data-type="taskItem"] input[type="checkbox"] {
+  width: 0.95rem;
+  height: 0.95rem;
+  accent-color: var(--primary);
+}
+
+.readany-knowledge-editor li[data-type="taskItem"] > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.readany-knowledge-editor li[data-type="taskItem"] > div > p {
+  margin-top: 0;
+}
+
 /* Code blocks */
 .chat-markdown pre {
   margin: 0.6em 0;

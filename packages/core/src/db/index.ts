@@ -38,15 +38,39 @@ export {
   getAllHighlights,
   getAllHighlightsWithBooks,
   getHighlightStats,
+  ensureHighlightNoteKnowledgeDocuments,
   insertHighlight,
   updateHighlight,
   deleteHighlight,
   // Note queries
   getNotes,
   getAllNotes,
+  ensureNoteKnowledgeDocuments,
   insertNote,
   updateNote,
   deleteNote,
+  // Knowledge queries
+  getKnowledgeDocument,
+  getKnowledgeDocuments,
+  searchKnowledgeDocuments,
+  getBookHomeDocument,
+  createKnowledgeDocument,
+  ensureBookHomeDocument,
+  insertKnowledgeDocument,
+  updateKnowledgeDocument,
+  updateKnowledgeDocumentSummary,
+  deleteKnowledgeDocument,
+  getKnowledgeBacklinks,
+  getKnowledgeLinks,
+  insertKnowledgeLink,
+  deleteKnowledgeLink,
+  getKnowledgeAttachments,
+  insertKnowledgeAttachment,
+  deleteKnowledgeAttachment,
+  disableKnowledgeCardTemplate,
+  getKnowledgeCardTemplates,
+  upsertKnowledgeCardTemplate,
+  syncKnowledgeDocumentToLegacySource,
   // Bookmark queries
   getBookmarks,
   insertBookmark,
@@ -82,3 +106,11 @@ export {
 } from "./database";
 
 export type { HighlightWithBook } from "./database";
+export type {
+  CreateKnowledgeDocumentInput,
+  KnowledgeBacklink,
+  KnowledgeDocumentFilters,
+  KnowledgeDocumentSearchFilters,
+  KnowledgeSourceWritebackResult,
+  KnowledgeSourceWritebackStatus,
+} from "./database";

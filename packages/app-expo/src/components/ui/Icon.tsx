@@ -86,6 +86,16 @@ export const PlusIcon = icon(() => (
   </>
 ));
 
+export const ImagePlusIcon = icon(() => (
+  <>
+    <Path d="M16 5h6" />
+    <Path d="M19 2v6" />
+    <Path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5" />
+    <Circle cx="9" cy="9" r="2" />
+    <Path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" />
+  </>
+));
+
 export const SearchIcon = icon(() => (
   <>
     <Circle cx="11" cy="11" r="8" />
@@ -609,6 +619,16 @@ export const ListOrderedIcon = icon(() => (
     <Path d="M4 6h1v4" />
     <Path d="M4 10h2" />
     <Path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1" />
+  </>
+));
+
+export const ListTodoIcon = icon(() => (
+  <>
+    <Rect x="3" y="5" width="4" height="4" rx="1" />
+    <Path d="m4 7 1 1 2-2" />
+    <Line x1="11" x2="21" y1="7" y2="7" />
+    <Rect x="3" y="15" width="4" height="4" rx="1" />
+    <Line x1="11" x2="21" y1="17" y2="17" />
   </>
 ));
 

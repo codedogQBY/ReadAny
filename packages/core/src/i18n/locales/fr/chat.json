@@ -43,6 +43,8 @@
     "copyAll": "Tout copier",
     "exportSuccess": "Exportation réussie",
     "copiedSuccess": "Copié dans le presse-papiers",
+    "citationBookMissing": "Cette citation n'est liée à aucun livre",
+    "citationOpenedBook": "Livre ouvert. Cette citation n'a pas d'emplacement précis.",
     "roleUser": "Vous",
     "roleAI": "IA",
     "askAboutBook": "Posez n'importe quelle question sur ce livre...",
@@ -72,6 +74,7 @@
     "loadingMindmap": "Chargement de la carte mentale...",
     "toolFailed": "Appel échoué",
     "toolFailedDetail": "L'appel de l'outil a échoué",
+    "toolFailedHint": "Vérifiez les paramètres et les détails du résultat. Les outils échoués n'écrivent pas dans la base de connaissances et ne modifient pas les données.",
     "aborted": "Génération arrêtée par l'utilisateur"
   },
   "toolLabels": {
@@ -98,7 +101,144 @@
     "mindmap": "Génération de la carte mentale",
     "fallbackToc": "Lecture de la table des matières originale",
     "fallbackSearch": "Analyse du fichier original",
-    "fallbackChapterContext": "Lecture du contenu du chapitre"
+    "fallbackChapterContext": "Lecture du contenu du chapitre",
+    "searchKnowledgeBase": "Recherche dans la base de connaissances",
+    "getKnowledgeDocument": "Lecture du document de connaissance",
+    "getBookKnowledge": "Lecture des connaissances du livre",
+    "compressKnowledgeDocumentSummary": "Mise à jour de la mémoire de connaissance",
+    "proposeKnowledgeDocumentCreate": "Brouillon de document de connaissance",
+    "proposeKnowledgeDocumentUpdate": "Brouillon de mise à jour du document",
+    "proposeKnowledgeDocumentTagsUpdate": "Brouillon de mise à jour des tags",
+    "proposeKnowledgeLinkCreate": "Brouillon de lien de connaissance"
+  },
+  "knowledgeToolResult": {
+    "searchTitle": "Résultats de la base de connaissances",
+    "documentTitle": "Document de connaissance lu",
+    "bookKnowledgeTitle": "Connaissances du livre lues",
+    "summaryTitle": "Mémoire de connaissance mise à jour",
+    "failureTitle": "Échec de {{tool}}",
+    "tool": "Outil de connaissances",
+    "failureUnknown": "L'exécution de l'outil a échoué",
+    "failureSafeHint": "Cet appel d'outil échoué n'a pas écrit dans la base de connaissances ni modifié vos documents.",
+    "writeSafety": {
+      "read_only": {
+        "label": "Lecture seule",
+        "description": "Cet outil a seulement lu le contexte de connaissance. Il n'a rien enregistré ni modifié."
+      },
+      "memory_persisted": {
+        "label": "Mémoire mise à jour",
+        "description": "Cet outil a mis à jour la mémoire compacte de recherche. Il n'a pas réécrit le contenu utilisateur."
+      },
+      "memory_skipped": {
+        "label": "Aucune écriture",
+        "description": "Cet outil n'a pas persisté de résumé ni modifié le contenu utilisateur."
+      },
+      "no_write_failed": {
+        "label": "Aucune écriture",
+        "description": "Aucun document ou lien de connaissance n'a été enregistré ou modifié par cet appel échoué."
+      }
+    },
+    "count": "{{showing}} / {{total}} documents affichés",
+    "status": "Statut : {{status}}",
+    "persisted": "Persisté",
+    "notPersisted": "Non persisté",
+    "sourceChars": "{{count}} caractères",
+    "documentId": "Document : {{id}}",
+    "reason": "Raison : {{reason}}",
+    "empty": "Aucun document de connaissance correspondant",
+    "matchedIn": "Correspondance dans {{fields}}",
+    "matchFields": {
+      "title": "titre",
+      "path": "chemin",
+      "tags": "étiquettes",
+      "excerpt": "extrait",
+      "summary": "résumé",
+      "content": "contenu"
+    },
+    "more": "{{count}} de plus",
+    "relations": "Chemins liés",
+    "relationOutgoing": "Lié vers",
+    "relationBacklink": "Lié depuis",
+    "moreRelations": "{{count}} relations de plus",
+    "open": "Ouvrir",
+    "openDocument": "Ouvrir le document",
+    "openUnavailable": "Ouvrez d'abord l'onglet de connaissances du livre pour voir ce document.",
+    "types": {
+      "book_home": "Accueil du livre",
+      "folder": "Dossier",
+      "standalone_note": "Note autonome",
+      "highlight_note": "Note de surlignage",
+      "review": "Critique",
+      "summary": "Résumé",
+      "imported_markdown": "Document importé"
+    }
+  },
+  "knowledgeProposal": {
+    "title": "Proposition d'écriture de connaissance",
+    "create": "Créer un document de connaissance",
+    "update": "Mettre à jour le document de connaissance",
+    "link": "Créer un lien de connaissance",
+    "pendingBadge": "Confirmation requise",
+    "savedBadge": "Appliqué",
+    "failedBadge": "Échec",
+    "safeHint": "L'IA a seulement créé un brouillon. Il sera écrit dans votre base après confirmation.",
+    "writeSafety": {
+      "proposal_pending_confirmation": {
+        "label": "Confirmation requise",
+        "description": "L'IA a seulement préparé cette proposition. Elle n'écrira rien dans la base tant que vous ne l'appliquez pas."
+      }
+    },
+    "changes": "Modifications",
+    "location": "Emplacement",
+    "contentPreview": "Aperçu",
+    "apply": "Appliquer à la base de connaissances",
+    "applying": "Application...",
+    "applied": "Appliqué",
+    "applySuccess": "Enregistré dans la base de connaissances",
+    "applyFailed": "Impossible d'appliquer la proposition",
+    "retry": "Réessayer",
+    "applyFailedSafeHint": "Rien n'a été écrit. Actualisez ou vérifiez le document, puis réessayez.",
+    "errors": {
+      "parent": {
+        "book_home_locked": "Les documents d'accueil du livre ne peuvent pas être déplacés dans un dossier.",
+        "missing_parent": "Le dossier de destination n'existe plus. Actualisez la vue connaissances, puis réessayez.",
+        "parent_not_folder": "La destination sélectionnée n'est pas un dossier. Choisissez un dossier, puis réessayez.",
+        "book_mismatch": "La destination appartient au coffre d'un autre livre. Choisissez un dossier du même livre.",
+        "missing_document": "Ce document n'existe plus. Actualisez la vue connaissances, puis réessayez.",
+        "descendant_parent": "Un dossier ne peut pas être déplacé dans l'un de ses propres sous-dossiers.",
+        "invalid_parent": "Le dossier de destination n'est pas valide. Actualisez la vue connaissances, puis réessayez."
+      },
+      "title": {
+        "duplicate_sibling_title": "Un document portant le même titre existe déjà dans ce dossier. Renommez d'abord l'un des deux."
+      },
+      "create": {
+        "create_id_conflict": "Ce brouillon pointe vers un autre document existant. Actualisez la proposition avant de l'appliquer."
+      },
+      "update": {
+        "stale_document": "Ce document a changé après la création de la proposition. Actualisez ou vérifiez la dernière version avant de l'appliquer."
+      },
+      "link": {
+        "missing_source_document": "Le document source n'existe plus. Actualisez la vue connaissances, puis réessayez.",
+        "missing_target_document": "Le document cible n'existe plus. Actualisez la vue connaissances, puis réessayez."
+      }
+    },
+    "fields": {
+      "parentFolder": "Dossier",
+      "title": "Titre",
+      "content": "Contenu",
+      "tags": "Étiquettes"
+    },
+    "types": {
+      "knowledgeDocument": "Document de connaissance",
+      "bookHome": "Accueil du livre",
+      "folder": "Dossier",
+      "standaloneNote": "Note autonome",
+      "highlightNote": "Note de surlignage",
+      "review": "Critique",
+      "summary": "Résumé",
+      "importedMarkdown": "Document importé",
+      "knowledgeLink": "Lien de connaissance"
+    }
   },
   "mindmap": {
     "title": "Carte mentale",

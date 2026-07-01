@@ -3,14 +3,23 @@
  */
 import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
 import { CheckIcon, EditIcon, XIcon } from "@/components/ui/Icon";
-import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
+import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { useAnnotationStore } from "@/stores";
 import { useColors } from "@/styles/theme";
 import { createSelectionNoteMutation } from "@readany/core/reader";
-import { KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { makeStyles } from "./reader-styles";
 
 export type NoteViewHighlight = {
@@ -51,21 +60,12 @@ export function ReaderNoteViewModal({
   const { t } = useTranslation();
 
   return (
-    <Modal
-      visible={!!highlight}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
+    <Modal visible={!!highlight} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={s.noteViewOverlay}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        <TouchableOpacity
-          style={StyleSheet.absoluteFill}
-          activeOpacity={1}
-          onPress={onClose}
-        />
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
         <View
           style={[
             s.noteViewModal,
@@ -90,6 +90,7 @@ export function ReaderNoteViewModal({
                 <>
                   <View style={s.noteViewEditorContainer}>
                     <RichTextEditor
+                      tier="inline_note"
                       initialContent={editContent}
                       onChange={onContentChange}
                       placeholder={t("reader.notePlaceholder", "写下你的想法...")}

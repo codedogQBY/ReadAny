@@ -14,11 +14,8 @@ import { onLibraryChanged } from "@readany/core/events/library-events";
 import { installFeedbackLogCapture, setFeedbackWorkerUrl } from "@readany/core/feedback";
 import { setVectorDB } from "@readany/core/rag";
 import { setPlatformService } from "@readany/core/services";
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
-import { TauriPlatformService } from "./lib/platform/tauri-platform-service";
-import { syncLegacyDesktopLibraryRootConfig } from "./lib/storage/desktop-library-root";
-import { TauriVectorDB } from "./lib/tauri-vector-db";
-import { registerDesktopFallbackContentProvider } from "./lib/rag/fallback-content-provider";
+import { BrowserPreviewPlatformService } from "./lib/platform/browser-preview-platform-service";
+import { isTauriRuntimeAvailable, TauriPlatformService } from "./lib/platform/tauri-platform-service";
 import { useLibraryStore } from "./stores/library-store";
 import { flushAllWrites } from "./stores/persist";
 import { useVectorModelStore } from "./stores/vector-model-store";
@@ -30,13 +27,30 @@ const feedbackWorkerUrl = import.meta.env.VITE_FEEDBACK_WORKER_URL?.trim() || FE
 setFeedbackWorkerUrl(feedbackWorkerUrl);
 
 // Register platform service before any database/core operations
-const tauriPlatform = new TauriPlatformService();
-tauriPlatform.initSync().catch(console.error);
-setPlatformService(tauriPlatform);
-registerDesktopFallbackContentProvider();
+const isTauriRuntime = isTauriRuntimeAvailable();
+const platform = isTauriRuntime ? new TauriPlatformService() : new BrowserPreviewPlatformService();
+if (platform instanceof TauriPlatformService) {
+  platform.initSync().catch(console.error);
+}
+setPlatformService(platform);
+if (isTauriRuntime) {
+  import("./lib/rag/fallback-content-provider")
+    .then(({ registerDesktopFallbackContentProvider }) => registerDesktopFallbackContentProvider())
+    .catch(console.error);
+}
 
-// Set Tauri fetch for streaming AI requests (avoids CORS issues)
-setStreamingFetch(tauriFetch as typeof globalThis.fetch);
+// Set Tauri fetch for streaming AI requests (avoids CORS issues in the desktop app).
+// Browser preview uses native fetch so opening the Vite dev server directly stays usable.
+if (isTauriRuntime) {
+  import("@tauri-apps/plugin-http")
+    .then(({ fetch: tauriFetch }) => setStreamingFetch(tauriFetch as typeof globalThis.fetch))
+    .catch((error) => {
+      console.warn("[Platform] Failed to initialize Tauri fetch, using native fetch:", error);
+      setStreamingFetch(globalThis.fetch.bind(globalThis) as typeof globalThis.fetch);
+    });
+} else {
+  setStreamingFetch(globalThis.fetch.bind(globalThis) as typeof globalThis.fetch);
+}
 
 // Register embedding worker factory for Vite/Tauri
 // Must use `new URL(...)` + explicit `{ type: "module" }` so that
@@ -47,16 +61,33 @@ setEmbeddingWorkerFactory(
 );
 
 // Set vector database reference (initialized in Rust setup)
-const tauriVectorDB = new TauriVectorDB();
-setVectorDB(tauriVectorDB);
-console.log("[VectorDB] TauriVectorDB reference set");
+const tauriVectorDBReady = isTauriRuntime
+  ? import("./lib/tauri-vector-db")
+      .then(({ TauriVectorDB }) => {
+        const tauriVectorDB = new TauriVectorDB();
+        setVectorDB(tauriVectorDB);
+        console.log("[VectorDB] TauriVectorDB reference set");
+        return tauriVectorDB;
+      })
+      .catch((error) => {
+        console.warn("[VectorDB] Failed to initialize TauriVectorDB:", error);
+        return null;
+      })
+  : Promise.resolve(null);
 
-const desktopDataRootReady = syncLegacyDesktopLibraryRootConfig().catch(console.error);
+const desktopDataRootReady = isTauriRuntime
+  ? import("./lib/storage/desktop-library-root")
+      .then(({ syncLegacyDesktopLibraryRootConfig }) => syncLegacyDesktopLibraryRootConfig())
+      .catch(console.error)
+  : Promise.resolve();
 
 // Align vector DB dimension with the currently selected model
 (async () => {
   try {
     await desktopDataRootReady;
+    const tauriVectorDB = await tauriVectorDBReady;
+    if (!tauriVectorDB) return;
+
     const { vectorModelMode, selectedBuiltinModelId, getSelectedVectorModel } =
       useVectorModelStore.getState();
     let dimension: number | undefined;

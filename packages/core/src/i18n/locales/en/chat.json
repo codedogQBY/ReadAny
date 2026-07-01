@@ -43,6 +43,8 @@
     "copyAll": "Copy All",
     "exportSuccess": "Export successful",
     "copiedSuccess": "Copied to clipboard",
+    "citationBookMissing": "This citation is not linked to a book",
+    "citationOpenedBook": "Opened the book. This citation has no precise location.",
     "roleUser": "You",
     "roleAI": "AI",
     "askAboutBook": "Ask anything about this book...",
@@ -72,6 +74,7 @@
     "loadingMindmap": "Loading mindmap...",
     "toolFailed": "Call failed",
     "toolFailedDetail": "Tool call failed",
+    "toolFailedHint": "Check the parameters and result details. Failed tools do not write to the knowledge base or modify data.",
     "aborted": "Generation stopped by user"
   },
   "toolLabels": {
@@ -98,7 +101,144 @@
     "mindmap": "Generating mindmap",
     "fallbackToc": "Reading original table of contents",
     "fallbackSearch": "Scanning original file",
-    "fallbackChapterContext": "Reading chapter content"
+    "fallbackChapterContext": "Reading chapter content",
+    "searchKnowledgeBase": "Searching knowledge base",
+    "getKnowledgeDocument": "Reading knowledge document",
+    "getBookKnowledge": "Reading book knowledge",
+    "compressKnowledgeDocumentSummary": "Updating knowledge memory",
+    "proposeKnowledgeDocumentCreate": "Drafting knowledge document",
+    "proposeKnowledgeDocumentUpdate": "Drafting document update",
+    "proposeKnowledgeDocumentTagsUpdate": "Drafting tag update",
+    "proposeKnowledgeLinkCreate": "Drafting knowledge link"
+  },
+  "knowledgeToolResult": {
+    "searchTitle": "Knowledge search results",
+    "documentTitle": "Knowledge document read",
+    "bookKnowledgeTitle": "Book knowledge read",
+    "summaryTitle": "Knowledge memory updated",
+    "failureTitle": "{{tool}} failed",
+    "tool": "Knowledge tool",
+    "failureUnknown": "Tool execution failed",
+    "failureSafeHint": "This failed tool call did not write to the knowledge base or change your documents.",
+    "writeSafety": {
+      "read_only": {
+        "label": "Read-only",
+        "description": "This tool only read knowledge context. It did not save or change anything."
+      },
+      "memory_persisted": {
+        "label": "Memory updated",
+        "description": "This tool updated compact retrieval memory. It did not rewrite user-authored document content."
+      },
+      "memory_skipped": {
+        "label": "No write",
+        "description": "This tool did not persist a summary or change user-authored content."
+      },
+      "no_write_failed": {
+        "label": "No write",
+        "description": "No knowledge document or link was saved or changed by this failed tool call."
+      }
+    },
+    "count": "Showing {{showing}} / {{total}} documents",
+    "status": "Status: {{status}}",
+    "persisted": "Persisted",
+    "notPersisted": "Not persisted",
+    "sourceChars": "{{count}} chars",
+    "documentId": "Document: {{id}}",
+    "reason": "Reason: {{reason}}",
+    "empty": "No matching knowledge documents",
+    "matchedIn": "Matched in {{fields}}",
+    "matchFields": {
+      "title": "title",
+      "path": "path",
+      "tags": "tags",
+      "excerpt": "excerpt",
+      "summary": "summary",
+      "content": "content"
+    },
+    "more": "{{count}} more",
+    "relations": "Related paths",
+    "relationOutgoing": "Links to",
+    "relationBacklink": "Linked from",
+    "moreRelations": "{{count}} more relations",
+    "open": "Open",
+    "openDocument": "Open document",
+    "openUnavailable": "Open the book knowledge tab to view this document.",
+    "types": {
+      "book_home": "Book home",
+      "folder": "Folder",
+      "standalone_note": "Standalone note",
+      "highlight_note": "Highlight note",
+      "review": "Review",
+      "summary": "Summary",
+      "imported_markdown": "Imported document"
+    }
+  },
+  "knowledgeProposal": {
+    "title": "Knowledge write proposal",
+    "create": "Create knowledge document",
+    "update": "Update knowledge document",
+    "link": "Create knowledge link",
+    "pendingBadge": "Needs confirmation",
+    "savedBadge": "Applied",
+    "failedBadge": "Failed",
+    "safeHint": "AI has only drafted this. It will write to your knowledge base after confirmation.",
+    "writeSafety": {
+      "proposal_pending_confirmation": {
+        "label": "Confirmation required",
+        "description": "AI only prepared this proposal. It will not write to the knowledge base until you apply it."
+      }
+    },
+    "changes": "Changes",
+    "location": "Location",
+    "contentPreview": "Preview",
+    "apply": "Apply to knowledge base",
+    "applying": "Applying...",
+    "applied": "Applied",
+    "applySuccess": "Saved to knowledge base",
+    "applyFailed": "Failed to apply knowledge proposal",
+    "retry": "Try again",
+    "applyFailedSafeHint": "Nothing was written. Refresh or review the document, then try again.",
+    "errors": {
+      "parent": {
+        "book_home_locked": "Book home documents cannot be moved into a folder.",
+        "missing_parent": "The destination folder no longer exists. Refresh the knowledge view and try again.",
+        "parent_not_folder": "The selected destination is not a folder. Choose a folder and try again.",
+        "book_mismatch": "The destination belongs to a different book vault. Choose a folder in the same book.",
+        "missing_document": "The document no longer exists. Refresh the knowledge view and try again.",
+        "descendant_parent": "A folder cannot be moved inside one of its own child folders.",
+        "invalid_parent": "The destination folder is invalid. Refresh the knowledge view and try again."
+      },
+      "title": {
+        "duplicate_sibling_title": "A document with the same title already exists in that folder. Rename one of them first."
+      },
+      "create": {
+        "create_id_conflict": "This draft points to an existing different document. Refresh the proposal before applying it."
+      },
+      "update": {
+        "stale_document": "This document changed after the proposal was created. Refresh or review the latest version before applying it."
+      },
+      "link": {
+        "missing_source_document": "The source document no longer exists. Refresh the knowledge view and try again.",
+        "missing_target_document": "The target document no longer exists. Refresh the knowledge view and try again."
+      }
+    },
+    "fields": {
+      "parentFolder": "Folder",
+      "title": "Title",
+      "content": "Content",
+      "tags": "Tags"
+    },
+    "types": {
+      "knowledgeDocument": "Knowledge document",
+      "bookHome": "Book home",
+      "folder": "Folder",
+      "standaloneNote": "Standalone note",
+      "highlightNote": "Highlight note",
+      "review": "Review",
+      "summary": "Summary",
+      "importedMarkdown": "Imported document",
+      "knowledgeLink": "Knowledge link"
+    }
   },
   "mindmap": {
     "title": "Mindmap",

@@ -3,8 +3,10 @@ import { ConfigGuideDialog, type ConfigGuideType } from "@/components/shared/Con
  * ChatPage — standalone full-page chat for general conversations.
  */
 import { useStreamingChat } from "@/hooks/use-streaming-chat";
+import { openDesktopBook } from "@/lib/library/open-book";
 import { useChatReaderStore } from "@/stores/chat-reader-store";
 import { useChatStore } from "@/stores/chat-store";
+import { useLibraryStore } from "@/stores/library-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { getPlatformService } from "@readany/core/services";
 import type { CitationPart } from "@readany/core/types";
@@ -242,6 +244,7 @@ export function ChatPage() {
 
   const activeThreadId = getActiveThreadId();
   const activeThread = threads.find((t) => t.id === activeThreadId);
+  const loadBooks = useLibraryStore((s) => s.loadBooks);
 
   const handleSend = useCallback(
     async (content: string, deepThinking = false, spoilerFree = false) => {
@@ -268,11 +271,40 @@ export function ChatPage() {
     setGeneralActiveThread(null);
   }, [setGeneralActiveThread]);
 
-  const handleCitationClick = useCallback((citation: CitationPart) => {
-    // TODO: Navigate to reader page with this citation
-    // For now, log to console. Future enhancement: use router to navigate to /reader/${citation.bookId}?cfi=${citation.cfi}
-    console.log("Citation clicked:", citation);
-  }, []);
+  const handleCitationClick = useCallback(
+    async (citation: CitationPart) => {
+      const bookId = citation.bookId?.trim();
+      if (!bookId) {
+        toast.error(t("chat.citationBookMissing", "引用没有关联书籍"));
+        return;
+      }
+
+      let book = useLibraryStore.getState().books.find((item) => item.id === bookId);
+      if (!book) {
+        await loadBooks();
+        book = useLibraryStore.getState().books.find((item) => item.id === bookId);
+      }
+
+      if (!book) {
+        toast.error(t("library.bookNotFound", "书籍不存在"));
+        return;
+      }
+
+      const opened = await openDesktopBook({
+        book,
+        t,
+        initialCfi: citation.cfi?.trim() || undefined,
+      });
+      if (!opened) {
+        return;
+      }
+
+      if (!citation.cfi?.trim()) {
+        toast.message(t("chat.citationOpenedBook", "已打开书籍，当前引用没有精确位置"));
+      }
+    },
+    [loadBooks, t],
+  );
 
   const displayMessages = convertToMessageV2(activeThread?.messages || []);
   const allMessages = mergeMessagesWithStreaming(displayMessages, currentMessage, isStreaming);

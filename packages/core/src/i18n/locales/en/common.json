@@ -48,7 +48,7 @@
   "sidebar": {
     "library": "Library",
     "chat": "Chat",
-    "notes": "Notes",
+    "notes": "Knowledge",
     "skills": "Skills",
     "allBooks": "All Books",
     "uncategorized": "Uncategorized",
@@ -64,7 +64,7 @@
   "tabs": {
     "library": "Library",
     "ai": "AI",
-    "notes": "Notes",
+    "notes": "Knowledge",
     "profile": "Me"
   },
   "window": {

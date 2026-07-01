@@ -56,6 +56,7 @@ export {
   getAllHighlights,
   getAllHighlightsWithBooks,
   getHighlightStats,
+  ensureHighlightNoteKnowledgeDocuments,
   insertHighlight,
   updateHighlight,
   deleteHighlight,
@@ -65,10 +66,45 @@ export type { HighlightWithBook } from "./highlight-queries";
 export {
   getNotes,
   getAllNotes,
+  ensureNoteKnowledgeDocuments,
   insertNote,
   updateNote,
   deleteNote,
 } from "./note-queries";
+
+export {
+  getKnowledgeDocument,
+  getKnowledgeDocuments,
+  searchKnowledgeDocuments,
+  getBookHomeDocument,
+  createKnowledgeDocument,
+  ensureBookHomeDocument,
+  insertKnowledgeDocument,
+  updateKnowledgeDocument,
+  updateKnowledgeDocumentSummary,
+  deleteKnowledgeDocument,
+  getKnowledgeBacklinks,
+  getKnowledgeLinks,
+  insertKnowledgeLink,
+  deleteKnowledgeLink,
+  getKnowledgeAttachments,
+  insertKnowledgeAttachment,
+  deleteKnowledgeAttachment,
+  disableKnowledgeCardTemplate,
+  getKnowledgeCardTemplates,
+  upsertKnowledgeCardTemplate,
+} from "./knowledge-queries";
+export type {
+  CreateKnowledgeDocumentInput,
+  KnowledgeBacklink,
+  KnowledgeDocumentFilters,
+  KnowledgeDocumentSearchFilters,
+} from "./knowledge-queries";
+export { syncKnowledgeDocumentToLegacySource } from "./knowledge-source-writeback";
+export type {
+  KnowledgeSourceWritebackResult,
+  KnowledgeSourceWritebackStatus,
+} from "./knowledge-source-writeback";
 
 export {
   getBookmarks,

@@ -43,6 +43,8 @@
     "copyAll": "すべてコピー",
     "exportSuccess": "エクスポート成功",
     "copiedSuccess": "クリップボードにコピーしました",
+    "citationBookMissing": "この引用は書籍に関連付けられていません",
+    "citationOpenedBook": "書籍を開きました。この引用には正確な位置情報がありません。",
     "roleUser": "あなた",
     "roleAI": "AI",
     "askAboutBook": "この本について何でも聞いてください...",
@@ -72,6 +74,7 @@
     "loadingMindmap": "マインドマップを読み込み中...",
     "toolFailed": "呼び出し失敗",
     "toolFailedDetail": "ツール呼び出しに失敗しました",
+    "toolFailedHint": "パラメータと結果の詳細を確認してください。失敗したツールはナレッジベースへの書き込みやデータ変更を行いません。",
     "aborted": "ユーザーにより生成を停止しました"
   },
   "toolLabels": {
@@ -98,7 +101,144 @@
     "mindmap": "マインドマップを生成中",
     "fallbackToc": "元ファイルの目次を読み取り中",
     "fallbackSearch": "元ファイルをスキャン中",
-    "fallbackChapterContext": "章の内容を読み取り中"
+    "fallbackChapterContext": "章の内容を読み取り中",
+    "searchKnowledgeBase": "ナレッジベースを検索中",
+    "getKnowledgeDocument": "ナレッジ文書を読み取り中",
+    "getBookKnowledge": "この本のナレッジを読み取り中",
+    "compressKnowledgeDocumentSummary": "ナレッジメモリを更新中",
+    "proposeKnowledgeDocumentCreate": "ナレッジ文書を下書き中",
+    "proposeKnowledgeDocumentUpdate": "文書更新を下書き中",
+    "proposeKnowledgeDocumentTagsUpdate": "タグ更新を下書き中",
+    "proposeKnowledgeLinkCreate": "ナレッジリンクを下書き中"
+  },
+  "knowledgeToolResult": {
+    "searchTitle": "ナレッジ検索結果",
+    "documentTitle": "ナレッジ文書を読み取りました",
+    "bookKnowledgeTitle": "この本のナレッジを読み取りました",
+    "summaryTitle": "ナレッジメモリを更新しました",
+    "failureTitle": "{{tool}} の呼び出しに失敗しました",
+    "tool": "ナレッジツール",
+    "failureUnknown": "ツールの実行に失敗しました",
+    "failureSafeHint": "失敗したツール呼び出しは、ナレッジベースへの書き込みや文書の変更を行いません。",
+    "writeSafety": {
+      "read_only": {
+        "label": "読み取り専用",
+        "description": "このツールはナレッジ文脈を読むだけで、保存や変更は行いません。"
+      },
+      "memory_persisted": {
+        "label": "メモリ更新済み",
+        "description": "このツールは圧縮検索メモリを更新しました。ユーザー本文は書き換えません。"
+      },
+      "memory_skipped": {
+        "label": "書き込みなし",
+        "description": "このツールは要約を保存せず、ユーザー本文も変更しませんでした。"
+      },
+      "no_write_failed": {
+        "label": "書き込みなし",
+        "description": "失敗したこのツール呼び出しでは、ナレッジ文書やリンクは保存・変更されていません。"
+      }
+    },
+    "count": "{{showing}} / {{total}} 件の文書を表示",
+    "status": "状態：{{status}}",
+    "persisted": "保存済み",
+    "notPersisted": "未保存",
+    "sourceChars": "{{count}} 文字",
+    "documentId": "文書：{{id}}",
+    "reason": "理由：{{reason}}",
+    "empty": "一致するナレッジ文書はありません",
+    "matchedIn": "一致箇所：{{fields}}",
+    "matchFields": {
+      "title": "タイトル",
+      "path": "パス",
+      "tags": "タグ",
+      "excerpt": "抜粋",
+      "summary": "要約",
+      "content": "本文"
+    },
+    "more": "ほか {{count}} 件",
+    "relations": "関連パス",
+    "relationOutgoing": "リンク先",
+    "relationBacklink": "リンク元",
+    "moreRelations": "ほか {{count}} 件の関連",
+    "open": "開く",
+    "openDocument": "文書を開く",
+    "openUnavailable": "この文書を見るには、先にこの本のナレッジタブを開いてください。",
+    "types": {
+      "book_home": "本のホーム",
+      "folder": "フォルダー",
+      "standalone_note": "独立ノート",
+      "highlight_note": "ハイライトノート",
+      "review": "レビュー",
+      "summary": "要約",
+      "imported_markdown": "インポート文書"
+    }
+  },
+  "knowledgeProposal": {
+    "title": "ナレッジ書き込み提案",
+    "create": "ナレッジ文書を作成",
+    "update": "ナレッジ文書を更新",
+    "link": "ナレッジリンクを作成",
+    "pendingBadge": "確認待ち",
+    "savedBadge": "適用済み",
+    "failedBadge": "失敗",
+    "safeHint": "AI は下書きだけを作成しました。確認後にナレッジベースへ保存されます。",
+    "writeSafety": {
+      "proposal_pending_confirmation": {
+        "label": "確認が必要",
+        "description": "AI はこの提案を準備しただけです。適用するまでナレッジベースには書き込まれません。"
+      }
+    },
+    "changes": "変更",
+    "location": "場所",
+    "contentPreview": "プレビュー",
+    "apply": "ナレッジベースに適用",
+    "applying": "適用中...",
+    "applied": "適用済み",
+    "applySuccess": "ナレッジベースに保存しました",
+    "applyFailed": "ナレッジ提案の適用に失敗しました",
+    "retry": "再試行",
+    "applyFailedSafeHint": "何も書き込まれていません。更新するか文書を確認してから、もう一度お試しください。",
+    "errors": {
+      "parent": {
+        "book_home_locked": "本のホーム文書はフォルダーへ移動できません。",
+        "missing_parent": "移動先フォルダーが存在しません。ナレッジ表示を更新してから再試行してください。",
+        "parent_not_folder": "選択した移動先はフォルダーではありません。フォルダーを選んで再試行してください。",
+        "book_mismatch": "移動先は別の本のナレッジ保管庫にあります。同じ本のフォルダーを選んでください。",
+        "missing_document": "この文書は存在しません。ナレッジ表示を更新してから再試行してください。",
+        "descendant_parent": "フォルダーを自分の子フォルダー内へ移動することはできません。",
+        "invalid_parent": "移動先フォルダーが無効です。ナレッジ表示を更新してから再試行してください。"
+      },
+      "title": {
+        "duplicate_sibling_title": "そのフォルダーには同じタイトルの文書が既にあります。先にどちらかを名前変更してください。"
+      },
+      "create": {
+        "create_id_conflict": "この下書きは既存の別文書を指しています。提案を更新してから適用してください。"
+      },
+      "update": {
+        "stale_document": "提案作成後にこの文書が変更されました。最新内容を更新または確認してから適用してください。"
+      },
+      "link": {
+        "missing_source_document": "リンク元文書が存在しません。ナレッジ表示を更新してから再試行してください。",
+        "missing_target_document": "リンク先文書が存在しません。ナレッジ表示を更新してから再試行してください。"
+      }
+    },
+    "fields": {
+      "parentFolder": "フォルダー",
+      "title": "タイトル",
+      "content": "内容",
+      "tags": "タグ"
+    },
+    "types": {
+      "knowledgeDocument": "ナレッジ文書",
+      "bookHome": "本のホーム",
+      "folder": "フォルダー",
+      "standaloneNote": "独立ノート",
+      "highlightNote": "ハイライトノート",
+      "review": "レビュー",
+      "summary": "要約",
+      "importedMarkdown": "インポート文書",
+      "knowledgeLink": "ナレッジリンク"
+    }
   },
   "mindmap": {
     "title": "マインドマップ",

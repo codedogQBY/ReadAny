@@ -362,9 +362,34 @@ export async function deleteBook(id: string, options: DeleteBookOptions = {}): P
     return;
   }
 
-  const [highlightRows, noteRows, bookmarkRows] = await Promise.all([
+  const [
+    highlightRows,
+    noteRows,
+    knowledgeDocumentRows,
+    knowledgeLinkRows,
+    knowledgeAttachmentRows,
+    bookmarkRows,
+  ] = await Promise.all([
     database.select<{ id: string }>("SELECT id FROM highlights WHERE book_id = ?", [id]),
     database.select<{ id: string }>("SELECT id FROM notes WHERE book_id = ?", [id]),
+    database.select<{ id: string }>("SELECT id FROM knowledge_documents WHERE book_id = ?", [id]),
+    database.select<{ id: string }>(
+      `SELECT DISTINCT kl.id
+       FROM knowledge_links kl
+       WHERE kl.from_document_id IN (SELECT id FROM knowledge_documents WHERE book_id = ?)
+          OR (
+            kl.to_kind = 'document'
+            AND kl.to_id IN (SELECT id FROM knowledge_documents WHERE book_id = ?)
+          )`,
+      [id, id],
+    ),
+    database.select<{ id: string }>(
+      `SELECT ka.id
+       FROM knowledge_attachments ka
+       INNER JOIN knowledge_documents kd ON ka.document_id = kd.id
+       WHERE kd.book_id = ?`,
+      [id],
+    ),
     database.select<{ id: string }>("SELECT id FROM bookmarks WHERE book_id = ?", [id]),
   ]);
 
@@ -374,12 +399,36 @@ export async function deleteBook(id: string, options: DeleteBookOptions = {}): P
   for (const row of noteRows) {
     await insertTombstone(database, row.id, "notes");
   }
+  for (const row of knowledgeLinkRows) {
+    await insertTombstone(database, row.id, "knowledge_links");
+  }
+  for (const row of knowledgeAttachmentRows) {
+    await insertTombstone(database, row.id, "knowledge_attachments");
+  }
+  for (const row of knowledgeDocumentRows) {
+    await insertTombstone(database, row.id, "knowledge_documents");
+  }
   for (const row of bookmarkRows) {
     await insertTombstone(database, row.id, "bookmarks");
   }
 
   await database.execute("DELETE FROM highlights WHERE book_id = ?", [id]);
   await database.execute("DELETE FROM notes WHERE book_id = ?", [id]);
+  await database.execute(
+    `DELETE FROM knowledge_links
+     WHERE from_document_id IN (SELECT id FROM knowledge_documents WHERE book_id = ?)
+        OR (
+          to_kind = 'document'
+          AND to_id IN (SELECT id FROM knowledge_documents WHERE book_id = ?)
+        )`,
+    [id, id],
+  );
+  await database.execute(
+    `DELETE FROM knowledge_attachments
+     WHERE document_id IN (SELECT id FROM knowledge_documents WHERE book_id = ?)`,
+    [id],
+  );
+  await database.execute("DELETE FROM knowledge_documents WHERE book_id = ?", [id]);
   await database.execute("DELETE FROM bookmarks WHERE book_id = ?", [id]);
   await database.execute("DELETE FROM reading_sessions WHERE book_id = ?", [id]);
   await deleteThreadsByBookId(id);

@@ -1,6 +1,5 @@
 import i18n from "@readany/core/i18n";
-import { relaunch } from "@tauri-apps/plugin-process";
-import { check } from "@tauri-apps/plugin-updater";
+import { isTauriRuntimeAvailable } from "./platform/tauri-platform-service";
 
 export interface UpdateInfo {
   version: string;
@@ -55,11 +54,16 @@ function notifyListeners() {
 }
 
 export async function checkForUpdate(): Promise<UpdateInfo | null> {
+  if (!isTauriRuntimeAvailable()) {
+    return null;
+  }
+
   updateStatus = "checking";
   errorMessage = "";
   notifyListeners();
 
   try {
+    const { check } = await import("@tauri-apps/plugin-updater");
     const update = await check();
 
     if (update) {
@@ -96,6 +100,11 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
 }
 
 export async function downloadAndInstall(): Promise<boolean> {
+  if (!isTauriRuntimeAvailable()) {
+    return false;
+  }
+
+  const { check } = await import("@tauri-apps/plugin-updater");
   const update = await check();
 
   if (!update) {
@@ -155,7 +164,12 @@ export async function installUpdate(): Promise<void> {
 }
 
 export async function relaunchApp(): Promise<void> {
+  if (!isTauriRuntimeAvailable()) {
+    return;
+  }
+
   try {
+    const { relaunch } = await import("@tauri-apps/plugin-process");
     await relaunch();
   } catch (error) {
     console.error("[Updater] Relaunch failed:", error);

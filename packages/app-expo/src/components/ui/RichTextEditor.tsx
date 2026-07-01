@@ -16,7 +16,15 @@ import {
   XIcon,
 } from "@/components/ui/Icon";
 import { radius, useColors } from "@/styles/theme";
-import { useCallback, useRef, useState } from "react";
+import {
+  type KnowledgeEditorFeature,
+  type KnowledgeEditorSurface,
+  type KnowledgeEditorTier,
+  getKnowledgeEditorProfile,
+  getKnowledgeEditorSurfaceProfile,
+  hasKnowledgeEditorFeature,
+} from "@readany/core/knowledge";
+import { Fragment, useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Modal,
@@ -33,6 +41,8 @@ interface RichTextEditorProps {
   onChange?: (markdown: string) => void;
   placeholder?: string;
   autoFocus?: boolean;
+  tier?: KnowledgeEditorTier;
+  surface?: KnowledgeEditorSurface;
 }
 
 export function RichTextEditor({
@@ -40,6 +50,8 @@ export function RichTextEditor({
   onChange,
   placeholder,
   autoFocus = false,
+  tier = "inline_note",
+  surface,
 }: RichTextEditorProps) {
   const colors = useColors();
   const { t } = useTranslation();
@@ -50,6 +62,14 @@ export function RichTextEditor({
   const [linkText, setLinkText] = useState("");
   const [previewMode, setPreviewMode] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const editorProfile = useMemo(
+    () => (surface ? getKnowledgeEditorSurfaceProfile(surface) : getKnowledgeEditorProfile(tier)),
+    [surface, tier],
+  );
+  const canUse = useCallback(
+    (feature: KnowledgeEditorFeature) => hasKnowledgeEditorFeature(editorProfile, feature),
+    [editorProfile],
+  );
   const selectionRef = useRef<{ start: number; end: number }>({
     start: initialContent.length,
     end: initialContent.length,
@@ -143,6 +163,91 @@ export function RichTextEditor({
   }, [linkUrl, linkText, value, handleChange]);
 
   const styles = makeStyles(colors);
+  const toolbarGroupCandidates: ({ key: string; node: React.ReactNode } | null)[] = [
+    canUse("heading1") || canUse("heading2") || canUse("heading3")
+      ? {
+          key: "headings",
+          node: (
+            <View style={styles.toolbarGroup}>
+              {canUse("heading1") ? (
+                <ToolbarButton onPress={handleH1} styles={styles}>
+                  <Heading1Icon size={16} color={colors.mutedForeground} />
+                </ToolbarButton>
+              ) : null}
+              {canUse("heading2") ? (
+                <ToolbarButton onPress={handleH2} styles={styles}>
+                  <Heading2Icon size={16} color={colors.mutedForeground} />
+                </ToolbarButton>
+              ) : null}
+              {canUse("heading3") ? (
+                <ToolbarButton onPress={handleH3} styles={styles}>
+                  <Heading3Icon size={16} color={colors.mutedForeground} />
+                </ToolbarButton>
+              ) : null}
+            </View>
+          ),
+        }
+      : null,
+    {
+      key: "inline",
+      node: (
+        <View style={styles.toolbarGroup}>
+          {canUse("bold") ? (
+            <ToolbarButton onPress={handleBold} styles={styles}>
+              <BoldIcon size={16} color={colors.mutedForeground} />
+            </ToolbarButton>
+          ) : null}
+          {canUse("italic") ? (
+            <ToolbarButton onPress={handleItalic} styles={styles}>
+              <ItalicIcon size={16} color={colors.mutedForeground} />
+            </ToolbarButton>
+          ) : null}
+          {canUse("strike") ? (
+            <ToolbarButton onPress={handleStrikethrough} styles={styles}>
+              <StrikethroughIcon size={16} color={colors.mutedForeground} />
+            </ToolbarButton>
+          ) : null}
+          {canUse("inlineCode") ? (
+            <ToolbarButton onPress={handleCode} styles={styles}>
+              <CodeIcon size={16} color={colors.mutedForeground} />
+            </ToolbarButton>
+          ) : null}
+          {canUse("link") ? (
+            <ToolbarButton onPress={openLinkModal} styles={styles}>
+              <Link2Icon size={16} color={colors.mutedForeground} />
+            </ToolbarButton>
+          ) : null}
+        </View>
+      ),
+    },
+    canUse("bulletList") || canUse("orderedList") || canUse("blockquote")
+      ? {
+          key: "blocks",
+          node: (
+            <View style={styles.toolbarGroup}>
+              {canUse("bulletList") ? (
+                <ToolbarButton onPress={handleBulletList} styles={styles}>
+                  <ListIcon size={16} color={colors.mutedForeground} />
+                </ToolbarButton>
+              ) : null}
+              {canUse("orderedList") ? (
+                <ToolbarButton onPress={handleOrderedList} styles={styles}>
+                  <ListOrderedIcon size={16} color={colors.mutedForeground} />
+                </ToolbarButton>
+              ) : null}
+              {canUse("blockquote") ? (
+                <ToolbarButton onPress={handleQuote} styles={styles}>
+                  <QuoteIcon size={16} color={colors.mutedForeground} />
+                </ToolbarButton>
+              ) : null}
+            </View>
+          ),
+        }
+      : null,
+  ];
+  const toolbarGroups = toolbarGroupCandidates.filter(
+    (group): group is { key: string; node: React.ReactNode } => group !== null,
+  );
 
   return (
     <View style={styles.container}>
@@ -156,7 +261,6 @@ export function RichTextEditor({
           <ToolbarButton
             onPress={() => setPreviewMode(!previewMode)}
             isActive={previewMode}
-            colors={colors}
             styles={styles}
           >
             {previewMode ? (
@@ -167,57 +271,13 @@ export function RichTextEditor({
           </ToolbarButton>
         </View>
 
-        {!previewMode && (
-          <>
-            <View style={styles.toolbarDivider} />
-
-            <View style={styles.toolbarGroup}>
-              <ToolbarButton onPress={handleH1} colors={colors} styles={styles}>
-                <Heading1Icon size={16} color={colors.mutedForeground} />
-              </ToolbarButton>
-              <ToolbarButton onPress={handleH2} colors={colors} styles={styles}>
-                <Heading2Icon size={16} color={colors.mutedForeground} />
-              </ToolbarButton>
-              <ToolbarButton onPress={handleH3} colors={colors} styles={styles}>
-                <Heading3Icon size={16} color={colors.mutedForeground} />
-              </ToolbarButton>
-            </View>
-
-            <View style={styles.toolbarDivider} />
-
-            <View style={styles.toolbarGroup}>
-              <ToolbarButton onPress={handleBold} colors={colors} styles={styles}>
-                <BoldIcon size={16} color={colors.mutedForeground} />
-              </ToolbarButton>
-              <ToolbarButton onPress={handleItalic} colors={colors} styles={styles}>
-                <ItalicIcon size={16} color={colors.mutedForeground} />
-              </ToolbarButton>
-              <ToolbarButton onPress={handleStrikethrough} colors={colors} styles={styles}>
-                <StrikethroughIcon size={16} color={colors.mutedForeground} />
-              </ToolbarButton>
-              <ToolbarButton onPress={handleCode} colors={colors} styles={styles}>
-                <CodeIcon size={16} color={colors.mutedForeground} />
-              </ToolbarButton>
-              <ToolbarButton onPress={openLinkModal} colors={colors} styles={styles}>
-                <Link2Icon size={16} color={colors.mutedForeground} />
-              </ToolbarButton>
-            </View>
-
-            <View style={styles.toolbarDivider} />
-
-            <View style={styles.toolbarGroup}>
-              <ToolbarButton onPress={handleBulletList} colors={colors} styles={styles}>
-                <ListIcon size={16} color={colors.mutedForeground} />
-              </ToolbarButton>
-              <ToolbarButton onPress={handleOrderedList} colors={colors} styles={styles}>
-                <ListOrderedIcon size={16} color={colors.mutedForeground} />
-              </ToolbarButton>
-              <ToolbarButton onPress={handleQuote} colors={colors} styles={styles}>
-                <QuoteIcon size={16} color={colors.mutedForeground} />
-              </ToolbarButton>
-            </View>
-          </>
-        )}
+        {!previewMode &&
+          toolbarGroups.map((group) => (
+            <Fragment key={group.key}>
+              <View style={styles.toolbarDivider} />
+              {group.node}
+            </Fragment>
+          ))}
       </ScrollView>
 
       {previewMode ? (
@@ -232,7 +292,7 @@ export function RichTextEditor({
             <MarkdownRenderer content={value} />
           ) : (
             <Text style={[styles.previewPlaceholder, { color: colors.mutedForeground }]}>
-              {placeholder}
+              {defaultPlaceholder}
             </Text>
           )}
         </ScrollView>
@@ -248,7 +308,7 @@ export function RichTextEditor({
             value={value}
             onChangeText={handleChange}
             onSelectionChange={handleSelectionChange}
-            placeholder={placeholder}
+            placeholder={defaultPlaceholder}
             placeholderTextColor={colors.mutedForeground}
             autoFocus={autoFocus}
             multiline
@@ -313,18 +373,10 @@ interface ToolbarButtonProps {
   isActive?: boolean;
   disabled?: boolean;
   children: React.ReactNode;
-  colors: ReturnType<typeof useColors>;
   styles: ReturnType<typeof makeStyles>;
 }
 
-function ToolbarButton({
-  onPress,
-  isActive,
-  disabled,
-  children,
-  colors,
-  styles,
-}: ToolbarButtonProps) {
+function ToolbarButton({ onPress, isActive, disabled, children, styles }: ToolbarButtonProps) {
   return (
     <TouchableOpacity
       style={[
@@ -372,7 +424,7 @@ const makeStyles = (colors: ReturnType<typeof useColors>) =>
       justifyContent: "center",
     },
     toolbarButtonActive: {
-      backgroundColor: colors.primary + "20",
+      backgroundColor: `${colors.primary}20`,
     },
     toolbarButtonDisabled: {
       opacity: 0.3,

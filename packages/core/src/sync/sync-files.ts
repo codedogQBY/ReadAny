@@ -1,5 +1,5 @@
 /**
- * Sync file operations — sync book files and covers between local and remote.
+ * Sync file operations — sync book files, covers, and knowledge attachments between local and remote.
  *
  * Remote layout (new): /readany/data/books/{sanitized-title}-{book.id}/{sanitized-title}.{ext}
  * Local layout (unchanged): {appData}/books/{book.id}.{ext} + {appData}/covers/{book.id}.{ext}
@@ -7,9 +7,13 @@
  * Legacy remote layout (still read for migration + orphan cleanup):
  *   /readany/data/file/{book.id}.{ext}
  *   /readany/data/cover/{book.id}.{ext}
+ *
+ * Knowledge attachments:
+ *   /readany/data/knowledge/attachments/{attachment-id}-{filename}
  */
 
 import { getDB } from "../db/database";
+import { sanitizeKnowledgeAttachmentFileName } from "../knowledge/attachments";
 import { getSyncAdapter } from "./sync-adapter";
 import type { ISyncBackend, RemoteFile } from "./sync-backend";
 import {
@@ -27,6 +31,7 @@ import {
   REMOTE_COVERS,
   REMOTE_FILES,
   REMOTE_FILE_MANIFEST,
+  REMOTE_KNOWLEDGE_ATTACHMENTS,
   type SyncProgress,
 } from "./sync-types";
 
@@ -63,9 +68,22 @@ function getDirName(path: string): string {
   return separatorIndex > 0 ? path.substring(0, separatorIndex) : "";
 }
 
+function getBaseName(path: string): string {
+  return path.replace(/\\/g, "/").split("/").filter(Boolean).pop() ?? "";
+}
+
 function getExt(name: string): string {
   const idx = name.lastIndexOf(".");
   return idx >= 0 ? name.slice(idx + 1) : "";
+}
+
+function stripFileProtocol(path: string): string {
+  if (!path.startsWith("file://")) return path;
+  try {
+    return decodeURIComponent(path.replace(/^file:\/\//, ""));
+  } catch {
+    return path.replace(/^file:\/\//, "");
+  }
 }
 
 function isDirectFileTransferUnsupported(error: unknown): boolean {
@@ -171,6 +189,19 @@ type BookRow = {
   title: string;
 };
 
+type KnowledgeAttachmentRow = {
+  id: string;
+  document_id: string | null;
+  kind: string;
+  file_name: string | null;
+  mime_type: string | null;
+  local_path: string | null;
+  remote_path: string | null;
+  size: number | null;
+  hash: string | null;
+  updated_at: number;
+};
+
 type BookInfo = {
   book: BookRow;
   fileExt: string;
@@ -187,6 +218,15 @@ type BookInfo = {
   hasCover: boolean;
 };
 
+type KnowledgeAttachmentInfo = {
+  row: KnowledgeAttachmentRow;
+  id: string;
+  fileName: string;
+  localPath: string;
+  remotePath: string;
+  manifestFileName: string;
+};
+
 type RemoteListings = {
   source: "manifest" | "scan";
   manifest: RemoteFileManifest | null;
@@ -199,6 +239,8 @@ type RemoteListings = {
   legacyCoverNames: Set<string>; // names inside REMOTE_COVERS
   legacyFileSizeByName: Map<string, number>;
   legacyCoverSizeByName: Map<string, number>;
+  attachmentPathById: Map<string, string>;
+  attachmentSizeById: Map<string, number>;
   /** Folders under REMOTE_BOOKS_ROOT shaped like {title}-{uuid} whose uuid is not in the DB. */
   orphanBookDirs: { folderName: string; bookId: string }[];
   /** Folders under REMOTE_BOOKS_ROOT with no valid uuid suffix and not matched to any book. */
@@ -221,10 +263,18 @@ type RemoteFileManifestEntry = {
   updatedAt?: number;
 };
 
+type RemoteKnowledgeAttachmentManifestEntry = {
+  fileName: string;
+  remotePath: string;
+  size?: number;
+  updatedAt?: number;
+};
+
 type RemoteFileManifest = {
   version: 1;
   generatedAt: number;
   books: Record<string, RemoteFileManifestEntry>;
+  knowledgeAttachments?: Record<string, RemoteKnowledgeAttachmentManifestEntry>;
 };
 
 type FileTask = {
@@ -235,6 +285,53 @@ type FileTask = {
 
 function isPositiveFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function knowledgeAttachmentRemotePath(row: KnowledgeAttachmentRow): string {
+  const existing = row.remote_path?.trim();
+  if (existing) return existing;
+  const fileName = sanitizeKnowledgeAttachmentFileName(
+    `${row.id}-${row.file_name?.trim() || "attachment"}`,
+    row.id,
+  );
+  return `${REMOTE_KNOWLEDGE_ATTACHMENTS}/${fileName}`;
+}
+
+function knowledgeAttachmentLocalPath(
+  row: KnowledgeAttachmentRow,
+  appDataDir: string,
+  remotePath: string,
+): string {
+  const existing = row.local_path?.trim();
+  if (existing) {
+    const normalized = stripFileProtocol(existing);
+    if (isAbsoluteOrProtocolPath(normalized)) {
+      return normalized;
+    }
+    return getSyncAdapter().joinPath(appDataDir, normalized);
+  }
+
+  const fileName = getBaseName(remotePath) || sanitizeKnowledgeAttachmentFileName(row.id, row.id);
+  return getSyncAdapter().joinPath(appDataDir, "knowledge", "attachments", fileName);
+}
+
+function buildKnowledgeAttachmentInfos(
+  rows: KnowledgeAttachmentRow[],
+  appDataDir: string,
+): KnowledgeAttachmentInfo[] {
+  return rows
+    .filter((row) => row.id && row.file_name?.trim())
+    .map((row) => {
+      const remotePath = knowledgeAttachmentRemotePath(row);
+      return {
+        row,
+        id: row.id,
+        fileName: row.file_name?.trim() || row.id,
+        localPath: knowledgeAttachmentLocalPath(row, appDataDir, remotePath),
+        remotePath,
+        manifestFileName: getBaseName(remotePath) || row.file_name?.trim() || row.id,
+      };
+    });
 }
 
 async function runFileTasks(
@@ -358,6 +455,12 @@ export async function syncFiles(
     "SELECT id, file_path, file_hash, cover_url, title FROM books WHERE deleted_at IS NULL",
     [],
   );
+  const knowledgeAttachmentRows = await db.select<KnowledgeAttachmentRow>(
+    `SELECT id, document_id, kind, file_name, mime_type, local_path, remote_path,
+            size, hash, updated_at
+       FROM knowledge_attachments`,
+    [],
+  );
 
   const appDataDir = await adapter.getAppDataDir();
   const currentBookIds = new Set(books.map((b) => b.id));
@@ -392,12 +495,16 @@ export async function syncFiles(
       hasCover: !!book.cover_url,
     };
   });
+  const attachmentInfos = buildKnowledgeAttachmentInfos(knowledgeAttachmentRows, appDataDir);
 
   // --- Check local file existence in parallel ---
-  const allLocalPaths = bookInfos.flatMap((i) => [
-    ...(i.hasFile ? [i.localFilePath] : []),
-    ...(i.hasCover ? [i.localCoverPath] : []),
-  ]);
+  const allLocalPaths = [
+    ...bookInfos.flatMap((i) => [
+      ...(i.hasFile ? [i.localFilePath] : []),
+      ...(i.hasCover ? [i.localCoverPath] : []),
+    ]),
+    ...attachmentInfos.map((attachment) => attachment.localPath),
+  ];
   const localExistsResults = await Promise.all(allLocalPaths.map((p) => adapter.fileExists(p)));
   const localExistsMap = new Map<string, boolean>();
   allLocalPaths.forEach((p, i) => localExistsMap.set(p, localExistsResults[i]));
@@ -410,7 +517,7 @@ export async function syncFiles(
   allLocalPaths.forEach((p, i) => localSizeMap.set(p, localSizeResults[i]));
 
   // --- List remote directories (tolerant of failures) ---
-  const listings = await loadRemoteListings(backend, bookInfos, localExistsMap, {
+  const listings = await loadRemoteListings(backend, bookInfos, attachmentInfos, localExistsMap, {
     forceDownloadAll,
     downloadRemoteBooks,
   });
@@ -426,6 +533,28 @@ export async function syncFiles(
   const remoteCoverAtNew = new Map<string, boolean>();
   const remoteFileSizeAtNew = new Map<string, number>();
   const remoteCoverSizeAtNew = new Map<string, number>();
+  const remoteAttachmentAtPath = new Map<string, boolean>();
+  const remoteAttachmentSizeAtPath = new Map<string, number>();
+  for (const attachment of attachmentInfos) {
+    const listedRemotePath = listings.attachmentPathById.get(attachment.id);
+    if (listedRemotePath) {
+      if (listedRemotePath !== attachment.remotePath) {
+        const nextLocalPath = attachment.row.local_path?.trim()
+          ? attachment.localPath
+          : knowledgeAttachmentLocalPath(attachment.row, appDataDir, listedRemotePath);
+        await patchKnowledgeAttachmentLocalCache(db, attachment, { remotePath: listedRemotePath });
+        attachment.row.remote_path = listedRemotePath;
+        attachment.localPath = nextLocalPath;
+        attachment.remotePath = listedRemotePath;
+        attachment.manifestFileName = getBaseName(listedRemotePath) || attachment.manifestFileName;
+      }
+      remoteAttachmentAtPath.set(attachment.id, true);
+      const remoteSize = listings.attachmentSizeById.get(attachment.id);
+      if (isPositiveFiniteNumber(remoteSize)) {
+        remoteAttachmentSizeAtPath.set(attachment.id, remoteSize);
+      }
+    }
+  }
   const migrationTasks = bookInfos.map((info) => async () => {
     const result = await migrateBookRemoteState(backend, info, listings);
     migrationResults.set(info.book.id, result);
@@ -537,8 +666,51 @@ export async function syncFiles(
     }
   }
 
+  for (const attachment of attachmentInfos) {
+    const localExists = localExistsMap.get(attachment.localPath) ?? false;
+    const localSize = localSizeMap.get(attachment.localPath) ?? null;
+    const remoteExists = remoteAttachmentAtPath.get(attachment.id) ?? false;
+    const remoteSize = listings.attachmentSizeById.get(attachment.id);
+
+    if (!disableUploads && localExists && (forceUploadAll || !remoteExists)) {
+      const task = buildUploadKnowledgeAttachmentTask(backend, attachment);
+      uploadTasks.push({
+        label: task.label,
+        sizeBytes: localSize,
+        run: async (onProgress) => {
+          const ok = await task.run(onProgress);
+          if (ok) {
+            remoteAttachmentAtPath.set(attachment.id, true);
+            if (isPositiveFiniteNumber(localSize)) {
+              remoteAttachmentSizeAtPath.set(attachment.id, localSize);
+            }
+            await patchKnowledgeAttachmentLocalCache(db, attachment, {
+              localPath: attachment.localPath,
+              remotePath: attachment.remotePath,
+              size: localSize,
+            });
+          }
+          return ok;
+        },
+      });
+    }
+
+    if (remoteExists && (forceDownloadAll || !localExists)) {
+      downloadTasks.push({
+        ...buildDownloadKnowledgeAttachmentTask(backend, attachment, async (downloadedSize) => {
+          await patchKnowledgeAttachmentLocalCache(db, attachment, {
+            localPath: attachment.localPath,
+            remotePath: attachment.remotePath,
+            size: downloadedSize ?? remoteSize,
+          });
+        }),
+        sizeBytes: remoteSize,
+      });
+    }
+  }
+
   console.log(
-    `[Sync] Task summary: ${bookInfos.length} books, ` +
+    `[Sync] Task summary: ${bookInfos.length} books, ${attachmentInfos.length} knowledge attachment(s), ` +
       `upload: ${uploadTasks.length}, download: ${downloadTasks.length}`,
   );
 
@@ -586,6 +758,9 @@ export async function syncFiles(
     remoteCoverAtNew,
     remoteFileSizeAtNew,
     remoteCoverSizeAtNew,
+    attachmentInfos,
+    remoteAttachmentAtPath,
+    remoteAttachmentSizeAtPath,
     listings.manifest,
   );
 
@@ -598,31 +773,38 @@ export async function syncFiles(
 async function loadRemoteListings(
   backend: ISyncBackend,
   bookInfos: BookInfo[],
+  attachmentInfos: KnowledgeAttachmentInfo[],
   localExistsMap: Map<string, boolean>,
   options: Pick<SyncFilesOptions, "forceDownloadAll" | "downloadRemoteBooks">,
 ): Promise<RemoteListings> {
   const currentBookIds = new Set(bookInfos.map((i) => i.book.id));
+  const currentAttachmentIds = new Set(attachmentInfos.map((i) => i.id));
   const manifest = await loadRemoteFileManifest(backend);
-  if (manifest && canUseRemoteFileManifest(manifest, bookInfos, localExistsMap, options)) {
+  if (
+    manifest &&
+    canUseRemoteFileManifest(manifest, bookInfos, attachmentInfos, localExistsMap, options)
+  ) {
     console.log(
-      `[Sync] Using remote file manifest with ${Object.keys(manifest.books).length} entries`,
+      `[Sync] Using remote file manifest with ${Object.keys(manifest.books).length} book entries and ${Object.keys(manifest.knowledgeAttachments ?? {}).length} knowledge attachment entries`,
     );
-    return buildListingsFromManifest(manifest, currentBookIds);
+    return buildListingsFromManifest(manifest, currentBookIds, currentAttachmentIds);
   }
 
   const settled = await Promise.allSettled([
     backend.listDir(REMOTE_BOOKS_ROOT),
     backend.listDir(REMOTE_FILES),
     backend.listDir(REMOTE_COVERS),
+    backend.listDir(REMOTE_KNOWLEDGE_ATTACHMENTS),
   ]);
 
   const bookDirs: RemoteFile[] = settled[0].status === "fulfilled" ? settled[0].value : [];
   const legacyFiles: RemoteFile[] = settled[1].status === "fulfilled" ? settled[1].value : [];
   const legacyCovers: RemoteFile[] = settled[2].status === "fulfilled" ? settled[2].value : [];
+  const remoteAttachments: RemoteFile[] = settled[3].status === "fulfilled" ? settled[3].value : [];
 
   for (let i = 0; i < settled.length; i++) {
     if (settled[i].status === "rejected") {
-      const dirs = [REMOTE_BOOKS_ROOT, REMOTE_FILES, REMOTE_COVERS];
+      const dirs = [REMOTE_BOOKS_ROOT, REMOTE_FILES, REMOTE_COVERS, REMOTE_KNOWLEDGE_ATTACHMENTS];
       console.warn(
         `[Sync] Failed to list remote dir ${dirs[i]}, assuming empty:`,
         (settled[i] as PromiseRejectedResult).reason,
@@ -646,6 +828,8 @@ async function loadRemoteListings(
   }
   const fileSizeByBookId = new Map<string, number>();
   const coverSizeByBookId = new Map<string, number>();
+  const attachmentPathById = new Map<string, string>();
+  const attachmentSizeById = new Map<string, number>();
 
   const orphanBookDirs: { folderName: string; bookId: string }[] = [];
   const unknownBookDirs: { folderName: string }[] = [];
@@ -656,6 +840,19 @@ async function loadRemoteListings(
       orphanBookDirs.push({ folderName: name, bookId: parsedId });
     } else {
       unknownBookDirs.push({ folderName: name });
+    }
+  }
+
+  const remoteAttachmentByName = new Map(
+    remoteAttachments.filter((file) => !file.isDirectory).map((file) => [file.name, file]),
+  );
+  for (const attachment of attachmentInfos) {
+    const expectedName = getBaseName(attachment.remotePath);
+    const remoteFile = expectedName ? remoteAttachmentByName.get(expectedName) : undefined;
+    if (!remoteFile) continue;
+    attachmentPathById.set(attachment.id, remoteFile.path || attachment.remotePath);
+    if (isPositiveFiniteNumber(remoteFile.size)) {
+      attachmentSizeById.set(attachment.id, remoteFile.size);
     }
   }
 
@@ -679,6 +876,8 @@ async function loadRemoteListings(
         .filter((f) => !f.isDirectory && isPositiveFiniteNumber(f.size))
         .map((f) => [f.name, f.size]),
     ),
+    attachmentPathById,
+    attachmentSizeById,
     orphanBookDirs,
     unknownBookDirs,
   };
@@ -705,6 +904,7 @@ async function loadRemoteFileManifest(backend: ISyncBackend): Promise<RemoteFile
 function canUseRemoteFileManifest(
   manifest: RemoteFileManifest,
   bookInfos: BookInfo[],
+  attachmentInfos: KnowledgeAttachmentInfo[],
   localExistsMap: Map<string, boolean>,
   options: Pick<SyncFilesOptions, "forceDownloadAll" | "downloadRemoteBooks">,
 ): boolean {
@@ -721,18 +921,30 @@ function canUseRemoteFileManifest(
     if (entry && needsRemoteBook && !entry.filePath) return false;
     if (entry && needsRemoteCover && !entry.coverPath) return false;
   }
+
+  for (const attachment of attachmentInfos) {
+    const localExists = localExistsMap.get(attachment.localPath) ?? false;
+    const needsRemoteAttachment = options.forceDownloadAll || !localExists;
+    if (!needsRemoteAttachment) continue;
+
+    const entry = manifest.knowledgeAttachments?.[attachment.id];
+    if (!entry?.remotePath) return false;
+  }
   return true;
 }
 
 function buildListingsFromManifest(
   manifest: RemoteFileManifest,
   currentBookIds: Set<string>,
+  currentAttachmentIds: Set<string>,
 ): RemoteListings {
   const bookDirByBookId = new Map<string, string>();
   const filePathByBookId = new Map<string, string>();
   const coverPathByBookId = new Map<string, string>();
   const fileSizeByBookId = new Map<string, number>();
   const coverSizeByBookId = new Map<string, number>();
+  const attachmentPathById = new Map<string, string>();
+  const attachmentSizeById = new Map<string, number>();
 
   for (const [bookId, entry] of Object.entries(manifest.books)) {
     if (!currentBookIds.has(bookId)) continue;
@@ -741,6 +953,12 @@ function buildListingsFromManifest(
     if (entry.coverPath) coverPathByBookId.set(bookId, entry.coverPath);
     if (isPositiveFiniteNumber(entry.fileSize)) fileSizeByBookId.set(bookId, entry.fileSize);
     if (isPositiveFiniteNumber(entry.coverSize)) coverSizeByBookId.set(bookId, entry.coverSize);
+  }
+
+  for (const [attachmentId, entry] of Object.entries(manifest.knowledgeAttachments ?? {})) {
+    if (!currentAttachmentIds.has(attachmentId)) continue;
+    if (entry.remotePath) attachmentPathById.set(attachmentId, entry.remotePath);
+    if (isPositiveFiniteNumber(entry.size)) attachmentSizeById.set(attachmentId, entry.size);
   }
 
   return {
@@ -755,6 +973,8 @@ function buildListingsFromManifest(
     legacyCoverNames: new Set(),
     legacyFileSizeByName: new Map(),
     legacyCoverSizeByName: new Map(),
+    attachmentPathById,
+    attachmentSizeById,
     orphanBookDirs: [],
     unknownBookDirs: [],
   };
@@ -767,6 +987,9 @@ async function saveRemoteFileManifest(
   remoteCoverAtNew: Map<string, boolean>,
   remoteFileSizeAtNew: Map<string, number>,
   remoteCoverSizeAtNew: Map<string, number>,
+  attachmentInfos: KnowledgeAttachmentInfo[],
+  remoteAttachmentAtPath: Map<string, boolean>,
+  remoteAttachmentSizeAtPath: Map<string, number>,
   previousManifest: RemoteFileManifest | null,
 ): Promise<void> {
   const books: RemoteFileManifest["books"] = {};
@@ -788,11 +1011,35 @@ async function saveRemoteFileManifest(
     };
   }
 
-  if (manifestBooksEqual(previousManifest?.books ?? {}, books)) {
+  const knowledgeAttachments: NonNullable<RemoteFileManifest["knowledgeAttachments"]> = {};
+  for (const attachment of attachmentInfos) {
+    const hasRemoteAttachment = remoteAttachmentAtPath.get(attachment.id) ?? false;
+    if (!hasRemoteAttachment) continue;
+    knowledgeAttachments[attachment.id] = {
+      fileName: attachment.manifestFileName,
+      remotePath: attachment.remotePath,
+      ...(remoteAttachmentSizeAtPath.has(attachment.id)
+        ? { size: remoteAttachmentSizeAtPath.get(attachment.id) }
+        : {}),
+      updatedAt: Date.now(),
+    };
+  }
+
+  if (
+    manifestBooksEqual(previousManifest?.books ?? {}, books) &&
+    manifestKnowledgeAttachmentsEqual(
+      previousManifest?.knowledgeAttachments ?? {},
+      knowledgeAttachments,
+    )
+  ) {
     return;
   }
 
-  if (!previousManifest && Object.keys(books).length === 0) {
+  if (
+    !previousManifest &&
+    Object.keys(books).length === 0 &&
+    Object.keys(knowledgeAttachments).length === 0
+  ) {
     return;
   }
 
@@ -801,6 +1048,7 @@ async function saveRemoteFileManifest(
       version: 1,
       generatedAt: Date.now(),
       books,
+      ...(Object.keys(knowledgeAttachments).length > 0 ? { knowledgeAttachments } : {}),
     });
   } catch (e) {
     console.warn("[Sync] Failed to save remote file manifest:", e);
@@ -827,6 +1075,32 @@ function manifestBooksEqual(
       previousEntry.coverPath !== nextEntry.coverPath ||
       previousEntry.fileSize !== nextEntry.fileSize ||
       previousEntry.coverSize !== nextEntry.coverSize
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function manifestKnowledgeAttachmentsEqual(
+  previous: NonNullable<RemoteFileManifest["knowledgeAttachments"]>,
+  next: NonNullable<RemoteFileManifest["knowledgeAttachments"]>,
+): boolean {
+  const previousIds = Object.keys(previous).sort();
+  const nextIds = Object.keys(next).sort();
+  if (previousIds.length !== nextIds.length) return false;
+
+  for (let i = 0; i < previousIds.length; i++) {
+    const id = previousIds[i];
+    if (id !== nextIds[i]) return false;
+
+    const previousEntry = previous[id];
+    const nextEntry = next[id];
+    if (
+      previousEntry.fileName !== nextEntry.fileName ||
+      previousEntry.remotePath !== nextEntry.remotePath ||
+      previousEntry.size !== nextEntry.size
     ) {
       return false;
     }
@@ -1083,6 +1357,107 @@ function buildDownloadCoverTask(backend: ISyncBackend, info: BookInfo): FileTask
       }
     },
   };
+}
+
+function buildUploadKnowledgeAttachmentTask(
+  backend: ISyncBackend,
+  attachment: KnowledgeAttachmentInfo,
+): FileTask {
+  return {
+    label: `knowledge attachment: ${attachment.fileName}`,
+    run: async (onProgress) => {
+      const taskStart = Date.now();
+      try {
+        console.log(
+          `[Sync] 📤 Uploading knowledge attachment: ${attachment.fileName} → ${attachment.remotePath}`,
+        );
+        const bytes = await uploadFileToRemote(
+          backend,
+          attachment.remotePath,
+          attachment.localPath,
+          onProgress,
+        );
+        const size = bytes === null ? "" : ` (${(bytes / 1024).toFixed(2)} KB)`;
+        console.log(
+          `[Sync] ✓ Uploaded knowledge attachment "${attachment.fileName}"${size} in ${Date.now() - taskStart}ms`,
+        );
+        return true;
+      } catch (e) {
+        console.log(
+          `[Sync] ✗ Failed to upload knowledge attachment "${attachment.fileName}": ${e}`,
+        );
+        return false;
+      }
+    },
+  };
+}
+
+function buildDownloadKnowledgeAttachmentTask(
+  backend: ISyncBackend,
+  attachment: KnowledgeAttachmentInfo,
+  onDownloaded: (downloadedSize: number | null) => Promise<void>,
+): FileTask {
+  return {
+    label: `knowledge attachment: ${attachment.fileName}`,
+    run: async (onProgress) => {
+      const taskStart = Date.now();
+      try {
+        console.log(
+          `[Sync] 📥 Downloading knowledge attachment: ${attachment.fileName} ← ${attachment.remotePath}`,
+        );
+        const bytes = await downloadRemoteFileToPath(
+          backend,
+          attachment.remotePath,
+          attachment.localPath,
+          onProgress,
+        );
+        await onDownloaded(bytes);
+        const size = bytes === null ? "" : ` (${(bytes / 1024).toFixed(2)} KB)`;
+        console.log(
+          `[Sync] ✓ Downloaded knowledge attachment "${attachment.fileName}"${size} in ${Date.now() - taskStart}ms`,
+        );
+        return true;
+      } catch (e) {
+        console.log(
+          `[Sync] ✗ Failed to download knowledge attachment "${attachment.fileName}": ${e}`,
+        );
+        return false;
+      }
+    },
+  };
+}
+
+async function patchKnowledgeAttachmentLocalCache(
+  db: Awaited<ReturnType<typeof getDB>>,
+  attachment: KnowledgeAttachmentInfo,
+  patch: { localPath?: string; remotePath?: string; size?: number | null },
+): Promise<void> {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+
+  if (patch.localPath && patch.localPath !== attachment.row.local_path) {
+    sets.push("local_path = ?");
+    params.push(patch.localPath);
+  }
+
+  if (patch.remotePath && patch.remotePath !== attachment.row.remote_path) {
+    sets.push("remote_path = ?");
+    params.push(patch.remotePath);
+  }
+
+  if (isPositiveFiniteNumber(patch.size) && patch.size !== attachment.row.size) {
+    sets.push("size = ?");
+    params.push(patch.size);
+  }
+
+  if (sets.length === 0) return;
+
+  params.push(attachment.id);
+  try {
+    await db.execute(`UPDATE knowledge_attachments SET ${sets.join(", ")} WHERE id = ?`, params);
+  } catch (e) {
+    console.warn(`[Sync] Failed to patch knowledge attachment cache ${attachment.id}:`, e);
+  }
 }
 
 async function cleanupRemoteOrphans(

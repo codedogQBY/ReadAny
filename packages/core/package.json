@@ -32,7 +32,8 @@
     "./stats/*": "./src/stats/*.ts",
     "./translation": "./src/translation/translator.ts",
     "./translation/*": "./src/translation/*.ts",
-    "./export": "./src/export/annotation-exporter.ts",
+    "./export": "./src/export/index.ts",
+    "./export/*": "./src/export/*.ts",
     "./sync": "./src/sync/index.ts",
     "./sync/*": "./src/sync/*.ts",
     "./update": "./src/update/index.ts",
@@ -47,6 +48,8 @@
     "./hooks/*": "./src/hooks/*.ts",
     "./hooks/reader": "./src/hooks/reader/index.ts",
     "./hooks/reader/*": "./src/hooks/reader/*.ts",
+    "./knowledge": "./src/knowledge/index.ts",
+    "./knowledge/*": "./src/knowledge/*.ts",
     "./events/*": "./src/events/*.ts",
     "./feedback": "./src/feedback/index.ts",
     "./feedback/*": "./src/feedback/*.ts"

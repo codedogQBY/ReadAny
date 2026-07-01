@@ -7,10 +7,7 @@
     "entryPoint": "./index.js",
     "doctor": {
       "reactNativeDirectoryCheck": {
-        "exclude": [
-          "react-native-tcp-socket",
-          "react-native-track-player"
-        ],
+        "exclude": ["react-native-tcp-socket", "react-native-track-player"],
         "listUnknownPackages": false
       }
     }
@@ -29,7 +26,7 @@
     "ios:simulator": "APP_VARIANT=development pnpm run build:reader && APP_VARIANT=development node scripts/configure-native-variant.js && APP_VARIANT=development expo run:ios",
     "preprebuild": "pnpm run build:reader",
     "prebuild": "expo prebuild",
-    "build:reader": "node scripts/build-reader.js",
+    "build:reader": "node scripts/build-reader.js && node scripts/build-knowledge-editor.js",
     "sync:native-variant": "node scripts/configure-native-variant.js",
     "lint": "biome check .",
     "eas-build-pre-install": "bash scripts/eas-install-ios-build-tools.sh",
@@ -58,6 +55,12 @@
     "@react-navigation/native": "^7.1.33",
     "@react-navigation/native-stack": "^7.14.4",
     "@readany/core": "workspace:*",
+    "@tiptap/core": "^3.20.0",
+    "@tiptap/extension-link": "^3.20.1",
+    "@tiptap/extension-placeholder": "^3.20.0",
+    "@tiptap/extension-task-item": "^3.20.1",
+    "@tiptap/extension-task-list": "^3.20.1",
+    "@tiptap/starter-kit": "^3.20.0",
     "@zip.js/zip.js": "^2.7.52",
     "expo": "~54.0.33",
     "expo-asset": "~12.0.12",

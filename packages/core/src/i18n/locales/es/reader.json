@@ -120,9 +120,11 @@
     "italic": "Cursiva (Ctrl+I)",
     "strikethrough": "Tachado",
     "inlineCode": "Código en línea",
+    "codeBlock": "Bloque de código",
     "link": "Enlace",
     "bulletList": "Lista con viñetas",
     "orderedList": "Lista numerada",
+    "taskList": "Lista de tareas",
     "blockquote": "Cita",
     "horizontalRule": "Línea horizontal"
   },

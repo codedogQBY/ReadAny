@@ -20,9 +20,9 @@ export interface SyncResult {
   direction: SyncDirection;
   filesUploaded: number;
   filesDownloaded: number;
-  /** Number of book/cover files that failed to upload to the remote in the file-sync phase. */
+  /** Number of files that failed to upload to the remote in the file-sync phase. */
   filesUploadFailed: number;
-  /** Number of book/cover files that failed to download from the remote in the file-sync phase. */
+  /** Number of files that failed to download from the remote in the file-sync phase. */
   filesDownloadFailed: number;
   durationMs: number;
   error?: string;
@@ -65,6 +65,9 @@ export const REMOTE_FILES = "/readany/data/file";
 export const REMOTE_COVERS = "/readany/data/cover";
 /** New layout: each book lives in its own folder under this root. */
 export const REMOTE_BOOKS_ROOT = "/readany/data/books";
+/** Knowledge-base assets used by Tiptap documents and custom cards. */
+export const REMOTE_KNOWLEDGE_ROOT = "/readany/data/knowledge";
+export const REMOTE_KNOWLEDGE_ATTACHMENTS = "/readany/data/knowledge/attachments";
 /** Lightweight index for the canonical remote book/cover layout. */
 export const REMOTE_FILE_MANIFEST = "/readany/data/file-manifest.json";
 

@@ -41,15 +41,116 @@ beforeEach(() => {
   createReactAgentMock.mockReset();
 });
 
+function mockEmptyAgentStream(): void {
+  createReactAgentMock.mockReturnValue({
+    streamEvents: vi.fn(() => ({
+      [Symbol.asyncIterator]: async function* () {
+        // no-op stream
+      },
+    })),
+  });
+}
+
+function extractAvailableToolNames(prompt: string): string[] {
+  const availableToolsSection = prompt.match(/## Available Tools\n\n([\s\S]*?)(?:\n\n---\n\n|$)/)?.[1];
+  if (!availableToolsSection) return [];
+
+  return Array.from(availableToolsSection.matchAll(/^- \*\*([A-Za-z][A-Za-z0-9_]*)\*\*/gm), (match) =>
+    match[1],
+  );
+}
+
+async function captureAgentRegistration(
+  options: Partial<Parameters<typeof streamReadingAgent>[0]> = {},
+) {
+  mockEmptyAgentStream();
+
+  for await (const _event of streamReadingAgent(
+    {
+      aiConfig: makeAIConfig(),
+      book: null,
+      bookId: null,
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: false,
+      getAvailableTools,
+      ...options,
+    },
+    "帮我分析一下",
+  )) {
+    // drain stream
+  }
+
+  return createReactAgentMock.mock.calls[createReactAgentMock.mock.calls.length - 1]?.[0];
+}
+
+function expectPromptToolsToMatchRegisteredTools(call: {
+  prompt: string;
+  tools: ToolDefinition[];
+}): void {
+  const promptToolNames = extractAvailableToolNames(call.prompt).sort();
+  const registeredToolNames = call.tools.map((tool) => tool.name).sort();
+
+  expect(promptToolNames).toEqual(registeredToolNames);
+}
+
 describe("streamReadingAgent tool registration", () => {
+  it("passes annotation context into the agent system prompt", async () => {
+    mockEmptyAgentStream();
+
+    for await (const _event of streamReadingAgent(
+      {
+        aiConfig: makeAIConfig(),
+        book: null,
+        bookId: "book-1",
+        semanticContext: null,
+        enabledSkills: [],
+        isVectorized: false,
+        annotationContext:
+          "- [highlight] Learning without thought is labor lost.\n  id: hl-1\n  cfi: epubcfi(/6/4)",
+        getAvailableTools,
+      },
+      "结合我的标注讲讲",
+    )) {
+      // drain stream
+    }
+
+    const call = createReactAgentMock.mock.calls[createReactAgentMock.mock.calls.length - 1]?.[0];
+
+    expect(call.prompt).toContain("Annotation Context");
+    expect(call.prompt).toContain("id: hl-1");
+    expect(call.prompt).toContain("epubcfi(/6/4)");
+  });
+
+  it("passes knowledge context into the agent system prompt", async () => {
+    mockEmptyAgentStream();
+
+    for await (const _event of streamReadingAgent(
+      {
+        aiConfig: makeAIConfig(),
+        book: null,
+        bookId: "book-1",
+        semanticContext: null,
+        enabledSkills: [],
+        isVectorized: false,
+        knowledgeContext:
+          "- [summary] Memory Map\n  id: summary-1\n  path: Knowledge base / Themes / Memory Map",
+        getAvailableTools,
+      },
+      "结合我的笔记讲讲",
+    )) {
+      // drain stream
+    }
+
+    const call = createReactAgentMock.mock.calls[createReactAgentMock.mock.calls.length - 1]?.[0];
+
+    expect(call.prompt).toContain("Knowledge Base Context");
+    expect(call.prompt).toContain("id: summary-1");
+    expect(call.prompt).toContain("Knowledge base / Themes / Memory Map");
+  });
+
   it("registers fallback tools when only bookId is available", async () => {
-    createReactAgentMock.mockReturnValue({
-      streamEvents: vi.fn(() => ({
-        [Symbol.asyncIterator]: async function* () {
-          // no-op stream
-        },
-      })),
-    });
+    mockEmptyAgentStream();
 
     const events = streamReadingAgent(
       {
@@ -75,6 +176,73 @@ describe("streamReadingAgent tool registration", () => {
     expect(toolNames).toContain("fallbackSearch");
     expect(toolNames).toContain("fallbackChapterContext");
     expect(toolNames).toContain("addCitation");
+  });
+
+  it("keeps knowledge summary compression in both the prompt and registered tools", async () => {
+    mockEmptyAgentStream();
+
+    for await (const _event of streamReadingAgent(
+      {
+        aiConfig: makeAIConfig(),
+        book: null,
+        bookId: "book-1",
+        semanticContext: null,
+        enabledSkills: [],
+        isVectorized: false,
+        getAvailableTools,
+      },
+      "帮我整理这本书的知识库",
+    )) {
+      // drain stream
+    }
+
+    const call = createReactAgentMock.mock.calls[createReactAgentMock.mock.calls.length - 1]?.[0];
+    const toolNames = (call.tools as ToolDefinition[]).map((tool) => tool.name);
+
+    expect(toolNames).toContain("compressKnowledgeDocumentSummary");
+    expect(call.prompt).toContain("- **compressKnowledgeDocumentSummary**");
+    expect(call.prompt).toContain("Knowledge memory safety");
+  });
+
+  it("keeps the no-book prompt tool list aligned with registered tools", async () => {
+    const call = await captureAgentRegistration();
+
+    expectPromptToolsToMatchRegisteredTools(call);
+    expect(call.prompt).not.toContain("- **fallbackToc**");
+    expect(call.prompt).not.toContain("- **ragSearch**");
+    expect(call.tools.map((tool: ToolDefinition) => tool.name)).not.toContain("addCitation");
+  });
+
+  it("keeps the non-indexed book prompt tool list aligned with registered tools", async () => {
+    const call = await captureAgentRegistration({
+      bookId: "book-1",
+      isVectorized: false,
+    });
+    const toolNames = call.tools.map((tool: ToolDefinition) => tool.name);
+
+    expectPromptToolsToMatchRegisteredTools(call);
+    expect(toolNames).toContain("fallbackToc");
+    expect(toolNames).toContain("fallbackSearch");
+    expect(toolNames).toContain("fallbackChapterContext");
+    expect(toolNames).toContain("addCitation");
+    expect(toolNames).not.toContain("ragSearch");
+    expect(call.prompt).not.toContain("- **ragSearch**");
+  });
+
+  it("keeps the indexed book prompt tool list aligned with registered tools", async () => {
+    const call = await captureAgentRegistration({
+      bookId: "book-1",
+      isVectorized: true,
+    });
+    const toolNames = call.tools.map((tool: ToolDefinition) => tool.name);
+
+    expectPromptToolsToMatchRegisteredTools(call);
+    expect(toolNames).toContain("ragSearch");
+    expect(toolNames).toContain("ragToc");
+    expect(toolNames).toContain("ragContext");
+    expect(toolNames).toContain("addCitation");
+    expect(toolNames).not.toContain("fallbackToc");
+    expect(call.prompt).not.toContain("- **fallbackToc**");
   });
 
   it("keeps tool-call turn text out of the final response before addCitation completes", async () => {
