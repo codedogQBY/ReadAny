@@ -194,4 +194,125 @@ describe("streamReadingAgent tool registration", () => {
       }),
     );
   });
+
+  it("emits Gemini OpenAI-compatible thought summaries from raw stream chunks", async () => {
+    createReactAgentMock.mockReturnValue({
+      streamEvents: vi.fn(() => ({
+        [Symbol.asyncIterator]: async function* () {
+          yield {
+            event: "on_chat_model_stream",
+            data: {
+              chunk: {
+                content: "",
+                additional_kwargs: {
+                  __raw_response: {
+                    choices: [
+                      {
+                        delta: {
+                          extra_content: {
+                            google: {
+                              thought_summary: "I should inspect the current chapter first.",
+                            },
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          };
+          yield {
+            event: "on_chat_model_end",
+            data: {
+              output: {
+                tool_calls: [{ name: "getCurrentChapter", args: {} }],
+              },
+            },
+          };
+        },
+      })),
+    });
+
+    const events = [];
+    for await (const event of streamReadingAgent(
+      {
+        aiConfig: makeAIConfig(),
+        book: null,
+        bookId: "book-1",
+        semanticContext: null,
+        enabledSkills: [],
+        isVectorized: false,
+        getAvailableTools,
+      },
+      "总结当前章节",
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "reasoning",
+          content: "I should inspect the current chapter first.",
+        }),
+        expect.objectContaining({ type: "tool_call", name: "getCurrentChapter" }),
+      ]),
+    );
+  });
+
+  it("does not display Gemini thought signatures as reasoning text", async () => {
+    createReactAgentMock.mockReturnValue({
+      streamEvents: vi.fn(() => ({
+        [Symbol.asyncIterator]: async function* () {
+          yield {
+            event: "on_chat_model_stream",
+            data: {
+              chunk: {
+                content: "",
+                additional_kwargs: {
+                  __raw_response: {
+                    choices: [
+                      {
+                        delta: {
+                          extra_content: {
+                            google: {
+                              thought_signature: "encrypted-signature",
+                            },
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          };
+        },
+      })),
+    });
+
+    const events = [];
+    for await (const event of streamReadingAgent(
+      {
+        aiConfig: makeAIConfig(),
+        book: null,
+        bookId: "book-1",
+        semanticContext: null,
+        enabledSkills: [],
+        isVectorized: false,
+        getAvailableTools,
+      },
+      "总结当前章节",
+    )) {
+      events.push(event);
+    }
+
+    expect(events).not.toContainEqual(
+      expect.objectContaining({
+        type: "reasoning",
+        content: "encrypted-signature",
+      }),
+    );
+  });
 });
