@@ -110,6 +110,51 @@ describe("WebDavClient PROPFIND parsing", () => {
     ]);
   });
 
+  it("treats MKCOL auth failure as success when the parent listing shows the directory", async () => {
+    const calls: { method: string; url: string }[] = [];
+    installFetchStub((url, options) => {
+      const method = String(options?.method ?? "GET");
+      calls.push({ method, url });
+
+      if (method === "PROPFIND" && url.endsWith("/readany/")) {
+        return new Response("", { status: 404 });
+      }
+      if (method === "MKCOL") {
+        return new Response("", { status: 401 });
+      }
+      return new Response(
+        `<?xml version="1.0" encoding="utf-8"?>
+        <d:multistatus xmlns:d="DAV:">
+          <d:response>
+            <d:href>/dav/</d:href>
+            <d:propstat><d:prop><d:resourcetype><d:collection /></d:resourcetype></d:prop></d:propstat>
+          </d:response>
+          <d:response>
+            <d:href>/dav/readany/</d:href>
+            <d:propstat><d:prop><d:resourcetype><d:collection /></d:resourcetype></d:prop></d:propstat>
+          </d:response>
+        </d:multistatus>`,
+        { status: 207 },
+      );
+    });
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const client = new WebDavClient("https://dav.example.com/dav", "alice", "secret");
+      await client.ensureDirectory("/readany");
+    } finally {
+      warnSpy.mockRestore();
+    }
+
+    expect(calls.map((call) => call.method)).toEqual(["PROPFIND", "MKCOL", "PROPFIND", "PROPFIND"]);
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://dav.example.com/dav/readany/",
+      "https://dav.example.com/dav/readany/",
+      "https://dav.example.com/dav/readany/",
+      "https://dav.example.com/dav/",
+    ]);
+  });
+
   it("uses a collection path when safely reading a directory", async () => {
     const calls: { method: string; url: string }[] = [];
     installFetchStub((url, options) => {

@@ -71,6 +71,7 @@ module.exports = {
       "expo-secure-store",
       "expo-sqlite",
       "expo-asset",
+      "./plugins/withVolumeKeyPaging",
       [
         "expo-camera",
         {
