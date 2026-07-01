@@ -4,7 +4,12 @@ import { useTranslator } from "@/hooks/useTranslator";
  * Robust positioning: always stays within viewport
  */
 import { useSettingsStore } from "@/stores/settings-store";
-import { TRANSLATOR_LANGS, type TranslationTargetLang } from "@readany/core/types/translation";
+import {
+  TRANSLATOR_LANGS,
+  TRANSLATOR_PROVIDERS,
+  type TranslationTargetLang,
+  type TranslatorName,
+} from "@readany/core/types/translation";
 import { Check, ChevronDown, Copy, Languages, Loader2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -31,12 +36,14 @@ export function TranslationPopover({ text, position, onClose }: TranslationPopov
   const [translation, setTranslation] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
+  const [providerOpen, setProviderOpen] = useState(false);
 
   const { translate, loading, error, provider } = useTranslator({ targetLang });
 
   // Refs
   const containerRef = useRef<HTMLDivElement>(null);
   const langRef = useRef<HTMLDivElement>(null);
+  const providerRef = useRef<HTMLDivElement>(null);
 
   // Calculate safe position that stays within viewport
   const calculatePosition = useCallback(() => {
@@ -94,6 +101,7 @@ export function TranslationPopover({ text, position, onClose }: TranslationPopov
   const [pos, setPos] = useState(() => calculatePosition());
 
   // Update position when content changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: content height changes after loading/translation updates.
   useEffect(() => {
     setPos(calculatePosition());
   }, [calculatePosition, translation, loading]);
@@ -129,6 +137,7 @@ export function TranslationPopover({ text, position, onClose }: TranslationPopov
   }, [onClose]);
 
   // Fetch translation
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keep targetLang explicit so Fast Refresh does not change dependency arity during local verification.
   useEffect(() => {
     let cancelled = false;
     setTranslation(null);
@@ -157,6 +166,17 @@ export function TranslationPopover({ text, position, onClose }: TranslationPopov
     setLangOpen(false);
   };
 
+  const handleProviderChange = (providerId: TranslatorName, providerName: string) => {
+    updateTranslationConfig({
+      provider: {
+        ...translationConfig.provider,
+        id: providerId,
+        name: providerName,
+      },
+    });
+    setProviderOpen(false);
+  };
+
   const handleCopy = async () => {
     if (translation) {
       await navigator.clipboard.writeText(translation);
@@ -169,7 +189,13 @@ export function TranslationPopover({ text, position, onClose }: TranslationPopov
   const aiConfig = useSettingsStore((s) => s.aiConfig);
   const endpointId = translationConfig.provider.endpointId || aiConfig.activeEndpointId;
   const endpoint = aiConfig.endpoints.find((e) => e.id === endpointId);
-  const providerName = provider === "ai" ? endpoint?.name || "AI" : translationConfig.provider.name;
+  const providerLabel = TRANSLATOR_PROVIDERS.find((p) => p.id === provider);
+  const providerName =
+    provider === "ai"
+      ? endpoint?.name || "AI"
+      : providerLabel
+        ? t(providerLabel.labelKey)
+        : translationConfig.provider.name;
 
   return (
     <div
@@ -184,37 +210,80 @@ export function TranslationPopover({ text, position, onClose }: TranslationPopov
     >
       <div className="rounded-lg border border-border bg-background shadow-lg">
         {/* Header: Language selector + Close */}
-        <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
-          <div className="relative" ref={langRef}>
-            <button
-              type="button"
-              onClick={() => setLangOpen(!langOpen)}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <Languages className="h-3.5 w-3.5" />
-              <span>{TRANSLATOR_LANGS[targetLang]}</span>
-              <ChevronDown className="h-3 w-3" />
-            </button>
+        <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="relative" ref={langRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setProviderOpen(false);
+                  setLangOpen(!langOpen);
+                }}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <Languages className="h-3.5 w-3.5" />
+                <span>{TRANSLATOR_LANGS[targetLang]}</span>
+                <ChevronDown className="h-3 w-3" />
+              </button>
 
-            {langOpen && (
-              <div className="absolute left-0 top-full z-50 mt-1 w-36 rounded-md border bg-background p-1 shadow-lg">
-                <div className="max-h-48 overflow-y-auto">
-                  {Object.entries(TRANSLATOR_LANGS).map(([code, name]) => (
-                    <button
-                      key={code}
-                      type="button"
-                      onClick={() => handleLangChange(code as TranslationTargetLang)}
-                      className={`flex w-full items-center justify-between rounded-sm px-2 py-1 text-left text-xs ${
-                        code === targetLang ? "bg-primary/10 text-primary" : "hover:bg-muted"
-                      }`}
-                    >
-                      <span>{name}</span>
-                      {code === targetLang && <Check className="h-3 w-3" />}
-                    </button>
-                  ))}
+              {langOpen && (
+                <div className="absolute left-0 top-full z-50 mt-1 w-36 rounded-md border bg-background p-1 shadow-lg">
+                  <div className="max-h-48 overflow-y-auto">
+                    {Object.entries(TRANSLATOR_LANGS).map(([code, name]) => (
+                      <button
+                        key={code}
+                        type="button"
+                        onClick={() => handleLangChange(code as TranslationTargetLang)}
+                        className={`flex w-full items-center justify-between rounded-sm px-2 py-1 text-left text-xs ${
+                          code === targetLang ? "bg-primary/10 text-primary" : "hover:bg-muted"
+                        }`}
+                      >
+                        <span>{name}</span>
+                        {code === targetLang && <Check className="h-3 w-3" />}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+
+            <div className="relative min-w-0" ref={providerRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setLangOpen(false);
+                  setProviderOpen(!providerOpen);
+                }}
+                className="flex max-w-28 items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                title={providerName}
+              >
+                <span className="truncate">{providerName}</span>
+                <ChevronDown className="h-3 w-3 shrink-0" />
+              </button>
+
+              {providerOpen && (
+                <div className="absolute left-0 top-full z-50 mt-1 w-40 rounded-md border bg-background p-1 shadow-lg">
+                  {TRANSLATOR_PROVIDERS.map((p) => {
+                    const label = t(p.labelKey);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => handleProviderChange(p.id, label)}
+                        className={`flex w-full items-center justify-between rounded-sm px-2 py-1 text-left text-xs ${
+                          p.id === translationConfig.provider.id
+                            ? "bg-primary/10 text-primary"
+                            : "hover:bg-muted"
+                        }`}
+                      >
+                        <span className="truncate">{label}</span>
+                        {p.id === translationConfig.provider.id && <Check className="h-3 w-3" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
 
           <button
@@ -241,7 +310,9 @@ export function TranslationPopover({ text, position, onClose }: TranslationPopov
             <>
               <p className="max-h-32 overflow-y-auto text-sm leading-relaxed">{translation}</p>
               <div className="flex items-center justify-end gap-2 pt-1">
-                <span className="text-[10px] text-muted-foreground">{providerName}</span>
+                <span className="max-w-28 truncate text-[10px] text-muted-foreground">
+                  {providerName}
+                </span>
                 <button
                   type="button"
                   onClick={handleCopy}
