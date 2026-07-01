@@ -10,6 +10,7 @@
  */
 
 import { getDB } from "../db/database";
+import { canonicalBookFilePath } from "./local-book-paths";
 import { getSyncAdapter } from "./sync-adapter";
 import type { ISyncBackend, RemoteFile } from "./sync-backend";
 import {
@@ -73,6 +74,12 @@ function isDirectFileTransferUnsupported(error: unknown): boolean {
   return /does not support direct file|Platform does not support direct file/i.test(message);
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+  return `${bytes} B`;
+}
+
 async function makeTempTransferPath(finalPath: string): Promise<string> {
   const adapter = getSyncAdapter();
   const tempDir = await adapter.getTempDir();
@@ -90,6 +97,7 @@ async function uploadFileToRemote(
   localPath: string,
   onProgress?: (loaded: number, total: number) => void,
 ): Promise<number | null> {
+  const adapter = getSyncAdapter();
   if (backend.putFile) {
     try {
       await backend.putFile(remotePath, localPath, onProgress);
@@ -102,7 +110,15 @@ async function uploadFileToRemote(
     }
   }
 
-  const adapter = getSyncAdapter();
+  if (adapter.maxBufferedTransferBytes != null) {
+    const fileSize = await adapter.getFileSize(localPath);
+    if (fileSize != null && fileSize > adapter.maxBufferedTransferBytes) {
+      throw new Error(
+        `Buffered upload would exceed platform memory limit for ${remotePath}: ${formatBytes(fileSize)} > ${formatBytes(adapter.maxBufferedTransferBytes)}`,
+      );
+    }
+  }
+
   const data = await adapter.readFileBytes(localPath);
   onProgress?.(0, data.length);
   await backend.put(remotePath, data);
@@ -151,9 +167,11 @@ async function downloadRemoteFileToPath(
 type BookRow = {
   id: string;
   file_path: string;
+  format: string;
   file_hash: string;
   cover_url: string;
   title: string;
+  sync_status: string;
 };
 
 type BookInfo = {
@@ -340,7 +358,7 @@ export async function syncFiles(
   let filesDownloadFailed = 0;
 
   const books = await db.select<BookRow>(
-    "SELECT id, file_path, file_hash, cover_url, title FROM books WHERE deleted_at IS NULL",
+    "SELECT id, file_path, format, file_hash, cover_url, title, sync_status FROM books WHERE deleted_at IS NULL",
     [],
   );
 
@@ -349,13 +367,10 @@ export async function syncFiles(
 
   // --- Compute per-book info ---
   const bookInfos: BookInfo[] = books.map((book) => {
-    const fileExt = book.file_path ? getExt(book.file_path) || "epub" : "";
+    const canonicalFilePath = canonicalBookFilePath(book.id, book.file_path, book.format);
+    const fileExt = canonicalFilePath ? getExt(canonicalFilePath) || "epub" : "";
     const coverExt = book.cover_url ? getExt(book.cover_url) || "jpg" : "";
-    const localFilePath = book.file_path
-      ? isAbsoluteOrProtocolPath(book.file_path)
-        ? book.file_path
-        : adapter.joinPath(appDataDir, book.file_path)
-      : "";
+    const localFilePath = canonicalFilePath ? adapter.joinPath(appDataDir, canonicalFilePath) : "";
     const localCoverPath = book.cover_url
       ? isAbsoluteOrProtocolPath(book.cover_url)
         ? book.cover_url
@@ -373,7 +388,7 @@ export async function syncFiles(
       remoteCoverPath: coverExt ? buildBookRemoteCover(book, coverExt) : "",
       legacyRemoteFileName: fileExt ? `${book.id}.${fileExt}` : "",
       legacyRemoteCoverName: coverExt ? `${book.id}.${coverExt}` : "",
-      hasFile: !!book.file_path,
+      hasFile: !!canonicalFilePath,
       hasCover: !!book.cover_url,
     };
   });
@@ -439,6 +454,14 @@ export async function syncFiles(
     if (info.hasFile && info.fileExt) {
       const localExists = localExistsMap.get(info.localFilePath) ?? false;
       const remoteExists = migration.fileAtNew;
+
+      if (localExists && book.sync_status && book.sync_status !== "local") {
+        try {
+          await setBookSyncStatus(book.id, "local");
+        } catch (e) {
+          console.warn(`[Sync] Failed to mark existing local book as local: ${e}`);
+        }
+      }
 
       if (!disableUploads && localExists && (forceUploadAll || !remoteExists)) {
         const task = buildUploadFileTask(backend, info);
@@ -1242,10 +1265,11 @@ export async function downloadBookFile(
   onProgress?: (progress: { downloaded: number; total: number }) => void,
 ): Promise<DownloadBookOutcome> {
   const adapter = getSyncAdapter();
-  const { setBookSyncStatus } = await import("../db/database");
+  const { setBookSyncStatus, updateBook } = await import("../db/database");
 
   try {
-    const ext = getExt(filePath) || "epub";
+    const localRelativePath = canonicalBookFilePath(bookId, filePath);
+    const ext = getExt(localRelativePath) || "epub";
 
     // Resolve book title for new-path computation.
     const db = await getDB();
@@ -1270,9 +1294,7 @@ export async function downloadBookFile(
     };
 
     const appDataDir = await adapter.getAppDataDir();
-    const localPath = isAbsoluteOrProtocolPath(filePath)
-      ? filePath
-      : adapter.joinPath(appDataDir, filePath);
+    const localPath = adapter.joinPath(appDataDir, localRelativePath);
     const reportDownloadProgress = (loaded: number, total: number) => {
       if (total > 0) onProgress?.({ downloaded: loaded, total });
     };
@@ -1361,7 +1383,7 @@ export async function downloadBookFile(
     }
 
     onProgress?.({ downloaded: 100, total: 100 });
-    await setBookSyncStatus(bookId, "local");
+    await updateBook(bookId, { filePath: localRelativePath, syncStatus: "local" });
     console.log(`[Sync] ✓ Book ${bookId} downloaded and marked as local`);
     return "ok";
   } catch (e) {

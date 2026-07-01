@@ -11,6 +11,7 @@ interface UsePaginationOptions {
   bookKey: string;
   viewRef: React.RefObject<FoliateView | null>;
   containerRef: React.RefObject<HTMLDivElement | null>;
+  isFixedLayout?: boolean;
 }
 
 /** Minimum cooldown after a page turn (ms) */
@@ -19,7 +20,39 @@ const WHEEL_MIN_COOLDOWN_MS = 350;
 /** After the last wheel event, wait this long before unlocking (ms). */
 const WHEEL_IDLE_MS = 200;
 
-export function usePagination({ bookKey, viewRef, containerRef }: UsePaginationOptions) {
+function getScrollableDistance(element: HTMLElement, axis: "x" | "y") {
+  return axis === "x"
+    ? Math.max(0, element.scrollWidth - element.clientWidth)
+    : Math.max(0, element.scrollHeight - element.clientHeight);
+}
+
+function scrollFixedLayoutPage(view: FoliateView, deltaY: number, deltaX = 0) {
+  const renderer = view.renderer as HTMLElement | undefined;
+  if (!renderer || renderer.getAttribute("spread") !== "none") return false;
+
+  const maxY = getScrollableDistance(renderer, "y");
+  const maxX = getScrollableDistance(renderer, "x");
+  if (maxY <= 1 && maxX <= 1) return false;
+
+  const beforeTop = renderer.scrollTop;
+  const beforeLeft = renderer.scrollLeft;
+  const top = maxY > 1 ? deltaY : 0;
+  const left = maxX > 1 ? deltaX : 0;
+  if (Math.abs(top) < 1 && Math.abs(left) < 1) return false;
+
+  renderer.scrollBy({ top, left, behavior: "auto" });
+  return (
+    Math.abs(renderer.scrollTop - beforeTop) > 0.5 ||
+    Math.abs(renderer.scrollLeft - beforeLeft) > 0.5
+  );
+}
+
+export function usePagination({
+  bookKey,
+  viewRef,
+  containerRef,
+  isFixedLayout = false,
+}: UsePaginationOptions) {
   const wheelLocked = useRef(false);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lockTime = useRef(0);
@@ -30,6 +63,10 @@ export function usePagination({ bookKey, viewRef, containerRef }: UsePaginationO
       if (!view) return;
 
       if (view.renderer?.scrolled) return;
+
+      if (isFixedLayout && scrollFixedLayoutPage(view, deltaY, deltaX)) {
+        return;
+      }
 
       const absDY = Math.abs(deltaY);
       const absDX = Math.abs(deltaX || 0);
@@ -69,7 +106,7 @@ export function usePagination({ bookKey, viewRef, containerRef }: UsePaginationO
         wheelLocked.current = false;
       }, WHEEL_IDLE_MS);
     },
-    [viewRef],
+    [isFixedLayout, viewRef],
   );
 
   useEffect(() => {
