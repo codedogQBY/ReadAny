@@ -193,6 +193,7 @@ function useAutoHideControls(
   keepVisible = false,
   isDoublePage = false,
   isScrollMode = false,
+  isFixedLayout = false,
 ) {
   const [isVisible, setIsVisible] = useState(true);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -273,9 +274,22 @@ function useAutoHideControls(
           viewWidth,
           isDoublePage,
           isScrollMode,
+          isFixedLayout,
           leftNavEnd,
           rightNavStart,
         });
+
+        if (isFixedLayout && !isVisible) {
+          console.log("[ReaderTap][reader:action]", {
+            bookKey,
+            source,
+            action: "show-controls",
+            fraction,
+            isDoublePage,
+          });
+          showAndScheduleHide();
+          return;
+        }
 
         if (isScrollMode) {
           toggleControls();
@@ -328,6 +342,8 @@ function useAutoHideControls(
     showAndScheduleHide,
     isDoublePage,
     isScrollMode,
+    isFixedLayout,
+    isVisible,
   ]);
 
   // Mouse enter/leave handlers for toolbar area
@@ -867,6 +883,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     keepControlsVisible,
     (viewSettings.paginatedLayout ?? "double") === "double",
     viewSettings.viewMode === "scroll",
+    isFixedLayout,
   );
   const isDoublePage = (viewSettings.paginatedLayout ?? "double") === "double";
   const toolbarVisible = controlsVisible || isToolbarPinned;

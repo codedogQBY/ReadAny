@@ -1,5 +1,13 @@
 /// <reference types="vite/client" />
 
+declare interface PromiseConstructor {
+  withResolvers<T>(): {
+    promise: Promise<T>;
+    resolve: (value: T | PromiseLike<T>) => void;
+    reject: (reason?: unknown) => void;
+  };
+}
+
 // foliate-js is a pure JS library with no type declarations
 declare module "foliate-js/view.js";
 declare module "foliate-js/epub.js";
