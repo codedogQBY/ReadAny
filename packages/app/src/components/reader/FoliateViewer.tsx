@@ -3189,7 +3189,7 @@ body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):n
   font-family: var(--readany-font-family) !important;
 }
 
-body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *):not(rt):not(rp) {
+body :not(#__readany_font_size_override):not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *):not(rt):not(rp) {
   font-size: ${settings.fontSize}px !important;
 }
 
