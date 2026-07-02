@@ -1,3 +1,4 @@
+import "./polyfills";
 import { i18nReady } from "@readany/core/i18n";
 import { initI18nLanguage } from "@readany/core/i18n";
 /**
