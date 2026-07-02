@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { type FetchOptions, type IPlatformService, setPlatformService } from "../services/platform";
-import { WebDavClient } from "./webdav-client";
+import { WebDavClient, sanitizeWebDavRemoteRoot } from "./webdav-client";
 
 function installFetchStub(
   handler: (url: string, options?: FetchOptions) => Response | Promise<Response>,
@@ -169,5 +169,15 @@ describe("WebDavClient PROPFIND parsing", () => {
 
     expect(calls.map((call) => call.method)).toEqual(["PROPFIND"]);
     expect(calls.map((call) => call.url)).toEqual(["https://dav.example.com/dav/readany/sync/"]);
+  });
+});
+
+describe("sanitizeWebDavRemoteRoot", () => {
+  it("preserves case because WebDAV paths can be case-sensitive", () => {
+    expect(sanitizeWebDavRemoteRoot("ReadAny/DeviceSync")).toBe("ReadAny/DeviceSync");
+  });
+
+  it("trims unsafe path noise without lowercasing user folders", () => {
+    expect(sanitizeWebDavRemoteRoot(" /\u0000ReadAny//Sync/ ")).toBe("ReadAny/Sync");
   });
 });
