@@ -672,7 +672,7 @@ function makeStyles(_colors: ReturnType<typeof useColors>) {
     },
     loadingText: { fontSize: fontSize.sm },
     buttonRow: { flexDirection: "row", gap: 12, marginBottom: 16 },
-    presetSection: { gap: 8 },
+    presetSection: { gap: 8, marginBottom: 16 },
     importBtn: {
       flexDirection: "row",
       alignItems: "center",
