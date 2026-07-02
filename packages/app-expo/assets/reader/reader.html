@@ -2229,6 +2229,15 @@ a { color: ${primary} !important; }
         ${verticalDoc ? getVerticalWritingCompatibilityStyles() : ''}
       `;
       doc.head.appendChild(style);
+      if (lastRendererStyles) {
+        const themedStyles = injectThemeIntoStyles(
+          lastRendererStyles,
+          currentThemeColors.bg,
+          currentThemeColors.fg,
+          currentThemeColors.primary,
+        );
+        syncReaderOverrideStylesForDoc(doc, themedStyles);
+      }
       doc.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); return false; }, true);
     }
 

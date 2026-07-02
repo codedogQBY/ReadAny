@@ -41,6 +41,8 @@ const THEME_COLORS: Record<AppTheme, { bg: string; fg: string; link: string }> =
   sepia: { bg: "#f0e6d2", fg: "#3d2b1f", link: "#6b4c2a" },
 };
 
+const READER_OVERRIDE_STYLE_ID = "__readany_reader_overrides__";
+
 function getAppTheme(): AppTheme {
   if (typeof document === "undefined") return "dark";
   const theme = document.documentElement.getAttribute("data-theme") as AppTheme | null;
@@ -1837,7 +1839,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         getDirection(detail.doc);
 
         // Apply theme styles to loaded document
-        applyDocumentStyles(detail.doc, viewSettings, isFixedLayout);
+        applyDocumentStyles(detail.doc, viewSettings, isFixedLayout, appTheme);
 
         // Register iframe event handlers for this section
         registerIframeEventHandlers(bookKey, detail.doc);
@@ -1877,7 +1879,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           }
         })();
       },
-      [bookKey, viewSettings, onLoaded, onSectionLoad, isFixedLayout],
+      [appTheme, bookKey, viewSettings, onLoaded, onSectionLoad, isFixedLayout],
     );
     const docLoadHandlerRef = useRef(docLoadHandlerImpl);
     docLoadHandlerRef.current = docLoadHandlerImpl;
@@ -2900,7 +2902,12 @@ function syncRemoteFontStyles(view: FoliateView, settings: ViewSettings) {
 }
 
 /** Apply CSS styles to a loaded section document */
-function applyDocumentStyles(doc: Document, settings: ViewSettings, isFixedLayout: boolean) {
+function applyDocumentStyles(
+  doc: Document,
+  settings: ViewSettings,
+  isFixedLayout: boolean,
+  theme: AppTheme,
+) {
   if (isFixedLayout) {
     // PDF/CBZ: don't inject styles that would break layout
     return;
@@ -2908,12 +2915,33 @@ function applyDocumentStyles(doc: Document, settings: ViewSettings, isFixedLayou
 
   normalizeBrOnlyParagraphs(doc);
   syncRemoteFontStylesInDocument(doc, settings.customFontCssUrls);
+  syncReaderOverrideStylesInDocument(doc, getRendererStyles(settings, theme));
 
   // Basic styles for images
   const images = doc.querySelectorAll("img");
   for (const img of images) {
     img.style.maxWidth = "100%";
     img.style.height = "auto";
+  }
+}
+
+function syncReaderOverrideStylesInDocument(doc: Document, css: string) {
+  const head = doc.head || doc.documentElement;
+  if (!head) return;
+  let style = doc.getElementById(READER_OVERRIDE_STYLE_ID) as HTMLStyleElement | null;
+  if (!style) {
+    style = doc.createElement("style");
+    style.id = READER_OVERRIDE_STYLE_ID;
+    head.appendChild(style);
+  }
+  style.textContent = css;
+  head.appendChild(style);
+}
+
+function syncReaderOverrideStyles(view: FoliateView, css: string) {
+  for (const content of getRendererContents(view)) {
+    const doc = content?.doc;
+    if (doc) syncReaderOverrideStylesInDocument(doc, css);
   }
 }
 
@@ -3161,6 +3189,10 @@ body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):n
   font-family: var(--readany-font-family) !important;
 }
 
+body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *):not(rt):not(rp) {
+  font-size: ${settings.fontSize}px !important;
+}
+
 pre, code, kbd, samp {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
 }
@@ -3253,6 +3285,7 @@ function applyRendererStyles(
   });
   const styles = getRendererStyles(settings, theme);
   renderer.setStyles(styles);
+  syncReaderOverrideStyles(view, styles);
 }
 
 /**
