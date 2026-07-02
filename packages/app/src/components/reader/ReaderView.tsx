@@ -202,6 +202,7 @@ function useAutoHideControls(
   keepVisible = false,
   isDoublePage = false,
   isScrollMode = false,
+  isFixedLayout = false,
 ) {
   const [isVisible, setIsVisible] = useState(true);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -282,9 +283,22 @@ function useAutoHideControls(
           viewWidth,
           isDoublePage,
           isScrollMode,
+          isFixedLayout,
           leftNavEnd,
           rightNavStart,
         });
+
+        if (isFixedLayout && !isVisible) {
+          console.log("[ReaderTap][reader:action]", {
+            bookKey,
+            source,
+            action: "show-controls",
+            fraction,
+            isDoublePage,
+          });
+          showAndScheduleHide();
+          return;
+        }
 
         if (isScrollMode) {
           toggleControls();
@@ -337,6 +351,8 @@ function useAutoHideControls(
     showAndScheduleHide,
     isDoublePage,
     isScrollMode,
+    isFixedLayout,
+    isVisible,
   ]);
 
   // Mouse enter/leave handlers for toolbar area
@@ -475,7 +491,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
                 : selectedFont.format === "woff2"
                   ? "woff2"
                   : "truetype";
-          return `@font-face {\n  font-family: '${selectedFont.fontFamily}';\n  src: url('${blobUrl}') format('${cssFormat}');\n  font-weight: normal;\n  font-style: normal;\n}`;
+          return `@font-face {\n  font-family: ${JSON.stringify(selectedFont.fontFamily)};\n  src: url('${blobUrl}') format('${cssFormat}');\n  font-weight: normal;\n  font-style: normal;\n}`;
         })()
       : "";
     return {
@@ -876,6 +892,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     keepControlsVisible,
     (viewSettings.paginatedLayout ?? "double") === "double",
     viewSettings.viewMode === "scroll",
+    isFixedLayout,
   );
   const isDoublePage = (viewSettings.paginatedLayout ?? "double") === "double";
   const fixedLayoutZoom = normalizeFixedLayoutZoom(viewSettings.fixedLayoutZoom ?? 1);
@@ -899,6 +916,11 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   } | null>(null);
   const totalBookCharactersRef = useRef<number | null>(null);
   const progressTrackingGuardUntilRef = useRef(0);
+  const latestProgressRef = useRef<{
+    bookId: string;
+    progress: number;
+    cfi: string;
+  } | null>(null);
 
   const suppressProgressTracking = useCallback((duration = PROGRAMMATIC_NAV_GUARD_MS) => {
     progressTrackingGuardUntilRef.current = Math.max(
@@ -940,6 +962,27 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     }, 5000),
   ).current;
 
+  const flushLatestProgress = useCallback(() => {
+    const latest = latestProgressRef.current;
+    if (!latest || latest.bookId !== bookId) return;
+    updateBook(latest.bookId, {
+      progress: latest.progress,
+      currentCfi: latest.cfi,
+      lastOpenedAt: Date.now(),
+    });
+  }, [bookId, updateBook]);
+
+  useEffect(() => {
+    window.addEventListener("pagehide", flushLatestProgress);
+    window.addEventListener("beforeunload", flushLatestProgress);
+
+    return () => {
+      window.removeEventListener("pagehide", flushLatestProgress);
+      window.removeEventListener("beforeunload", flushLatestProgress);
+      flushLatestProgress();
+    };
+  }, [flushLatestProgress]);
+
   // --- Load book on mount ---
   useEffect(() => {
     if (!book?.filePath || isInitializedRef.current) return;
@@ -974,6 +1017,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
   useEffect(() => {
     sessionProgressRef.current = null;
+    latestProgressRef.current = null;
     suppressProgressTracking(INITIAL_PROGRESS_RESTORE_GUARD_MS);
   }, [bookId, tabId, bookFormat, suppressProgressTracking]);
 
@@ -1121,6 +1165,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
       // Update reader store (immediate)
       setProgress(tabId, progress, cfi);
+      latestProgressRef.current = { bookId, progress, cfi };
 
       // Update chapter info
       if (detail.tocItem?.label) {
@@ -1617,9 +1662,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           right: r.right - containerRect.left,
         }));
 
-        const topmostRect = containerRelativeRects.reduce((min, r) =>
-          r.top < min.top ? r : min,
-        );
+        const topmostRect = containerRelativeRects.reduce((min, r) => (r.top < min.top ? r : min));
         const bottommostRect = containerRelativeRects.reduce((max, r) =>
           r.bottom > max.bottom ? r : max,
         );

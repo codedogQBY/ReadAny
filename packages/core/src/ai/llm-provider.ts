@@ -1,8 +1,8 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { AIConfig, AIEndpoint } from "../types";
-import { logAIEndpointDebug, summarizeDebugText } from "./request-debug";
 import { providerRequiresApiKey } from "../utils";
 import { formatApiHost } from "../utils/api";
+import { logAIEndpointDebug, summarizeDebugText } from "./request-debug";
 
 /**
  * Optional custom fetch for streaming support (e.g. expo/fetch in React Native).
@@ -66,6 +66,129 @@ function sanitizeCustomHeaders(headers?: Headers): Headers | undefined {
   return sanitized;
 }
 
+const GEMINI_THOUGHT_SIGNATURE_BYPASS = "skip_thought_signature_validator";
+
+function shouldPatchGeminiThoughtSignatures(
+  endpoint: AIEndpoint,
+  model: string | undefined,
+  requestUrl: string,
+): boolean {
+  const modelName = model?.toLowerCase() ?? "";
+  const targetUrl = `${requestUrl} ${endpoint.baseUrl ?? ""}`.toLowerCase();
+
+  return (
+    endpoint.provider === "google" ||
+    targetUrl.includes("generativelanguage.googleapis.com") ||
+    modelName.startsWith("gemini-3")
+  );
+}
+
+function hasGeminiThoughtSignature(toolCall: Record<string, unknown>): boolean {
+  const extraContent = toolCall.extra_content;
+  if (!extraContent || typeof extraContent !== "object") return false;
+
+  const google = (extraContent as Record<string, unknown>).google;
+  if (!google || typeof google !== "object") return false;
+
+  return typeof (google as Record<string, unknown>).thought_signature === "string";
+}
+
+function patchGeminiThoughtSignatureBody(bodyText: string): string | undefined {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(bodyText);
+  } catch {
+    return undefined;
+  }
+
+  if (!payload || typeof payload !== "object") return undefined;
+
+  const messages = (payload as Record<string, unknown>).messages;
+  if (!Array.isArray(messages)) return undefined;
+
+  let changed = false;
+  for (const message of messages) {
+    if (!message || typeof message !== "object") continue;
+
+    const messageRecord = message as Record<string, unknown>;
+    if (messageRecord.role !== "assistant") continue;
+
+    const toolCalls = messageRecord.tool_calls;
+    if (!Array.isArray(toolCalls)) continue;
+
+    const firstFunctionToolCall = toolCalls.find(
+      (toolCall): toolCall is Record<string, unknown> =>
+        Boolean(toolCall) &&
+        typeof toolCall === "object" &&
+        (toolCall as Record<string, unknown>).type === "function",
+    );
+    if (!firstFunctionToolCall || hasGeminiThoughtSignature(firstFunctionToolCall)) continue;
+
+    const extraContent =
+      typeof firstFunctionToolCall.extra_content === "object" &&
+      firstFunctionToolCall.extra_content !== null
+        ? { ...(firstFunctionToolCall.extra_content as Record<string, unknown>) }
+        : {};
+    const google =
+      typeof extraContent.google === "object" && extraContent.google !== null
+        ? { ...(extraContent.google as Record<string, unknown>) }
+        : {};
+
+    firstFunctionToolCall.extra_content = {
+      ...extraContent,
+      google: {
+        ...google,
+        thought_signature: GEMINI_THOUGHT_SIGNATURE_BYPASS,
+      },
+    };
+    changed = true;
+  }
+
+  return changed ? JSON.stringify(payload) : undefined;
+}
+
+async function patchGeminiThoughtSignatureRequest(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<{ input: RequestInfo | URL; init?: RequestInit } | undefined> {
+  if (typeof init?.body === "string") {
+    const body = patchGeminiThoughtSignatureBody(init.body);
+    if (!body) return undefined;
+
+    const headers = init.headers ? new Headers(init.headers) : undefined;
+    headers?.delete("content-length");
+
+    return {
+      input,
+      init: {
+        ...init,
+        ...(headers ? { headers } : {}),
+        body,
+      },
+    };
+  }
+
+  if (!isRequestLike(input)) return undefined;
+
+  let sourceBody: string;
+  try {
+    sourceBody = await input.clone().text();
+  } catch {
+    return undefined;
+  }
+
+  const body = patchGeminiThoughtSignatureBody(sourceBody);
+  if (!body) return undefined;
+
+  const headers = new Headers(input.headers);
+  headers.delete("content-length");
+
+  return {
+    input: new Request(input, { body, headers }),
+    init,
+  };
+}
+
 export function getEndpointFetch(endpoint: AIEndpoint, model?: string): typeof globalThis.fetch {
   const exactUrl = endpoint.useExactRequestUrl ? endpoint.baseUrl?.trim() : "";
   const baseFetch = (_streamingFetch ?? globalThis.fetch).bind(globalThis);
@@ -91,6 +214,17 @@ export function getEndpointFetch(endpoint: AIEndpoint, model?: string): typeof g
         } else {
           requestInit = { ...(init ?? {}), headers: sanitizedHeaders };
         }
+      }
+    }
+
+    if (
+      requestMethod.toUpperCase() === "POST" &&
+      shouldPatchGeminiThoughtSignatures(endpoint, model, requestUrl)
+    ) {
+      const patched = await patchGeminiThoughtSignatureRequest(requestInput, requestInit);
+      if (patched) {
+        requestInput = patched.input;
+        requestInit = patched.init;
       }
     }
 
@@ -271,10 +405,11 @@ export async function createChatModelFromEndpoint(
       if (endpoint.useExactRequestUrl && endpoint.baseUrl) {
         geminiBaseUrl = endpoint.baseUrl.trim();
       } else {
-        const rawBase = (endpoint.baseUrl || "https://generativelanguage.googleapis.com").replace(/\/+$/, "");
-        geminiBaseUrl = rawBase.includes("/v1beta/openai")
-          ? rawBase
-          : `${rawBase}/v1beta/openai`;
+        const rawBase = (endpoint.baseUrl || "https://generativelanguage.googleapis.com").replace(
+          /\/+$/,
+          "",
+        );
+        geminiBaseUrl = rawBase.includes("/v1beta/openai") ? rawBase : `${rawBase}/v1beta/openai`;
       }
 
       return new ChatOpenAI({
@@ -283,6 +418,17 @@ export async function createChatModelFromEndpoint(
         configuration: {
           baseURL: geminiBaseUrl,
           fetch: endpointFetch,
+        },
+        __includeRawResponse: true,
+        modelKwargs: {
+          extra_body: {
+            google: {
+              thinking_config: {
+                thinking_level: "low",
+                include_thoughts: true,
+              },
+            },
+          },
         },
         temperature,
         maxTokens,
