@@ -17,6 +17,7 @@ import {
 } from "../db/database";
 import { runSerializedDbTask } from "../db/write-retry";
 import { getPlatformService } from "../services/platform";
+import { canonicalBookCoverPath, canonicalBookFilePath } from "./local-book-paths";
 import type { ISyncBackend } from "./sync-backend";
 import type { SyncFilesOptions } from "./sync-files";
 import type { SyncProgress } from "./sync-types";
@@ -408,7 +409,8 @@ async function upsertRecord(
   record: Record<string, unknown>,
   pk: string,
 ): Promise<void> {
-  const filteredRecord = await filterRecordToExistingColumns(db, table, record);
+  const localRecord = table === "books" ? localizeSyncedBookRecord(record) : record;
+  const filteredRecord = await filterRecordToExistingColumns(db, table, localRecord);
   const columns = Object.keys(filteredRecord);
   if (columns.length === 0 || !columns.includes(pk)) return;
 
@@ -433,6 +435,19 @@ async function upsertRecord(
      ON CONFLICT(${pk}) DO UPDATE SET ${updateSet}`,
     values,
   );
+}
+
+function localizeSyncedBookRecord(record: Record<string, unknown>): Record<string, unknown> {
+  const id = record.id;
+  const filePath = canonicalBookFilePath(id, record.file_path, record.format);
+  if (!filePath) return record;
+
+  return {
+    ...record,
+    file_path: filePath,
+    cover_url: canonicalBookCoverPath(id, record.cover_url),
+    sync_status: "remote",
+  };
 }
 
 function normalizeDeletedAt(value: unknown): number | null | undefined {

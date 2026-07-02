@@ -380,6 +380,7 @@ function sortRow(row: Row): Row {
   const {
     is_vectorized: _isVectorized,
     vectorize_progress: _vectorizeProgress,
+    sync_status: _syncStatus,
     ...syncedRow
   } = row;
   return Object.fromEntries(Object.entries(syncedRow).sort(([a], [b]) => a.localeCompare(b)));
@@ -516,6 +517,33 @@ describe("simple sync convergence", () => {
     expect(result).toEqual({ applied: 2, skipped: 0 });
     expect(target.get("books", "book-1")).toBeTruthy();
     expect(target.get("highlights", "hl-1")).toBeTruthy();
+  });
+
+  it("localizes synced book file paths and keeps remote books downloadable", async () => {
+    const target = new FakeSyncDb();
+    dbMocks.currentDb = target;
+    dbMocks.currentDeviceId = "device-local";
+
+    const result = await applyChanges({
+      deviceId: "device-remote",
+      timestamp: now,
+      since: 0,
+      tables: {
+        books: {
+          records: [
+            bookRow({
+              file_path: "file:///data/user/0/com.readany.app/files/books/source-device.epub",
+              sync_status: "local",
+            }),
+          ],
+          deletedIds: [],
+        },
+      },
+    });
+
+    expect(result).toEqual({ applied: 1, skipped: 0 });
+    expect(target.get("books", "book-1")?.file_path).toBe("books/book-1.epub");
+    expect(target.get("books", "book-1")?.sync_status).toBe("remote");
   });
 
   it("keeps a newer local record when an older remote tombstone arrives", async () => {
