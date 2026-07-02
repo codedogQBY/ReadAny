@@ -40,8 +40,16 @@ export class ExpoPlatformService implements IPlatformService {
   // ---- File system (expo-file-system v55 — File/Directory/Paths API) ----
 
   async readFile(path: string): Promise<Uint8Array> {
-    const file = new File(path);
-    return file.bytes();
+    try {
+      const file = new File(path);
+      return await file.bytes();
+    } catch (err) {
+      if (!path.startsWith("content://")) throw err;
+      const base64 = await LegacyFS.readAsStringAsync(path, {
+        encoding: LegacyFS.EncodingType.Base64,
+      });
+      return base64ToBytes(base64);
+    }
   }
 
   async writeFile(path: string, data: Uint8Array): Promise<void> {
@@ -836,6 +844,15 @@ export class ExpoPlatformService implements IPlatformService {
       (server as any).close();
     }
   }
+}
+
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 /** Map book file extensions to MIME types for document picker */

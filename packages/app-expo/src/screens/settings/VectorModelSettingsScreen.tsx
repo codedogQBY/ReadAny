@@ -11,6 +11,11 @@ import {
 } from "@/styles/theme";
 import { useNavigation } from "@react-navigation/native";
 import type { VectorModelConfig } from "@readany/core/types";
+import {
+  EmbeddingEndpointTestError,
+  normalizeEmbeddingEndpointUrl,
+  testEmbeddingEndpoint,
+} from "@readany/core/utils/api";
 /**
  * VectorModelSettingsScreen — Mobile version only supports remote embedding APIs.
  * Local embedding is not supported to reduce APK size by ~100MB.
@@ -191,6 +196,8 @@ function RemoteModelsSection() {
   const [formModelId, setFormModelId] = useState("");
   const [formApiKey, setFormApiKey] = useState("");
   const [formDesc, setFormDesc] = useState("");
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, string>>({});
 
   const resetForm = useCallback(() => {
     setFormName("");
@@ -207,7 +214,7 @@ function RemoteModelsSection() {
     const newModel: VectorModelConfig = {
       id: `vm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       name: formName.trim(),
-      url: formUrl.trim(),
+      url: normalizeEmbeddingEndpointUrl(formUrl),
       modelId: formModelId.trim(),
       apiKey: formApiKey.trim(),
       description: formDesc.trim(),
@@ -230,7 +237,7 @@ function RemoteModelsSection() {
     if (!editingId || !formName.trim() || !formUrl.trim() || !formModelId.trim()) return;
     updateVectorModel(editingId, {
       name: formName.trim(),
-      url: formUrl.trim(),
+      url: normalizeEmbeddingEndpointUrl(formUrl),
       modelId: formModelId.trim(),
       apiKey: formApiKey.trim(),
       description: formDesc.trim(),
@@ -246,6 +253,40 @@ function RemoteModelsSection() {
     updateVectorModel,
     resetForm,
   ]);
+
+  const detectModelDimension = useCallback(
+    async (model: VectorModelConfig) => {
+      setTestingId(model.id);
+      setTestResults((prev) => ({ ...prev, [model.id]: t("settings.vm_testing", "测试中...") }));
+      const normalizedUrl = normalizeEmbeddingEndpointUrl(model.url);
+      if (normalizedUrl && normalizedUrl !== model.url) {
+        updateVectorModel(model.id, { url: normalizedUrl });
+      }
+      try {
+        const result = await testEmbeddingEndpoint({
+          url: normalizedUrl,
+          modelId: model.modelId,
+          apiKey: model.apiKey,
+        });
+        updateVectorModel(model.id, { dimension: result.dimension, url: result.url });
+        setTestResults((prev) => ({
+          ...prev,
+          [model.id]: t("settings.vm_testSuccess", { dimension: result.dimension }),
+        }));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const testUrl =
+          error instanceof EmbeddingEndpointTestError ? error.url : normalizedUrl || model.url;
+        setTestResults((prev) => ({
+          ...prev,
+          [model.id]: t("settings.vm_testFailedWithUrl", { error: message, url: testUrl }),
+        }));
+      } finally {
+        setTestingId(null);
+      }
+    },
+    [t, updateVectorModel],
+  );
 
   return (
     <View style={s.section}>
@@ -283,6 +324,11 @@ function RemoteModelsSection() {
             <View style={s.modelInfo}>
               <Text style={s.modelName}>{model.name}</Text>
               <Text style={s.modelSize}>{model.modelId}</Text>
+              {model.dimension ? (
+                <Text style={s.modelSize}>
+                  {t("settings.vm_dimension", { dim: model.dimension })}
+                </Text>
+              ) : null}
             </View>
             <Switch
               value={selectedVectorModelId === model.id}
@@ -304,6 +350,17 @@ function RemoteModelsSection() {
             </Text>
           ) : null}
           <View style={s.remoteActions}>
+            <TouchableOpacity
+              style={s.testBtn}
+              onPress={() => detectModelDimension(model)}
+              disabled={testingId === model.id}
+            >
+              <Text style={s.testBtnText}>
+                {testingId === model.id
+                  ? t("settings.vm_testing", "测试中...")
+                  : t("settings.vm_test", "测试")}
+              </Text>
+            </TouchableOpacity>
             <TouchableOpacity style={s.iconBtn} onPress={() => startEdit(model)}>
               <EditIcon size={14} color={colors.mutedForeground} />
             </TouchableOpacity>
@@ -311,6 +368,16 @@ function RemoteModelsSection() {
               <Trash2Icon size={14} color={colors.mutedForeground} />
             </TouchableOpacity>
           </View>
+          {testResults[model.id] ? (
+            <Text
+              style={[
+                s.testResult,
+                testResults[model.id].includes("✓") ? s.testSuccess : s.testError,
+              ]}
+            >
+              {testResults[model.id]}
+            </Text>
+          ) : null}
         </View>
       ))}
 
@@ -351,9 +418,10 @@ function RemoteModelsSection() {
             style={s.fieldInput}
             value={formUrl}
             onChangeText={setFormUrl}
-            placeholder="https://api.openai.com/v1/embeddings"
+            placeholder="https://api.openai.com/v1"
             placeholderTextColor={colors.mutedForeground}
           />
+          <Text style={s.fieldHint}>{t("settings.vm_urlHint")}</Text>
 
           <Text style={s.fieldLabel}>{t("settings.vm_apiKey", "API Key")}</Text>
           <PasswordInput
@@ -567,6 +635,16 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: 24,
     },
     remoteActions: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 8 },
+    testBtn: {
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: radius.md,
+      backgroundColor: withOpacity(colors.primary, 0.1),
+    },
+    testBtnText: { fontSize: 11, fontWeight: fontWeight.medium, color: colors.primary },
+    testResult: { fontSize: fontSize.xs, marginTop: 8, lineHeight: 17 },
+    testSuccess: { color: colors.emerald },
+    testError: { color: colors.destructive },
     // Form
     formCard: {
       backgroundColor: colors.card,
@@ -596,6 +674,12 @@ const makeStyles = (colors: ThemeColors) =>
       paddingHorizontal: 12,
       fontSize: fontSize.sm,
       color: colors.foreground,
+    },
+    fieldHint: {
+      fontSize: 11,
+      color: colors.mutedForeground,
+      marginTop: 4,
+      lineHeight: 16,
     },
     formActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 16 },
     formCancelBtn: {

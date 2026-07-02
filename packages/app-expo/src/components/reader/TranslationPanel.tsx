@@ -1,10 +1,18 @@
 import { CheckIcon, ChevronDownIcon, XIcon } from "@/components/ui/Icon";
 import { useSettingsStore } from "@/stores";
 import { type ThemeColors, fontSize, fontWeight, radius, useColors } from "@/styles/theme";
-import { buildAITranslationPrompt } from "@readany/core/translation/providers";
-import { TRANSLATOR_LANGS, type TranslationTargetLang } from "@readany/core/types/translation";
+import {
+  aiTranslate,
+  deeplTranslate,
+  microsoftTranslate,
+} from "@readany/core/translation/providers";
+import {
+  TRANSLATOR_LANGS,
+  TRANSLATOR_PROVIDERS,
+  type TranslationTargetLang,
+  type TranslatorName,
+} from "@readany/core/types/translation";
 import { providerRequiresApiKey } from "@readany/core/utils";
-import { buildOpenAICompatibleUrl } from "@readany/core/utils/api";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -39,69 +47,61 @@ export function TranslationPanel({ text, onClose }: TranslationPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showLangPicker, setShowLangPicker] = useState(false);
+  const [showProviderPicker, setShowProviderPicker] = useState(false);
+  const [providerRevision, setProviderRevision] = useState(0);
 
   const translate = useCallback(async () => {
+    void providerRevision;
     setLoading(true);
     setError(null);
     setTranslation(null);
 
     try {
-      const { getEndpointById } = useSettingsStore.getState();
-      const endpointId = translationConfig.provider.endpointId || aiConfig.activeEndpointId;
-      const endpoint = await getEndpointById(endpointId);
+      const input = text.split("\n").join(" ").trim();
+      let results: string[];
 
-      if (!endpoint || (providerRequiresApiKey(endpoint.provider) && !endpoint.apiKey)) {
-        throw new Error(t("translation.noApiKey", "请先配置 AI 设置"));
-      }
-
-      // Resolve model: translation-specific → global active → first from endpoint
-      let model = translationConfig.provider.model || aiConfig.activeModel;
-      if (endpoint.models.length > 0) {
-        if (!model || !endpoint.models.includes(model)) {
-          model = endpoint.models[0];
+      if (translationConfig.provider.id === "microsoft") {
+        results = await microsoftTranslate([input], "AUTO", targetLang);
+      } else if (translationConfig.provider.id === "deepl") {
+        const apiKey = translationConfig.provider.apiKey;
+        if (!apiKey) {
+          throw new Error(t("translation.noApiKey", "请先配置翻译设置"));
         }
+        results = await deeplTranslate(
+          [input],
+          "AUTO",
+          targetLang,
+          apiKey,
+          translationConfig.provider.baseUrl,
+        );
+      } else {
+        const { getEndpointById } = useSettingsStore.getState();
+        const endpointId = translationConfig.provider.endpointId || aiConfig.activeEndpointId;
+        const endpoint = await getEndpointById(endpointId);
+
+        if (!endpoint || (providerRequiresApiKey(endpoint.provider) && !endpoint.apiKey)) {
+          throw new Error(t("translation.noApiKey", "请先配置 AI 设置"));
+        }
+
+        let model = translationConfig.provider.model || aiConfig.activeModel;
+        if (endpoint.models.length > 0) {
+          if (!model || !endpoint.models.includes(model)) {
+            model = endpoint.models[0];
+          }
+        }
+
+        results = await aiTranslate(
+          [input],
+          "AUTO",
+          targetLang,
+          endpoint.apiKey,
+          endpoint.baseUrl,
+          model || "gpt-4o-mini",
+          endpoint.useExactRequestUrl || false,
+        );
       }
 
-      const requestUrl = buildOpenAICompatibleUrl(
-        endpoint.baseUrl,
-        "chat/completions",
-        "https://api.openai.com",
-        endpoint.useExactRequestUrl || false,
-      );
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      if (endpoint.apiKey) {
-        headers.Authorization = `Bearer ${endpoint.apiKey}`;
-      }
-
-      const response = await fetch(requestUrl, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model: model || "gpt-4o-mini",
-          messages: [
-            {
-              role: "system",
-              content: buildAITranslationPrompt("AUTO", targetLang),
-            },
-            {
-              role: "user",
-              content: text.split("\n").join(" ").trim(),
-            },
-          ],
-          temperature: 0.3,
-          max_tokens: 2000,
-        }),
-      });
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error?.message || `HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      const result = data.choices?.[0]?.message?.content?.trim();
+      const result = results[0]?.trim();
       if (result) {
         setTranslation(result);
       } else {
@@ -113,7 +113,7 @@ export function TranslationPanel({ text, onClose }: TranslationPanelProps) {
     } finally {
       setLoading(false);
     }
-  }, [text, targetLang, translationConfig, aiConfig, t]);
+  }, [text, targetLang, translationConfig, aiConfig, t, providerRevision]);
 
   useEffect(() => {
     translate();
@@ -128,12 +128,30 @@ export function TranslationPanel({ text, onClose }: TranslationPanelProps) {
     [updateTranslationConfig],
   );
 
+  const handleProviderChange = useCallback(
+    (providerId: TranslatorName, providerName: string) => {
+      updateTranslationConfig({
+        provider: {
+          ...translationConfig.provider,
+          id: providerId,
+          name: providerName,
+        },
+      });
+      setProviderRevision((revision) => revision + 1);
+      setShowProviderPicker(false);
+    },
+    [translationConfig.provider, updateTranslationConfig],
+  );
+
   const providerName =
     translationConfig.provider.id === "ai"
       ? aiConfig.endpoints.find(
           (e) => e.id === (translationConfig.provider.endpointId || aiConfig.activeEndpointId),
         )?.name || "AI"
-      : translationConfig.provider.name;
+      : t(
+          TRANSLATOR_PROVIDERS.find((p) => p.id === translationConfig.provider.id)?.labelKey ||
+            translationConfig.provider.name,
+        );
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
@@ -143,11 +161,28 @@ export function TranslationPanel({ text, onClose }: TranslationPanelProps) {
 
         <View style={s.header}>
           <View style={s.headerLeft}>
-            <TouchableOpacity style={s.langBtn} onPress={() => setShowLangPicker(!showLangPicker)}>
+            <TouchableOpacity
+              style={s.langBtn}
+              onPress={() => {
+                setShowProviderPicker(false);
+                setShowLangPicker(!showLangPicker);
+              }}
+            >
               <Text style={s.langBtnText}>{TRANSLATOR_LANGS[targetLang]}</Text>
               <ChevronDownIcon size={14} color={colors.mutedForeground} />
             </TouchableOpacity>
-            <Text style={s.providerText}>{providerName}</Text>
+            <TouchableOpacity
+              style={s.providerBtn}
+              onPress={() => {
+                setShowLangPicker(false);
+                setShowProviderPicker(!showProviderPicker);
+              }}
+            >
+              <Text style={s.providerBtnText} numberOfLines={1}>
+                {providerName}
+              </Text>
+              <ChevronDownIcon size={14} color={colors.mutedForeground} />
+            </TouchableOpacity>
           </View>
           <TouchableOpacity style={s.closeBtn} onPress={onClose}>
             <XIcon size={18} color={colors.mutedForeground} />
@@ -171,6 +206,36 @@ export function TranslationPanel({ text, onClose }: TranslationPanelProps) {
               ),
             )}
           </ScrollView>
+        )}
+
+        {showProviderPicker && (
+          <View style={s.providerPicker}>
+            {TRANSLATOR_PROVIDERS.map((p) => {
+              const label = t(p.labelKey);
+              return (
+                <TouchableOpacity
+                  key={p.id}
+                  style={[
+                    s.providerOption,
+                    translationConfig.provider.id === p.id && s.providerOptionActive,
+                  ]}
+                  onPress={() => handleProviderChange(p.id, label)}
+                >
+                  <Text
+                    style={[
+                      s.providerOptionText,
+                      translationConfig.provider.id === p.id && s.providerOptionTextActive,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                  {translationConfig.provider.id === p.id && (
+                    <CheckIcon size={14} color={colors.primary} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         )}
 
         <ScrollView style={s.content} nestedScrollEnabled>
@@ -238,6 +303,8 @@ const makeStyles = (colors: ThemeColors) =>
       flexDirection: "row",
       alignItems: "center",
       gap: 8,
+      flex: 1,
+      paddingRight: 8,
     },
     langBtn: {
       flexDirection: "row",
@@ -252,9 +319,23 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: fontSize.sm,
       color: colors.foreground,
     },
-    providerText: {
+    providerBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      minWidth: 0,
+      maxWidth: 150,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: radius.lg,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    providerBtnText: {
       fontSize: fontSize.xs,
       color: colors.mutedForeground,
+      flexShrink: 1,
     },
     closeBtn: {
       width: 32,
@@ -284,6 +365,30 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors.foreground,
     },
     langOptionTextActive: {
+      color: colors.primary,
+      fontWeight: fontWeight.medium,
+    },
+    providerPicker: {
+      backgroundColor: colors.card,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      paddingVertical: 4,
+    },
+    providerOption: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+    },
+    providerOptionActive: {
+      backgroundColor: colors.muted,
+    },
+    providerOptionText: {
+      fontSize: fontSize.sm,
+      color: colors.foreground,
+    },
+    providerOptionTextActive: {
       color: colors.primary,
       fontWeight: fontWeight.medium,
     },

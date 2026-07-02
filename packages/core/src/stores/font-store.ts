@@ -1,9 +1,9 @@
+import { create } from "zustand";
+import { getPlatformService, waitForPlatformService } from "../services/platform";
 /**
  * Custom font store — manages user-uploaded fonts
  */
 import type { CustomFont, FontFormat, FontPreset } from "../types/font";
-import { create } from "zustand";
-import { getPlatformService, waitForPlatformService } from "../services/platform";
 
 const FONTS_DIR = "readany-fonts";
 const FONTS_INDEX_FILE = "custom-fonts.json";
@@ -50,7 +50,7 @@ export interface FontState {
   selectedFontId: string | null; // null = use fontTheme
   _hasHydrated: boolean;
 
-  addFont: (font: CustomFont) => void;
+  addFont: (font: CustomFont, options?: { select?: boolean }) => void;
   removeFont: (id: string) => Promise<void>;
   setSelectedFont: (id: string | null) => void;
   getFont: (id: string) => CustomFont | undefined;
@@ -61,6 +61,33 @@ export interface FontState {
 
 function generateFontId(): string {
   return `font-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getSourceFileName(sourcePath: string, originalFileName?: string): string {
+  const sourceName = originalFileName || sourcePath.split(/[/\\]/).pop() || "font.ttf";
+  const cleanName = sourceName.split(/[?#]/, 1)[0] || "font.ttf";
+  try {
+    return decodeURIComponent(cleanName);
+  } catch {
+    return cleanName;
+  }
+}
+
+function getSafeFontFileBase(fontName: string): string {
+  const safeName = fontName
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return safeName || "font";
+}
+
+function getFontExtension(fileName: string): FontFormat {
+  return getFontFormat(fileName);
+}
+
+function createCustomFontFamily(fontId: string): string {
+  const safeId = fontId.replace(/[^a-zA-Z0-9_-]+/g, "-");
+  return `ReadAnyCustomFont-${safeId}`;
 }
 
 function getFontFormat(fileName: string): FontFormat {
@@ -105,13 +132,14 @@ export async function getFontsDir(): Promise<string> {
 export async function saveFontFile(
   sourcePath: string,
   fontName: string,
+  originalFileName?: string,
 ): Promise<{ filePath: string; fileName: string; size: number }> {
   const platform = getPlatformService();
   const fontsDir = await getFontsDir();
 
-  const originalName = sourcePath.split(/[/\\]/).pop() || "font.ttf";
-  const ext = originalName.split(".").pop() || "ttf";
-  const safeName = fontName.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const originalName = getSourceFileName(sourcePath, originalFileName);
+  const ext = getFontExtension(originalName);
+  const safeName = getSafeFontFileBase(fontName);
   const fileName = `${safeName}-${Date.now()}.${ext}`;
   const filePath = await platform.joinPath(fontsDir, fileName);
 
@@ -149,7 +177,7 @@ export function getCSSFontFace(font: CustomFont, baseUrl?: string): string {
       src = `url('${font.remoteUrl}') format('${getCSSFontFormat(font.format)}')`;
     }
     return `@font-face {
-  font-family: '${font.fontFamily}';
+  font-family: ${JSON.stringify(font.fontFamily)};
   src: ${src};
   font-weight: normal;
   font-style: normal;
@@ -160,7 +188,7 @@ export function getCSSFontFace(font: CustomFont, baseUrl?: string): string {
   if (!baseUrl) return "";
   const cssFormat = getCSSFontFormat(font.format);
   return `@font-face {
-  font-family: '${font.fontFamily}';
+  font-family: ${JSON.stringify(font.fontFamily)};
   src: url('${baseUrl}/${font.fileName}') format('${cssFormat}');
   font-weight: normal;
   font-style: normal;
@@ -176,7 +204,7 @@ export function getRemoteCssImports(fonts: CustomFont[]): string {
 }
 
 export function getFontFamilyCSS(font: CustomFont): string {
-  return `'${font.fontFamily}', sans-serif`;
+  return `${JSON.stringify(font.fontFamily)}, sans-serif`;
 }
 
 export const useFontStore = create<FontState>((set, get) => ({
@@ -184,12 +212,13 @@ export const useFontStore = create<FontState>((set, get) => ({
   selectedFontId: null,
   _hasHydrated: false,
 
-  addFont: (font) => {
+  addFont: (font, options) => {
     set((state) => {
       const nextFonts = state.fonts.filter((item) => item.id !== font.id);
       const newFonts = [...nextFonts, font];
-      persistFontIndex(newFonts, state.selectedFontId);
-      return { fonts: newFonts };
+      const selectedFontId = options?.select ? font.id : state.selectedFontId;
+      persistFontIndex(newFonts, selectedFontId);
+      return { fonts: newFonts, selectedFontId };
     });
   },
 
@@ -297,4 +326,4 @@ async function hydrateFontStore(): Promise<void> {
 
 void hydrateFontStore();
 
-export { generateFontId, getFontFormat };
+export { generateFontId, getFontFormat, createCustomFontFamily };
