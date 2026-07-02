@@ -5,10 +5,10 @@
  */
 
 import { useCallback, useState } from "react";
-import type { AIConfig } from "../types";
 import { useSettingsStore } from "../stores/settings-store";
 import { getFromCache, storeInCache } from "../translation/cache";
-import { aiTranslate, deeplTranslate } from "../translation/providers";
+import { aiTranslate, deeplTranslate, microsoftTranslate } from "../translation/providers";
+import type { AIConfig } from "../types";
 import type { TranslationConfig, TranslationTargetLang } from "../types/translation";
 import { providerRequiresApiKey } from "../utils";
 
@@ -20,7 +20,12 @@ export interface UseTranslatorOptions {
 }
 
 export function useTranslator(options: UseTranslatorOptions = {}) {
-  const { sourceLang = "AUTO", targetLang, aiConfig: aiConfigOverride, translationConfig: translationConfigOverride } = options;
+  const {
+    sourceLang = "AUTO",
+    targetLang,
+    aiConfig: aiConfigOverride,
+    translationConfig: translationConfigOverride,
+  } = options;
   const translationConfigFromStore = useSettingsStore((s) => s.translationConfig);
   const aiConfigFromStore = useSettingsStore((s) => s.aiConfig);
   const translationConfig = translationConfigOverride || translationConfigFromStore;
@@ -91,6 +96,12 @@ export function useTranslator(options: UseTranslatorOptions = {}) {
             targetLanguage,
             apiKey,
             translationConfig.provider.baseUrl,
+          );
+        } else if (providerId === "microsoft") {
+          translatedTexts = await microsoftTranslate(
+            needsTranslation.map((n) => n.text),
+            sourceLang,
+            targetLanguage,
           );
         } else {
           throw new Error(`Unknown translation provider: ${providerId}`);

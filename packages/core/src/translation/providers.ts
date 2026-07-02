@@ -553,12 +553,18 @@ let _msToken: string | null = null;
 let _msTokenExpiry = 0;
 
 /** Language code mapping: our codes → Microsoft API codes */
-function toMicrosoftLangCode(lang: string): string {
-  const map: Record<string, string> = {
-    "zh-CN": "zh-Hans",
-    "zh-TW": "zh-Hant",
-  };
-  return map[lang] || lang;
+export function toMicrosoftLangCode(lang: string): string {
+  const normalized = lang.trim().replace(/_/g, "-");
+  const lower = normalized.toLowerCase();
+
+  if (lower === "zh" || lower === "zh-cn" || lower === "zh-sg" || lower === "zh-hans") {
+    return "zh-Hans";
+  }
+  if (lower === "zh-tw" || lower === "zh-hk" || lower === "zh-mo" || lower === "zh-hant") {
+    return "zh-Hant";
+  }
+
+  return normalized;
 }
 
 /** Microsoft supported source languages (subset for validation) */
@@ -601,11 +607,18 @@ export async function microsoftTranslate(
   // If source lang is "auto"/"AUTO", empty, or not recognized by Microsoft, omit it for auto-detection
   const from = (!sourceLang || sourceLang.toLowerCase() === "auto" || !MS_SUPPORTED_LANGS.has(mappedSource)) ? "" : mappedSource;
   const to = toMicrosoftLangCode(targetLang);
+  const params = new URLSearchParams({
+    "api-version": "3.0",
+    to,
+  });
+  if (from) {
+    params.set("from", from);
+  }
 
   const body = texts.map((t) => ({ Text: t }));
 
   const resp = await fetch(
-    `https://api-edge.cognitive.microsofttranslator.com/translate?from=${from}&to=${to}&api-version=3.0`,
+    `https://api-edge.cognitive.microsofttranslator.com/translate?${params.toString()}`,
     {
       method: "POST",
       headers: {

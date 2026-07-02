@@ -12,14 +12,15 @@ import { useVectorModelStore } from "@/stores/vector-model-store";
 import { BUILTIN_EMBEDDING_MODELS } from "@readany/core/ai/builtin-embedding-models";
 import { clearModelCache, loadEmbeddingPipeline } from "@readany/core/ai/local-embedding-service";
 import type { VectorModelConfig } from "@readany/core/types";
+import {
+  EmbeddingEndpointTestError,
+  normalizeEmbeddingEndpointUrl,
+  testEmbeddingEndpoint,
+} from "@readany/core/utils/api";
 import { Check, Download, Edit2, Loader2, Plus, Trash2, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ConfigTransfer } from "./ConfigTransfer";
-
-function normalizeEmbeddingsUrl(url: string): string {
-  return url.replace(/\/$/, "");
-}
 
 /* ------------------------------------------------------------------ */
 /*  Built-in Models Section                                           */
@@ -229,7 +230,11 @@ function RemoteModelsSection() {
     if (!formData.name.trim() || !formData.url.trim() || !formData.modelId.trim()) return;
     const newModel: VectorModelConfig = {
       id: `vm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      ...formData,
+      name: formData.name.trim(),
+      url: normalizeEmbeddingEndpointUrl(formData.url),
+      modelId: formData.modelId.trim(),
+      apiKey: formData.apiKey.trim(),
+      description: formData.description?.trim() || "",
     };
     addVectorModel(newModel);
     resetForm();
@@ -250,7 +255,13 @@ function RemoteModelsSection() {
   const handleEdit = useCallback(() => {
     if (!editingId || !formData.name.trim() || !formData.url.trim() || !formData.modelId.trim())
       return;
-    updateVectorModel(editingId, formData);
+    updateVectorModel(editingId, {
+      name: formData.name.trim(),
+      url: normalizeEmbeddingEndpointUrl(formData.url),
+      modelId: formData.modelId.trim(),
+      apiKey: formData.apiKey.trim(),
+      description: formData.description?.trim() || "",
+    });
     resetForm();
   }, [editingId, formData, updateVectorModel, resetForm]);
 
@@ -265,37 +276,29 @@ function RemoteModelsSection() {
     async (model: VectorModelConfig) => {
       setTestingId(model.id);
       setTestResults((prev) => ({ ...prev, [model.id]: t("settings.vm_testing") }));
+      const normalizedUrl = normalizeEmbeddingEndpointUrl(model.url);
+      if (normalizedUrl && normalizedUrl !== model.url) {
+        updateVectorModel(model.id, { url: normalizedUrl });
+      }
       try {
-        const testUrl = normalizeEmbeddingsUrl(model.url);
-        const isOllama = testUrl.endsWith("/api/embed");
-        const headers: Record<string, string> = { "Content-Type": "application/json" };
-        if (model.apiKey.trim()) headers.Authorization = `Bearer ${model.apiKey}`;
-
-        const requestBody = isOllama
-          ? { model: model.modelId, input: "test" }
-          : { input: ["test"], model: model.modelId, encoding_format: "float" };
-
-        const res = await fetch(testUrl, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(requestBody),
+        const result = await testEmbeddingEndpoint({
+          url: normalizedUrl,
+          modelId: model.modelId,
+          apiKey: model.apiKey,
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-        const json = await res.json();
-        const len = isOllama
-          ? (json?.embeddings?.[0]?.length ?? 0)
-          : (json?.data?.[0]?.embedding?.length ?? 0);
 
-        updateVectorModel(model.id, { dimension: len });
+        updateVectorModel(model.id, { dimension: result.dimension, url: result.url });
         setTestResults((prev) => ({
           ...prev,
-          [model.id]: t("settings.vm_testSuccess", { dimension: len }),
+          [model.id]: t("settings.vm_testSuccess", { dimension: result.dimension }),
         }));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        const testUrl =
+          error instanceof EmbeddingEndpointTestError ? error.url : normalizedUrl || model.url;
         setTestResults((prev) => ({
           ...prev,
-          [model.id]: t("settings.vm_testFailed", { error: message }),
+          [model.id]: t("settings.vm_testFailedWithUrl", { error: message, url: testUrl }),
         }));
       } finally {
         setTestingId(null);
@@ -471,7 +474,7 @@ function RemoteModelsSection() {
               id="vector-model-url"
               value={formData.url}
               onChange={(e) => setFormData((p) => ({ ...p, url: e.target.value }))}
-              placeholder="https://api.openai.com/v1/embeddings"
+              placeholder="https://api.openai.com/v1"
               className="h-8 text-sm"
             />
             <p className="mt-1 text-xs text-muted-foreground">{t("settings.vm_urlHint")}</p>

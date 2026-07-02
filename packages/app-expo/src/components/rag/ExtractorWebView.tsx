@@ -6,6 +6,26 @@ import { WebView } from "react-native-webview";
 
 const READER_HTML_ASSET = Asset.fromModule(require("../../../assets/reader/reader.html"));
 
+const EXTRACTOR_EXTENSIONS_BY_MIME: Record<string, string> = {
+  "application/epub+zip": "epub",
+  "application/pdf": "pdf",
+  "application/x-mobipocket-ebook": "mobi",
+  "application/vnd.amazon.ebook": "azw3",
+  "application/vnd.comicbook+zip": "cbz",
+  "application/x-fictionbook+xml": "fb2",
+  "application/x-zip-compressed-fb2": "fbz",
+  "text/plain": "txt",
+};
+
+function getExtractorFileName(mimeType: string) {
+  const normalized = mimeType.split(";")[0]?.trim().toLowerCase() || "application/epub+zip";
+  return `book.${EXTRACTOR_EXTENSIONS_BY_MIME[normalized] || "epub"}`;
+}
+
+function isPDFMimeType(mimeType: string) {
+  return mimeType.split(";")[0]?.trim().toLowerCase() === "application/pdf";
+}
+
 export interface ExtractorRef {
   extractChapters: (base64BookData: string, mimeType?: string) => Promise<ChapterData[]>;
 }
@@ -58,6 +78,8 @@ export const ExtractorWebView = forwardRef<ExtractorRef>((_, ref) => {
         } else if (msg.chapters && resolve) {
           resolve(msg.chapters);
         }
+      } else if (msg.type === "debug") {
+        console.log("[ExtractorWebView]", msg.message);
       } else if (msg.type === "error") {
         console.error("[ExtractorWebView] WebView error:", msg.message);
         // Only reject if we were waiting for it
@@ -85,10 +107,10 @@ export const ExtractorWebView = forwardRef<ExtractorRef>((_, ref) => {
         // Command the webview to open the book first.
         // It will reply with "loaded" when it finishes rendering.
         const cmd = {
-          type: "openBook",
+          type: isPDFMimeType(mimeType) ? "extractBookChapters" : "openBook",
           base64: base64BookData,
-          fileName: "book.epub",
           mimeType,
+          fileName: getExtractorFileName(mimeType),
         };
 
         webViewRef.current.injectJavaScript(`
