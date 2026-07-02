@@ -1841,6 +1841,9 @@
           :root:not(.vrtl):not(.vltr) body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *) {
             font-family: var(--readany-font-family) !important;
           }
+          :root:not(.vrtl):not(.vltr) body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *):not(rt):not(rp) {
+            font-size: ${fSize}px !important;
+          }
           :root:is(.vrtl, .vltr),
           :root:is(.vrtl, .vltr) body {
             font-family: var(--readany-font-family);
@@ -1894,6 +1897,7 @@
         if (typeof renderer.setStyles === 'function') {
           renderer.setStyles(themedStyles);
         }
+        syncReaderOverrideStylesForAllDocs(themedStyles);
         syncCustomFontStylesForAllDocs(currentCustomFontFaceCSS);
       }
 
@@ -1999,6 +2003,28 @@
       }
     }
 
+    function syncReaderOverrideStylesForDoc(doc, css) {
+      if (!doc || !doc.head) return;
+      const styleId = '__readany_reader_overrides__';
+      let el = doc.getElementById(styleId);
+      if (!el) {
+        el = doc.createElement('style');
+        el.id = styleId;
+        doc.head.appendChild(el);
+      }
+      el.textContent = css || '';
+      // Keep this style after book styles and our @font-face block so it wins
+      // against EPUBs that define fixed font sizes with !important.
+      doc.head.appendChild(el);
+    }
+
+    function syncReaderOverrideStylesForAllDocs(css) {
+      for (const content of getRendererContents()) {
+        if (!content || !content.doc) continue;
+        syncReaderOverrideStylesForDoc(content.doc, css);
+      }
+    }
+
     function injectCustomFontFace(css) {
       syncCustomFontStylesForDoc(document, css);
       syncCustomFontStylesForAllDocs(css);
@@ -2023,6 +2049,7 @@
         const currentStyles = lastRendererStyles || '';
         const themedStyles = injectThemeIntoStyles(currentStyles, bg, fg, primary);
         view.renderer.setStyles(themedStyles);
+        syncReaderOverrideStylesForAllDocs(themedStyles);
       }
 
       if (view && view.setSearchIndicator) {
