@@ -543,11 +543,25 @@ export class TrackPlayerEdgeTTSPlayer implements ITTSPlayer {
 
   private _handlePlaybackEnded(gen: number, track?: number): void {
     if (gen !== this._speakGen || this._stopped) return;
-    if (!this._downloadComplete) {
-      this._markQueueStarved(track);
+
+    const endedIndex = typeof track === "number" ? track : this._currentIndex;
+    if (this._downloadComplete && this._isAtFinalTrack(endedIndex)) {
+      this._finishPlayback();
       return;
     }
-    this._finishPlayback();
+
+    console.warn("[TrackPlayerEdgeTTSPlayer] playback ended before final chunk", {
+      track,
+      currentIndex: this._currentIndex,
+      endedIndex,
+      nextChunkToAdd: this._nextChunkToAdd,
+      total: this._chunks.length,
+      downloadComplete: this._downloadComplete,
+    });
+    this._markQueueStarved(track);
+    if (this._hasEnoughQueuedToResume()) {
+      void this._resumeStarvedQueue(gen);
+    }
   }
 
   private _markQueueStarved(track?: number): void {
