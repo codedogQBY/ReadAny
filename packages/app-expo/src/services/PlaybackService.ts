@@ -16,7 +16,6 @@ import { useTTSStore } from "../stores/tts-store";
 export async function PlaybackService() {
   TrackPlayer.addEventListener(Event.RemotePlay, () => {
     useTTSStore.getState().resume();
-    TrackPlayer.play();
   });
 
   TrackPlayer.addEventListener(Event.RemotePause, () => {

@@ -8,11 +8,14 @@ import {
   shouldRespeakForSynthChange,
   splitNarrationText,
 } from "@readany/core/tts";
+import { Platform } from "react-native";
 import TrackPlayer from "react-native-track-player";
 import { create } from "zustand";
 import { ExpoSpeechTTSPlayer } from "../lib/platform/expo-speech-player";
+import { canUseSystemTtsSynthesis } from "../lib/platform/system-tts-synthesis";
 import { TrackPlayerDashScopeTTSPlayer } from "../lib/platform/track-player-dashscope-player";
 import { TrackPlayerEdgeTTSPlayer } from "../lib/platform/track-player-edge-player";
+import { TrackPlayerSystemTTSPlayer } from "../lib/platform/track-player-system-player";
 import { withPersist } from "./persist";
 
 export type TTSPlayState = "stopped" | "playing" | "paused" | "loading";
@@ -24,7 +27,15 @@ export interface TTSPlayerFactories {
 }
 
 const defaultFactories: TTSPlayerFactories = {
-  createSystemTTS: () => new ExpoSpeechTTSPlayer(),
+  createSystemTTS: () => {
+    if (Platform.OS === "android" || Platform.OS === "ios") {
+      if (!canUseSystemTtsSynthesis()) {
+        console.warn("[TTS] System TTS synthesis module unavailable; native rebuild required");
+      }
+      return new TrackPlayerSystemTTSPlayer();
+    }
+    return new ExpoSpeechTTSPlayer();
+  },
   createEdgeTTS: () => new TrackPlayerEdgeTTSPlayer(),
   createDashScopeTTS: () => new TrackPlayerDashScopeTTSPlayer(),
 };
@@ -469,6 +480,7 @@ export const useTTSStore = create<TTSState>()(
               TrackPlayer.updateMetadataForTrack(idx, {
                 title: chapter || title,
                 artist: title,
+                album: title || "ReadAny",
                 ...(artwork ? { artwork } : {}),
               }).catch((err) => console.warn("[TTS] Failed to update track metadata:", err));
             }

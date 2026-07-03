@@ -171,7 +171,7 @@
     function postToRN(type, data) {
       if (RN) RN.postMessage(JSON.stringify({ type, ...data }));
     }
-    window.__READANY_READER_BUILD_ID = 'pdf-vectorization-direct-extract';
+    window.__READANY_READER_BUILD_ID = 'android-local-server-cors';
     postToRN('debug', { message: '[ReaderBuild] ' + window.__READANY_READER_BUILD_ID });
     Promise.withResolvers ??= function () {
       let resolve;
@@ -1392,6 +1392,14 @@
             type: msg.mimeType || 'application/epub+zip'
           });
         } else if (msg.uri) {
+          postToRN('debug', {
+            message: `[ReaderFetch] open ${JSON.stringify({
+              uri: msg.uri,
+              fileName: msg.fileName || '',
+              mimeType: msg.mimeType || ''
+            })}`
+          });
+
           // Try Range-based lazy loading for ZIP-based formats (EPUB, CBZ, FBZ)
           // This avoids loading the entire file into memory — only reads
           // the ZIP central directory (~few KB) then fetches entries on demand.
@@ -1712,8 +1720,9 @@
 
       } catch (err) {
         console.error('[WebView] Error in openBook:', err);
-        loading.innerHTML = '<div class="error-text">' + escapeHtml(String(err)) + '</div>';
-        postToRN('error', { message: String(err) });
+        const message = `${String(err)}${msg?.uri ? ` (${msg.uri})` : ''}`;
+        loading.innerHTML = '<div class="error-text">' + escapeHtml(message) + '</div>';
+        postToRN('error', { message });
       }
     }
 

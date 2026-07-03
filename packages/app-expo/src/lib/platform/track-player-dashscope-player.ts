@@ -9,6 +9,7 @@ import { chunkIndexFromTrackId, trackIdForChunkIndex } from "./track-player-chun
 import { ensureSilenceFile } from "./tts-silence-keeper";
 
 const CHUNK_MAX_CHARS = 500;
+const MEDIA_ARTIST = "ReadAny";
 const DEFAULT_ARTWORK = (() => {
   try {
     return Image.resolveAssetSource(require("../../../assets/icon.png"))?.uri || "";
@@ -140,6 +141,11 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
     const unsubStateChange = TrackPlayer.addEventListener(Event.PlaybackState, (event) => {
       if (gen !== this._speakGen || this._stopped) return;
       if (event.state === State.Playing) {
+        if (this._paused) {
+          TrackPlayer.pause().catch((err) => console.warn("[TTS] TrackPlayer pause failed:", err));
+          this.onStateChange?.("paused");
+          return;
+        }
         this.onStateChange?.("playing");
       } else if (event.state === State.Paused) {
         // RNTP reports Paused for several reasons that are NOT real starvation:
@@ -225,7 +231,7 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
     void this._runProducer(gen).finally(() => {
       if (gen !== this._speakGen) return;
       this._producerRunning = false;
-      if (!this._stopped && this._nextChunkToAdd < this._chunks.length) {
+      if (!this._stopped && !this._paused && this._nextChunkToAdd < this._chunks.length) {
         this._ensureProducerRunning(gen);
       }
     });
@@ -317,6 +323,9 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
       id: trackIdForChunkIndex(index),
       url: audioUri,
       title: this._currentTitle || `Segment ${index + 1}`,
+      artist: MEDIA_ARTIST,
+      album: this._currentTitle || "ReadAny TTS",
+      description: this._chunks[index]?.slice(0, 240),
       artwork: this._currentArtwork,
     });
 
@@ -345,9 +354,11 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
     try {
       // Remove silence keep-alive tracks before resuming real audio
       await this._removeSilenceTracks();
+      if (gen !== this._speakGen || this._stopped || this._paused) return;
 
       const queue = await TrackPlayer.getQueue();
       if (queue.length === 0) return;
+      if (gen !== this._speakGen || this._stopped || this._paused) return;
 
       // Resolve queue position by track ID rather than treating chunk index
       // as queue index. See track-player-chunk-id.ts for the why.
@@ -367,6 +378,7 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
 
       this._queueStarved = false;
       await TrackPlayer.skip(targetQueuePos).catch(() => {});
+      if (gen !== this._speakGen || this._stopped || this._paused) return;
       await TrackPlayer.play();
       const resolvedTrack = await TrackPlayer.getActiveTrack().catch(() => null);
       const resolvedChunkIndex = chunkIndexFromTrackId(resolvedTrack?.id) ?? targetChunkIndex;
@@ -452,12 +464,17 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
           this._notifyChunkChange(chunkIndex);
         }
 
-        if (playbackState?.state === State.Playing) {
+        if (this._paused) {
+          if (playbackState?.state === State.Playing) {
+            await TrackPlayer.pause().catch((err) =>
+              console.warn("[TTS] TrackPlayer pause failed:", err),
+            );
+          }
+          this.onStateChange?.("paused");
+        } else if (playbackState?.state === State.Playing) {
           this._playStarted = true;
           this._startProgressPolling(gen);
           this.onStateChange?.("playing");
-        } else if (this._paused && playbackState?.state === State.Paused) {
-          this.onStateChange?.("paused");
         } else if (playbackState?.state === State.Ended || playbackState?.state === State.Stopped) {
           this._handlePlaybackEnded(gen, chunkIndex ?? undefined);
         }
@@ -485,6 +502,7 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
       this._stopProgressPolling();
       return;
     }
+    if (this._paused) return;
 
     try {
       const [activeTrack, playbackState] = await Promise.all([
