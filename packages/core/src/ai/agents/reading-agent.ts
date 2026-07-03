@@ -108,6 +108,63 @@ async function executeTool(tool: ToolDefinition, args: Record<string, unknown>):
   }
 }
 
+function collectTextValues(value: unknown): string[] {
+  if (typeof value === "string") return value ? [value] : [];
+  if (!value || typeof value !== "object") return [];
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectTextValues(item));
+  }
+
+  const record = value as Record<string, unknown>;
+  const values: string[] = [];
+  for (const key of ["text", "content", "summary", "value"]) {
+    values.push(...collectTextValues(record[key]));
+  }
+  return values;
+}
+
+function extractGeminiThoughtSummariesFromRaw(rawResponse: unknown): string[] {
+  if (!rawResponse || typeof rawResponse !== "object") return [];
+
+  const summaries: string[] = [];
+  const visit = (value: unknown, keyHint = "") => {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, keyHint);
+      return;
+    }
+
+    const record = value as Record<string, unknown>;
+    const type = typeof record.type === "string" ? record.type.toLowerCase() : "";
+    const key = keyHint.toLowerCase();
+    const isThoughtSummary =
+      type === "thought_summary" ||
+      type === "thinking_summary" ||
+      key === "thought_summary" ||
+      key === "thinking_summary";
+
+    if (isThoughtSummary) {
+      summaries.push(
+        ...collectTextValues(record.text ?? record.content ?? record.summary ?? value),
+      );
+    }
+
+    for (const [childKey, childValue] of Object.entries(record)) {
+      const normalizedKey = childKey.toLowerCase();
+      if (normalizedKey === "thought_signature" || normalizedKey === "signature") continue;
+      if (normalizedKey === "thought_summary" || normalizedKey === "thinking_summary") {
+        summaries.push(...collectTextValues(childValue));
+        continue;
+      }
+      visit(childValue, childKey);
+    }
+  };
+
+  visit(rawResponse);
+  return summaries.filter((summary) => summary.trim().length > 0);
+}
+
 // --- Main Agent Function ---
 
 export async function* streamReadingAgent(
@@ -200,7 +257,16 @@ export async function* streamReadingAgent(
       const allMessages = [new SystemMessage(systemPrompt), ...inputMessages];
       const stream = await model.stream(allMessages);
       const thinkTagParser = new ThinkTagStreamParser();
+      const emittedGeminiThoughtSummaries = new Set<string>();
       for await (const chunk of stream) {
+        for (const summary of extractGeminiThoughtSummariesFromRaw(
+          chunk.additional_kwargs?.__raw_response,
+        )) {
+          if (emittedGeminiThoughtSummaries.has(summary)) continue;
+          emittedGeminiThoughtSummaries.add(summary);
+          yield { type: "reasoning", content: summary, stepType: "thinking" };
+        }
+
         const content = chunk.content;
         if (typeof content === "string" && content) {
           for (const event of thinkTagParser.push(content)) {
@@ -301,6 +367,7 @@ export async function* streamReadingAgent(
     const iterator = eventStream[Symbol.asyncIterator]();
     let eventResult = await raceNext(iterator);
     let turnTextBuffer = "";
+    const emittedGeminiThoughtSummaries = new Set<string>();
 
     function* flushBufferedTurnText(hasToolCalls: boolean): Generator<AgentStreamEvent> {
       if (!turnTextBuffer) return;
@@ -327,6 +394,14 @@ export async function* streamReadingAgent(
       if (event.event === "on_chat_model_stream") {
         const chunk = event.data?.chunk;
         if (chunk) {
+          for (const summary of extractGeminiThoughtSummariesFromRaw(
+            chunk.additional_kwargs?.__raw_response,
+          )) {
+            if (emittedGeminiThoughtSummaries.has(summary)) continue;
+            emittedGeminiThoughtSummaries.add(summary);
+            yield { type: "reasoning", content: summary, stepType: "thinking" };
+          }
+
           const content = chunk.content;
 
           // Buffer normal text until the model turn ends. If the same turn also

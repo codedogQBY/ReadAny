@@ -85,6 +85,7 @@ export interface ViewSettings {
   customFontCssUrls?: string[]; // remote font stylesheet URLs to inject into renderer docs
   viewMode: ViewMode;
   paginatedLayout: PaginatedLayout;
+  fixedLayoutZoom?: number; // relative zoom multiplier for PDF/CBZ fixed layouts
   pageMargin: number; // px
   paragraphSpacing: number;
 }

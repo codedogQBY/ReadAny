@@ -49,6 +49,7 @@ const defaultReadSettings: ReadSettings = {
   fontTheme: "system",
   viewMode: "paginated",
   paginatedLayout: "double",
+  fixedLayoutZoom: 1,
   pageMargin: 40,
   paragraphSpacing: 16,
   showTopTitleProgress: true,

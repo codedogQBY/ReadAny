@@ -1,4 +1,5 @@
 import { getPlatformService } from "@readany/core/services";
+import { cn } from "@readany/core/utils";
 import type { CitationPart } from "@readany/core/types/message";
 /**
  * MarkdownRenderer — renders AI markdown responses with:
@@ -646,7 +647,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
 
   return (
     <CitationContext.Provider value={{ citations, onCitationClick }}>
-      <div className={className} data-md-scope={isStreaming ? scopeId : undefined}>
+      <div className={cn("select-text", className)} data-md-scope={isStreaming ? scopeId : undefined}>
         <Markdown
           remarkPlugins={remarkPlugins}
           rehypePlugins={rehypePlugins}

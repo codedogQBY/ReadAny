@@ -110,7 +110,7 @@ function TextPartView({
     // Even if no text yet, show cursor when streaming
     if (isStreaming) {
       return (
-        <div className="chat-markdown max-w-none text-sm leading-relaxed">
+        <div className="chat-markdown select-text max-w-none text-sm leading-relaxed">
           <span className="inline-block h-4 w-[3px] animate-pulse rounded-sm bg-primary" />
         </div>
       );
@@ -119,7 +119,7 @@ function TextPartView({
   }
 
   return (
-    <div className="chat-markdown max-w-none text-sm leading-relaxed">
+    <div className="chat-markdown select-text max-w-none text-sm leading-relaxed">
       <MarkdownRenderer
         content={throttledText}
         isStreaming={isStreaming}

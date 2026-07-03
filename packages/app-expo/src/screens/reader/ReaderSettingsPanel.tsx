@@ -5,7 +5,7 @@ import { XIcon } from "@/components/ui/Icon";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { useColors } from "@/styles/theme";
 import type { ReadSettings } from "@readany/core/types";
-import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { makeStyles } from "./reader-styles";
@@ -39,6 +39,7 @@ export function ReaderSettingsPanel({ visible, readSettings, bookId, onClose, on
     paragraphSpacing: settingParagraphSpacing,
     pageMargin: settingPageMargin,
     viewMode: settingViewMode,
+    volumeButtonsPageTurn,
     showTopTitleProgress,
     showBottomTimeBattery,
     followSystemFontScale,
@@ -211,6 +212,24 @@ export function ReaderSettingsPanel({ visible, readSettings, bookId, onClose, on
               </TouchableOpacity>
             </View>
           </View>
+          {Platform.OS === "android" && (
+            <View style={s.settingRow}>
+              <View style={s.settingLabelBlock}>
+                <Text style={s.settingLabel}>{t("settings.volumeButtonsPageTurn")}</Text>
+                <Text style={s.settingHint}>
+                  {t("settings.volumeButtonsPageTurnDesc", "开启后阅读时音量键用于上下翻页")}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[s.settingToggleBtn, !!volumeButtonsPageTurn && s.settingToggleBtnActive]}
+                onPress={() => onUpdateSetting("volumeButtonsPageTurn", !volumeButtonsPageTurn)}
+              >
+                <Text style={[s.settingToggleText, !!volumeButtonsPageTurn && s.settingToggleTextActive]}>
+                  {volumeButtonsPageTurn ? t("settings.enabled") : t("settings.disabled")}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
           <View style={s.settingRow}>
             <Text style={s.settingLabel}>{t("settings.showTopTitleProgress")}</Text>
             <TouchableOpacity
