@@ -1,18 +1,8 @@
 import type { ITTSPlayer, TTSConfig } from "@readany/core/tts";
 /**
  * ExpoSpeechTTSPlayer — ITTSPlayer backed by expo-speech (native OS TTS).
- *
- * NOTE: Apple's TextToSpeech.framework crashes if speech is active when the
- * app is backgrounded. We listen for AppState changes and stop speech before
- * the system kills it.
  */
 import * as Speech from "expo-speech";
-import {
-  AppState,
-  type AppStateStatus,
-  type NativeEventSubscription,
-  Platform,
-} from "react-native";
 
 export class ExpoSpeechTTSPlayer implements ITTSPlayer {
   onStateChange?: (state: "playing" | "paused" | "stopped") => void;
@@ -22,20 +12,8 @@ export class ExpoSpeechTTSPlayer implements ITTSPlayer {
   private _chunks: string[] = [];
   private _currentIndex = 0;
   private _stopped = false;
-  private _appStateSubscription: NativeEventSubscription | null = null;
-
-  private _handleAppStateChange = (nextAppState: AppStateStatus): void => {
-    if (Platform.OS === "ios" && nextAppState === "background") {
-      if (!this._stopped) {
-        this.stop();
-      }
-    }
-  };
 
   async speak(text: string | string[], config: TTSConfig): Promise<void> {
-    // Register AppState listener to stop speech on background (prevents crash)
-    this._appStateSubscription?.remove();
-    this._appStateSubscription = AppState.addEventListener("change", this._handleAppStateChange);
     this._stopped = false;
 
     // Split long text into chunks (expo-speech works best with shorter segments)
@@ -49,9 +27,6 @@ export class ExpoSpeechTTSPlayer implements ITTSPlayer {
   private async _speakChunk(config: TTSConfig): Promise<void> {
     if (this._stopped || this._currentIndex >= this._chunks.length) {
       if (!this._stopped) {
-        // All chunks finished — remove AppState listener and fire callbacks
-        this._appStateSubscription?.remove();
-        this._appStateSubscription = null;
         this.onStateChange?.("stopped");
         this.onEnd?.();
       }
@@ -94,8 +69,6 @@ export class ExpoSpeechTTSPlayer implements ITTSPlayer {
   stop(): void {
     this._stopped = true;
     Speech.stop();
-    this._appStateSubscription?.remove();
-    this._appStateSubscription = null;
     this.onStateChange?.("stopped");
   }
 }
