@@ -141,6 +141,99 @@ function summarizeChatRequestBody(bodyText: string): Record<string, unknown> | u
   };
 }
 
+function removeTokenLimitFields(bodyText: string): string | undefined {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(bodyText);
+  } catch {
+    return undefined;
+  }
+
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+
+  const record = payload as Record<string, unknown>;
+  let changed = false;
+  for (const key of ["max_completion_tokens", "max_tokens"]) {
+    if (Object.prototype.hasOwnProperty.call(record, key)) {
+      delete record[key];
+      changed = true;
+    }
+  }
+
+  return changed ? JSON.stringify(record) : undefined;
+}
+
+function requestBodyHasLargeTokenLimit(summary: Record<string, unknown> | undefined): boolean {
+  const maxTokens = summary?.maxTokens;
+  return typeof maxTokens === "number" && Number.isFinite(maxTokens) && maxTokens > 100;
+}
+
+function shouldRetryWithoutTokenLimit(args: {
+  endpoint: AIEndpoint;
+  response: Response;
+  responseText: string;
+  requestBodySummary: Record<string, unknown> | undefined;
+}): boolean {
+  if (args.endpoint.provider !== "custom") return false;
+  if (args.response.status !== 400) return false;
+  if (!requestBodyHasLargeTokenLimit(args.requestBodySummary)) return false;
+  return /超过\s*100|over\s*100|exceed(?:s|ed)?\s*100|greater than\s*100/i.test(args.responseText);
+}
+
+async function readRequestBodyText(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<string | undefined> {
+  if (typeof init?.body === "string") return init.body;
+  if (!isRequestLike(input)) return undefined;
+
+  try {
+    return await input.clone().text();
+  } catch {
+    return undefined;
+  }
+}
+
+function withRequestBodyText(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  bodyText: string,
+): { input: RequestInfo | URL; init?: RequestInit } {
+  const headers = mergeRequestHeaders(input, init) ?? new Headers();
+  headers.delete("content-length");
+  if (!headers.has("content-type")) headers.set("content-type", "application/json");
+
+  if (init) {
+    return {
+      input,
+      init: {
+        ...init,
+        headers,
+        body: bodyText,
+      },
+    };
+  }
+
+  if (isRequestLike(input)) {
+    return {
+      input: new Request(input, {
+        headers,
+        body: bodyText,
+      }),
+      init,
+    };
+  }
+
+  return {
+    input,
+    init: {
+      method: "POST",
+      headers,
+      body: bodyText,
+    },
+  };
+}
+
 async function getRequestBodySummary(
   input: RequestInfo | URL,
   init?: RequestInit,
@@ -325,6 +418,10 @@ export function getEndpointFetch(endpoint: AIEndpoint, model?: string): typeof g
       requestMethod.toUpperCase() === "POST"
         ? await getRequestBodySummary(requestInput, requestInit)
         : undefined;
+    const requestBodyText =
+      requestMethod.toUpperCase() === "POST"
+        ? await readRequestBodyText(requestInput, requestInit)
+        : undefined;
 
     logAIEndpointDebug("request", endpoint, {
       action: "langchain-chat",
@@ -340,10 +437,11 @@ export function getEndpointFetch(endpoint: AIEndpoint, model?: string): typeof g
 
       if (!response.ok) {
         let responseBodyPreview = "";
+        let responseText = "";
         let responseLength: number | undefined;
 
         try {
-          const responseText = await response.clone().text();
+          responseText = await response.clone().text();
           responseLength = responseText.length;
           responseBodyPreview = summarizeDebugText(responseText, 600);
         } catch (readError) {
@@ -351,6 +449,45 @@ export function getEndpointFetch(endpoint: AIEndpoint, model?: string): typeof g
             readError instanceof Error ? readError.message : String(readError),
             200,
           );
+        }
+
+        if (
+          requestBodyText &&
+          shouldRetryWithoutTokenLimit({
+            endpoint,
+            response,
+            responseText,
+            requestBodySummary,
+          })
+        ) {
+          const retryBody = removeTokenLimitFields(requestBodyText);
+          if (retryBody) {
+            const retryRequest = withRequestBodyText(requestInput, requestInit, retryBody);
+            const retryBodySummary = summarizeChatRequestBody(retryBody);
+            logAIEndpointDebug("request", endpoint, {
+              action: "langchain-chat-retry-without-token-limit",
+              method: requestMethod,
+              requestUrl,
+              model,
+              requestBodySummary: retryBodySummary,
+              responseBodyPreview,
+            });
+            const retryResponse = await baseFetch(retryRequest.input, retryRequest.init);
+            const retryContentType = retryResponse.headers.get("content-type");
+            if (retryResponse.ok) {
+              logAIEndpointDebug("response", endpoint, {
+                action: "langchain-chat-retry-without-token-limit",
+                method: requestMethod,
+                requestUrl,
+                model,
+                status: retryResponse.status,
+                statusText: retryResponse.statusText,
+                contentType: retryContentType,
+                requestBodySummary: retryBodySummary,
+              });
+            }
+            return retryResponse;
+          }
         }
 
         logAIEndpointDebug("error", endpoint, {

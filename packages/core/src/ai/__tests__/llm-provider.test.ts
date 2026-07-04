@@ -141,3 +141,72 @@ describe("getEndpointFetch Gemini thought signatures", () => {
     expect(toolCall.extra_content).toBeUndefined();
   });
 });
+
+describe("getEndpointFetch custom endpoint compatibility", () => {
+  it("retries without token limit when a custom endpoint rejects max_completion_tokens over 100", async () => {
+    const requestBodies: Record<string, unknown>[] = [];
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      let bodyText = "";
+      if (typeof init?.body === "string") {
+        bodyText = init.body;
+      } else if (input instanceof Request) {
+        bodyText = await input.clone().text();
+      }
+      requestBodies.push(JSON.parse(bodyText) as Record<string, unknown>);
+
+      if (requestBodies.length === 1) {
+        return new Response(
+          JSON.stringify({
+            error: {
+              message: "参数错误超过100个",
+              type: "invalid_request_error",
+            },
+          }),
+          {
+            status: 400,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+
+      return new Response("{}", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const endpoint = makeEndpoint();
+    const endpointFetch = getEndpointFetch(endpoint, "gpt-5.5");
+    const response = await endpointFetch(endpoint.baseUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "gpt-5.5",
+        messages: [{ role: "user", content: "总结我最近的阅读" }],
+        max_completion_tokens: 4096,
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "getReadingStats",
+              parameters: {
+                type: "object",
+                properties: {
+                  reasoning: { type: "string" },
+                  days: { type: "number" },
+                },
+              },
+            },
+          },
+        ],
+      }),
+    });
+
+    expect(response.ok).toBe(true);
+    expect(requestBodies).toHaveLength(2);
+    expect(requestBodies[0]?.max_completion_tokens).toBe(4096);
+    expect(requestBodies[1]?.max_completion_tokens).toBeUndefined();
+    expect(requestBodies[1]?.messages).toEqual(requestBodies[0]?.messages);
+    expect(requestBodies[1]?.tools).toEqual(requestBodies[0]?.tools);
+  });
+});
