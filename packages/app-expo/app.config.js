@@ -68,6 +68,12 @@ module.exports = {
         },
       ],
       "expo-font",
+      [
+        "expo-image-picker",
+        {
+          photosPermission: "ReadAny uses your photo library to choose custom book covers.",
+        },
+      ],
       "expo-secure-store",
       "expo-sqlite",
       "expo-asset",
