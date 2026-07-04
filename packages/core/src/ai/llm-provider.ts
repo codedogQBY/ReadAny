@@ -66,6 +66,99 @@ function sanitizeCustomHeaders(headers?: Headers): Headers | undefined {
   return sanitized;
 }
 
+function countToolSchemaParameters(tools: unknown): number {
+  if (!Array.isArray(tools)) return 0;
+  return tools.reduce((sum, tool) => {
+    if (!tool || typeof tool !== "object") return sum;
+    const fn = (tool as Record<string, unknown>).function;
+    if (!fn || typeof fn !== "object") return sum;
+    const parameters = (fn as Record<string, unknown>).parameters;
+    if (!parameters || typeof parameters !== "object") return sum;
+    const properties = (parameters as Record<string, unknown>).properties;
+    if (!properties || typeof properties !== "object") return sum;
+    return sum + Object.keys(properties).length;
+  }, 0);
+}
+
+function summarizeChatRequestBody(bodyText: string): Record<string, unknown> | undefined {
+  if (!bodyText) return undefined;
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(bodyText);
+  } catch {
+    return { bodyLength: bodyText.length, parseable: false };
+  }
+
+  if (!payload || typeof payload !== "object") {
+    return { bodyLength: bodyText.length, parseable: true, type: typeof payload };
+  }
+
+  const record = payload as Record<string, unknown>;
+  const messages = Array.isArray(record.messages) ? record.messages : [];
+  const roles = messages.map((message) =>
+    message && typeof message === "object"
+      ? String((message as Record<string, unknown>).role ?? "")
+      : "",
+  );
+  const assistantToolCallCount = messages.reduce((count, message) => {
+    if (!message || typeof message !== "object") return count;
+    const toolCalls = (message as Record<string, unknown>).tool_calls;
+    return count + (Array.isArray(toolCalls) ? toolCalls.length : 0);
+  }, 0);
+  const tools = Array.isArray(record.tools) ? record.tools : [];
+
+  return {
+    bodyLength: bodyText.length,
+    topLevelKeys: Object.keys(record).sort(),
+    topLevelKeyCount: Object.keys(record).length,
+    model: record.model,
+    stream: record.stream,
+    maxTokens: record.max_tokens ?? record.max_completion_tokens,
+    temperature: record.temperature,
+    toolChoice: record.tool_choice,
+    parallelToolCalls: record.parallel_tool_calls,
+    messages: {
+      count: messages.length,
+      roles,
+      lastRole: roles[roles.length - 1] || "",
+      toolMessages: roles.filter((role) => role === "tool").length,
+      assistantToolCallCount,
+    },
+    tools: {
+      count: tools.length,
+      parameterCount: countToolSchemaParameters(tools),
+      names: tools
+        .map((tool) => {
+          if (!tool || typeof tool !== "object") return "";
+          const fn = (tool as Record<string, unknown>).function;
+          return fn && typeof fn === "object"
+            ? String((fn as Record<string, unknown>).name ?? "")
+            : "";
+        })
+        .filter(Boolean),
+    },
+  };
+}
+
+async function getRequestBodySummary(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Record<string, unknown> | undefined> {
+  if (typeof init?.body === "string") {
+    return summarizeChatRequestBody(init.body);
+  }
+
+  if (!isRequestLike(input)) return undefined;
+  try {
+    return summarizeChatRequestBody(await input.clone().text());
+  } catch (error) {
+    return {
+      bodyReadError: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 const GEMINI_THOUGHT_SIGNATURE_BYPASS = "skip_thought_signature_validator";
 
 function shouldPatchGeminiThoughtSignatures(
@@ -228,11 +321,17 @@ export function getEndpointFetch(endpoint: AIEndpoint, model?: string): typeof g
       }
     }
 
+    const requestBodySummary =
+      requestMethod.toUpperCase() === "POST"
+        ? await getRequestBodySummary(requestInput, requestInit)
+        : undefined;
+
     logAIEndpointDebug("request", endpoint, {
       action: "langchain-chat",
       method: requestMethod,
       requestUrl,
       model,
+      requestBodySummary,
     });
 
     try {
@@ -264,6 +363,7 @@ export function getEndpointFetch(endpoint: AIEndpoint, model?: string): typeof g
           contentType,
           responseLength,
           responseBodyPreview,
+          requestBodySummary,
         });
         return response;
       }
