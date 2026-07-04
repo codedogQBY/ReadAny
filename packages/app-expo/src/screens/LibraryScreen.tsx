@@ -79,8 +79,6 @@ import { TagManagementSheet } from "./library/TagManagementSheet";
 import { useBookDownload } from "./library/useBookDownload";
 import { useVectorizationQueue } from "./library/useVectorizationQueue";
 
-const MOBILE_FALLBACK_EXTRACTOR_MAX_BYTES = 12 * 1024 * 1024;
-
 function bytesToBase64(bytes: Uint8Array): string {
   const chunkSize = 0x8000;
   let binary = "";
@@ -278,18 +276,8 @@ export function LibraryScreen() {
 
         const file = new ExpoFile(filePath);
         if (!file.exists) throw new Error("Book file is not available on this device");
-        if (file.size > MOBILE_FALLBACK_EXTRACTOR_MAX_BYTES) {
-          throw new Error(
-            "Mobile original-file search is disabled for books larger than 12 MB. Please vectorize the book first.",
-          );
-        }
 
         const bytes = await platform.readFile(filePath);
-        if (bytes.byteLength > MOBILE_FALLBACK_EXTRACTOR_MAX_BYTES) {
-          throw new Error(
-            "Mobile original-file search is disabled for books larger than 12 MB. Please vectorize the book first.",
-          );
-        }
         const mimeTypes: Record<string, string> = {
           epub: "application/epub+zip",
           pdf: "application/pdf",

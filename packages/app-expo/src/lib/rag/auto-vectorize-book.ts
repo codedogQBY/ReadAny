@@ -3,8 +3,6 @@ import type { Book } from "@readany/core/types";
 import * as FileSystem from "expo-file-system/legacy";
 import { queueBook as queueAutoVectorize } from "./auto-vectorize-service";
 
-export const MOBILE_AUTO_VECTORIZER_MAX_BYTES = 12 * 1024 * 1024;
-
 const MIME_TYPES: Record<string, string> = {
   epub: "application/epub+zip",
   pdf: "application/pdf",
@@ -56,7 +54,7 @@ export async function inspectMobileBookForVectorize(book: Book): Promise<{
   mimeType: string | null;
   size: number | null;
   canVectorize: boolean;
-  reason?: "unsupported-format" | "missing-file" | "too-large";
+  reason?: "unsupported-format" | "missing-file";
 }> {
   const absPath = await resolveMobileBookPath(book.filePath);
   const mimeType = getMobileVectorizeMimeType(book.format);
@@ -67,9 +65,6 @@ export async function inspectMobileBookForVectorize(book: Book): Promise<{
   const size = await getMobileBookFileSize(absPath);
   if (size == null) {
     return { absPath, mimeType, size, canVectorize: false, reason: "missing-file" };
-  }
-  if (size <= 0 || size > MOBILE_AUTO_VECTORIZER_MAX_BYTES) {
-    return { absPath, mimeType, size, canVectorize: false, reason: "too-large" };
   }
 
   return { absPath, mimeType, size, canVectorize: true };
@@ -86,13 +81,6 @@ export async function queueBookForAutoVectorize(book: Book): Promise<boolean> {
   }
 
   const bytes = await platform.readFile(info.absPath);
-  if (bytes.byteLength > MOBILE_AUTO_VECTORIZER_MAX_BYTES) {
-    console.warn(
-      `[AutoVectorize] Skip mobile book after read: ${book.meta.title} (${bytes.byteLength} bytes)`,
-    );
-    return false;
-  }
-
   queueAutoVectorize(book, bytesToBase64(bytes), info.mimeType);
   return true;
 }

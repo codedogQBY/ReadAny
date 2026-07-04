@@ -156,7 +156,6 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 const MOBILE_IMPORT_METADATA_MAX_BYTES = 32 * 1024 * 1024;
-const MOBILE_AUTO_VECTORIZER_MAX_BYTES = 12 * 1024 * 1024;
 
 async function getMobileFileStat(path: string): Promise<{ size: number; md5?: string }> {
   const LegacyFileSystem = await import("expo-file-system/legacy");
@@ -201,10 +200,7 @@ async function extractMobileImportMetadata(params: {
   };
 }
 
-function shouldAutoVectorizeMobile(format: Book["format"], size: number): boolean {
-  if (size <= 0 || size > MOBILE_AUTO_VECTORIZER_MAX_BYTES) {
-    return false;
-  }
+function shouldAutoVectorizeMobile(format: Book["format"]): boolean {
   return format === "epub" || format === "txt" || format === "umd";
 }
 
@@ -1003,18 +999,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
                   vmState.autoVectorizeOnImport &&
                   vmState.vectorModelEnabled &&
                   vmState.hasVectorCapability() &&
-                  shouldAutoVectorizeMobile("txt", conversion.epubBytes.byteLength)
+                  shouldAutoVectorizeMobile("txt")
                 ) {
                   const base64 = bytesToBase64(conversion.epubBytes);
                   queueAutoVectorize(book, base64, "application/epub+zip");
-                } else if (
-                  vmState.autoVectorizeOnImport &&
-                  vmState.vectorModelEnabled &&
-                  vmState.hasVectorCapability()
-                ) {
-                  console.warn(
-                    `[importBooks] Skip auto-vectorize for large TXT conversion: ${fileName} (${conversion.epubBytes.byteLength} bytes)`,
-                  );
                 }
               } catch (autoVectorizeErr) {
                 console.warn(
@@ -1132,7 +1120,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
                   vmState.autoVectorizeOnImport &&
                   vmState.vectorModelEnabled &&
                   vmState.hasVectorCapability() &&
-                  shouldAutoVectorizeMobile("umd", conversion.epubBytes.byteLength)
+                  shouldAutoVectorizeMobile("umd")
                 ) {
                   const base64 = bytesToBase64(conversion.epubBytes);
                   queueAutoVectorize(book, base64, "application/epub+zip");
@@ -1251,7 +1239,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
               vmState.autoVectorizeOnImport &&
               vmState.vectorModelEnabled &&
               vmState.hasVectorCapability() &&
-              shouldAutoVectorizeMobile(format, fileSize)
+              shouldAutoVectorizeMobile(format)
             ) {
               const sourceBytes = await platform.readFile(filePath);
               const base64 = bytesToBase64(sourceBytes);
@@ -1269,13 +1257,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
               };
               const mimeType = mimeTypes[format] || "application/epub+zip";
               queueAutoVectorize(book, base64, mimeType);
-            } else if (
-              vmState.autoVectorizeOnImport &&
-              vmState.vectorModelEnabled &&
-              vmState.hasVectorCapability()
-            ) {
+            } else if (vmState.autoVectorizeOnImport && vmState.vectorModelEnabled) {
               console.warn(
-                `[importBooks] Skip auto-vectorize for large/unsupported mobile import: ${fileName} (${fileSize} bytes, format=${format})`,
+                `[importBooks] Skip auto-vectorize for unsupported mobile import: ${fileName} (${fileSize} bytes, format=${format})`,
               );
             }
           } catch (autoVectorizeErr) {

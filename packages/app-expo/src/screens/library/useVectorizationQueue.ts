@@ -1,8 +1,5 @@
 import type { ExtractorRef } from "@/components/rag/ExtractorWebView";
-import {
-  MOBILE_AUTO_VECTORIZER_MAX_BYTES,
-  inspectMobileBookForVectorize,
-} from "@/lib/rag/auto-vectorize-book";
+import { inspectMobileBookForVectorize } from "@/lib/rag/auto-vectorize-book";
 import { triggerVectorizeBook } from "@/lib/rag/vectorize-trigger";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { useVectorModelStore } from "@/stores/vector-model-store";
@@ -14,16 +11,6 @@ import { useTranslation } from "react-i18next";
 import { Alert } from "react-native";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 * 1024) {
-    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  }
-  if (bytes >= 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-  return `${bytes} B`;
-}
 
 interface UseVectorizationQueueOptions {
   extractorRef: React.RefObject<ExtractorRef | null>;
@@ -140,19 +127,6 @@ export function useVectorizationQueue({ extractorRef, nav }: UseVectorizationQue
           );
           return;
         }
-        if (info.reason === "too-large") {
-          Alert.alert(
-            t("vectorize.fileTooLargeTitle", "Book is too large"),
-            t("vectorize.fileTooLargeDesc", {
-              defaultValue:
-                "This book is {{size}}. Mobile vectorization is limited to {{limit}} to avoid running out of memory.",
-              size: info.size != null ? formatBytes(info.size) : t("common.unknown", "unknown"),
-              limit: formatBytes(MOBILE_AUTO_VECTORIZER_MAX_BYTES),
-            }),
-          );
-          return;
-        }
-
         const alreadyQueued = vectorQueueRef.current.some((b) => b.id === book.id);
         if (alreadyQueued || vectorizingBookId === book.id) return;
 
