@@ -599,7 +599,7 @@ export async function createChatModelFromEndpoint(
   const apiKey = endpoint.apiKey || "local-model";
 
   const temperature = options.temperature ?? 0.7;
-  const maxTokens = options.maxTokens ?? 4096;
+  const maxTokens = options.maxTokens ?? 8192;
   const streaming = options.streaming ?? true;
   const endpointFetch = getEndpointFetch(endpoint, model);
 

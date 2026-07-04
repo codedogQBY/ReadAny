@@ -8,7 +8,7 @@ import { z } from "zod";
  *
  * Architecture:
  * 1. Uses LangGraph's createReactAgent for automatic tool-calling loop (no hard iteration limit)
- * 2. Uses getAvailableTools() and registers a focused subset of tools
+ * 2. Uses getAvailableTools() to register all available tools
  * 3. Builds proper Zod schemas from ToolDefinition.parameters
  * 4. Real streaming via streamEvents API
  * 5. System prompt from system-prompt.ts
@@ -96,200 +96,8 @@ function buildZodSchema(
   return z.object(shape);
 }
 
-const MAX_TOOL_SCHEMA_PARAMETERS = 90;
-
-const TOOL_GROUPS = {
-  libraryRead: [
-    "listBooks",
-    "searchAllHighlights",
-    "searchAllNotes",
-    "getReadingStats",
-    "getSkills",
-    "mindmap",
-  ],
-  libraryWrite: [
-    "classifyBooks",
-    "tagBooks",
-    "manageBookTags",
-    "updateBookMetadata",
-    "manageBookGroups",
-  ],
-  readingContext: [
-    "getCurrentChapter",
-    "getSelection",
-    "getReadingProgress",
-    "getRecentHighlights",
-    "getSurroundingContext",
-  ],
-  indexedContent: [
-    "ragSearch",
-    "ragToc",
-    "ragContext",
-    "summarize",
-    "extractEntities",
-    "findQuotes",
-    "addCitation",
-  ],
-  indexedAnalysis: ["analyzeArguments", "compareSections"],
-  fallbackContent: ["fallbackToc", "fallbackSearch", "fallbackChapterContext", "addCitation"],
-  annotations: ["getAnnotations", "addCitation"],
-} as const;
-
-function hasAnyKeyword(input: string, keywords: string[]): boolean {
-  return keywords.some((keyword) => input.includes(keyword));
-}
-
 function countToolParameters(tools: ToolDefinition[]): number {
   return tools.reduce((sum, tool) => sum + Object.keys(tool.parameters ?? {}).length, 0);
-}
-
-function addToolGroup(
-  selected: ToolDefinition[],
-  toolsByName: Map<string, ToolDefinition>,
-  names: readonly string[],
-): void {
-  for (const name of names) {
-    const tool = toolsByName.get(name);
-    if (tool && !selected.some((existing) => existing.name === tool.name)) {
-      selected.push(tool);
-    }
-  }
-}
-
-function addRelevantSkillTools(
-  selected: ToolDefinition[],
-  allTools: ToolDefinition[],
-  input: string,
-): void {
-  const builtInNames = new Set<string>(Object.values(TOOL_GROUPS).flat());
-  for (const tool of allTools) {
-    if (builtInNames.has(tool.name)) continue;
-    const searchable = `${tool.name} ${tool.description}`.toLowerCase();
-    if (!searchable || !input) continue;
-    if (
-      input.includes(tool.name.toLowerCase()) ||
-      searchable.split(/\s+/).some((word) => word.length >= 4 && input.includes(word))
-    ) {
-      selected.push(tool);
-    }
-  }
-}
-
-function trimToolsToParameterBudget(tools: ToolDefinition[]): ToolDefinition[] {
-  const selected: ToolDefinition[] = [];
-  let parameterCount = 0;
-
-  for (const tool of tools) {
-    if (selected.some((existing) => existing.name === tool.name)) continue;
-    const nextCount = parameterCount + Object.keys(tool.parameters ?? {}).length;
-    if (selected.length > 0 && nextCount > MAX_TOOL_SCHEMA_PARAMETERS) continue;
-    selected.push(tool);
-    parameterCount = nextCount;
-  }
-
-  return selected;
-}
-
-function selectToolsForRequest(options: {
-  tools: ToolDefinition[];
-  userInput: string;
-  hasBook: boolean;
-  isVectorized: boolean;
-}): ToolDefinition[] {
-  const input = options.userInput.toLowerCase();
-  const toolsByName = new Map(options.tools.map((tool) => [tool.name, tool]));
-  const selected: ToolDefinition[] = [];
-
-  const asksReadingStats = hasAnyKeyword(input, [
-    "阅读",
-    "最近",
-    "统计",
-    "时长",
-    "读了",
-    "读书",
-    "reading",
-    "stats",
-    "statistics",
-    "activity",
-    "habit",
-    "progress",
-  ]);
-  const asksHighlights = hasAnyKeyword(input, [
-    "高亮",
-    "划线",
-    "标注",
-    "摘录",
-    "highlight",
-    "annotation",
-    "quote",
-  ]);
-  const asksNotes = hasAnyKeyword(input, ["笔记", "想法", "note", "notes"]);
-  const asksLibrary = hasAnyKeyword(input, ["书库", "书架", "书籍", "书", "library", "books"]);
-  const asksSkill = hasAnyKeyword(input, ["技能", "流程", "sop", "skill"]);
-  const asksMindmap = hasAnyKeyword(input, ["思维导图", "脑图", "mindmap"]);
-  const asksBookManagement = hasAnyKeyword(input, [
-    "标签",
-    "分类",
-    "归类",
-    "分组",
-    "改名",
-    "元数据",
-    "封面",
-    "tag",
-    "classify",
-    "category",
-    "group",
-    "metadata",
-    "cover",
-  ]);
-  const asksArgumentAnalysis = hasAnyKeyword(input, [
-    "论点",
-    "论证",
-    "比较",
-    "对比",
-    "argument",
-    "compare",
-    "comparison",
-  ]);
-
-  if (options.hasBook) {
-    addToolGroup(selected, toolsByName, TOOL_GROUPS.readingContext);
-    addToolGroup(
-      selected,
-      toolsByName,
-      options.isVectorized ? TOOL_GROUPS.indexedContent : TOOL_GROUPS.fallbackContent,
-    );
-    if (asksArgumentAnalysis) {
-      addToolGroup(selected, toolsByName, TOOL_GROUPS.indexedAnalysis);
-    }
-    if (asksHighlights || asksNotes) {
-      addToolGroup(selected, toolsByName, TOOL_GROUPS.annotations);
-    }
-  }
-
-  if (!options.hasBook || asksReadingStats || asksLibrary || asksHighlights || asksNotes) {
-    if (asksReadingStats) addToolGroup(selected, toolsByName, ["getReadingStats", "listBooks"]);
-    if (asksHighlights) addToolGroup(selected, toolsByName, ["searchAllHighlights"]);
-    if (asksNotes) addToolGroup(selected, toolsByName, ["searchAllNotes"]);
-    if (asksLibrary) addToolGroup(selected, toolsByName, ["listBooks"]);
-  }
-
-  if (!options.hasBook && selected.length === 0) {
-    addToolGroup(selected, toolsByName, [
-      "listBooks",
-      "getReadingStats",
-      "searchAllHighlights",
-      "searchAllNotes",
-    ]);
-  }
-
-  if (asksSkill) addToolGroup(selected, toolsByName, ["getSkills"]);
-  if (asksMindmap) addToolGroup(selected, toolsByName, ["mindmap"]);
-  if (asksBookManagement) addToolGroup(selected, toolsByName, TOOL_GROUPS.libraryWrite);
-  addRelevantSkillTools(selected, options.tools, input);
-
-  const focusedTools = selected.length > 0 ? selected : options.tools;
-  return trimToolsToParameterBudget(focusedTools);
 }
 
 // --- Tool Executor (error-safe wrapper) ---
@@ -400,28 +208,17 @@ export async function* streamReadingAgent(
     // Check abort after async operation
     if (isAborted()) return;
 
-    // Register a focused subset of tools via injected getAvailableTools.
-    // Some OpenAI-compatible providers reject requests whose tool schemas expose
-    // more than 100 top-level parameters, especially on the follow-up request
-    // after a tool result. Keeping the active toolset focused also improves
-    // model choice and avoids accidental write-tool calls.
+    // Register all available tools via injected getAvailableTools.
     const effectiveBookId = book?.id || bookId || null;
-    const allTools = getAvailableTools({
+    const tools = getAvailableTools({
       bookId: effectiveBookId,
       isVectorized,
       enabledSkills,
-    });
-    const tools = selectToolsForRequest({
-      tools: allTools,
-      userInput,
-      hasBook: Boolean(effectiveBookId),
-      isVectorized,
     });
     console.log(
       "[ReadingAgent] tools",
       JSON.stringify({
         registered: tools.length,
-        available: allTools.length,
         parameters: countToolParameters(tools),
         names: tools.map((tool) => tool.name),
       }),

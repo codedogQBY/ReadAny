@@ -78,7 +78,7 @@ const defaultAIConfig: AIConfig = {
   activeEndpointId: "default",
   activeModel: "",
   temperature: 0.7,
-  maxTokens: 4096,
+  maxTokens: 8192,
   slidingWindowSize: 8,
 };
 
