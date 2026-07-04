@@ -43,6 +43,7 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "format",
     "title",
     "author",
+    "cover_url",
     "added_at",
     "updated_at",
     "deleted_at",
@@ -393,6 +394,7 @@ function bookRow(overrides: Row = {}): Row {
     format: "epub",
     title: "Original",
     author: "Author",
+    cover_url: "covers/book-1.jpg",
     added_at: 1000,
     updated_at: 1000,
     deleted_at: null,
@@ -792,5 +794,40 @@ describe("simple sync convergence", () => {
     expect(result.success).toBe(true);
     expect(local.get("books", "remote-book")).toBeUndefined();
     expect(backend.jsonFiles.has("/readany/sync/device-device-local.json")).toBe(true);
+  });
+
+  it("preserves custom cover paths from remote book snapshots", async () => {
+    const backend = new MemoryBackend();
+    const local = new FakeSyncDb();
+    local.insert(
+      "books",
+      bookRow({
+        cover_url: "covers/book-1.jpg",
+        updated_at: 1000,
+      }),
+    );
+
+    backend.jsonFiles.set("/readany/sync/device-remote.json", {
+      deviceId: "remote",
+      timestamp: 2500,
+      since: 0,
+      tables: {
+        books: {
+          records: [
+            bookRow({
+              cover_url: "covers/book-1-custom-123.jpg",
+              updated_at: 2500,
+            }),
+          ],
+          deletedIds: [],
+        },
+      },
+    });
+
+    now = 3000;
+    const result = await syncDevice("device-local", local, backend);
+
+    expect(result.success).toBe(true);
+    expect(local.get("books", "book-1")?.cover_url).toBe("covers/book-1-custom-123.jpg");
   });
 });

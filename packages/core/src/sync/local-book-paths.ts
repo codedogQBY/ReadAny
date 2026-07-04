@@ -27,13 +27,28 @@ export function canonicalBookFilePath(
 
 export function canonicalBookCoverPath(bookId: unknown, coverUrl: unknown): string | null {
   if (coverUrl == null || coverUrl === "") return null;
-  if (typeof coverUrl === "string" && /^https?:\/\//i.test(coverUrl)) {
-    return coverUrl;
+  if (typeof coverUrl !== "string") return null;
+
+  const raw = coverUrl.trim();
+  if (!raw) return null;
+  if (/^https?:\/\//i.test(raw)) {
+    return raw;
+  }
+
+  const normalized = raw.replace(/\\/g, "/");
+  if (
+    !normalized.startsWith("/") &&
+    !/^[A-Za-z]:\//.test(normalized) &&
+    !/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(normalized)
+  ) {
+    const leaf = normalized.slice(normalized.lastIndexOf("/") + 1);
+    if (!leaf) return null;
+    return normalized.startsWith("covers/") ? normalized : `covers/${leaf}`;
   }
 
   const id = String(bookId || "").trim();
-  if (!id) return typeof coverUrl === "string" ? coverUrl : null;
+  if (!id) return normalized;
 
-  const ext = getPathExtension(coverUrl) || DEFAULT_COVER_EXTENSION;
+  const ext = getPathExtension(normalized) || DEFAULT_COVER_EXTENSION;
   return `covers/${id}.${ext}`;
 }
