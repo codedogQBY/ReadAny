@@ -5,7 +5,18 @@ import { getChunks } from "../../db/database";
 import { estimateTokens } from "../../rag/chunker";
 import { search } from "../../rag/search";
 import type { SearchQuery } from "../../types";
+import { getFallbackChaptersForBook } from "../fallback-source-resolver";
 import type { ToolDefinition } from "./tool-types";
+
+function isGenericSectionTitle(title: string): boolean {
+  return /^Section\s+\d+$/i.test(title.trim());
+}
+
+function shouldPreferOriginalToc(chapters: Map<number, string>): boolean {
+  if (chapters.size === 0) return false;
+  const titles = Array.from(chapters.values());
+  return titles.every(isGenericSectionTitle);
+}
 
 /** Create RAG search tool for a specific book */
 export function createRagSearchTool(bookId: string): ToolDefinition {
@@ -106,6 +117,24 @@ export function createRagTocTool(bookId: string): ToolDefinition {
       for (const chunk of chunks) {
         if (!chapters.has(chunk.chapterIndex)) {
           chapters.set(chunk.chapterIndex, chunk.chapterTitle);
+        }
+      }
+
+      if (shouldPreferOriginalToc(chapters)) {
+        const fallback = await getFallbackChaptersForBook(bookId);
+        if (!("error" in fallback) && fallback.chapters.length > 0) {
+          return {
+            bookTitle: fallback.bookTitle,
+            chapters: fallback.chapters.map((chapter, ordinal) => ({
+              index: chapter.index,
+              number: ordinal + 1,
+              title: chapter.title,
+            })),
+            totalChapters: fallback.chapters.length,
+            source: "original-file",
+            instruction:
+              "The vector index has generic Section titles, so this TOC was rebuilt from the original book file. Re-vectorize the book to refresh RAG chapter titles.",
+          };
         }
       }
 

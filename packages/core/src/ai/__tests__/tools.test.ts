@@ -290,6 +290,32 @@ describe("ragToc tool", () => {
       { index: 2, number: 3, title: "Chapter 2" },
     ]);
   });
+
+  it("rebuilds the TOC from the original book when indexed chunks only have generic section titles", async () => {
+    vi.mocked(getChunks).mockResolvedValue([
+      makeChunk({ chapterIndex: 1, chapterTitle: "Section 2" }),
+      makeChunk({ chapterIndex: 2, chapterTitle: "Section 3" }),
+    ] as any);
+    vi.mocked(getBook).mockResolvedValue(makeBook({ isVectorized: true }) as any);
+    setFallbackContentProvider({
+      async getChapters() {
+        return [
+          { index: 0, title: "第1章 整洁代码", content: "chapter one" },
+          { index: 1, title: "第2章 有意义的命名", content: "chapter two" },
+        ];
+      },
+    });
+
+    const tools = getAvailableTools({ bookId: "book-1", isVectorized: true, enabledSkills: [] });
+    const tool = findTool(tools, "ragToc");
+    const result = (await tool.execute({})) as any;
+
+    expect(result.source).toBe("original-file");
+    expect(result.chapters).toEqual([
+      { index: 0, number: 1, title: "第1章 整洁代码" },
+      { index: 1, number: 2, title: "第2章 有意义的命名" },
+    ]);
+  });
 });
 
 // ============================================
