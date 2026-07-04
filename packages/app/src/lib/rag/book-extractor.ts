@@ -5,6 +5,7 @@
  */
 import { DocumentLoader } from "@/lib/reader/document-loader";
 import { buildChapterSectionGroups } from "@readany/core/rag";
+import type { ChapterSectionGroup, TocTreeItemLike } from "@readany/core/rag";
 import * as CFI from "foliate-js/epubcfi.js";
 
 export interface TextSegment {
@@ -35,7 +36,21 @@ export async function extractBookChapters(filePath: string): Promise<ChapterData
 
   const sections = book.sections ?? [];
   const toc = book.toc ?? [];
-  const chapterGroups = buildChapterSectionGroups(sections, toc);
+  let chapterGroups = buildChapterSectionGroups(sections, toc);
+  if (format === "EPUB" && hasOnlyGenericSectionTitles(chapterGroups)) {
+    const directToc = await extractEpubTocFromFile(file);
+    if (directToc.length > 0) {
+      const directGroups = buildChapterSectionGroups(sections, directToc);
+      if (!hasOnlyGenericSectionTitles(directGroups)) {
+        console.log("[extractBookChapters] Using EPUB TOC fallback", {
+          tocItems: directToc.length,
+          groups: directGroups.length,
+          sampleTitles: directGroups.slice(0, 5).map((group) => group.title),
+        });
+        chapterGroups = directGroups;
+      }
+    }
+  }
 
   const chapters: ChapterData[] = [];
 
@@ -66,6 +81,163 @@ export async function extractBookChapters(filePath: string): Promise<ChapterData
   }
 
   return chapters;
+}
+
+function hasOnlyGenericSectionTitles(groups: ChapterSectionGroup[]): boolean {
+  return groups.length > 0 && groups.every((group) => /^Section\s+\d+$/i.test(group.title));
+}
+
+async function extractEpubTocFromFile(file: File): Promise<TocTreeItemLike[]> {
+  const { configure, ZipReader, BlobReader, TextWriter } = await import("@zip.js/zip.js");
+  configure({ useWebWorkers: false });
+
+  const reader = new ZipReader(new BlobReader(file));
+  try {
+    const entries = await reader.getEntries();
+    const entryMap = new Map(entries.map((entry) => [entry.filename, entry]));
+
+    const readTextEntry = async (entryPath: string): Promise<string | null> => {
+      let entry = entryMap.get(entryPath);
+      if (!entry) {
+        const lowerPath = entryPath.toLowerCase();
+        entry = entries.find((candidate) => candidate.filename.toLowerCase() === lowerPath);
+      }
+      if (!entry || entry.directory || !entry.getData) return null;
+      return entry.getData(new TextWriter());
+    };
+
+    const containerXml = await readTextEntry("META-INF/container.xml");
+    if (!containerXml) return [];
+
+    const parser = new DOMParser();
+    const containerDoc = parser.parseFromString(containerXml, "application/xml");
+    const opfPath =
+      Array.from(containerDoc.getElementsByTagName("*")).find(
+        (element) => element.localName === "rootfile",
+      )?.getAttribute("full-path") || "content.opf";
+    const opfXml = await readTextEntry(opfPath);
+    if (!opfXml) return [];
+
+    const opfDoc = parser.parseFromString(opfXml, "application/xml");
+    const tocPath = getTocPathFromOpf(opfDoc, opfPath);
+    if (!tocPath) return [];
+
+    const tocXml = await readTextEntry(tocPath);
+    if (!tocXml) return [];
+
+    const tocDoc = parser.parseFromString(tocXml, "application/xml");
+    if (tocPath.toLowerCase().endsWith(".ncx")) {
+      return parseNcxToc(tocDoc);
+    }
+    return parseNavToc(tocDoc);
+  } catch (error) {
+    console.warn("[extractBookChapters] Failed to read EPUB TOC directly:", error);
+    return [];
+  } finally {
+    await reader.close();
+  }
+}
+
+function getTocPathFromOpf(opfDoc: Document, opfPath: string): string | null {
+  const opfDir = getDirname(opfPath);
+  const elements = Array.from(opfDoc.getElementsByTagName("*"));
+  const spine = elements.find((element) => element.localName === "spine");
+  const tocId = spine?.getAttribute("toc") || "";
+  const manifestItems = elements.filter((element) => element.localName === "item");
+  const ncxItem =
+    manifestItems.find((item) => item.getAttribute("id") === tocId) ||
+    manifestItems.find((item) => item.getAttribute("media-type") === "application/x-dtbncx+xml");
+  const navItem = manifestItems.find((item) =>
+    (item.getAttribute("properties") || "").split(/\s+/).includes("nav"),
+  );
+  const href = ncxItem?.getAttribute("href") || navItem?.getAttribute("href");
+  return href ? joinEpubPath(opfDir, href) : null;
+}
+
+function parseNcxToc(doc: Document): TocTreeItemLike[] {
+  const navMap = Array.from(doc.getElementsByTagName("*")).find(
+    (element) => element.localName === "navMap",
+  );
+  if (!navMap) return [];
+
+  return childElementsByLocalName(navMap, "navPoint")
+    .map(parseNcxNavPoint)
+    .filter((item): item is TocTreeItemLike => item !== null);
+}
+
+function parseNcxNavPoint(element: Element): TocTreeItemLike | null {
+  const labelElement = childElementsByLocalName(element, "navLabel")[0];
+  const label = labelElement?.textContent?.replace(/\s+/g, " ").trim() || "";
+  const href = childElementsByLocalName(element, "content")[0]?.getAttribute("src") || "";
+  if (!label && !href) return null;
+
+  const subitems = childElementsByLocalName(element, "navPoint")
+    .map(parseNcxNavPoint)
+    .filter((item): item is TocTreeItemLike => item !== null);
+  return { label, href, subitems };
+}
+
+function parseNavToc(doc: Document): TocTreeItemLike[] {
+  const navElements = Array.from(doc.getElementsByTagName("*")).filter(
+    (element) => element.localName === "nav",
+  );
+  const tocNav =
+    navElements.find((element) => /\btoc\b/i.test(element.getAttribute("epub:type") || "")) ||
+    navElements[0];
+  if (!tocNav) return [];
+
+  const rootList = Array.from(tocNav.getElementsByTagName("*")).find(
+    (element) => element.localName === "ol",
+  );
+  if (!rootList) return [];
+
+  return childElementsByLocalName(rootList, "li")
+    .map(parseNavListItem)
+    .filter((item): item is TocTreeItemLike => item !== null);
+}
+
+function parseNavListItem(element: Element): TocTreeItemLike | null {
+  const link = childElements(element).find(
+    (child) => child.localName === "a" || child.localName === "span",
+  );
+  const label = link?.textContent?.replace(/\s+/g, " ").trim() || "";
+  const href = link?.localName === "a" ? link.getAttribute("href") || "" : "";
+  const childList = childElements(element).find((child) => child.localName === "ol");
+  const subitems = childList
+    ? childElementsByLocalName(childList, "li")
+        .map(parseNavListItem)
+        .filter((item): item is TocTreeItemLike => item !== null)
+    : [];
+  if (!label && !href && subitems.length === 0) return null;
+  return { label, href, subitems };
+}
+
+function childElementsByLocalName(element: Element, localName: string): Element[] {
+  return childElements(element).filter((child) => child.localName === localName);
+}
+
+function childElements(element: Element): Element[] {
+  return Array.from(element.children);
+}
+
+function getDirname(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, "/");
+  const index = normalized.lastIndexOf("/");
+  return index >= 0 ? normalized.slice(0, index) : "";
+}
+
+function joinEpubPath(baseDir: string, relativePath: string): string {
+  const parts = `${baseDir}/${relativePath}`.split("/");
+  const normalized: string[] = [];
+  for (const part of parts) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      normalized.pop();
+      continue;
+    }
+    normalized.push(part);
+  }
+  return normalized.join("/");
 }
 
 /**
