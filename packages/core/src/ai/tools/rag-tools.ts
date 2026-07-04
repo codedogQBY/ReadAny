@@ -16,7 +16,24 @@ function isGenericSectionTitle(title: string): boolean {
 function shouldPreferOriginalToc(chapters: Map<number, string>): boolean {
   if (chapters.size === 0) return false;
   const titles = Array.from(chapters.values());
-  return titles.every(isGenericSectionTitle);
+  const genericCount = titles.filter(isGenericSectionTitle).length;
+  return genericCount >= Math.max(2, Math.ceil(titles.length * 0.6));
+}
+
+function getTocDebugInfo(
+  chapters: Map<number, string>,
+  fallback?: { attempted: boolean; error?: string; chapterCount?: number; sampleTitles?: string[] },
+) {
+  const titles = Array.from(chapters.values());
+  const genericCount = titles.filter(isGenericSectionTitle).length;
+  return {
+    vectorChapterCount: chapters.size,
+    genericSectionCount: genericCount,
+    genericSectionRatio: titles.length > 0 ? Math.round((genericCount / titles.length) * 100) / 100 : 0,
+    preferOriginalToc: shouldPreferOriginalToc(chapters),
+    vectorSampleTitles: titles.slice(0, 8),
+    fallback,
+  };
 }
 
 /** Create RAG search tool for a specific book */
@@ -139,10 +156,36 @@ export function createRagTocTool(bookId: string): ToolDefinition {
             })),
             totalChapters: fallback.chapters.length,
             source: "original-file",
+            debug: getTocDebugInfo(chapters, {
+              attempted: true,
+              chapterCount: fallback.chapters.length,
+              sampleTitles: fallback.chapters.slice(0, 8).map((chapter) => chapter.title),
+            }),
             instruction:
               "The vector index has generic Section titles, so this TOC was rebuilt from the original book file. Re-vectorize the book to refresh RAG chapter titles.",
           };
         }
+
+        const fallbackError = "error" in fallback ? fallback.error : "Original file TOC was empty";
+        console.warn("[ragToc] Failed to rebuild generic section TOC from original book", {
+          bookId,
+          error: fallbackError,
+        });
+        return {
+          chapters: Array.from(chapters.entries()).map(([index, title], ordinal) => ({
+            index,
+            number: ordinal + 1,
+            title,
+          })),
+          totalChapters: chapters.size,
+          source: "vector-index",
+          debug: getTocDebugInfo(chapters, {
+            attempted: true,
+            error: fallbackError,
+          }),
+          warning:
+            "The vector index has mostly generic Section titles, but rebuilding the TOC from the original book failed. See debug.fallback.error.",
+        };
       }
 
       return {
@@ -152,6 +195,8 @@ export function createRagTocTool(bookId: string): ToolDefinition {
           title,
         })),
         totalChapters: chapters.size,
+        source: "vector-index",
+        debug: getTocDebugInfo(chapters, { attempted: false }),
       };
     },
   };

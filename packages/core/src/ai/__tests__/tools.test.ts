@@ -284,6 +284,13 @@ describe("ragToc tool", () => {
     const result = (await tool.execute({})) as any;
 
     expect(result.totalChapters).toBe(3);
+    expect(result.source).toBe("vector-index");
+    expect(result.debug).toMatchObject({
+      vectorChapterCount: 3,
+      genericSectionCount: 0,
+      preferOriginalToc: false,
+      fallback: { attempted: false },
+    });
     expect(result.chapters).toEqual([
       { index: 0, number: 1, title: "Intro" },
       { index: 1, number: 2, title: "Chapter 1" },
@@ -311,10 +318,49 @@ describe("ragToc tool", () => {
     const result = (await tool.execute({})) as any;
 
     expect(result.source).toBe("original-file");
+    expect(result.debug).toMatchObject({
+      vectorChapterCount: 2,
+      genericSectionCount: 2,
+      preferOriginalToc: true,
+      fallback: {
+        attempted: true,
+        chapterCount: 2,
+        sampleTitles: ["第1章 整洁代码", "第2章 有意义的命名"],
+      },
+    });
     expect(result.chapters).toEqual([
       { index: 0, number: 1, title: "第1章 整洁代码" },
       { index: 1, number: 2, title: "第2章 有意义的命名" },
     ]);
+  });
+
+  it("returns visible diagnostics when generic section fallback fails", async () => {
+    vi.mocked(getChunks).mockResolvedValue([
+      makeChunk({ chapterIndex: 1, chapterTitle: "Section 2" }),
+      makeChunk({ chapterIndex: 2, chapterTitle: "Section 3" }),
+    ] as any);
+    vi.mocked(getBook).mockResolvedValue(makeBook({ isVectorized: true }) as any);
+    setFallbackContentProvider({
+      async getChapters() {
+        throw new Error("Original file is unavailable");
+      },
+    });
+
+    const tools = getAvailableTools({ bookId: "book-1", isVectorized: true, enabledSkills: [] });
+    const tool = findTool(tools, "ragToc");
+    const result = (await tool.execute({})) as any;
+
+    expect(result.source).toBe("vector-index");
+    expect(result.warning).toContain("rebuilding the TOC from the original book failed");
+    expect(result.debug).toMatchObject({
+      vectorChapterCount: 2,
+      genericSectionCount: 2,
+      preferOriginalToc: true,
+      fallback: {
+        attempted: true,
+        error: "Original file is unavailable",
+      },
+    });
   });
 });
 
