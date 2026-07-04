@@ -18,6 +18,22 @@ let _serverUrl: string | null = null;
 let _serverDocRoot: string | null = null;
 let _useNative: boolean | null = null; // null = not yet determined
 
+const CORS_HEADERS =
+  "Access-Control-Allow-Origin: *\r\n" +
+  "Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n" +
+  "Access-Control-Allow-Headers: Range, Content-Type\r\n" +
+  "Access-Control-Expose-Headers: Accept-Ranges, Content-Length, Content-Range\r\n";
+
+const LIGHTTPD_CORS_CONFIG = `
+server.modules += ("mod_setenv")
+setenv.add-response-header = (
+  "Access-Control-Allow-Origin" => "*",
+  "Access-Control-Allow-Methods" => "GET, HEAD, OPTIONS",
+  "Access-Control-Allow-Headers" => "Range, Content-Type",
+  "Access-Control-Expose-Headers" => "Accept-Ranges, Content-Length, Content-Range"
+)
+`;
+
 /**
  * Start a local file server serving files from `docRoot`.
  * Returns the base URL (e.g. `http://127.0.0.1:12345`).
@@ -71,6 +87,7 @@ async function _startNativeServer(cleanRoot: string): Promise<string> {
     server = new StaticServer({
       fileDir: cleanRoot,
       port: 0,
+      extraConfig: LIGHTTPD_CORS_CONFIG,
       stopInBackground: false,
     });
     // Cap server.start() so a hung Lighttpd init can't pin the reader on a spinner.
@@ -94,7 +111,9 @@ async function _startNativeServer(cleanRoot: string): Promise<string> {
       `[FileServer] Native Lighttpd unavailable (${e instanceof Error ? e.message : e}), falling back to TCP`,
     );
     if (server) {
-      try { await server.stop?.(); } catch {}
+      try {
+        await server.stop?.();
+      } catch {}
     }
     _nativeServer = null;
     _useNative = false;
@@ -134,64 +153,117 @@ async function _startTcpFallback(cleanRoot: string): Promise<string> {
         if (headerEnd === -1) return;
 
         const requestLine = headerBuf.slice(0, headerBuf.indexOf("\r\n"));
-        const [, rawPath] = requestLine.split(" ") || [];
+        const [method = "GET", rawPath] = requestLine.split(" ") || [];
+        const normalizedMethod = method.toUpperCase();
 
         if (!rawPath || rawPath === "/favicon.ico") {
-          socket.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+          socket.write(`HTTP/1.1 404 Not Found\r\n${CORS_HEADERS}Content-Length: 0\r\n\r\n`);
+          socket.destroy();
+          return;
+        }
+
+        if (normalizedMethod === "OPTIONS") {
+          socket.write(`HTTP/1.1 204 No Content\r\n${CORS_HEADERS}Content-Length: 0\r\n\r\n`);
           socket.destroy();
           return;
         }
 
         const decodedPath = decodeURIComponent(rawPath.slice(1));
         if (decodedPath.includes("..")) {
-          socket.write("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n");
+          socket.write(`HTTP/1.1 403 Forbidden\r\n${CORS_HEADERS}Content-Length: 0\r\n\r\n`);
           socket.destroy();
           return;
         }
 
         const filePath = `${fsRoot}/${decodedPath}`;
+        const fileUri = toFileUri(filePath);
         let file: InstanceType<typeof File>;
         try {
-          file = new File(filePath);
+          file = new File(fileUri);
           if (!file.exists) {
-            socket.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+            console.warn(`[FileServer] TCP file not found: ${fileUri}`);
+            socket.write(`HTTP/1.1 404 Not Found\r\n${CORS_HEADERS}Content-Length: 0\r\n\r\n`);
             socket.destroy();
             return;
           }
-        } catch {
-          socket.write("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n");
+        } catch (e) {
+          console.warn(
+            `[FileServer] TCP failed to open file: ${fileUri} (${e instanceof Error ? e.message : e})`,
+          );
+          socket.write(
+            `HTTP/1.1 500 Internal Server Error\r\n${CORS_HEADERS}Content-Length: 0\r\n\r\n`,
+          );
           socket.destroy();
           return;
         }
 
         const size = file.size;
         const mime = _guessMime(filePath);
+        const rangeHeader = headerBuf.match(/^Range:\s*bytes=(\d*)-(\d*)/im);
+        let start = 0;
+        let end = size > 0 ? size - 1 : 0;
+        let statusLine = "HTTP/1.1 200 OK";
+        let contentRangeHeader = "";
+
+        if (rangeHeader) {
+          const requestedStart = rangeHeader[1] ? Number.parseInt(rangeHeader[1], 10) : 0;
+          const requestedEnd = rangeHeader[2] ? Number.parseInt(rangeHeader[2], 10) : end;
+          if (
+            Number.isNaN(requestedStart) ||
+            Number.isNaN(requestedEnd) ||
+            requestedStart >= size ||
+            requestedEnd < requestedStart
+          ) {
+            socket.write(
+              `HTTP/1.1 416 Range Not Satisfiable\r\n${CORS_HEADERS}Content-Range: bytes */${size}\r\nContent-Length: 0\r\n\r\n`,
+            );
+            socket.destroy();
+            return;
+          }
+          start = requestedStart;
+          end = Math.min(requestedEnd, size - 1);
+          statusLine = "HTTP/1.1 206 Partial Content";
+          contentRangeHeader = `Content-Range: bytes ${start}-${end}/${size}\r\n`;
+        }
+
+        const contentLength = Math.max(0, end - start + 1);
 
         socket.write(
-          `HTTP/1.1 200 OK\r\nContent-Type: ${mime}\r\nContent-Length: ${size}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n`,
+          `${statusLine}\r\nContent-Type: ${mime}\r\nContent-Length: ${contentLength}\r\nAccept-Ranges: bytes\r\n${contentRangeHeader}${CORS_HEADERS}Connection: close\r\n\r\n`,
         );
+
+        if (normalizedMethod === "HEAD") {
+          socket.destroy();
+          return;
+        }
 
         let fileData: Uint8Array;
         try {
           fileData = await file.bytes();
-        } catch {
+        } catch (e) {
+          console.warn(
+            `[FileServer] TCP failed to read file: ${fileUri} (${e instanceof Error ? e.message : e})`,
+          );
           socket.destroy();
           return;
         }
 
         const CHUNK = 65536;
-        let offset = 0;
+        let offset = start;
         const pump = () => {
-          if (offset >= fileData.length) {
+          if (offset > end) {
             socket.destroy();
             return;
           }
-          const end = Math.min(offset + CHUNK, fileData.length);
-          const chunk = fileData.slice(offset, end);
-          offset = end;
+          const chunkEnd = Math.min(offset + CHUNK - 1, end);
+          const chunk = fileData.slice(offset, chunkEnd + 1);
+          offset = chunkEnd + 1;
           try {
             socket.write(chunk, undefined, (err?: Error) => {
-              if (err) { socket.destroy(); return; }
+              if (err) {
+                socket.destroy();
+                return;
+              }
               pump();
             });
           } catch {
@@ -199,7 +271,11 @@ async function _startTcpFallback(cleanRoot: string): Promise<string> {
           }
         };
 
-        try { pump(); } catch { socket.destroy(); }
+        try {
+          pump();
+        } catch {
+          socket.destroy();
+        }
       });
 
       socket.on("error", () => socket.destroy());
@@ -233,11 +309,15 @@ async function _startTcpFallback(cleanRoot: string): Promise<string> {
  */
 export async function stopFileServer(_docRoot?: string): Promise<void> {
   if (_nativeServer) {
-    try { await _nativeServer.stop(); } catch {}
+    try {
+      await _nativeServer.stop();
+    } catch {}
     _nativeServer = null;
   }
   if (_tcpServer) {
-    try { _tcpServer.close(); } catch {}
+    try {
+      _tcpServer.close();
+    } catch {}
     _tcpServer = null;
   }
   _serverUrl = null;
@@ -263,4 +343,8 @@ const EXT_MIME: Record<string, string> = {
 function _guessMime(filePath: string): string {
   const ext = filePath.slice(filePath.lastIndexOf(".")).toLowerCase();
   return EXT_MIME[ext] || "application/octet-stream";
+}
+
+function toFileUri(path: string): string {
+  return path.startsWith("file://") ? path : `file://${path}`;
 }

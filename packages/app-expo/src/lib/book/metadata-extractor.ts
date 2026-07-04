@@ -33,16 +33,45 @@ interface BlobLikeFile {
   slice(start?: number, end?: number, contentType?: string): SliceReadable;
 }
 
+const EPUB_TEXT_ENTRY_MAX_BYTES = 4 * 1024 * 1024;
+const EPUB_COVER_ENTRY_MAX_BYTES = 24 * 1024 * 1024;
+
 // ─── EPUB extraction ────────────────────────────────────────────────
 
 export async function extractEpubMetadata(fileBytes: Uint8Array): Promise<ExtractedMeta> {
   const buf = new Uint8Array(fileBytes);
   const directory = parseZipDirectory(buf);
 
+  return extractEpubMetadataFromReaders({
+    logPrefix: "extractEpubMetadata",
+    readText: async (path) => readTextFromZip(buf, directory, path, EPUB_TEXT_ENTRY_MAX_BYTES),
+    readBytes: async (path) => readBytesFromZip(buf, directory, path, EPUB_COVER_ENTRY_MAX_BYTES),
+  });
+}
+
+export async function extractEpubMetadataFromFile(file: BlobLikeFile): Promise<ExtractedMeta> {
+  const directory = await parseZipDirectoryFromFile(file);
+
+  return extractEpubMetadataFromReaders({
+    logPrefix: "extractEpubMetadataFromFile",
+    readText: (path) => readTextFromZipFile(file, directory, path, EPUB_TEXT_ENTRY_MAX_BYTES),
+    readBytes: (path) => readBytesFromZipFile(file, directory, path, EPUB_COVER_ENTRY_MAX_BYTES),
+  });
+}
+
+async function extractEpubMetadataFromReaders({
+  logPrefix,
+  readText,
+  readBytes,
+}: {
+  logPrefix: string;
+  readText: (path: string) => Promise<string | null>;
+  readBytes: (path: string) => Promise<Uint8Array | null>;
+}): Promise<ExtractedMeta> {
   // 1. Read container.xml to find OPF path
-  const containerXml = readTextFromZip(buf, directory, "META-INF/container.xml");
+  const containerXml = await readText("META-INF/container.xml");
   if (!containerXml) {
-    console.warn("[extractEpubMetadata] container.xml not found");
+    console.warn(`[${logPrefix}] container.xml not found`);
     return { title: "", author: "", coverBytes: null, coverMimeType: null };
   }
 
@@ -50,9 +79,9 @@ export async function extractEpubMetadata(fileBytes: Uint8Array): Promise<Extrac
   const opfDir = opfPath.includes("/") ? opfPath.substring(0, opfPath.lastIndexOf("/") + 1) : "";
 
   // 2. Read OPF and extract title / author
-  const opfXml = readTextFromZip(buf, directory, opfPath);
+  const opfXml = await readText(opfPath);
   if (!opfXml) {
-    console.warn(`[extractEpubMetadata] OPF not found at: ${opfPath}`);
+    console.warn(`[${logPrefix}] OPF not found at: ${opfPath}`);
     return { title: "", author: "", coverBytes: null, coverMimeType: null };
   }
 
@@ -82,7 +111,7 @@ export async function extractEpubMetadata(fileBytes: Uint8Array): Promise<Extrac
       const decoded = decodeURIComponent(coverHref);
       const candidates = [opfDir + decoded, opfDir + coverHref, decoded, coverHref];
       for (const candidate of candidates) {
-        const data = readBytesFromZip(buf, directory, candidate);
+        const data = await readBytes(candidate);
         if (data) {
           coverBytes = data;
           coverMimeType = guessMimeType(candidate);
@@ -91,7 +120,7 @@ export async function extractEpubMetadata(fileBytes: Uint8Array): Promise<Extrac
       }
     }
   } catch (err) {
-    console.warn("[extractEpubMetadata] cover extraction error:", err);
+    console.warn(`[${logPrefix}] cover extraction error:`, err);
   }
 
   return {
@@ -150,6 +179,8 @@ export async function extractBookMetadataFromFile(
 
   try {
     switch (format) {
+      case "epub":
+        return await extractEpubMetadataFromFile(file);
       case "mobi":
       case "azw":
       case "azw3":
@@ -232,6 +263,7 @@ const MOBI_EXTH_FLAG_OFFSET = 128;
 const EXTH_START_BASE_OFFSET = 16;
 const MAX_MOBI_RECORD_BYTES = 16 * 1024 * 1024;
 const RANGE_READ_CHUNK_BYTES = 256 * 1024;
+const ZIP_EOCD_SEARCH_BYTES = 65_557;
 
 async function parseMobiHeader(file: BlobLikeFile): Promise<ParsedMobiHeader | null> {
   const headerBuffer = await file.slice(0, PDB_HEADER_LENGTH).arrayBuffer();
@@ -562,7 +594,6 @@ interface ZipDirectoryEntry {
  */
 function parseZipDirectory(buf: Uint8Array): ZipDirectoryEntry[] {
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  const entries: ZipDirectoryEntry[] = [];
 
   // Find End of Central Directory
   let eocdOffset = -1;
@@ -572,12 +603,49 @@ function parseZipDirectory(buf: Uint8Array): ZipDirectoryEntry[] {
       break;
     }
   }
-  if (eocdOffset === -1) return entries;
+  if (eocdOffset === -1) return [];
 
   const cdOffset = view.getUint32(eocdOffset + 16, true);
   const cdCount = view.getUint16(eocdOffset + 10, true);
+  const cdSize = view.getUint32(eocdOffset + 12, true);
 
-  let pos = cdOffset;
+  if (cdOffset < 0 || cdOffset >= buf.byteLength) return [];
+  const cdEnd = Math.min(buf.byteLength, cdOffset + cdSize);
+  return parseZipCentralDirectory(buf.slice(cdOffset, cdEnd), cdCount);
+}
+
+async function parseZipDirectoryFromFile(file: BlobLikeFile): Promise<ZipDirectoryEntry[]> {
+  const fileSize = file.size ?? 0;
+  if (fileSize < 22) return [];
+
+  const tailLength = Math.min(fileSize, ZIP_EOCD_SEARCH_BYTES);
+  const tailStart = fileSize - tailLength;
+  const tail = new Uint8Array(await file.slice(tailStart, fileSize).arrayBuffer());
+  const view = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
+
+  let eocdOffset = -1;
+  for (let i = tail.byteLength - 22; i >= 0; i--) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      eocdOffset = i;
+      break;
+    }
+  }
+  if (eocdOffset === -1) return [];
+
+  const cdCount = view.getUint16(eocdOffset + 10, true);
+  const cdSize = view.getUint32(eocdOffset + 12, true);
+  const cdOffset = view.getUint32(eocdOffset + 16, true);
+  if (cdOffset < 0 || cdSize <= 0 || cdOffset + cdSize > fileSize) return [];
+
+  const cdBuffer = new Uint8Array(await file.slice(cdOffset, cdOffset + cdSize).arrayBuffer());
+  return parseZipCentralDirectory(cdBuffer, cdCount);
+}
+
+function parseZipCentralDirectory(buf: Uint8Array, cdCount: number): ZipDirectoryEntry[] {
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const entries: ZipDirectoryEntry[] = [];
+  let pos = 0;
+
   for (let i = 0; i < cdCount; i++) {
     if (pos + 46 > buf.byteLength) break;
     if (view.getUint32(pos, true) !== 0x02014b50) break;
@@ -638,6 +706,50 @@ function decompressEntry(buf: Uint8Array, entry: ZipDirectoryEntry): Uint8Array 
   return null;
 }
 
+async function decompressEntryFromFile(
+  file: BlobLikeFile,
+  entry: ZipDirectoryEntry,
+  maxUncompressedSize: number,
+): Promise<Uint8Array | null> {
+  if (
+    entry.compressedSize <= 0 ||
+    entry.compressedSize > maxUncompressedSize ||
+    entry.uncompressedSize > maxUncompressedSize
+  ) {
+    return null;
+  }
+
+  const header = new Uint8Array(
+    await file.slice(entry.localHeaderOffset, entry.localHeaderOffset + 30).arrayBuffer(),
+  );
+  if (header.byteLength < 30) return null;
+
+  const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+  if (view.getUint32(0, true) !== 0x04034b50) return null;
+
+  const localFilenameLen = view.getUint16(26, true);
+  const localExtraLen = view.getUint16(28, true);
+  const dataStart = entry.localHeaderOffset + 30 + localFilenameLen + localExtraLen;
+  const dataEnd = dataStart + entry.compressedSize;
+
+  const data = new Uint8Array(await file.slice(dataStart, dataEnd).arrayBuffer());
+  if (data.byteLength !== entry.compressedSize) return null;
+
+  if (entry.compressionMethod === 0) {
+    return data;
+  }
+
+  if (entry.compressionMethod === 8) {
+    try {
+      return pako.inflateRaw(data);
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
 /**
  * Find a ZIP entry by name (case-insensitive fallback) and decompress it.
  */
@@ -645,6 +757,7 @@ function findAndDecompress(
   buf: Uint8Array,
   directory: ZipDirectoryEntry[],
   path: string,
+  maxUncompressedSize = Number.POSITIVE_INFINITY,
 ): Uint8Array | null {
   // Exact match first
   let entry = directory.find((e) => e.filename === path);
@@ -654,15 +767,32 @@ function findAndDecompress(
     entry = directory.find((e) => e.filename.toLowerCase() === lower);
   }
   if (!entry) return null;
+  if (entry.uncompressedSize > maxUncompressedSize) return null;
   return decompressEntry(buf, entry);
+}
+
+async function findAndDecompressFromFile(
+  file: BlobLikeFile,
+  directory: ZipDirectoryEntry[],
+  path: string,
+  maxUncompressedSize: number,
+): Promise<Uint8Array | null> {
+  let entry = directory.find((e) => e.filename === path);
+  if (!entry) {
+    const lower = path.toLowerCase();
+    entry = directory.find((e) => e.filename.toLowerCase() === lower);
+  }
+  if (!entry) return null;
+  return decompressEntryFromFile(file, entry, maxUncompressedSize);
 }
 
 function readTextFromZip(
   buf: Uint8Array,
   directory: ZipDirectoryEntry[],
   path: string,
+  maxUncompressedSize = Number.POSITIVE_INFINITY,
 ): string | null {
-  const data = findAndDecompress(buf, directory, path);
+  const data = findAndDecompress(buf, directory, path, maxUncompressedSize);
   if (!data) return null;
   return new TextDecoder().decode(data);
 }
@@ -671,8 +801,29 @@ function readBytesFromZip(
   buf: Uint8Array,
   directory: ZipDirectoryEntry[],
   path: string,
+  maxUncompressedSize = Number.POSITIVE_INFINITY,
 ): Uint8Array | null {
-  return findAndDecompress(buf, directory, path);
+  return findAndDecompress(buf, directory, path, maxUncompressedSize);
+}
+
+async function readTextFromZipFile(
+  file: BlobLikeFile,
+  directory: ZipDirectoryEntry[],
+  path: string,
+  maxUncompressedSize: number,
+): Promise<string | null> {
+  const data = await findAndDecompressFromFile(file, directory, path, maxUncompressedSize);
+  if (!data) return null;
+  return new TextDecoder().decode(data);
+}
+
+async function readBytesFromZipFile(
+  file: BlobLikeFile,
+  directory: ZipDirectoryEntry[],
+  path: string,
+  maxUncompressedSize: number,
+): Promise<Uint8Array | null> {
+  return findAndDecompressFromFile(file, directory, path, maxUncompressedSize);
 }
 
 // ─── XML helpers (no DOMParser, regex-based) ────────────────────────

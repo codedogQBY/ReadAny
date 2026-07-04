@@ -764,13 +764,13 @@ export function AISettings() {
         {/* Max Tokens */}
         <div>
           <h3 className="mb-2 text-xs text-muted-foreground">
-            {t("settings.maxTokens", { value: aiConfig.maxTokens ?? 4096 })}
+            {t("settings.maxTokens", { value: aiConfig.maxTokens ?? 8192 })}
           </h3>
           <Slider
             min={1024}
             max={32768}
             step={1024}
-            value={[aiConfig.maxTokens ?? 4096]}
+            value={[aiConfig.maxTokens ?? 8192]}
             onValueChange={([v]) => updateAIConfig({ maxTokens: v })}
           />
           <div className="mt-2 flex justify-between text-xs text-muted-foreground">

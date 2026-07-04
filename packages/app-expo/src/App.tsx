@@ -42,7 +42,11 @@ import { setPlatformService } from "@readany/core/services";
 import { setSyncAdapter } from "@readany/core/sync";
 import { Audio } from "expo-av";
 import { I18nextProvider } from "react-i18next";
-import TrackPlayer, { Event as TrackEvent, Capability } from "react-native-track-player";
+import TrackPlayer, {
+  AppKilledPlaybackBehavior,
+  Event as TrackEvent,
+  Capability,
+} from "react-native-track-player";
 
 import { FloatingTTSBubble } from "@/components/tts/FloatingTTSBubble";
 import { UpdateDialog } from "@/components/update/UpdateDialog";
@@ -69,7 +73,8 @@ if (Platform.OS === "ios") {
 }
 
 const FEEDBACK_WORKER_FALLBACK = "https://feedback.readany.top";
-const feedbackWorkerUrl = process.env.EXPO_PUBLIC_FEEDBACK_WORKER_URL?.trim() || FEEDBACK_WORKER_FALLBACK;
+const feedbackWorkerUrl =
+  process.env.EXPO_PUBLIC_FEEDBACK_WORKER_URL?.trim() || FEEDBACK_WORKER_FALLBACK;
 setFeedbackWorkerUrl(feedbackWorkerUrl);
 
 // Keep the native splash screen visible while we bootstrap
@@ -129,6 +134,11 @@ export default function App() {
           console.log("[App] TrackPlayer already initialized — reusing existing native instance");
         }
         await TrackPlayer.updateOptions({
+          android: {
+            appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
+            alwaysPauseOnInterruption: false,
+          },
+          stoppingAppPausesPlayback: false,
           capabilities: [
             Capability.Play,
             Capability.Pause,

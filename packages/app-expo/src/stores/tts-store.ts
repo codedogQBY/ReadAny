@@ -2,14 +2,20 @@ import {
   DEFAULT_TTS_CONFIG,
   type ITTSPlayer,
   type TTSConfig,
+  VOICE_RESPEAK_DEBOUNCE_MS,
+  isActivePlay,
   normalizeTTSConfig,
+  shouldRespeakForSynthChange,
   splitNarrationText,
 } from "@readany/core/tts";
+import { Platform } from "react-native";
 import TrackPlayer from "react-native-track-player";
 import { create } from "zustand";
 import { ExpoSpeechTTSPlayer } from "../lib/platform/expo-speech-player";
+import { canUseSystemTtsSynthesis } from "../lib/platform/system-tts-synthesis";
 import { TrackPlayerDashScopeTTSPlayer } from "../lib/platform/track-player-dashscope-player";
 import { TrackPlayerEdgeTTSPlayer } from "../lib/platform/track-player-edge-player";
+import { TrackPlayerSystemTTSPlayer } from "../lib/platform/track-player-system-player";
 import { withPersist } from "./persist";
 
 export type TTSPlayState = "stopped" | "playing" | "paused" | "loading";
@@ -21,7 +27,15 @@ export interface TTSPlayerFactories {
 }
 
 const defaultFactories: TTSPlayerFactories = {
-  createSystemTTS: () => new ExpoSpeechTTSPlayer(),
+  createSystemTTS: () => {
+    if (Platform.OS === "android" || Platform.OS === "ios") {
+      if (!canUseSystemTtsSynthesis()) {
+        console.warn("[TTS] System TTS synthesis module unavailable; native rebuild required");
+      }
+      return new TrackPlayerSystemTTSPlayer();
+    }
+    return new ExpoSpeechTTSPlayer();
+  },
   createEdgeTTS: () => new TrackPlayerEdgeTTSPlayer(),
   createDashScopeTTS: () => new TrackPlayerDashScopeTTSPlayer(),
 };
@@ -57,6 +71,26 @@ function clearSleepTimerHandle(): void {
     clearTimeout(_sleepTimerHandle);
     _sleepTimerHandle = null;
   }
+}
+
+let _respeakTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearRespeakTimer(): void {
+  if (_respeakTimer) {
+    clearTimeout(_respeakTimer);
+    _respeakTimer = null;
+  }
+}
+
+function scheduleRespeak(): void {
+  clearRespeakTimer();
+  _respeakTimer = setTimeout(() => {
+    _respeakTimer = null;
+    const { playState, jumpToChunk } = useTTSStore.getState();
+    if (isActivePlay(playState)) {
+      jumpToChunk(_sessionCurrentIndex);
+    }
+  }, VOICE_RESPEAK_DEBOUNCE_MS);
 }
 
 function detachAndStopPlayer(player: ITTSPlayer | null): void {
@@ -257,6 +291,7 @@ export const useTTSStore = create<TTSState>()(
       sleepTimerDurationMinutes: null,
 
       play: (text: string | string[]) => {
+        clearRespeakTimer();
         const segments = normalizeSegments(text);
         const joinedText = segments.join(" ").trim();
         if (!joinedText) {
@@ -327,6 +362,7 @@ export const useTTSStore = create<TTSState>()(
 
       pause: () => {
         console.log("[TTSStore] pause called");
+        clearRespeakTimer();
         const { playState } = get();
         if (playState !== "playing" && playState !== "loading") return;
         _activeTTS?.pause();
@@ -371,6 +407,7 @@ export const useTTSStore = create<TTSState>()(
       stop: () => {
         console.log("[TTSStore] stop called");
         clearSleepTimerHandle();
+        clearRespeakTimer();
         _sessionGeneration += 1;
         detachAndStopAllPlayers();
         _sessionSegments = [];
@@ -405,10 +442,22 @@ export const useTTSStore = create<TTSState>()(
         }
       },
 
-      updateConfig: (updates) =>
-        set((state) => ({
-          config: normalizeTTSConfig({ ...state.config, ...updates }),
-        })),
+      updateConfig: (updates) => {
+        const previousConfig = normalizeTTSConfig(get().config);
+        const nextConfig = normalizeTTSConfig({ ...previousConfig, ...updates });
+        set({ config: nextConfig });
+
+        if (
+          shouldRespeakForSynthChange(previousConfig, nextConfig) &&
+          isActivePlay(get().playState)
+        ) {
+          scheduleRespeak();
+        } else {
+          // 非重读变更（切引擎、或改了当前引擎不关心的字段）必须取消上一次合成变更排下的
+          // 待执行 respeak，否则陈旧防抖定时器会 fire 并强制重启播放。
+          clearRespeakTimer();
+        }
+      },
 
       setPlayState: (playState) => set({ playState }),
 
@@ -431,6 +480,7 @@ export const useTTSStore = create<TTSState>()(
               TrackPlayer.updateMetadataForTrack(idx, {
                 title: chapter || title,
                 artist: title,
+                album: title || "ReadAny",
                 ...(artwork ? { artwork } : {}),
               }).catch((err) => console.warn("[TTS] Failed to update track metadata:", err));
             }
@@ -448,6 +498,7 @@ export const useTTSStore = create<TTSState>()(
         }),
 
       jumpToChunk: (index: number) => {
+        clearRespeakTimer();
         if (index < 0 || index >= _sessionSegments.length) return;
 
         const config = normalizeTTSConfig(get().config);

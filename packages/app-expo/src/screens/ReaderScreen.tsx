@@ -33,6 +33,7 @@ import {
 import { useMissingBookPromptStore } from "@/stores/missing-book-prompt-store";
 import { useTheme } from "@/styles/ThemeContext";
 import { useColors, withOpacity } from "@/styles/theme";
+import { useIsFocused } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { readingContextService } from "@readany/core/ai/reading-context-service";
 import { runWithDbRetry } from "@readany/core/db/write-retry";
@@ -55,9 +56,10 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
+  type AppStateStatus,
   Easing,
   Modal,
-  NativeModules,
   Platform,
   Pressable,
   ScrollView,
@@ -144,13 +146,13 @@ const NOTE_TOOLTIP_SIDE_PADDING = 12;
 const NOTE_TOOLTIP_ABOVE_OFFSET = 2;
 const NOTE_TOOLTIP_BELOW_OFFSET = 8;
 const NOTE_TOOLTIP_TOP_THRESHOLD = 180;
+import { useRubyStore } from "@readany/core/stores/ruby-store";
 import { ReaderSettingsPanel } from "./reader/ReaderSettingsPanel";
 import { ReaderTOCPanel } from "./reader/ReaderTOCPanel";
 import {
   CONTROLS_TIMEOUT,
   SCREEN_HEIGHT,
   SCREEN_WIDTH,
-  getVolumeManager,
 } from "./reader/reader-constants";
 import { BatteryIcon, ListIcon, SettingsIcon } from "./reader/reader-icons";
 import { makeStyles, noteTooltipMdStyles } from "./reader/reader-styles";
@@ -159,7 +161,6 @@ import { useReaderSearch } from "./reader/useReaderSearch";
 import { useReaderSystemInfo } from "./reader/useReaderSystemInfo";
 import { useReaderTTS } from "./reader/useReaderTTS";
 import { useVolumeButtonPaging } from "./reader/useVolumeButtonPaging";
-import { useRubyStore } from "@readany/core/stores/ruby-store";
 
 const READER_HTML_ASSET = Asset.fromModule(require("../../assets/reader/reader.html"));
 const LOCAL_FONT_SERVER_DIR = "readany-fonts";
@@ -311,10 +312,8 @@ export function ReaderScreen({ route, navigation }: Props) {
   const updateReadSettings = useSettingsStore((s) => s.updateReadSettings);
   const translationConfig = useSettingsStore((s) => s.translationConfig);
   const aiConfig = useSettingsStore((s) => s.aiConfig);
-  const settingViewMode = readSettings.viewMode;
   const showTopTitleProgress = readSettings.showTopTitleProgress !== false;
   const showBottomTimeBattery = readSettings.showBottomTimeBattery !== false;
-  const volumeButtonsPageTurn = readSettings.volumeButtonsPageTurn === true;
 
   // Track OS-level accessibility font scale; re-renders when the user
   // changes the system font size while the reader is open.
@@ -333,8 +332,8 @@ export function ReaderScreen({ route, navigation }: Props) {
   const customFonts = useFontStore((s) => s.fonts);
   const selectedFontId = useFontStore((s) => s.selectedFontId);
   const customFontFamily = useMemo(() => {
-    if (!selectedFontId) return undefined;
-    return customFonts.find((f) => f.id === selectedFontId)?.fontFamily;
+    if (!selectedFontId) return "";
+    return customFonts.find((f) => f.id === selectedFontId)?.fontFamily ?? "";
   }, [customFonts, selectedFontId]);
   const customFontFaceCSS = useMemo(
     () => buildCustomFontFaceCSS(customFonts, selectedFontId, fontServerUrl),
@@ -509,6 +508,16 @@ export function ReaderScreen({ route, navigation }: Props) {
   const ttsPlayState = useTTSStore((s) => s.playState);
   const ttsConfig = useTTSStore((s) => s.config);
 
+  // Focus & foreground state for volume paging whitelist
+  const isFocused = useIsFocused();
+  const [appActive, setAppActive] = useState(true);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s: AppStateStatus) =>
+      setAppActive(s === "active"),
+    );
+    return () => sub.remove();
+  }, []);
+
   // Load reader HTML asset
   useEffect(() => {
     if (assetLoadedRef.current) return;
@@ -571,7 +580,7 @@ export function ReaderScreen({ route, navigation }: Props) {
       const settings = useSettingsStore.getState().readSettings;
       const { fonts, selectedFontId: selId } = useFontStore.getState();
       const fontCSS = buildCustomFontFaceCSS(fonts, selId, fileServerRef.current);
-      const fontFamily = selId ? fonts.find((f) => f.id === selId)?.fontFamily : undefined;
+      const fontFamily = selId ? fonts.find((f) => f.id === selId)?.fontFamily : "";
       console.log("[ReaderScreen][Font] selection", {
         selectedFontId: selId,
         fontFamily,
@@ -586,7 +595,7 @@ export function ReaderScreen({ route, navigation }: Props) {
         viewMode: settings.viewMode,
         paginatedLayout: settings.paginatedLayout,
         customFontFaceCSS: fontCSS,
-        customFontFamily: fontFamily,
+        customFontFamily: fontFamily ?? "",
       });
 
       // Auto-restore ruby annotations if enabled for this book
@@ -594,7 +603,9 @@ export function ReaderScreen({ route, navigation }: Props) {
       if (rubyMode) {
         void (async () => {
           try {
-            const { checkExistingDictMobile, readDictStrings } = await import("@/lib/ruby/dict-service-mobile");
+            const { checkExistingDictMobile, readDictStrings } = await import(
+              "@/lib/ruby/dict-service-mobile"
+            );
             const exists = await checkExistingDictMobile();
             if (exists) {
               const { wordDict, charDict } = await readDictStrings();
@@ -835,23 +846,11 @@ export function ReaderScreen({ route, navigation }: Props) {
       suppressReaderTapUntilRef.current = Date.now() + 650;
       const highlight = highlights.find((h) => h.cfi === detail.value);
       if (!highlight) return;
-      if (highlight.note) {
-        setNoteViewHighlight({
-          id: highlight.id,
-          text: highlight.text,
-          note: highlight.note,
-          cfi: highlight.cfi,
-          color: highlight.color,
-        });
-        setNoteViewContent(highlight.note);
-        setNoteViewEditing(false);
-      } else {
-        setSelection({
-          text: highlight.text,
-          cfi: highlight.cfi,
-          position: detail.position,
-        });
-      }
+      setSelection({
+        text: highlight.text,
+        cfi: highlight.cfi,
+        position: detail.position,
+      });
     },
     onNoteTooltip: (detail) => {
       suppressReaderTapUntilRef.current = Date.now() + 900;
@@ -883,23 +882,39 @@ export function ReaderScreen({ route, navigation }: Props) {
   }, [noteTooltip]);
 
   // ── Volume button paging ─────────────────────────────────────────────────
-  const volumeButtonPagingActive =
-    Platform.OS !== "web" &&
-    Platform.OS !== "windows" &&
-    !!NativeModules.VolumeManager &&
-    !!getVolumeManager() &&
-    volumeButtonsPageTurn &&
-    webViewReady &&
-    !showSearch &&
-    !showTOC &&
-    !showSettings &&
-    !showNotebook &&
-    !showTTS &&
-    ttsPlayState === "stopped";
+  const isPureReadingContext = useMemo(
+    () =>
+      Platform.OS === "android" &&
+      readSettings.volumeButtonsPageTurn === true &&
+      webViewReady &&
+      !loading &&
+      !error &&
+      !isReimporting &&
+      !showSearch &&
+      !showTOC &&
+      !showSettings &&
+      !showNotebook &&
+      !showTTS &&
+      !showTranslation &&
+      !showChapterTranslation &&
+      chapterTranslation.state.status === "idle" &&
+      !selection &&
+      !noteViewHighlight &&
+      !noteTooltip &&
+      ttsPlayState === "stopped" &&
+      isFocused &&
+      appActive,
+    // 维护约定：任何新增遮盖正文/输入态/导航跳转，必须在此追加判定。
+    [
+      readSettings.volumeButtonsPageTurn, webViewReady, loading, error, isReimporting,
+      showSearch, showTOC, showSettings, showNotebook, showTTS,
+      showTranslation, showChapterTranslation, chapterTranslation.state.status,
+      selection, noteViewHighlight, noteTooltip, ttsPlayState, isFocused, appActive,
+    ],
+  );
 
   useVolumeButtonPaging({
-    active: volumeButtonPagingActive,
-    settingViewMode,
+    active: isPureReadingContext,
     onPrev: () => bridge.goPrev(),
     onNext: () => bridge.goNext(),
   });
@@ -961,7 +976,7 @@ export function ReaderScreen({ route, navigation }: Props) {
       const currentSettings = useSettingsStore.getState().readSettings;
       const { fonts, selectedFontId: selId } = useFontStore.getState();
       const fontCSS = buildCustomFontFaceCSS(fonts, selId, fileServerRef.current);
-      const fontFamily = selId ? fonts.find((f) => f.id === selId)?.fontFamily : undefined;
+      const fontFamily = selId ? fonts.find((f) => f.id === selId)?.fontFamily : "";
       // Recompute effective fontSize after every settings change — covers
       // both stepper changes and toggling followSystemFontScale on/off.
       const merged = { ...currentSettings, ...updates };
@@ -969,7 +984,7 @@ export function ReaderScreen({ route, navigation }: Props) {
         ...merged,
         fontSize: computeEffectiveFontSize(merged.fontSize, merged.followSystemFontScale),
         customFontFaceCSS: fontCSS,
-        customFontFamily: fontFamily,
+        customFontFamily: fontFamily ?? "",
       });
     },
     [bridge, updateReadSettings, computeEffectiveFontSize],
@@ -1309,12 +1324,6 @@ export function ReaderScreen({ route, navigation }: Props) {
     };
   }, [bookId, currentCfi, goToCFISafely, loading, navigation, openTTS, webViewReady]);
 
-  // Lock navigation when selection is active
-  useEffect(() => {
-    if (!webViewReady) return;
-    bridge.setNavigationLocked(!!selection);
-  }, [webViewReady, selection]);
-
   if (loading && !webViewReady && !readerHtmlUri) {
     return (
       <SafeAreaView style={[s.container, { backgroundColor: colors.background }]}>
@@ -1412,8 +1421,9 @@ export function ReaderScreen({ route, navigation }: Props) {
 
   const isPanelOpen = showTOC || showSettings || showSearch || showNotebook || showTranslation;
   const existingSelectionHighlight = selection
-    ? (highlights.find((highlight) => highlight.bookId === bookId && highlight.cfi === selection.cfi) ??
-      null)
+    ? (highlights.find(
+        (highlight) => highlight.bookId === bookId && highlight.cfi === selection.cfi,
+      ) ?? null)
     : null;
   const readerTopMargin = !showSearch
     ? showTopTitleProgress
@@ -1477,6 +1487,7 @@ export function ReaderScreen({ route, navigation }: Props) {
             }}
             javaScriptEnabled
             domStorageEnabled
+            cacheEnabled={false}
             allowFileAccess
             allowFileAccessFromFileURLs
             allowUniversalAccessFromFileURLs

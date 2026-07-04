@@ -9,7 +9,11 @@ import * as Crypto from "expo-crypto";
 import { Directory, File, Paths } from "expo-file-system";
 import { Platform } from "react-native";
 
+const MAX_MOBILE_BUFFERED_TRANSFER_BYTES = 16 * 1024 * 1024;
+
 export class MobileSyncAdapter implements ISyncAdapter {
+  readonly maxBufferedTransferBytes = MAX_MOBILE_BUFFERED_TRANSFER_BYTES;
+
   async vacuumInto(targetPath: string): Promise<void> {
     const SQLite = await import("expo-sqlite");
     const db = await SQLite.openDatabaseAsync("readany.db");
