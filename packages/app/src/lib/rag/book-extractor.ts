@@ -125,11 +125,12 @@ async function extractEpubTocFromFile(file: File): Promise<TocTreeItemLike[]> {
     const tocXml = await readTextEntry(tocPath);
     if (!tocXml) return [];
 
+    const spineHrefIndex = getSpineHrefIndexFromOpf(opfDoc, opfPath);
     const tocDoc = parser.parseFromString(tocXml, "application/xml");
     if (tocPath.toLowerCase().endsWith(".ncx")) {
-      return parseNcxToc(tocDoc);
+      return parseNcxToc(tocDoc, spineHrefIndex);
     }
-    return parseNavToc(tocDoc);
+    return parseNavToc(tocDoc, spineHrefIndex);
   } catch (error) {
     console.warn("[extractBookChapters] Failed to read EPUB TOC directly:", error);
     return [];
@@ -154,30 +155,67 @@ function getTocPathFromOpf(opfDoc: Document, opfPath: string): string | null {
   return href ? joinEpubPath(opfDir, href) : null;
 }
 
-function parseNcxToc(doc: Document): TocTreeItemLike[] {
+function getSpineHrefIndexFromOpf(opfDoc: Document, opfPath: string): Map<string, number> {
+  const opfDir = getDirname(opfPath);
+  const elements = Array.from(opfDoc.getElementsByTagName("*"));
+  const manifestHrefById = new Map<string, string>();
+
+  for (const item of elements.filter((element) => element.localName === "item")) {
+    const id = item.getAttribute("id");
+    const href = item.getAttribute("href");
+    if (id && href) {
+      manifestHrefById.set(id, joinEpubPath(opfDir, href));
+    }
+  }
+
+  const spine = elements.find((element) => element.localName === "spine");
+  const hrefToIndex = new Map<string, number>();
+  let sectionIndex = 0;
+
+  for (const itemref of spine ? childElementsByLocalName(spine, "itemref") : []) {
+    if (itemref.getAttribute("linear") === "no") continue;
+
+    const idref = itemref.getAttribute("idref");
+    const href = idref ? manifestHrefById.get(idref) : undefined;
+    if (href) {
+      for (const key of getHrefLookupKeys(href)) {
+        if (!hrefToIndex.has(key)) hrefToIndex.set(key, sectionIndex);
+      }
+    }
+    sectionIndex += 1;
+  }
+
+  return hrefToIndex;
+}
+
+function parseNcxToc(doc: Document, spineHrefIndex: Map<string, number>): TocTreeItemLike[] {
   const navMap = Array.from(doc.getElementsByTagName("*")).find(
     (element) => element.localName === "navMap",
   );
   if (!navMap) return [];
 
   return childElementsByLocalName(navMap, "navPoint")
-    .map(parseNcxNavPoint)
+    .map((element) => parseNcxNavPoint(element, spineHrefIndex))
     .filter((item): item is TocTreeItemLike => item !== null);
 }
 
-function parseNcxNavPoint(element: Element): TocTreeItemLike | null {
+function parseNcxNavPoint(
+  element: Element,
+  spineHrefIndex: Map<string, number>,
+): TocTreeItemLike | null {
   const labelElement = childElementsByLocalName(element, "navLabel")[0];
   const label = labelElement?.textContent?.replace(/\s+/g, " ").trim() || "";
   const href = childElementsByLocalName(element, "content")[0]?.getAttribute("src") || "";
   if (!label && !href) return null;
 
   const subitems = childElementsByLocalName(element, "navPoint")
-    .map(parseNcxNavPoint)
+    .map((child) => parseNcxNavPoint(child, spineHrefIndex))
     .filter((item): item is TocTreeItemLike => item !== null);
-  return { label, href, subitems };
+  const index = getSpineIndexForHref(href, spineHrefIndex);
+  return { label, href, subitems, ...(index !== null ? { index } : {}) };
 }
 
-function parseNavToc(doc: Document): TocTreeItemLike[] {
+function parseNavToc(doc: Document, spineHrefIndex: Map<string, number>): TocTreeItemLike[] {
   const navElements = Array.from(doc.getElementsByTagName("*")).filter(
     (element) => element.localName === "nav",
   );
@@ -192,11 +230,14 @@ function parseNavToc(doc: Document): TocTreeItemLike[] {
   if (!rootList) return [];
 
   return childElementsByLocalName(rootList, "li")
-    .map(parseNavListItem)
+    .map((element) => parseNavListItem(element, spineHrefIndex))
     .filter((item): item is TocTreeItemLike => item !== null);
 }
 
-function parseNavListItem(element: Element): TocTreeItemLike | null {
+function parseNavListItem(
+  element: Element,
+  spineHrefIndex: Map<string, number>,
+): TocTreeItemLike | null {
   const link = childElements(element).find(
     (child) => child.localName === "a" || child.localName === "span",
   );
@@ -205,11 +246,12 @@ function parseNavListItem(element: Element): TocTreeItemLike | null {
   const childList = childElements(element).find((child) => child.localName === "ol");
   const subitems = childList
     ? childElementsByLocalName(childList, "li")
-        .map(parseNavListItem)
+        .map((child) => parseNavListItem(child, spineHrefIndex))
         .filter((item): item is TocTreeItemLike => item !== null)
     : [];
   if (!label && !href && subitems.length === 0) return null;
-  return { label, href, subitems };
+  const index = getSpineIndexForHref(href, spineHrefIndex);
+  return { label, href, subitems, ...(index !== null ? { index } : {}) };
 }
 
 function childElementsByLocalName(element: Element, localName: string): Element[] {
@@ -238,6 +280,36 @@ function joinEpubPath(baseDir: string, relativePath: string): string {
     normalized.push(part);
   }
   return normalized.join("/");
+}
+
+function getSpineIndexForHref(href: string, spineHrefIndex: Map<string, number>): number | null {
+  if (!href) return null;
+  for (const key of getHrefLookupKeys(href)) {
+    const index = spineHrefIndex.get(key);
+    if (index !== undefined) return index;
+  }
+  return null;
+}
+
+function getHrefLookupKeys(href: string): string[] {
+  const decoded = safeDecodeUri(href);
+  const withoutFragment = decoded.split("#")[0] || decoded;
+  const normalized = normalizeHrefPath(withoutFragment);
+  const fileName = normalized.split("/").pop() || normalized;
+
+  return Array.from(new Set([decoded, withoutFragment, normalized, fileName].filter(Boolean)));
+}
+
+function normalizeHrefPath(href: string): string {
+  return href.replace(/^\/+/, "").replace(/^\.\//, "");
+}
+
+function safeDecodeUri(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 /**

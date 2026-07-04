@@ -81,6 +81,36 @@ describe("buildChapterSectionGroups", () => {
     ]);
   });
 
+  it("uses TOC item indices when section hrefs are unavailable", () => {
+    const groups = buildChapterSectionGroups(
+      [{}, {}, {}],
+      [
+        {
+          label: "第1章 整洁代码",
+          href: "Text/part0008.xhtml",
+          index: 0,
+          subitems: [
+            { label: "1.1 要有代码", href: "Text/part0008.xhtml#bw1", index: 0 },
+            { label: "1.2 糟糕的代码", href: "Text/part0008.xhtml#bw2", index: 0 },
+          ],
+        },
+        {
+          label: "第2章 有意义的命名",
+          href: "Text/part0009.xhtml",
+          index: 1,
+          subitems: [{ label: "2.1 介绍", href: "Text/part0009.xhtml#bw15", index: 1 }],
+        },
+        { label: "第3章 函数", href: "Text/part0010.xhtml", index: 2 },
+      ],
+    );
+
+    expect(groups).toEqual([
+      { index: 0, title: "第1章 整洁代码", sectionIndices: [0] },
+      { index: 1, title: "第2章 有意义的命名", sectionIndices: [1] },
+      { index: 2, title: "第3章 函数", sectionIndices: [2] },
+    ]);
+  });
+
   it("normalizes encoded and relative hrefs before matching sections", () => {
     const groups = buildChapterSectionGroups(
       [{ href: "Text/第1章.xhtml" }, { href: "Text/%E7%AC%AC2%E7%AB%A0.xhtml" }],
