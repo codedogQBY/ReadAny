@@ -84,6 +84,17 @@ const defaultAIConfig: AIConfig = {
   slidingWindowSize: 8,
 };
 
+function migrateSettingsState(state: SettingsState): SettingsState {
+  if (state.aiConfig.maxTokens !== 4096) return state;
+  return {
+    ...state,
+    aiConfig: {
+      ...state.aiConfig,
+      maxTokens: defaultAIConfig.maxTokens,
+    },
+  };
+}
+
 /**
  * Fetch available models from an AI provider endpoint.
  * Supports OpenAI-compatible (/v1/models), Anthropic, and Google Gemini.
@@ -473,5 +484,5 @@ export const useSettingsStore = create<SettingsState>()(
         translationConfig: defaultTranslationConfig,
         aiConfig: defaultAIConfig,
       }),
-  })),
+  }), undefined, migrateSettingsState),
 );
