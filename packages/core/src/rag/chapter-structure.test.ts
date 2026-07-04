@@ -46,6 +46,41 @@ describe("buildChapterSectionGroups", () => {
     expect(groups).toEqual([{ index: 0, title: "正文", sectionIndices: [1] }]);
   });
 
+  it("uses parent chapter entries when child TOC entries are same-section fragments", () => {
+    const groups = buildChapterSectionGroups(
+      [
+        { href: "Text/part0008.xhtml" },
+        { href: "Text/part0009.xhtml" },
+        { href: "Text/part0010.xhtml" },
+      ],
+      [
+        {
+          label: "第1章 整洁代码",
+          href: "Text/part0008.xhtml",
+          subitems: [
+            { label: "1.1 要有代码", href: "Text/part0008.xhtml#bw1" },
+            { label: "1.2 糟糕的代码", href: "Text/part0008.xhtml#bw2" },
+          ],
+        },
+        {
+          label: "第2章 有意义的命名",
+          href: "Text/part0009.xhtml",
+          subitems: [
+            { label: "2.1 介绍", href: "Text/part0009.xhtml#bw15" },
+            { label: "2.2 名副其实", href: "Text/part0009.xhtml#bw16" },
+          ],
+        },
+        { label: "第3章 函数", href: "Text/part0010.xhtml" },
+      ],
+    );
+
+    expect(groups).toEqual([
+      { index: 0, title: "第1章 整洁代码", sectionIndices: [0] },
+      { index: 1, title: "第2章 有意义的命名", sectionIndices: [1] },
+      { index: 2, title: "第3章 函数", sectionIndices: [2] },
+    ]);
+  });
+
   it("normalizes encoded and relative hrefs before matching sections", () => {
     const groups = buildChapterSectionGroups(
       [{ href: "Text/第1章.xhtml" }, { href: "Text/%E7%AC%AC2%E7%AB%A0.xhtml" }],

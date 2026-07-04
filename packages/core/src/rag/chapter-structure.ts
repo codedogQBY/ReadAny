@@ -50,17 +50,18 @@ export function buildChapterSectionGroups(
 
 function getTocAnchors(sections: SectionRefLike[], toc: TocTreeItemLike[]): TocAnchor[] {
   const hrefToSectionIndex = buildSectionHrefIndex(sections);
-  const leaves = flattenTocLeaves(toc).filter((item) => item.label?.trim() && item.href);
-  const candidates = leaves.length > 0 ? leaves : flattenToc(toc);
   const anchors: TocAnchor[] = [];
   const seenSectionIndices = new Set<number>();
 
-  for (const item of candidates) {
+  for (const item of flattenToc(toc)) {
     const title = item.label?.trim();
     if (!title) continue;
 
     const sectionIndex = getSectionIndexForTocItem(item, hrefToSectionIndex, sections.length);
     if (sectionIndex === null || seenSectionIndices.has(sectionIndex)) continue;
+    if (!shouldUseTocItemAsChapterAnchor(item, sectionIndex, hrefToSectionIndex, sections.length)) {
+      continue;
+    }
 
     seenSectionIndices.add(sectionIndex);
     anchors.push({ title, sectionIndex });
@@ -81,6 +82,23 @@ function getTocBoundaryIndices(sections: SectionRefLike[], toc: TocTreeItemLike[
   }
 
   return Array.from(seen).sort((a, b) => a - b);
+}
+
+function shouldUseTocItemAsChapterAnchor(
+  item: TocTreeItemLike,
+  sectionIndex: number,
+  hrefToSectionIndex: Map<string, number>,
+  sectionCount: number,
+): boolean {
+  if (!item.subitems?.length) return true;
+
+  const descendantSectionIndices = flattenToc(item.subitems)
+    .map((child) => getSectionIndexForTocItem(child, hrefToSectionIndex, sectionCount))
+    .filter((index): index is number => index !== null);
+
+  if (descendantSectionIndices.length === 0) return true;
+
+  return descendantSectionIndices.every((descendantIndex) => descendantIndex === sectionIndex);
 }
 
 function buildSectionHrefIndex(sections: SectionRefLike[]): Map<string, number> {
@@ -122,20 +140,6 @@ function getSectionIndexForTocItem(
   }
 
   return null;
-}
-
-function flattenTocLeaves(toc: TocTreeItemLike[]): TocTreeItemLike[] {
-  const leaves: TocTreeItemLike[] = [];
-
-  for (const item of toc) {
-    if (item.subitems?.length) {
-      leaves.push(...flattenTocLeaves(item.subitems));
-    } else {
-      leaves.push(item);
-    }
-  }
-
-  return leaves;
 }
 
 function flattenToc(toc: TocTreeItemLike[]): TocTreeItemLike[] {
