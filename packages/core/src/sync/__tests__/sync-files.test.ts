@@ -12,6 +12,7 @@ const mockAdapter = {
   getTempDir: vi.fn().mockResolvedValue("/tmp"),
   joinPath: vi.fn((...segs: string[]) => segs.join("/")),
   fileExists: vi.fn(),
+  hashFile: vi.fn().mockResolvedValue("local-hash"),
   readFileBytes: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
   getFileSize: vi.fn().mockResolvedValue(null),
   maxBufferedTransferBytes: undefined as number | undefined,
@@ -739,6 +740,113 @@ describe("sync-files", () => {
             folderName: "Text Book-book-1",
             filePath: `${REMOTE_BOOKS_ROOT}/Text Book-book-1/Text Book.txt`,
             coverPath: `${REMOTE_BOOKS_ROOT}/Text Book-book-1/Text Book.jpg`,
+            updatedAt: 1000,
+          },
+        },
+      };
+      const backend = createMockBackend({
+        getJSON: vi.fn().mockResolvedValue(manifest),
+        listDir: vi.fn().mockResolvedValue([]),
+      });
+
+      const result = await syncFiles(backend);
+
+      expect(result.filesUploaded).toBe(1);
+      expect(backend.put).toHaveBeenCalledWith(
+        `${REMOTE_BOOKS_ROOT}/Text Book-book-1/Text Book.jpg`,
+        expect.any(Uint8Array),
+      );
+    });
+
+    it("uploads a replaced custom cover when the local cover path changes but size stays the same", async () => {
+      mockSelect.mockResolvedValue([
+        {
+          id: "book-1",
+          file_path: "books/book-1.txt",
+          file_hash: "h1",
+          cover_url: "covers/book-1-custom-456.jpg",
+          title: "Text Book",
+        },
+      ]);
+      mockAdapter.fileExists.mockResolvedValue(true);
+      mockAdapter.getFileSize.mockImplementation(async (path: string) => {
+        if (path === "/appdata/books/book-1.txt") return 500;
+        if (path === "/appdata/covers/book-1-custom-456.jpg") return 100;
+        return null;
+      });
+      mockAdapter.hashFile.mockResolvedValue("new-cover-hash");
+
+      const manifest = {
+        version: 1 as const,
+        generatedAt: 1000,
+        books: {
+          "book-1": {
+            folderName: "Text Book-book-1",
+            filePath: `${REMOTE_BOOKS_ROOT}/Text Book-book-1/Text Book.txt`,
+            fileSize: 500,
+            coverPath: `${REMOTE_BOOKS_ROOT}/Text Book-book-1/Text Book.jpg`,
+            coverSize: 100,
+            coverHash: "old-cover-hash",
+            coverSourcePath: "covers/book-1-custom-123.jpg",
+            updatedAt: 1000,
+          },
+        },
+      };
+      const backend = createMockBackend({
+        getJSON: vi.fn().mockResolvedValue(manifest),
+        listDir: vi.fn().mockResolvedValue([]),
+      });
+
+      const result = await syncFiles(backend);
+
+      expect(result.filesUploaded).toBe(1);
+      expect(backend.put).toHaveBeenCalledWith(
+        `${REMOTE_BOOKS_ROOT}/Text Book-book-1/Text Book.jpg`,
+        expect.any(Uint8Array),
+      );
+      expect(backend.putJSON).toHaveBeenCalledWith(
+        REMOTE_FILE_MANIFEST,
+        expect.objectContaining({
+          books: expect.objectContaining({
+            "book-1": expect.objectContaining({
+              coverHash: "new-cover-hash",
+              coverSourcePath: "covers/book-1-custom-456.jpg",
+            }),
+          }),
+        }),
+      );
+    });
+
+    it("uploads a custom cover when the content hash changes even if the path and size match", async () => {
+      mockSelect.mockResolvedValue([
+        {
+          id: "book-1",
+          file_path: "books/book-1.txt",
+          file_hash: "h1",
+          cover_url: "covers/book-1-custom-123.jpg",
+          title: "Text Book",
+        },
+      ]);
+      mockAdapter.fileExists.mockResolvedValue(true);
+      mockAdapter.getFileSize.mockImplementation(async (path: string) => {
+        if (path === "/appdata/books/book-1.txt") return 500;
+        if (path === "/appdata/covers/book-1-custom-123.jpg") return 100;
+        return null;
+      });
+      mockAdapter.hashFile.mockResolvedValue("new-cover-hash");
+
+      const manifest = {
+        version: 1 as const,
+        generatedAt: 1000,
+        books: {
+          "book-1": {
+            folderName: "Text Book-book-1",
+            filePath: `${REMOTE_BOOKS_ROOT}/Text Book-book-1/Text Book.txt`,
+            fileSize: 500,
+            coverPath: `${REMOTE_BOOKS_ROOT}/Text Book-book-1/Text Book.jpg`,
+            coverSize: 100,
+            coverHash: "old-cover-hash",
+            coverSourcePath: "covers/book-1-custom-123.jpg",
             updatedAt: 1000,
           },
         },
