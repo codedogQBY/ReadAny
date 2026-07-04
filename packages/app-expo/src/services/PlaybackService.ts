@@ -11,26 +11,37 @@
  * handler hasn't loaded yet.
  */
 import TrackPlayer, { Event } from "react-native-track-player";
+import { useTTSStore } from "../stores/tts-store";
 
 export async function PlaybackService() {
   TrackPlayer.addEventListener(Event.RemotePlay, () => {
-    TrackPlayer.play();
+    useTTSStore.getState().resume();
   });
 
   TrackPlayer.addEventListener(Event.RemotePause, () => {
+    useTTSStore.getState().pause();
     TrackPlayer.pause();
   });
 
   TrackPlayer.addEventListener(Event.RemoteStop, () => {
+    useTTSStore.getState().stop();
     TrackPlayer.stop();
   });
 
   TrackPlayer.addEventListener(Event.RemoteNext, () => {
-    // Handled by App.tsx TTS store bridge
+    const { currentChunkIndex, jumpToChunk, totalChunks } = useTTSStore.getState();
+    const nextIndex = currentChunkIndex + 1;
+    if (nextIndex < totalChunks) {
+      jumpToChunk(nextIndex);
+    }
   });
 
   TrackPlayer.addEventListener(Event.RemotePrevious, () => {
-    // Handled by App.tsx TTS store bridge
+    const { currentChunkIndex, jumpToChunk } = useTTSStore.getState();
+    const prevIndex = currentChunkIndex - 1;
+    if (prevIndex >= 0) {
+      jumpToChunk(prevIndex);
+    }
   });
 
   TrackPlayer.addEventListener(Event.RemoteSeek, (event) => {

@@ -320,9 +320,9 @@ export function BookDetailsDialog({ book, open, onOpenChange }: BookDetailsDialo
     setValues((current) => (current ? { ...current, [field]: value } : current));
   };
 
-  const persistCoverUrl = (coverUrl: string) => {
+  const persistCoverUrl = async (coverUrl: string) => {
     setField("coverUrl", coverUrl);
-    updateBook(book.id, {
+    await updateBook(book.id, {
       meta: {
         ...book.meta,
         coverUrl,
@@ -410,7 +410,7 @@ export function BookDetailsDialog({ book, open, onOpenChange }: BookDetailsDialo
       await mkdir(coversDir, { recursive: true });
       const relativePath = `covers/${book.id}-custom-${Date.now()}.${safeExt}`;
       await copyFile(selected, await join(libraryRoot, relativePath));
-      persistCoverUrl(relativePath);
+      await persistCoverUrl(relativePath);
       toast.success(t("library.detailsCoverSaved", "Cover saved"));
     } catch (err) {
       console.warn("[BookDetailsDialog] Failed to change cover:", err);
@@ -452,7 +452,7 @@ export function BookDetailsDialog({ book, open, onOpenChange }: BookDetailsDialo
                   variant="ghost"
                   size="sm"
                   className="h-8 w-full justify-start rounded-none px-3 text-xs text-muted-foreground"
-                  onClick={() => persistCoverUrl("")}
+                  onClick={() => void persistCoverUrl("")}
                   disabled={!values.coverUrl && !book.meta.coverUrl}
                 >
                   <Trash2 className="size-3.5" />

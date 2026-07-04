@@ -78,9 +78,20 @@ const defaultAIConfig: AIConfig = {
   activeEndpointId: "default",
   activeModel: "",
   temperature: 0.7,
-  maxTokens: 4096,
+  maxTokens: 8192,
   slidingWindowSize: 8,
 };
+
+function migrateSettingsState(state: SettingsState): SettingsState {
+  if (state.aiConfig.maxTokens !== 4096) return state;
+  return {
+    ...state,
+    aiConfig: {
+      ...state.aiConfig,
+      maxTokens: defaultAIConfig.maxTokens,
+    },
+  };
+}
 
 async function fetchModelsFromEndpoint(endpoint: AIEndpoint): Promise<string[]> {
   if (!endpoint.apiKey && endpoint.provider !== "ollama" && endpoint.provider !== "lmstudio") {
@@ -618,7 +629,7 @@ export const useSettingsStore = create<SettingsState>()(
         });
       },
     };
-  }),
+  }, undefined, migrateSettingsState),
 );
 
 // 在应用启动时加载 API keys

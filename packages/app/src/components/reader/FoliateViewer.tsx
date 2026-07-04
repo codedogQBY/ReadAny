@@ -41,6 +41,8 @@ const THEME_COLORS: Record<AppTheme, { bg: string; fg: string; link: string }> =
   sepia: { bg: "#f0e6d2", fg: "#3d2b1f", link: "#6b4c2a" },
 };
 
+const READER_OVERRIDE_STYLE_ID = "__readany_reader_overrides__";
+
 function getAppTheme(): AppTheme {
   if (typeof document === "undefined") return "dark";
   const theme = document.documentElement.getAttribute("data-theme") as AppTheme | null;
@@ -1781,7 +1783,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
     );
 
     // --- Hooks ---
-    usePagination({ bookKey, viewRef, containerRef });
+    usePagination({ bookKey, viewRef, containerRef, isFixedLayout });
     useBookShortcuts({
       bookKey,
       viewRef,
@@ -1837,7 +1839,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         getDirection(detail.doc);
 
         // Apply theme styles to loaded document
-        applyDocumentStyles(detail.doc, viewSettings, isFixedLayout);
+        applyDocumentStyles(detail.doc, viewSettings, isFixedLayout, appTheme);
 
         // Register iframe event handlers for this section
         registerIframeEventHandlers(bookKey, detail.doc);
@@ -1877,7 +1879,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           }
         })();
       },
-      [bookKey, viewSettings, onLoaded, onSectionLoad, isFixedLayout],
+      [appTheme, bookKey, viewSettings, onLoaded, onSectionLoad, isFixedLayout],
     );
     const docLoadHandlerRef = useRef(docLoadHandlerImpl);
     docLoadHandlerRef.current = docLoadHandlerImpl;
@@ -2783,7 +2785,13 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       }
 
       applyReflowLayoutSettings(view, viewSettings);
-    }, [viewSettings.viewMode, viewSettings.paginatedLayout, isFixedLayout, appTheme]);
+    }, [
+      viewSettings.viewMode,
+      viewSettings.paginatedLayout,
+      viewSettings.fixedLayoutZoom,
+      isFixedLayout,
+      appTheme,
+    ]);
 
     const handleViewerShellClick = useCallback(
       (event: {
@@ -2900,7 +2908,12 @@ function syncRemoteFontStyles(view: FoliateView, settings: ViewSettings) {
 }
 
 /** Apply CSS styles to a loaded section document */
-function applyDocumentStyles(doc: Document, settings: ViewSettings, isFixedLayout: boolean) {
+function applyDocumentStyles(
+  doc: Document,
+  settings: ViewSettings,
+  isFixedLayout: boolean,
+  theme: AppTheme,
+) {
   if (isFixedLayout) {
     // PDF/CBZ: don't inject styles that would break layout
     return;
@@ -2908,12 +2921,33 @@ function applyDocumentStyles(doc: Document, settings: ViewSettings, isFixedLayou
 
   normalizeBrOnlyParagraphs(doc);
   syncRemoteFontStylesInDocument(doc, settings.customFontCssUrls);
+  syncReaderOverrideStylesInDocument(doc, getRendererStyles(settings, theme));
 
   // Basic styles for images
   const images = doc.querySelectorAll("img");
   for (const img of images) {
     img.style.maxWidth = "100%";
     img.style.height = "auto";
+  }
+}
+
+function syncReaderOverrideStylesInDocument(doc: Document, css: string) {
+  const head = doc.head || doc.documentElement;
+  if (!head) return;
+  let style = doc.getElementById(READER_OVERRIDE_STYLE_ID) as HTMLStyleElement | null;
+  if (!style) {
+    style = doc.createElement("style");
+    style.id = READER_OVERRIDE_STYLE_ID;
+    head.appendChild(style);
+  }
+  style.textContent = css;
+  head.appendChild(style);
+}
+
+function syncReaderOverrideStyles(view: FoliateView, css: string) {
+  for (const content of getRendererContents(view)) {
+    const doc = content?.doc;
+    if (doc) syncReaderOverrideStylesInDocument(doc, css);
   }
 }
 
@@ -2925,7 +2959,9 @@ function normalizeBrOnlyParagraphs(doc: Document) {
   const body = doc.body;
   if (!body || body.querySelectorAll("p").length > 2) return;
 
-  const containers: Element[] = Array.from(body.querySelectorAll("div, section, article, main"));
+  const containers: Element[] = Array.from(body.querySelectorAll("div, section, article, main")).filter(
+    shouldNormalizeBrParagraphContainer,
+  );
   if (shouldNormalizeBrParagraphContainer(body)) containers.push(body);
 
   for (const container of containers) {
@@ -2984,6 +3020,7 @@ function shouldNormalizeBrParagraphContainer(container: Element) {
 }
 
 function normalizeBrParagraphContainer(doc: Document, container: Element) {
+  const originalNodes = Array.from(container.childNodes);
   const fragment = doc.createDocumentFragment();
   let pending: Node[] = [];
   let breakNodes: Node[] = [];
@@ -3029,7 +3066,10 @@ function normalizeBrParagraphContainer(doc: Document, container: Element) {
   commitBreak();
   flushPending();
 
-  if (paragraphCount < 2) return false;
+  if (paragraphCount < 2) {
+    container.replaceChildren(...originalNodes);
+    return false;
+  }
   container.replaceChildren(fragment);
   container.setAttribute("data-readany-br-paragraphs", "");
   return true;
@@ -3068,6 +3108,7 @@ function applyRendererSettings(
     // EPUBs do not look "shrunk inside a spread". Double-page mode still uses
     // fit-page to keep both pages fully visible inside the viewport.
     renderer.setAttribute("zoom", isSinglePage ? "fit-width" : "fit-page");
+    renderer.setAttribute("zoom-factor", String(settings.fixedLayoutZoom ?? 1));
     if (view.book?.rendition) {
       view.book.rendition.spread = spreadMode;
     }
@@ -3121,7 +3162,7 @@ function getRendererStyles(settings: ViewSettings, theme: AppTheme): string {
 
   // Custom font takes precedence over font theme
   const fontFamily = settings.customFontFamily
-    ? settings.customFontFamily
+    ? JSON.stringify(settings.customFontFamily)
     : `'${fontTheme.cjk}', '${fontTheme.serif}', serif`;
 
   // paragraphSpacing is stored as px tuned at the default 16px font size.
@@ -3153,6 +3194,10 @@ html, body {
 
 body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *) {
   font-family: var(--readany-font-family) !important;
+}
+
+body :not(#__readany_font_size_override):not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *):not(rt):not(rp) {
+  font-size: ${settings.fontSize}px !important;
 }
 
 pre, code, kbd, samp {
@@ -3247,6 +3292,7 @@ function applyRendererStyles(
   });
   const styles = getRendererStyles(settings, theme);
   renderer.setStyles(styles);
+  syncReaderOverrideStyles(view, styles);
 }
 
 /**

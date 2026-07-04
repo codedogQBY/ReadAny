@@ -1,35 +1,36 @@
+import { GlobeIcon, LinkIcon, PlusIcon, Trash2Icon, TypeIcon } from "@/components/ui/Icon";
+import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
+import { fontSize, fontWeight, radius, spacing, useColors } from "@/styles/theme";
 /**
  * FontSettingsScreen — custom font management for mobile
  */
 import {
-  useFontStore,
+  createCustomFontFamily,
   generateFontId,
   saveFontFile,
+  useFontStore,
 } from "@readany/core/stores";
-import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import type { CustomFont } from "@readany/core/types/font";
 import { PRESET_FONTS } from "@readany/core/types/font";
-import { getPlatformService } from "@readany/core/services";
+import * as DocumentPicker from "expo-document-picker";
+import * as Font from "expo-font";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
-  ActivityIndicator,
-  TextInput,
-  Modal,
-  KeyboardAvoidingView,
-  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import * as DocumentPicker from "expo-document-picker";
-import { useCallback, useState } from "react";
 import { SettingsHeader } from "./SettingsHeader";
-import { useColors, fontSize, fontWeight, radius, spacing } from "@/styles/theme";
-import { PlusIcon, Trash2Icon, TypeIcon, LinkIcon, GlobeIcon } from "@/components/ui/Icon";
 
 export default function FontSettingsScreen() {
   const { t, i18n } = useTranslation();
@@ -60,10 +61,10 @@ export default function FontSettingsScreen() {
         remoteUrlWoff2: preset.remoteUrlWoff2,
         remoteUrl: preset.remoteUrl,
       };
-      addFont(font);
+      addFont(font, { select: true });
       Alert.alert(
         t("fonts.imported", "导入成功"),
-        t("fonts.importedDesc", "字体 \"{{name}}\" 已添加", { name: font.name }),
+        t("fonts.importedDesc", '字体 "{{name}}" 已添加', { name: font.name }),
       );
     },
     [addFont, i18n.language, t],
@@ -72,18 +73,55 @@ export default function FontSettingsScreen() {
   const [importing, setImporting] = useState(false);
   const [nameModalVisible, setNameModalVisible] = useState(false);
   const [urlModalVisible, setUrlModalVisible] = useState(false);
-  const [pendingFontFile, setPendingFontFile] = useState<{ uri: string; name: string } | null>(null);
+  const [pendingFontFile, setPendingFontFile] = useState<{ uri: string; name: string } | null>(
+    null,
+  );
   const [fontNameInput, setFontNameInput] = useState("");
 
   const [remoteUrl, setRemoteUrl] = useState("");
   const [remoteUrlWoff2, setRemoteUrlWoff2] = useState("");
   const [remoteFontName, setRemoteFontName] = useState("");
+  const [loadedPreviewFontIds, setLoadedPreviewFontIds] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPreviewFonts = async () => {
+      const loadedIds = new Set<string>();
+      for (const font of fonts) {
+        if (font.source !== "local" || !font.filePath) continue;
+        try {
+          if (!Font.isLoaded(font.fontFamily)) {
+            await Font.loadAsync({ [font.fontFamily]: font.filePath });
+          }
+          loadedIds.add(font.id);
+        } catch (err) {
+          console.warn("[FontSettings] Failed to load font preview:", font.name, err);
+        }
+      }
+      if (!cancelled) setLoadedPreviewFontIds(loadedIds);
+    };
+
+    void loadPreviewFonts();
+    return () => {
+      cancelled = true;
+    };
+  }, [fonts]);
 
   const handleImport = useCallback(async () => {
     setImporting(true);
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ["application/font-sfnt", "application/x-font-ttf", "application/x-font-otf", "font/ttf", "font/otf", "font/woff", "font/woff2", "*/*"],
+        type: [
+          "application/font-sfnt",
+          "application/x-font-ttf",
+          "application/x-font-otf",
+          "font/ttf",
+          "font/otf",
+          "font/woff",
+          "font/woff2",
+          "*/*",
+        ],
         copyToCacheDirectory: true,
       });
 
@@ -118,28 +156,30 @@ export default function FontSettingsScreen() {
     setImporting(true);
 
     try {
-      const { filePath, fileName: savedName, size } = await saveFontFile(
-        pendingFontFile.uri,
-        fontNameInput.trim(),
-      );
+      const {
+        filePath,
+        fileName: savedName,
+        size,
+      } = await saveFontFile(pendingFontFile.uri, fontNameInput.trim(), pendingFontFile.name);
 
-      const fontFamily = `Custom-${fontNameInput.trim().replace(/\s+/g, "-")}`;
+      const id = generateFontId();
       const font: CustomFont = {
-        id: generateFontId(),
+        id,
         name: fontNameInput.trim(),
         fileName: savedName,
         filePath,
-        fontFamily,
-        format: (savedName.split(".").pop()?.toLowerCase() as "ttf" | "otf" | "woff" | "woff2") || "ttf",
+        fontFamily: createCustomFontFamily(id),
+        format:
+          (savedName.split(".").pop()?.toLowerCase() as "ttf" | "otf" | "woff" | "woff2") || "ttf",
         size,
         addedAt: Date.now(),
         source: "local",
       };
 
-      addFont(font);
+      addFont(font, { select: true });
       Alert.alert(
         t("fonts.imported", "导入成功"),
-        t("fonts.importedDesc", "字体 \"{{name}}\" 已导入", { name: fontNameInput.trim() }),
+        t("fonts.importedDesc", '字体 "{{name}}" 已导入', { name: fontNameInput.trim() }),
       );
     } catch (err) {
       console.error("[FontSettings] Import error:", err);
@@ -165,16 +205,16 @@ export default function FontSettingsScreen() {
     setImporting(true);
 
     try {
-      const fontFamily = `Custom-${remoteFontName.trim().replace(/\s+/g, "-")}`;
+      const id = generateFontId();
       const url = remoteUrl.trim();
       const woff2Url = remoteUrlWoff2.trim();
       const format = woff2Url ? "woff2" : url.endsWith(".woff2") ? "woff2" : "woff";
 
       const font: CustomFont = {
-        id: generateFontId(),
+        id,
         name: remoteFontName.trim(),
         fileName: `remote-${Date.now()}.${format}`,
-        fontFamily,
+        fontFamily: createCustomFontFamily(id),
         format,
         addedAt: Date.now(),
         source: "remote",
@@ -182,10 +222,10 @@ export default function FontSettingsScreen() {
         remoteUrlWoff2: woff2Url || undefined,
       };
 
-      addFont(font);
+      addFont(font, { select: true });
       Alert.alert(
         t("fonts.imported", "导入成功"),
-        t("fonts.importedDesc", "字体 \"{{name}}\" 已导入", { name: remoteFontName.trim() }),
+        t("fonts.importedDesc", '字体 "{{name}}" 已导入', { name: remoteFontName.trim() }),
       );
     } catch (err) {
       console.error("[FontSettings] Import remote error:", err);
@@ -202,10 +242,14 @@ export default function FontSettingsScreen() {
     (font: CustomFont) => {
       Alert.alert(
         t("fonts.deleteTitle", "删除字体"),
-        t("fonts.deleteConfirm", "确定删除字体 \"{{name}}\" 吗？", { name: font.name }),
+        t("fonts.deleteConfirm", '确定删除字体 "{{name}}" 吗？', { name: font.name }),
         [
           { text: t("common.cancel", "取消"), style: "cancel" },
-          { text: t("common.delete", "删除"), style: "destructive", onPress: () => removeFont(font.id) },
+          {
+            text: t("common.delete", "删除"),
+            style: "destructive",
+            onPress: () => removeFont(font.id),
+          },
         ],
       );
     },
@@ -251,7 +295,6 @@ export default function FontSettingsScreen() {
             </View>
           ) : (
             <>
-
               <View style={s.buttonRow}>
                 <TouchableOpacity
                   style={[s.importBtn, { backgroundColor: colors.primary }, s.importBtnHalf]}
@@ -284,108 +327,154 @@ export default function FontSettingsScreen() {
                 </TouchableOpacity>
               </View>
 
-            {/* Preset fonts */}
-            {availablePresetFonts.length > 0 && (
-              <View style={s.presetSection}>
-                <Text style={[s.hint, { color: colors.mutedForeground, fontWeight: fontWeight.medium }]}>
-                  {t("fonts.presets", "推荐字体（在线，点击即可添加）")}
-                </Text>
-                {availablePresetFonts.map((preset) => {
-                  const name = i18n.language === "zh" ? preset.name : preset.nameEn;
-                  const desc = i18n.language === "zh" ? preset.description : preset.descriptionEn;
-                  return (
+              {/* Preset fonts */}
+              {availablePresetFonts.length > 0 && (
+                <View style={s.presetSection}>
+                  <Text
+                    style={[
+                      s.hint,
+                      { color: colors.mutedForeground, fontWeight: fontWeight.medium },
+                    ]}
+                  >
+                    {t("fonts.presets", "推荐字体（在线，点击即可添加）")}
+                  </Text>
+                  {availablePresetFonts.map((preset) => {
+                    const name = i18n.language === "zh" ? preset.name : preset.nameEn;
+                    const desc = i18n.language === "zh" ? preset.description : preset.descriptionEn;
+                    return (
+                      <View
+                        key={preset.id}
+                        style={[
+                          s.fontCard,
+                          { backgroundColor: colors.card, borderColor: colors.border },
+                        ]}
+                      >
+                        <View style={s.fontHeader}>
+                          <View style={s.fontInfo}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                              <Text style={[s.fontName, { color: colors.foreground }]}>{name}</Text>
+                              <View
+                                style={[s.remoteBadge, { backgroundColor: `${colors.primary}22` }]}
+                              >
+                                <Text style={[s.remoteBadgeText, { color: colors.primary }]}>
+                                  {preset.license}
+                                </Text>
+                              </View>
+                            </View>
+                            <Text
+                              style={[s.fontMetaText, { color: colors.mutedForeground }]}
+                              numberOfLines={2}
+                            >
+                              {desc}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            style={[
+                              {
+                                paddingHorizontal: 12,
+                                paddingVertical: 6,
+                                borderRadius: radius.md,
+                                marginLeft: 8,
+                              },
+                              { backgroundColor: colors.primary },
+                            ]}
+                            onPress={() => handleAddPreset(preset)}
+                          >
+                            <Text
+                              style={{
+                                fontSize: fontSize.sm,
+                                fontWeight: fontWeight.medium,
+                                color: colors.primaryForeground,
+                              }}
+                            >
+                              {t("fonts.add", "添加")}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              {fonts.length === 0 ? (
+                <View style={s.emptyState}>
+                  <TypeIcon size={48} color={colors.mutedForeground} />
+                  <Text style={[s.emptyText, { color: colors.mutedForeground }]}>
+                    {t("fonts.empty", "暂无自定义字体")}
+                  </Text>
+                  <Text style={[s.emptyHint, { color: colors.mutedForeground }]}>
+                    {t("fonts.emptyHint", "点击上方按钮导入字体文件")}
+                  </Text>
+                </View>
+              ) : (
+                <View style={s.fontList}>
+                  {fonts.map((font) => (
                     <View
-                      key={preset.id}
-                      style={[s.fontCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                      key={font.id}
+                      style={[
+                        s.fontCard,
+                        { backgroundColor: colors.card, borderColor: colors.border },
+                      ]}
                     >
                       <View style={s.fontHeader}>
                         <View style={s.fontInfo}>
                           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                            <Text style={[s.fontName, { color: colors.foreground }]}>{name}</Text>
-                            <View style={[s.remoteBadge, { backgroundColor: `${colors.primary}22` }]}>
-                              <Text style={[s.remoteBadgeText, { color: colors.primary }]}>{preset.license}</Text>
-                            </View>
+                            <Text style={[s.fontName, { color: colors.foreground }]}>
+                              {font.name}
+                            </Text>
+                            {font.source === "remote" && (
+                              <View
+                                style={[s.remoteBadge, { backgroundColor: `${colors.primary}22` }]}
+                              >
+                                <GlobeIcon size={12} color={colors.primary} />
+                                <Text style={[s.remoteBadgeText, { color: colors.primary }]}>
+                                  {t("fonts.remote", "在线")}
+                                </Text>
+                              </View>
+                            )}
                           </View>
-                          <Text style={[s.fontMetaText, { color: colors.mutedForeground }]} numberOfLines={2}>
-                            {desc}
-                          </Text>
+                          <View style={s.fontMeta}>
+                            <Text style={[s.fontMetaText, { color: colors.mutedForeground }]}>
+                              {font.format.toUpperCase()}
+                            </Text>
+                            <Text style={[s.fontMetaDot, { color: colors.mutedForeground }]}>
+                              ·
+                            </Text>
+                            <Text style={[s.fontMetaText, { color: colors.mutedForeground }]}>
+                              {formatSize(font.size)}
+                            </Text>
+                          </View>
                         </View>
                         <TouchableOpacity
-                          style={[
-                            { paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.md, marginLeft: 8 },
-                            { backgroundColor: colors.primary },
-                          ]}
-                          onPress={() => handleAddPreset(preset)}
+                          style={s.deleteBtn}
+                          onPress={() => handleDelete(font)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
-                          <Text style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, color: colors.primaryForeground }}>
-                            {t("fonts.add", "添加")}
-                          </Text>
+                          <Trash2Icon size={20} color={colors.destructive} />
                         </TouchableOpacity>
                       </View>
-                    </View>
-                  );
-                })}
-              </View>
-            )}
 
-            {fonts.length === 0 ? (
-              <View style={s.emptyState}>
-                <TypeIcon size={48} color={colors.mutedForeground} />
-                <Text style={[s.emptyText, { color: colors.mutedForeground }]}>
-                  {t("fonts.empty", "暂无自定义字体")}
-                </Text>
-                <Text style={[s.emptyHint, { color: colors.mutedForeground }]}>
-                  {t("fonts.emptyHint", "点击上方按钮导入字体文件")}
-                </Text>
-              </View>
-            ) : (
-              <View style={s.fontList}>
-                {fonts.map((font) => (
-                  <View
-                    key={font.id}
-                    style={[s.fontCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                  >
-                    <View style={s.fontHeader}>
-                      <View style={s.fontInfo}>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                          <Text style={[s.fontName, { color: colors.foreground }]}>{font.name}</Text>
-                          {font.source === "remote" && (
-                            <View style={[s.remoteBadge, { backgroundColor: `${colors.primary}22` }]}>
-                              <GlobeIcon size={12} color={colors.primary} />
-                              <Text style={[s.remoteBadgeText, { color: colors.primary }]}>
-                                {t("fonts.remote", "在线")}
-                              </Text>
-                            </View>
-                          )}
-                        </View>
-                        <View style={s.fontMeta}>
-                          <Text style={[s.fontMetaText, { color: colors.mutedForeground }]}>
-                            {font.format.toUpperCase()}
-                          </Text>
-                          <Text style={[s.fontMetaDot, { color: colors.mutedForeground }]}>·</Text>
-                          <Text style={[s.fontMetaText, { color: colors.mutedForeground }]}>
-                            {formatSize(font.size)}
-                          </Text>
-                        </View>
-                      </View>
-                      <TouchableOpacity
-                        style={s.deleteBtn}
-                        onPress={() => handleDelete(font)}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      <View
+                        style={[
+                          s.previewBox,
+                          { backgroundColor: colors.muted, borderColor: colors.border },
+                        ]}
                       >
-                        <Trash2Icon size={20} color={colors.destructive} />
-                      </TouchableOpacity>
+                        <Text
+                          style={[
+                            s.previewText,
+                            { color: colors.foreground },
+                            loadedPreviewFontIds.has(font.id) && { fontFamily: font.fontFamily },
+                          ]}
+                        >
+                          {t("fonts.preview", "预览文字：阅读改变世界 The quick brown fox")}
+                        </Text>
+                      </View>
                     </View>
-
-                    <View style={[s.previewBox, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-                      <Text style={[s.previewText, { color: colors.foreground }]}>
-                        {t("fonts.preview", "预览文字：阅读改变世界 The quick brown fox")}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            )}
+                  ))}
+                </View>
+              )}
             </>
           )}
         </View>
@@ -410,7 +499,14 @@ export default function FontSettingsScreen() {
               {t("fonts.nameFontDesc", "请输入字体的显示名称")}
             </Text>
             <TextInput
-              style={[s.modalInput, { backgroundColor: colors.background, color: colors.foreground, borderColor: colors.border }]}
+              style={[
+                s.modalInput,
+                {
+                  backgroundColor: colors.background,
+                  color: colors.foreground,
+                  borderColor: colors.border,
+                },
+              ]}
               value={fontNameInput}
               onChangeText={setFontNameInput}
               placeholder={t("fonts.namePlaceholder", "输入显示名称")}
@@ -420,15 +516,23 @@ export default function FontSettingsScreen() {
             <View style={s.modalButtons}>
               <TouchableOpacity
                 style={[s.modalBtn, { backgroundColor: colors.muted }]}
-                onPress={() => { setNameModalVisible(false); setPendingFontFile(null); setFontNameInput(""); }}
+                onPress={() => {
+                  setNameModalVisible(false);
+                  setPendingFontFile(null);
+                  setFontNameInput("");
+                }}
               >
-                <Text style={[s.modalBtnText, { color: colors.foreground }]}>{t("common.cancel", "取消")}</Text>
+                <Text style={[s.modalBtnText, { color: colors.foreground }]}>
+                  {t("common.cancel", "取消")}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[s.modalBtn, { backgroundColor: colors.primary }]}
                 onPress={handleConfirmImport}
               >
-                <Text style={[s.modalBtnText, { color: colors.primaryForeground }]}>{t("fonts.import", "导入")}</Text>
+                <Text style={[s.modalBtnText, { color: colors.primaryForeground }]}>
+                  {t("fonts.import", "导入")}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -454,18 +558,36 @@ export default function FontSettingsScreen() {
               {t("fonts.urlHint", "输入字体 CDN 链接")}
             </Text>
 
-            <Text style={[s.inputLabel, { color: colors.foreground }]}>{t("fonts.name", "字体名称")}</Text>
+            <Text style={[s.inputLabel, { color: colors.foreground }]}>
+              {t("fonts.name", "字体名称")}
+            </Text>
             <TextInput
-              style={[s.modalInput, { backgroundColor: colors.background, color: colors.foreground, borderColor: colors.border }]}
+              style={[
+                s.modalInput,
+                {
+                  backgroundColor: colors.background,
+                  color: colors.foreground,
+                  borderColor: colors.border,
+                },
+              ]}
               value={remoteFontName}
               onChangeText={setRemoteFontName}
               placeholder={t("fonts.namePlaceholder", "输入显示名称")}
               placeholderTextColor={colors.mutedForeground}
             />
 
-            <Text style={[s.inputLabel, { color: colors.foreground }]}>{t("fonts.urlWoff2", "WOFF2 链接")}</Text>
+            <Text style={[s.inputLabel, { color: colors.foreground }]}>
+              {t("fonts.urlWoff2", "WOFF2 链接")}
+            </Text>
             <TextInput
-              style={[s.modalInput, { backgroundColor: colors.background, color: colors.foreground, borderColor: colors.border }]}
+              style={[
+                s.modalInput,
+                {
+                  backgroundColor: colors.background,
+                  color: colors.foreground,
+                  borderColor: colors.border,
+                },
+              ]}
               value={remoteUrlWoff2}
               onChangeText={setRemoteUrlWoff2}
               placeholder="https://example.com/font.woff2"
@@ -475,9 +597,18 @@ export default function FontSettingsScreen() {
               keyboardType="url"
             />
 
-            <Text style={[s.inputLabel, { color: colors.foreground }]}>{t("fonts.urlWoff", "WOFF 链接 (备选)")}</Text>
+            <Text style={[s.inputLabel, { color: colors.foreground }]}>
+              {t("fonts.urlWoff", "WOFF 链接 (备选)")}
+            </Text>
             <TextInput
-              style={[s.modalInput, { backgroundColor: colors.background, color: colors.foreground, borderColor: colors.border }]}
+              style={[
+                s.modalInput,
+                {
+                  backgroundColor: colors.background,
+                  color: colors.foreground,
+                  borderColor: colors.border,
+                },
+              ]}
               value={remoteUrl}
               onChangeText={setRemoteUrl}
               placeholder="https://example.com/font.woff"
@@ -490,15 +621,24 @@ export default function FontSettingsScreen() {
             <View style={s.modalButtons}>
               <TouchableOpacity
                 style={[s.modalBtn, { backgroundColor: colors.muted }]}
-                onPress={() => { setUrlModalVisible(false); setRemoteUrl(""); setRemoteUrlWoff2(""); setRemoteFontName(""); }}
+                onPress={() => {
+                  setUrlModalVisible(false);
+                  setRemoteUrl("");
+                  setRemoteUrlWoff2("");
+                  setRemoteFontName("");
+                }}
               >
-                <Text style={[s.modalBtnText, { color: colors.foreground }]}>{t("common.cancel", "取消")}</Text>
+                <Text style={[s.modalBtnText, { color: colors.foreground }]}>
+                  {t("common.cancel", "取消")}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[s.modalBtn, { backgroundColor: colors.primary }]}
                 onPress={handleImportRemote}
               >
-                <Text style={[s.modalBtnText, { color: colors.primaryForeground }]}>{t("fonts.import", "导入")}</Text>
+                <Text style={[s.modalBtnText, { color: colors.primaryForeground }]}>
+                  {t("fonts.import", "导入")}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -508,7 +648,7 @@ export default function FontSettingsScreen() {
   );
 }
 
-function makeStyles(colors: ReturnType<typeof useColors>) {
+function makeStyles(_colors: ReturnType<typeof useColors>) {
   return StyleSheet.create({
     container: { flex: 1 },
     scroll: { flex: 1 },
@@ -532,10 +672,14 @@ function makeStyles(colors: ReturnType<typeof useColors>) {
     },
     loadingText: { fontSize: fontSize.sm },
     buttonRow: { flexDirection: "row", gap: 12, marginBottom: 16 },
-    presetSection: { gap: 8 },
+    presetSection: { gap: 8, marginBottom: 16 },
     importBtn: {
-      flexDirection: "row", alignItems: "center", justifyContent: "center",
-      gap: 8, borderRadius: radius.lg, paddingVertical: 14,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      borderRadius: radius.lg,
+      paddingVertical: 14,
     },
     importBtnHalf: { flex: 1 },
     importBtnText: { fontSize: fontSize.base, fontWeight: fontWeight.medium },
@@ -553,14 +697,33 @@ function makeStyles(colors: ReturnType<typeof useColors>) {
     deleteBtn: { padding: 4 },
     previewBox: { borderRadius: radius.md, borderWidth: 1, padding: 12 },
     previewText: { fontSize: fontSize.sm },
-    remoteBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.sm },
+    remoteBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: radius.sm,
+    },
     remoteBadgeText: { fontSize: fontSize.xs, fontWeight: fontWeight.medium },
-    modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.5)",
+      justifyContent: "center",
+      alignItems: "center",
+    },
     modalContent: { borderRadius: radius.xl, padding: 20, width: "85%", maxWidth: 340 },
     modalTitle: { fontSize: fontSize.lg, fontWeight: fontWeight.semibold, marginBottom: 8 },
     modalDesc: { fontSize: fontSize.sm, marginBottom: 16 },
     inputLabel: { fontSize: fontSize.sm, fontWeight: fontWeight.medium, marginBottom: 4 },
-    modalInput: { borderRadius: radius.md, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: fontSize.base, marginBottom: 12 },
+    modalInput: {
+      borderRadius: radius.md,
+      borderWidth: 1,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: fontSize.base,
+      marginBottom: 12,
+    },
     modalButtons: { flexDirection: "row", gap: 12, marginTop: 4 },
     modalBtn: { flex: 1, borderRadius: radius.md, paddingVertical: 10, alignItems: "center" },
     modalBtnText: { fontSize: fontSize.base, fontWeight: fontWeight.medium },

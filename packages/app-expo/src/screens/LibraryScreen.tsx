@@ -49,6 +49,7 @@ import { useSyncStore } from "@readany/core/stores";
 import { SYNC_SECRET_KEYS } from "@readany/core/sync/sync-backend";
 import type { Book, BookGroup, SortField } from "@readany/core/types";
 import * as DocumentPicker from "expo-document-picker";
+import { File as ExpoFile } from "expo-file-system";
 /**
  * LibraryScreen — matching Tauri mobile LibraryPage exactly.
  * Features: header search/sort/import, tag filter, vectorization progress banner,
@@ -77,6 +78,19 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { TagManagementSheet } from "./library/TagManagementSheet";
 import { useBookDownload } from "./library/useBookDownload";
 import { useVectorizationQueue } from "./library/useVectorizationQueue";
+
+const MOBILE_FALLBACK_EXTRACTOR_MAX_BYTES = 12 * 1024 * 1024;
+
+function bytesToBase64(bytes: Uint8Array): string {
+  const chunkSize = 0x8000;
+  let binary = "";
+
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+
+  return btoa(binary);
+}
 
 const BOOK_PNG = require("../../assets/book.png");
 const BOOK_DARK_PNG = require("../../assets/book-dark.png");
@@ -258,11 +272,23 @@ export function LibraryScreen() {
           book.filePath.startsWith("http")
             ? book.filePath
             : await platform.joinPath(appData, book.filePath);
+        if (/^https?:\/\//i.test(filePath)) {
+          throw new Error("Mobile original-file search requires a local book file");
+        }
+
+        const file = new ExpoFile(filePath);
+        if (!file.exists) throw new Error("Book file is not available on this device");
+        if (file.size > MOBILE_FALLBACK_EXTRACTOR_MAX_BYTES) {
+          throw new Error(
+            "Mobile original-file search is disabled for books larger than 12 MB. Please vectorize the book first.",
+          );
+        }
+
         const bytes = await platform.readFile(filePath);
-        const chunkSize = 0x8000;
-        let binary = "";
-        for (let i = 0; i < bytes.length; i += chunkSize) {
-          binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+        if (bytes.byteLength > MOBILE_FALLBACK_EXTRACTOR_MAX_BYTES) {
+          throw new Error(
+            "Mobile original-file search is disabled for books larger than 12 MB. Please vectorize the book first.",
+          );
         }
         const mimeTypes: Record<string, string> = {
           epub: "application/epub+zip",
@@ -277,7 +303,7 @@ export function LibraryScreen() {
           txt: "text/plain",
         };
         return extractorRef.current.extractChapters(
-          btoa(binary),
+          bytesToBase64(bytes),
           mimeTypes[String(book.format || "").toLowerCase()] || "application/epub+zip",
         );
       },

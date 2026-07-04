@@ -74,7 +74,7 @@ export interface LibraryState {
   setActiveGroupId: (groupId: string) => void;
   addBook: (book: Book) => Promise<void>;
   removeBook: (bookId: string, options?: RemoveBookOptions) => Promise<void>;
-  updateBook: (bookId: string, updates: Partial<Book>) => void;
+  updateBook: (bookId: string, updates: Partial<Book>) => Promise<void>;
   setFilter: (filter: Partial<LibraryFilter>) => void;
   setViewMode: (mode: LibraryViewMode) => void;
   setSortField: (field: SortField) => void;
@@ -177,17 +177,15 @@ async function extractMobileImportMetadata(params: {
   const { filePath, format, fileName, fileSize, sourceBytes } = params;
 
   if (format === "epub") {
-    const bytes =
-      sourceBytes ??
-      (fileSize > 0 && fileSize <= MOBILE_IMPORT_METADATA_MAX_BYTES
-        ? await getPlatformService().readFile(filePath)
-        : null);
-    if (bytes) {
-      return extractBookMetadata(bytes, format, fileName);
+    if (sourceBytes) {
+      return extractBookMetadata(sourceBytes, format, fileName);
     }
-    console.warn(
-      `[extractMobileImportMetadata] Skip EPUB metadata for large file: ${fileName} (${fileSize} bytes)`,
-    );
+    if (fileSize > 0 && fileSize <= MOBILE_IMPORT_METADATA_MAX_BYTES) {
+      return extractBookMetadata(await getPlatformService().readFile(filePath), format, fileName);
+    }
+
+    const rangeReadable = await createRangeReadableFile(filePath, fileSize);
+    return extractBookMetadataFromFile(rangeReadable, format, fileName);
   }
 
   if (format === "mobi" || format === "azw" || format === "azw3") {
@@ -822,7 +820,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     debouncedSave("library-books", get().books);
   },
 
-  updateBook: (bookId, updates) => {
+  updateBook: async (bookId, updates) => {
     set((state) => ({
       books: state.books.map((b) => (b.id === bookId ? { ...b, ...updates } : b)),
       allTags:
@@ -830,10 +828,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           ? Array.from(new Set([...state.allTags, ...updates.tags])).sort()
           : state.allTags,
     }));
-    persistBookUpdate(bookId, updates).catch((err) =>
+    debouncedSave("library-books", get().books);
+    await persistBookUpdate(bookId, updates).catch((err) =>
       console.error("Failed to update book in database:", err),
     );
-    debouncedSave("library-books", get().books);
   },
 
   setFilter: (filter) => set((state) => ({ filter: { ...state.filter, ...filter } })),

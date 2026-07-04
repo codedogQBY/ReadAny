@@ -5,6 +5,7 @@ interface AIEndpointDebugExtras {
   method?: string;
   requestUrl?: string;
   model?: string;
+  requestBodySummary?: unknown;
   status?: number;
   statusText?: string;
   contentType?: string | null;
@@ -41,6 +42,7 @@ export function logAIEndpointDebug(
     hasApiKey: Boolean(endpoint.apiKey),
     method: extras.method || "",
     model: extras.model || "",
+    requestBodySummary: extras.requestBodySummary,
     status: extras.status,
     statusText: extras.statusText,
     contentType: extras.contentType,

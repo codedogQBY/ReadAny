@@ -167,17 +167,17 @@ export async function triggerVectorizeBook(
         if (vectorDB && (await vectorDB.isReady())) {
           await vectorDB.deleteByBookId(bookId);
 
-          const vectorRecords: VectorRecord[] = allChunks.flatMap((c) =>
-            c.embedding && c.embedding.length > 0
-              ? [
-                  {
-                    id: c.id,
-                    bookId: c.bookId,
-                    embedding: c.embedding,
-                  },
-                ]
-              : [],
-          );
+          const vectorRecords: VectorRecord[] = allChunks.flatMap((c) => {
+            const embedding = c.embedding;
+            if (!embedding || embedding.length === 0) return [];
+            return [
+              {
+                id: c.id,
+                bookId: c.bookId,
+                embedding,
+              },
+            ];
+          });
 
           if (vectorRecords.length > 0) {
             // Detect actual embedding dimension and reinit vector DB if needed

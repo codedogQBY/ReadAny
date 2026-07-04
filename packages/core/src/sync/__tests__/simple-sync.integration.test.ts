@@ -43,6 +43,7 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "format",
     "title",
     "author",
+    "cover_url",
     "added_at",
     "updated_at",
     "deleted_at",
@@ -198,17 +199,20 @@ class FakeSyncDb {
     }
 
     const stateMatch = normalized.match(
-      /^SELECT (\w+) AS id, (\w+) AS timestamp(, deleted_at AS deleted_at)? FROM (\w+) WHERE (\w+) IN \(/,
+      /^SELECT (\w+) AS id, (\w+) AS timestamp(.*?) FROM (\w+) WHERE (\w+) IN \(/,
     );
     if (stateMatch) {
-      const [, pk, timestampCol, deletedAtSelect, table] = stateMatch;
+      const [, pk, timestampCol, extraSelects, table] = stateMatch;
+      const includeDeletedAt = extraSelects.includes("deleted_at AS deleted_at");
+      const includeCoverUrl = extraSelects.includes("cover_url AS cover_url");
       const ids = new Set(params.map(String));
       return [...(this.tables.get(table)?.values() ?? [])]
         .filter((row) => ids.has(String(row[pk])))
         .map((row) => ({
           id: row[pk],
           timestamp: row[timestampCol] ?? 0,
-          ...(deletedAtSelect ? { deleted_at: row.deleted_at ?? null } : {}),
+          ...(includeDeletedAt ? { deleted_at: row.deleted_at ?? null } : {}),
+          ...(includeCoverUrl ? { cover_url: row.cover_url ?? null } : {}),
         })) as T[];
     }
 
@@ -380,6 +384,7 @@ function sortRow(row: Row): Row {
   const {
     is_vectorized: _isVectorized,
     vectorize_progress: _vectorizeProgress,
+    sync_status: _syncStatus,
     ...syncedRow
   } = row;
   return Object.fromEntries(Object.entries(syncedRow).sort(([a], [b]) => a.localeCompare(b)));
@@ -392,6 +397,7 @@ function bookRow(overrides: Row = {}): Row {
     format: "epub",
     title: "Original",
     author: "Author",
+    cover_url: "covers/book-1.jpg",
     added_at: 1000,
     updated_at: 1000,
     deleted_at: null,
@@ -516,6 +522,33 @@ describe("simple sync convergence", () => {
     expect(result).toEqual({ applied: 2, skipped: 0 });
     expect(target.get("books", "book-1")).toBeTruthy();
     expect(target.get("highlights", "hl-1")).toBeTruthy();
+  });
+
+  it("localizes synced book file paths and keeps remote books downloadable", async () => {
+    const target = new FakeSyncDb();
+    dbMocks.currentDb = target;
+    dbMocks.currentDeviceId = "device-local";
+
+    const result = await applyChanges({
+      deviceId: "device-remote",
+      timestamp: now,
+      since: 0,
+      tables: {
+        books: {
+          records: [
+            bookRow({
+              file_path: "file:///data/user/0/com.readany.app/files/books/source-device.epub",
+              sync_status: "local",
+            }),
+          ],
+          deletedIds: [],
+        },
+      },
+    });
+
+    expect(result).toEqual({ applied: 1, skipped: 0 });
+    expect(target.get("books", "book-1")?.file_path).toBe("books/book-1.epub");
+    expect(target.get("books", "book-1")?.sync_status).toBe("remote");
   });
 
   it("keeps a newer local record when an older remote tombstone arrives", async () => {
@@ -764,5 +797,81 @@ describe("simple sync convergence", () => {
     expect(result.success).toBe(true);
     expect(local.get("books", "remote-book")).toBeUndefined();
     expect(backend.jsonFiles.has("/readany/sync/device-device-local.json")).toBe(true);
+  });
+
+  it("preserves custom cover paths from remote book snapshots", async () => {
+    const backend = new MemoryBackend();
+    const local = new FakeSyncDb();
+    local.insert(
+      "books",
+      bookRow({
+        cover_url: "covers/book-1.jpg",
+        updated_at: 1000,
+      }),
+    );
+
+    backend.jsonFiles.set("/readany/sync/device-remote.json", {
+      deviceId: "remote",
+      timestamp: 2500,
+      since: 0,
+      tables: {
+        books: {
+          records: [
+            bookRow({
+              cover_url: "covers/book-1-custom-123.jpg",
+              updated_at: 2500,
+            }),
+          ],
+          deletedIds: [],
+        },
+      },
+    });
+
+    now = 3000;
+    const result = await syncDevice("device-local", local, backend);
+
+    expect(result.success).toBe(true);
+    expect(local.get("books", "book-1")?.cover_url).toBe("covers/book-1-custom-123.jpg");
+  });
+
+  it("keeps a local custom cover when applying newer remote metadata with the old canonical cover", async () => {
+    const backend = new MemoryBackend();
+    const local = new FakeSyncDb();
+    local.insert(
+      "books",
+      bookRow({
+        cover_url: "covers/book-1-custom-123.jpg",
+        title: "Local title",
+        updated_at: 2000,
+      }),
+    );
+
+    backend.jsonFiles.set("/readany/sync/device-remote.json", {
+      deviceId: "remote",
+      timestamp: 2500,
+      since: 0,
+      tables: {
+        books: {
+          records: [
+            bookRow({
+              cover_url: "covers/book-1.jpg",
+              title: "Remote title",
+              updated_at: 2500,
+            }),
+          ],
+          deletedIds: [],
+        },
+      },
+    });
+
+    now = 3000;
+    const result = await syncDevice("device-local", local, backend);
+
+    expect(result.success).toBe(true);
+    expect(local.get("books", "book-1")).toMatchObject({
+      cover_url: "covers/book-1-custom-123.jpg",
+      title: "Remote title",
+      updated_at: 2500,
+    });
   });
 });
