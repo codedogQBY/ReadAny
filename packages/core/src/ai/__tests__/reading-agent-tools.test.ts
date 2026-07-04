@@ -42,6 +42,41 @@ beforeEach(() => {
 });
 
 describe("streamReadingAgent tool registration", () => {
+  it("keeps library-level reading stats requests under a focused tool set", async () => {
+    createReactAgentMock.mockReturnValue({
+      streamEvents: vi.fn(() => ({
+        [Symbol.asyncIterator]: async function* () {
+          // no-op stream
+        },
+      })),
+    });
+
+    for await (const _event of streamReadingAgent(
+      {
+        aiConfig: makeAIConfig(),
+        book: null,
+        bookId: null,
+        semanticContext: null,
+        enabledSkills: [],
+        isVectorized: false,
+        getAvailableTools,
+      },
+      "总结我最近的阅读",
+    )) {
+      // drain stream
+    }
+
+    const call = createReactAgentMock.mock.calls[createReactAgentMock.mock.calls.length - 1]?.[0];
+    const toolNames = (call.tools as ToolDefinition[]).map((tool) => tool.name);
+
+    expect(toolNames).toContain("getReadingStats");
+    expect(toolNames).toContain("listBooks");
+    expect(toolNames).not.toContain("tagBooks");
+    expect(toolNames).not.toContain("manageBookTags");
+    expect(toolNames).not.toContain("updateBookMetadata");
+    expect(toolNames).not.toContain("manageBookGroups");
+  });
+
   it("registers fallback tools when only bookId is available", async () => {
     createReactAgentMock.mockReturnValue({
       streamEvents: vi.fn(() => ({
