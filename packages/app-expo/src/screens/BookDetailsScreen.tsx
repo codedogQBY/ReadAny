@@ -374,11 +374,13 @@ export function BookDetailsScreen({ route }: Props) {
   );
 
   const persistCoverUrl = useCallback(
-    (coverUrl: string) => {
-      if (!book) return;
-      setField("coverUrl", coverUrl);
+    async (coverUrl: string) => {
+      if (!book || !values) return;
+      const nextValues = { ...values, coverUrl };
+      setValues(nextValues);
+      await updateBook(book.id, buildBookMetadataUpdate(book, nextValues));
     },
-    [book, setField],
+    [book, updateBook, values],
   );
 
   const setRating = useCallback(
@@ -446,7 +448,7 @@ export function BookDetailsScreen({ route }: Props) {
   );
 
   const handleChangeCover = useCallback(async () => {
-    if (!book) return;
+    if (!book || !values) return;
     try {
       const platform = getPlatformService();
       let selected: PickedCoverSource | null = null;
@@ -477,13 +479,13 @@ export function BookDetailsScreen({ route }: Props) {
       const targetPath = await platform.joinPath(appData, relativePath);
       const bytes = await platform.readFile(selected.uri);
       await platform.writeFile(targetPath, bytes);
-      persistCoverUrl(relativePath);
+      await persistCoverUrl(relativePath);
       Alert.alert(t("common.success", "成功"), t("library.detailsCoverSaved", "封面已保存"));
     } catch (error) {
       console.warn("[BookDetailsScreen] Failed to change cover:", error);
       Alert.alert(t("common.failed", "失败"), t("common.failed", "失败"));
     }
-  }, [book, persistCoverUrl, t]);
+  }, [book, persistCoverUrl, t, values]);
 
   if (!book || !values) {
     return (
@@ -561,7 +563,7 @@ export function BookDetailsScreen({ route }: Props) {
                   style={[styles.coverAction, !values.coverUrl && styles.coverActionDisabled]}
                   disabled={!values.coverUrl}
                   activeOpacity={0.78}
-                  onPress={() => persistCoverUrl("")}
+                  onPress={() => void persistCoverUrl("")}
                 >
                   <Trash2Icon size={12} color={colors.mutedForeground} />
                   <Text style={styles.coverActionText}>

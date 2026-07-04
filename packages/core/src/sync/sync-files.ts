@@ -566,6 +566,25 @@ export async function syncFiles(
             (!isPositiveFiniteNumber(localSize) ||
               !isPositiveFiniteNumber(remoteSize) ||
               !isNonEmptyString(remoteSourcePath))));
+      if (isCustomCover) {
+        console.log(
+          "[Sync] Cover decision",
+          JSON.stringify({
+            bookId: book.id,
+            coverUrl: info.book.cover_url,
+            localExists,
+            localSize,
+            localHash: isNonEmptyString(localHash),
+            remoteExists,
+            remoteSize,
+            remoteHash: isNonEmptyString(remoteHash),
+            remoteSourcePath,
+            coverSourceChanged,
+            coverHashChanged,
+            coverChanged,
+          }),
+        );
+      }
 
       if (!disableUploads && localExists && (forceUploadAll || !remoteExists || coverChanged)) {
         const task = buildUploadCoverTask(backend, info);

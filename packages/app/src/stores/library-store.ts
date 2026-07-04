@@ -353,7 +353,7 @@ export interface LibraryState {
   setActiveGroupId: (groupId: string) => void;
   addBook: (book: Book) => void;
   removeBook: (bookId: string, options?: RemoveBookOptions) => Promise<void>;
-  updateBook: (bookId: string, updates: Partial<Book>) => void;
+  updateBook: (bookId: string, updates: Partial<Book>) => Promise<void>;
   setFilter: (filter: Partial<LibraryFilter>) => void;
   setViewMode: (mode: LibraryViewMode) => void;
   setSortField: (field: SortField) => void;
@@ -839,7 +839,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     }
   },
 
-  updateBook: (bookId, updates) => {
+  updateBook: async (bookId, updates) => {
     set((state) => ({
       books: state.books.map((b) => (b.id === bookId ? { ...b, ...updates } : b)),
       allTags:
@@ -847,11 +847,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           ? Array.from(new Set([...state.allTags, ...updates.tags])).sort()
           : state.allTags,
     }));
-    db.updateBook(bookId, updates).catch((err) =>
-      console.error("Failed to update book in database:", err),
-    );
     // Update FS cache
     debouncedSave("library-books", get().books);
+    await db
+      .updateBook(bookId, updates)
+      .catch((err) => console.error("Failed to update book in database:", err));
   },
 
   setFilter: (filter) => set((state) => ({ filter: { ...state.filter, ...filter } })),
