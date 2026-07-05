@@ -1,7 +1,8 @@
-import { useNavigation } from "@react-navigation/native";
+import { CommonActions, type NavigationProp, useNavigation } from "@react-navigation/native";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ChevronLeftIcon } from "../../components/ui/Icon";
 import { useResponsiveLayout } from "../../hooks/use-responsive-layout";
+import type { RootStackParamList } from "../../navigation/RootNavigator";
 import { fontSize, fontWeight, spacing, useColors } from "../../styles/theme";
 
 interface Props {
@@ -11,9 +12,17 @@ interface Props {
 }
 
 export function SettingsHeader({ title, subtitle, right }: Props) {
-  const nav = useNavigation();
+  const nav = useNavigation<NavigationProp<RootStackParamList>>();
   const colors = useColors();
   const layout = useResponsiveLayout();
+
+  const handleBack = () => {
+    if (nav.canGoBack()) {
+      nav.goBack();
+      return;
+    }
+    nav.dispatch(CommonActions.navigate("Tabs"));
+  };
 
   return (
     <View
@@ -24,7 +33,7 @@ export function SettingsHeader({ title, subtitle, right }: Props) {
     >
       <View style={[styles.headerInner, { maxWidth: layout.centeredContentWidth }]}>
         <TouchableOpacity
-          onPress={() => nav.goBack()}
+          onPress={handleBack}
           style={styles.backBtn}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >

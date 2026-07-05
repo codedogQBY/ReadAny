@@ -3,6 +3,15 @@ dist/
 .expo/
 ios/
 android/
+!modules/*/ios/
+modules/*/ios/build/
+!modules/*/ios/*.podspec
+!modules/*/ios/*.swift
+!modules/*/android/
+modules/*/android/build/
+!modules/*/android/build.gradle
+!modules/*/android/src/
+!modules/*/android/src/**
 *.jks
 *.p8
 *.p12
