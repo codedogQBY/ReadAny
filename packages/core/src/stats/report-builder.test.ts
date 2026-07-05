@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import type { DailyReadingFact } from "./schema";
 import {
   buildDayReport,
   buildLifetimeReport,
@@ -10,6 +9,7 @@ import {
   buildWeekReport,
   buildYearReport,
 } from "./report-builder";
+import type { DailyReadingFact } from "./schema";
 
 const facts: DailyReadingFact[] = [
   {
@@ -168,6 +168,44 @@ describe("report-builder", () => {
       totalTime: 60,
       charactersRead: 21000,
       avgCharactersPerMinute: 350,
+    });
+  });
+
+  it("keeps renamed books merged by id and uses the latest metadata", () => {
+    const renamedFacts: DailyReadingFact[] = [
+      {
+        ...facts[0],
+        bookBreakdown: [
+          {
+            ...facts[0].bookBreakdown[0],
+            title: "Old Title",
+            author: "Old Author",
+            coverUrl: "old-cover",
+          },
+        ],
+      },
+      {
+        ...facts[1],
+        bookBreakdown: [
+          {
+            ...facts[1].bookBreakdown[0],
+            title: "New Title",
+            author: "New Author",
+            coverUrl: "new-cover",
+          },
+        ],
+      },
+    ];
+
+    const [topBook] = buildTopBooksFromFacts(renamedFacts);
+
+    expect(topBook).toMatchObject({
+      bookId: "book-1",
+      title: "New Title",
+      author: "New Author",
+      coverUrl: "new-cover",
+      totalTime: 75,
+      sessionsCount: 3,
     });
   });
 

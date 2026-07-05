@@ -284,11 +284,83 @@ describe("ragToc tool", () => {
     const result = (await tool.execute({})) as any;
 
     expect(result.totalChapters).toBe(3);
+    expect(result.source).toBe("vector-index");
+    expect(result.debug).toMatchObject({
+      vectorChapterCount: 3,
+      genericSectionCount: 0,
+      preferOriginalToc: false,
+      fallback: { attempted: false },
+    });
     expect(result.chapters).toEqual([
-      { index: 0, title: "Intro" },
-      { index: 1, title: "Chapter 1" },
-      { index: 2, title: "Chapter 2" },
+      { index: 0, number: 1, title: "Intro" },
+      { index: 1, number: 2, title: "Chapter 1" },
+      { index: 2, number: 3, title: "Chapter 2" },
     ]);
+  });
+
+  it("rebuilds the TOC from the original book when indexed chunks only have generic section titles", async () => {
+    vi.mocked(getChunks).mockResolvedValue([
+      makeChunk({ chapterIndex: 1, chapterTitle: "Section 2" }),
+      makeChunk({ chapterIndex: 2, chapterTitle: "Section 3" }),
+    ] as any);
+    vi.mocked(getBook).mockResolvedValue(makeBook({ isVectorized: true }) as any);
+    setFallbackContentProvider({
+      async getChapters() {
+        return [
+          { index: 0, title: "第1章 整洁代码", content: "chapter one" },
+          { index: 1, title: "第2章 有意义的命名", content: "chapter two" },
+        ];
+      },
+    });
+
+    const tools = getAvailableTools({ bookId: "book-1", isVectorized: true, enabledSkills: [] });
+    const tool = findTool(tools, "ragToc");
+    const result = (await tool.execute({})) as any;
+
+    expect(result.source).toBe("original-file");
+    expect(result.debug).toMatchObject({
+      vectorChapterCount: 2,
+      genericSectionCount: 2,
+      preferOriginalToc: true,
+      fallback: {
+        attempted: true,
+        chapterCount: 2,
+        sampleTitles: ["第1章 整洁代码", "第2章 有意义的命名"],
+      },
+    });
+    expect(result.chapters).toEqual([
+      { index: 0, number: 1, title: "第1章 整洁代码" },
+      { index: 1, number: 2, title: "第2章 有意义的命名" },
+    ]);
+  });
+
+  it("returns visible diagnostics when generic section fallback fails", async () => {
+    vi.mocked(getChunks).mockResolvedValue([
+      makeChunk({ chapterIndex: 1, chapterTitle: "Section 2" }),
+      makeChunk({ chapterIndex: 2, chapterTitle: "Section 3" }),
+    ] as any);
+    vi.mocked(getBook).mockResolvedValue(makeBook({ isVectorized: true }) as any);
+    setFallbackContentProvider({
+      async getChapters() {
+        throw new Error("Original file is unavailable");
+      },
+    });
+
+    const tools = getAvailableTools({ bookId: "book-1", isVectorized: true, enabledSkills: [] });
+    const tool = findTool(tools, "ragToc");
+    const result = (await tool.execute({})) as any;
+
+    expect(result.source).toBe("vector-index");
+    expect(result.warning).toContain("rebuilding the TOC from the original book failed");
+    expect(result.debug).toMatchObject({
+      vectorChapterCount: 2,
+      genericSectionCount: 2,
+      preferOriginalToc: true,
+      fallback: {
+        attempted: true,
+        error: "Original file is unavailable",
+      },
+    });
   });
 });
 

@@ -1,4 +1,5 @@
 import type { Book } from "../types";
+import { eventBus } from "../utils/event-bus";
 import { deleteChunks } from "./chunk-queries";
 import {
   getDB,
@@ -330,6 +331,10 @@ export async function updateBook(id: string, updates: Partial<Book>): Promise<vo
 
   values.push(id);
   await database.execute(`UPDATE books SET ${sets.join(", ")} WHERE id = ?`, values);
+  eventBus.emit("book:updated", {
+    bookId: id,
+    changedFields: Object.keys(updates),
+  });
 }
 
 export async function setBookSyncStatus(id: string, syncStatus: Book["syncStatus"]): Promise<void> {

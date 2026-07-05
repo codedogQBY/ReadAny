@@ -29,8 +29,8 @@ import SkillsPage from "@/pages/Skills";
 import { useAppStore } from "@/stores/app-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useReaderStore } from "@/stores/reader-store";
-import { useSettingsStore } from "@readany/core/stores/settings-store";
 import { useFontStore } from "@readany/core/stores";
+import { useSettingsStore } from "@readany/core/stores/settings-store";
 import { BookOpen } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -69,7 +69,9 @@ export function AppLayout() {
     // 1. Inject <link> tags for CSS-based remote fonts
     const cssLinkClass = "__readany_remote_css_font__";
     // Remove old ones that are no longer needed
-    document.querySelectorAll(`link.${cssLinkClass}`).forEach((el) => el.remove());
+    for (const el of document.querySelectorAll(`link.${cssLinkClass}`)) {
+      el.remove();
+    }
     for (const f of customFonts) {
       if (f.source === "remote" && f.remoteCssUrl) {
         const link = document.createElement("link");
@@ -82,31 +84,44 @@ export function AppLayout() {
 
     // 2. Inject @font-face for local and direct-URL remote fonts
     if (customFonts.every((f) => f.remoteCssUrl)) return;
-    import("@tauri-apps/api/core").then(({ convertFileSrc }) => {
-      const styleId = "__readany_app_font_faces__";
-      let el = document.getElementById(styleId) as HTMLStyleElement | null;
-      if (!el) {
-        el = document.createElement("style");
-        el.id = styleId;
-        document.head.appendChild(el);
-      }
-      el.textContent = customFonts
-        .map((f) => {
-          if (f.remoteCssUrl) return ""; // handled by <link>
-          if (f.source === "remote") {
-            const src = f.remoteUrlWoff2
-              ? `url('${f.remoteUrlWoff2}') format('woff2')${f.remoteUrl ? `, url('${f.remoteUrl}') format('woff')` : ""}`
-              : f.remoteUrl ? `url('${f.remoteUrl}') format('woff')` : "";
-            return src ? `@font-face { font-family: '${f.fontFamily}'; src: ${src}; font-display: swap; }` : "";
-          }
-          if (!f.filePath) return "";
-          const fileUrl = convertFileSrc(f.filePath);
-          const fmt = f.format === "otf" ? "opentype" : f.format === "woff" ? "woff" : f.format === "woff2" ? "woff2" : "truetype";
-          return `@font-face { font-family: '${f.fontFamily}'; src: url('${fileUrl}') format('${fmt}'); }`;
-        })
-        .filter(Boolean)
-        .join("\n");
-    }).catch((err) => console.warn("[Layout] Failed to load custom font faces:", err));
+    import("@tauri-apps/api/core")
+      .then(({ convertFileSrc }) => {
+        const styleId = "__readany_app_font_faces__";
+        let el = document.getElementById(styleId) as HTMLStyleElement | null;
+        if (!el) {
+          el = document.createElement("style");
+          el.id = styleId;
+          document.head.appendChild(el);
+        }
+        el.textContent = customFonts
+          .map((f) => {
+            if (f.remoteCssUrl) return ""; // handled by <link>
+            if (f.source === "remote") {
+              const src = f.remoteUrlWoff2
+                ? `url('${f.remoteUrlWoff2}') format('woff2')${f.remoteUrl ? `, url('${f.remoteUrl}') format('woff')` : ""}`
+                : f.remoteUrl
+                  ? `url('${f.remoteUrl}') format('woff')`
+                  : "";
+              return src
+                ? `@font-face { font-family: ${JSON.stringify(f.fontFamily)}; src: ${src}; font-display: swap; }`
+                : "";
+            }
+            if (!f.filePath) return "";
+            const fileUrl = convertFileSrc(f.filePath);
+            const fmt =
+              f.format === "otf"
+                ? "opentype"
+                : f.format === "woff"
+                  ? "woff"
+                  : f.format === "woff2"
+                    ? "woff2"
+                    : "truetype";
+            return `@font-face { font-family: ${JSON.stringify(f.fontFamily)}; src: url('${fileUrl}') format('${fmt}'); }`;
+          })
+          .filter(Boolean)
+          .join("\n");
+      })
+      .catch((err) => console.warn("[Layout] Failed to load custom font faces:", err));
   }, [customFonts]);
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -140,10 +155,12 @@ export function AppLayout() {
       }
       if (e.key === "F11") {
         e.preventDefault();
-        import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
-          const win = getCurrentWindow();
-          win.isFullscreen().then((fs) => win.setFullscreen(!fs));
-        }).catch((err) => console.warn("[Layout] Failed to toggle fullscreen:", err));
+        import("@tauri-apps/api/window")
+          .then(({ getCurrentWindow }) => {
+            const win = getCurrentWindow();
+            win.isFullscreen().then((fs) => win.setFullscreen(!fs));
+          })
+          .catch((err) => console.warn("[Layout] Failed to toggle fullscreen:", err));
       }
     };
     window.addEventListener("keydown", handleKeyDown, { capture: true });
@@ -320,16 +337,14 @@ export function AppLayout() {
         data-tab-bar
         onMouseEnter={handleTabBarMouseEnter}
         onMouseLeave={handleTabBarMouseLeave}
-        className={`absolute left-0 right-0 top-0 z-50 transition-transform duration-300 ease-in-out ${
+        className={`absolute left-0 right-0 top-0 z-[80] transition-transform duration-300 ease-in-out ${
           isReaderActive && !showTabBar ? "-translate-y-full" : "translate-y-0"
         }`}
       >
         <TabBar />
       </div>
       <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        {!isReaderActive && (
-          <div className="h-8 shrink-0" />
-        )}
+        {!isReaderActive && <div className="h-8 shrink-0" />}
         {/* === Home layer (sidebar + content card) === */}
         <div
           className="flex min-h-0 flex-1 w-full overflow-hidden"
@@ -354,6 +369,8 @@ export function AppLayout() {
 
         {/* === Reader layers — one per open reader tab === */}
         {readerTabs.map((tab) => {
+          if (!tab.bookId) return null;
+
           const isHibernated = hibernatedTabs.has(tab.id);
           const isActive = activeTabId === tab.id;
 
@@ -371,7 +388,7 @@ export function AppLayout() {
                   t={t}
                 />
               ) : (
-                <ReaderView bookId={tab.bookId!} tabId={tab.id} />
+                <ReaderView bookId={tab.bookId} tabId={tab.id} />
               )}
             </div>
           );

@@ -29,7 +29,7 @@ const getViewport = (doc, viewport) => {
 };
 
 export class FixedLayout extends HTMLElement {
-  static observedAttributes = ["zoom", "spread"];
+  static observedAttributes = ["zoom", "zoom-factor", "spread"];
   #root = this.attachShadow({ mode: "closed" });
   #observer = new ResizeObserver(() => this.#render());
   #spreads;
@@ -42,6 +42,7 @@ export class FixedLayout extends HTMLElement {
   #center;
   #side;
   #zoom;
+  #zoomFactor = 1;
   constructor() {
     super();
 
@@ -51,8 +52,8 @@ export class FixedLayout extends HTMLElement {
             width: 100%;
             height: 100%;
             display: flex;
-            justify-content: center;
-            align-items: center;
+            justify-content: safe center;
+            align-items: safe center;
             overflow: auto;
         }`);
 
@@ -65,6 +66,12 @@ export class FixedLayout extends HTMLElement {
           value !== "fit-width" && value !== "fit-page" ? Number.parseFloat(value) : value;
         this.#render();
         break;
+      case "zoom-factor": {
+        const parsed = Number.parseFloat(value);
+        this.#zoomFactor = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+        this.#render();
+        break;
+      }
       case "spread":
         this.spread = value;
         void this.#applySpreadChange(value);
@@ -174,8 +181,8 @@ export class FixedLayout extends HTMLElement {
     const blankWidth = left.width ?? right.width ?? 0;
     const blankHeight = left.height ?? right.height ?? 0;
 
-    const scale =
-      typeof this.#zoom === "number" && !isNaN(this.#zoom)
+    const fitScale =
+      typeof this.#zoom === "number" && !Number.isNaN(this.#zoom)
         ? this.#zoom
         : (this.#zoom === "fit-width"
             ? portrait || this.#center
@@ -190,6 +197,10 @@ export class FixedLayout extends HTMLElement {
                   width / ((left.width ?? blankWidth) + (right.width ?? blankWidth)),
                   height / Math.max(left.height ?? blankHeight, right.height ?? blankHeight),
                 )) || 1;
+    const scale =
+      typeof this.#zoom === "number" && !Number.isNaN(this.#zoom)
+        ? fitScale
+        : fitScale * this.#zoomFactor;
 
     const transform = (frame) => {
       const { element, iframe, width, height, blank, onZoom } = frame;
@@ -263,7 +274,6 @@ export class FixedLayout extends HTMLElement {
     this.defaultViewport = rendition?.viewport;
 
     const rtl = book.dir === "rtl";
-    const ltr = !rtl;
     this.rtl = rtl;
 
     this.#spreads = this.#buildSpreads(book);

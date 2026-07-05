@@ -5,7 +5,36 @@ import { getChunks } from "../../db/database";
 import { estimateTokens } from "../../rag/chunker";
 import { search } from "../../rag/search";
 import type { SearchQuery } from "../../types";
+import { fallbackContentService } from "../fallback-content-service";
+import { getFallbackChaptersForBook } from "../fallback-source-resolver";
 import type { ToolDefinition } from "./tool-types";
+
+function isGenericSectionTitle(title: string): boolean {
+  return /^Section\s+\d+$/i.test(title.trim());
+}
+
+function shouldPreferOriginalToc(chapters: Map<number, string>): boolean {
+  if (chapters.size === 0) return false;
+  const titles = Array.from(chapters.values());
+  const genericCount = titles.filter(isGenericSectionTitle).length;
+  return genericCount >= Math.max(2, Math.ceil(titles.length * 0.6));
+}
+
+function getTocDebugInfo(
+  chapters: Map<number, string>,
+  fallback?: { attempted: boolean; error?: string; chapterCount?: number; sampleTitles?: string[] },
+) {
+  const titles = Array.from(chapters.values());
+  const genericCount = titles.filter(isGenericSectionTitle).length;
+  return {
+    vectorChapterCount: chapters.size,
+    genericSectionCount: genericCount,
+    genericSectionRatio: titles.length > 0 ? Math.round((genericCount / titles.length) * 100) / 100 : 0,
+    preferOriginalToc: shouldPreferOriginalToc(chapters),
+    vectorSampleTitles: titles.slice(0, 8),
+    fallback,
+  };
+}
 
 /** Create RAG search tool for a specific book */
 export function createRagSearchTool(bookId: string): ToolDefinition {
@@ -97,7 +126,7 @@ export function createRagTocTool(bookId: string): ToolDefinition {
   return {
     name: "ragToc",
     description:
-      "Get the table of contents of the current book. Use this when the user wants to see the book structure or navigate to a specific chapter.",
+      "Get the table of contents of the current book. Use this when the user wants to see the book structure or navigate to a specific chapter. Use the returned 'index' when calling chapter tools; 'number' is the human-readable chapter order.",
     parameters: {},
     execute: async () => {
       // Get unique chapter titles from chunks
@@ -109,12 +138,65 @@ export function createRagTocTool(bookId: string): ToolDefinition {
         }
       }
 
+      if (shouldPreferOriginalToc(chapters)) {
+        fallbackContentService.clear(bookId);
+        const fallback = await getFallbackChaptersForBook(bookId);
+        if (!("error" in fallback) && fallback.chapters.length > 0) {
+          console.log("[ragToc] Rebuilt generic section TOC from original book", {
+            bookId,
+            chapters: fallback.chapters.length,
+            sampleTitles: fallback.chapters.slice(0, 5).map((chapter) => chapter.title),
+          });
+          return {
+            bookTitle: fallback.bookTitle,
+            chapters: fallback.chapters.map((chapter, ordinal) => ({
+              index: chapter.index,
+              number: ordinal + 1,
+              title: chapter.title,
+            })),
+            totalChapters: fallback.chapters.length,
+            source: "original-file",
+            debug: getTocDebugInfo(chapters, {
+              attempted: true,
+              chapterCount: fallback.chapters.length,
+              sampleTitles: fallback.chapters.slice(0, 8).map((chapter) => chapter.title),
+            }),
+            instruction:
+              "The vector index has generic Section titles, so this TOC was rebuilt from the original book file. Re-vectorize the book to refresh RAG chapter titles.",
+          };
+        }
+
+        const fallbackError = "error" in fallback ? fallback.error : "Original file TOC was empty";
+        console.warn("[ragToc] Failed to rebuild generic section TOC from original book", {
+          bookId,
+          error: fallbackError,
+        });
+        return {
+          chapters: Array.from(chapters.entries()).map(([index, title], ordinal) => ({
+            index,
+            number: ordinal + 1,
+            title,
+          })),
+          totalChapters: chapters.size,
+          source: "vector-index",
+          debug: getTocDebugInfo(chapters, {
+            attempted: true,
+            error: fallbackError,
+          }),
+          warning:
+            "The vector index has mostly generic Section titles, but rebuilding the TOC from the original book failed. See debug.fallback.error.",
+        };
+      }
+
       return {
-        chapters: Array.from(chapters.entries()).map(([index, title]) => ({
+        chapters: Array.from(chapters.entries()).map(([index, title], ordinal) => ({
           index,
+          number: ordinal + 1,
           title,
         })),
         totalChapters: chapters.size,
+        source: "vector-index",
+        debug: getTocDebugInfo(chapters, { attempted: false }),
       };
     },
   };

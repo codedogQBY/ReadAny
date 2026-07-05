@@ -7,7 +7,12 @@ export type {
   TTSConfig,
   TTSPlayState,
 } from "./types";
-export { DEFAULT_TTS_CONFIG, DASHSCOPE_VOICES, normalizeTTSConfig, normalizeTTSEngine } from "./types";
+export {
+  DEFAULT_TTS_CONFIG,
+  DASHSCOPE_VOICES,
+  normalizeTTSConfig,
+  normalizeTTSEngine,
+} from "./types";
 
 // Text utilities
 export {
@@ -26,3 +31,10 @@ export type { EdgeTTSVoice, EdgeTTSPayload } from "./edge-tts";
 
 // Players
 export { BrowserTTSPlayer, DashScopeTTSPlayer, EdgeTTSPlayer } from "./tts-players";
+
+// Re-speak on synthesis-param change (#370)
+export {
+  VOICE_RESPEAK_DEBOUNCE_MS,
+  isActivePlay,
+  shouldRespeakForSynthChange,
+} from "./respeak";

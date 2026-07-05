@@ -1,5 +1,5 @@
-import type { Book } from "../../types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Book } from "../../types";
 
 // --- Mock db-core ---
 const mockExecute = vi.fn();
@@ -16,7 +16,11 @@ const coreMocks = vi.hoisted(() => ({
   insertTombstone: vi.fn(),
   parseJSON: vi.fn((str: string | null | undefined, fallback: unknown) => {
     if (!str) return fallback;
-    try { return JSON.parse(str); } catch { return fallback; }
+    try {
+      return JSON.parse(str);
+    } catch {
+      return fallback;
+    }
   }),
 }));
 
@@ -25,18 +29,19 @@ const dependencyMocks = vi.hoisted(() => ({
   deleteChunks: vi.fn(),
 }));
 
-vi.mock("../db-core", () => coreMocks);
-vi.mock("../thread-queries", () => ({ deleteThreadsByBookId: dependencyMocks.deleteThreadsByBookId }));
-vi.mock("../chunk-queries", () => ({ deleteChunks: dependencyMocks.deleteChunks }));
+const eventBusMocks = vi.hoisted(() => ({
+  emit: vi.fn(),
+}));
 
-const {
-  getBooks,
-  getBook,
-  getDeletedBookByFileHash,
-  insertBook,
-  updateBook,
-  deleteBook,
-} = await import("../book-queries");
+vi.mock("../db-core", () => coreMocks);
+vi.mock("../thread-queries", () => ({
+  deleteThreadsByBookId: dependencyMocks.deleteThreadsByBookId,
+}));
+vi.mock("../chunk-queries", () => ({ deleteChunks: dependencyMocks.deleteChunks }));
+vi.mock("../../utils/event-bus", () => ({ eventBus: eventBusMocks }));
+
+const { getBooks, getBook, getDeletedBookByFileHash, insertBook, updateBook, deleteBook } =
+  await import("../book-queries");
 
 const sampleBook: Book = {
   id: "book-1",
@@ -166,7 +171,7 @@ describe("book-queries", () => {
 
       const book = await getBook("book-1");
       expect(book).not.toBeNull();
-      expect(book!.id).toBe("book-1");
+      expect(book?.id).toBe("book-1");
       expect(mockSelect).toHaveBeenCalledWith(
         "SELECT * FROM books WHERE id = ? AND deleted_at IS NULL",
         ["book-1"],
@@ -248,11 +253,16 @@ describe("book-queries", () => {
       expect(sql).toContain("current_cfi = ?");
       expect(params).toContain(0.8);
       expect(params).toContain("epubcfi(/6/4)");
+      expect(eventBusMocks.emit).toHaveBeenCalledWith("book:updated", {
+        bookId: "book-1",
+        changedFields: ["progress", "currentCfi"],
+      });
     });
 
     it("does nothing when no updates provided", async () => {
       await updateBook("book-1", {});
       expect(mockExecute).not.toHaveBeenCalled();
+      expect(eventBusMocks.emit).not.toHaveBeenCalled();
     });
   });
 
@@ -262,18 +272,32 @@ describe("book-queries", () => {
 
       await deleteBook("book-1", { preserveData: true });
 
-      expect(mockSelect).not.toHaveBeenCalledWith("SELECT id FROM highlights WHERE book_id = ?", ["book-1"]);
-      expect(mockExecute).not.toHaveBeenCalledWith("DELETE FROM highlights WHERE book_id = ?", ["book-1"]);
-      expect(mockExecute).not.toHaveBeenCalledWith("DELETE FROM notes WHERE book_id = ?", ["book-1"]);
-      expect(mockExecute).not.toHaveBeenCalledWith("DELETE FROM bookmarks WHERE book_id = ?", ["book-1"]);
-      expect(mockExecute).not.toHaveBeenCalledWith("DELETE FROM reading_sessions WHERE book_id = ?", ["book-1"]);
+      expect(mockSelect).not.toHaveBeenCalledWith("SELECT id FROM highlights WHERE book_id = ?", [
+        "book-1",
+      ]);
+      expect(mockExecute).not.toHaveBeenCalledWith("DELETE FROM highlights WHERE book_id = ?", [
+        "book-1",
+      ]);
+      expect(mockExecute).not.toHaveBeenCalledWith("DELETE FROM notes WHERE book_id = ?", [
+        "book-1",
+      ]);
+      expect(mockExecute).not.toHaveBeenCalledWith("DELETE FROM bookmarks WHERE book_id = ?", [
+        "book-1",
+      ]);
+      expect(mockExecute).not.toHaveBeenCalledWith(
+        "DELETE FROM reading_sessions WHERE book_id = ?",
+        ["book-1"],
+      );
       expect(mockExecute).not.toHaveBeenCalledWith("DELETE FROM books WHERE id = ?", ["book-1"]);
       expect(dependencyMocks.deleteThreadsByBookId).toHaveBeenCalledWith("book-1");
       expect(dependencyMocks.deleteChunks).toHaveBeenCalledWith("book-1");
-      expect(mockExecute).toHaveBeenCalledWith(
-        expect.stringContaining("UPDATE books"),
-        [expect.any(Number), 3000, 1, "device-1", "book-1"],
-      );
+      expect(mockExecute).toHaveBeenCalledWith(expect.stringContaining("UPDATE books"), [
+        expect.any(Number),
+        3000,
+        1,
+        "device-1",
+        "book-1",
+      ]);
     });
 
     it("hard-deletes everything when preserveData is not requested", async () => {
@@ -285,10 +309,16 @@ describe("book-queries", () => {
 
       await deleteBook("book-1");
 
-      expect(mockExecute).toHaveBeenCalledWith("DELETE FROM highlights WHERE book_id = ?", ["book-1"]);
+      expect(mockExecute).toHaveBeenCalledWith("DELETE FROM highlights WHERE book_id = ?", [
+        "book-1",
+      ]);
       expect(mockExecute).toHaveBeenCalledWith("DELETE FROM notes WHERE book_id = ?", ["book-1"]);
-      expect(mockExecute).toHaveBeenCalledWith("DELETE FROM bookmarks WHERE book_id = ?", ["book-1"]);
-      expect(mockExecute).toHaveBeenCalledWith("DELETE FROM reading_sessions WHERE book_id = ?", ["book-1"]);
+      expect(mockExecute).toHaveBeenCalledWith("DELETE FROM bookmarks WHERE book_id = ?", [
+        "book-1",
+      ]);
+      expect(mockExecute).toHaveBeenCalledWith("DELETE FROM reading_sessions WHERE book_id = ?", [
+        "book-1",
+      ]);
       expect(mockExecute).toHaveBeenCalledWith("DELETE FROM books WHERE id = ?", ["book-1"]);
       expect(coreMocks.insertTombstone).toHaveBeenCalledWith(mockDb, "hl-1", "highlights");
       expect(coreMocks.insertTombstone).toHaveBeenCalledWith(mockDb, "note-1", "notes");

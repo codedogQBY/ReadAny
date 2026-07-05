@@ -1,3 +1,14 @@
+import {
+  buildLifetimePeriodRef,
+  buildPeriodRef,
+  fromLocalDateKey,
+  getMonthEndDate,
+  getMonthStartDate,
+  getWeekEndDate,
+  getWeekStartDate,
+  getYearStartDate,
+  toLocalDateKey,
+} from "./period-utils";
 import type {
   DailyReadingFact,
   DayReport,
@@ -20,17 +31,6 @@ import type {
   WeekReport,
   YearReport,
 } from "./schema";
-import {
-  buildLifetimePeriodRef,
-  buildPeriodRef,
-  fromLocalDateKey,
-  getMonthEndDate,
-  getMonthStartDate,
-  getWeekEndDate,
-  getWeekStartDate,
-  getYearStartDate,
-  toLocalDateKey,
-} from "./period-utils";
 
 interface ReportBuilderOptions {
   joinedSince?: string;
@@ -92,10 +92,7 @@ export function buildStatsSummary(facts: DailyReadingFact[]): StatsSummary {
   };
 }
 
-export function buildTopBooksFromFacts(
-  facts: DailyReadingFact[],
-  limit = 20,
-): TopBookEntry[] {
+export function buildTopBooksFromFacts(facts: DailyReadingFact[], limit = 20): TopBookEntry[] {
   const map = new Map<string, TopBookEntry>();
 
   for (const fact of facts) {
@@ -119,10 +116,11 @@ export function buildTopBooksFromFacts(
       existing.sessionsCount += book.sessionsCount;
       existing.progress = book.progressEnd ?? existing.progress;
       existing.totalPages = book.totalPages ?? existing.totalPages;
+      existing.title = book.title;
+      existing.author = book.author;
+      existing.coverUrl = book.coverUrl;
       existing.avgCharactersPerMinute =
-        existing.totalTime > 0
-          ? (existing.charactersRead ?? 0) / existing.totalTime
-          : 0;
+        existing.totalTime > 0 ? (existing.charactersRead ?? 0) / existing.totalTime : 0;
 
       map.set(book.bookId, existing);
     }
@@ -131,8 +129,7 @@ export function buildTopBooksFromFacts(
   return Array.from(map.values())
     .map((book) => ({
       ...book,
-      avgCharactersPerMinute:
-        book.totalTime > 0 ? (book.charactersRead ?? 0) / book.totalTime : 0,
+      avgCharactersPerMinute: book.totalTime > 0 ? (book.charactersRead ?? 0) / book.totalTime : 0,
     }))
     .sort((a, b) => b.totalTime - a.totalTime)
     .slice(0, limit);
@@ -222,9 +219,7 @@ function buildInsights(summary: StatsSummary, topBooks: TopBookEntry[]): StatsIn
 
 function computeDelta(current: number, previous: number): { delta: number; deltaLabel: string } {
   if (previous <= 0) {
-    return current > 0
-      ? { delta: 100, deltaLabel: "+∞" }
-      : { delta: 0, deltaLabel: "—" };
+    return current > 0 ? { delta: 100, deltaLabel: "+∞" } : { delta: 0, deltaLabel: "—" };
   }
   const pct = Math.round(((current - previous) / previous) * 100);
   if (pct === 0) return { delta: 0, deltaLabel: "—" };
@@ -236,11 +231,31 @@ export function buildPeriodComparison(
   previous: StatsSummary,
 ): StatsMetricComparison[] {
   return [
-    { label: "readingTime", value: current.totalReadingTime, ...computeDelta(current.totalReadingTime, previous.totalReadingTime) },
-    { label: "activeDays", value: current.activeDays, ...computeDelta(current.activeDays, previous.activeDays) },
-    { label: "sessions", value: current.totalSessions, ...computeDelta(current.totalSessions, previous.totalSessions) },
-    { label: "books", value: current.booksTouched, ...computeDelta(current.booksTouched, previous.booksTouched) },
-    { label: "avgSessionTime", value: current.avgSessionTime, ...computeDelta(current.avgSessionTime, previous.avgSessionTime) },
+    {
+      label: "readingTime",
+      value: current.totalReadingTime,
+      ...computeDelta(current.totalReadingTime, previous.totalReadingTime),
+    },
+    {
+      label: "activeDays",
+      value: current.activeDays,
+      ...computeDelta(current.activeDays, previous.activeDays),
+    },
+    {
+      label: "sessions",
+      value: current.totalSessions,
+      ...computeDelta(current.totalSessions, previous.totalSessions),
+    },
+    {
+      label: "books",
+      value: current.booksTouched,
+      ...computeDelta(current.booksTouched, previous.booksTouched),
+    },
+    {
+      label: "avgSessionTime",
+      value: current.avgSessionTime,
+      ...computeDelta(current.avgSessionTime, previous.avgSessionTime),
+    },
   ];
 }
 
@@ -289,10 +304,7 @@ function createShareCard(
     accentMetric,
     secondaryMetrics,
     topBook,
-    footer:
-      dimension === "lifetime"
-        ? "ReadAny has been reading with you."
-        : "Made with ReadAny",
+    footer: dimension === "lifetime" ? "ReadAny has been reading with you." : "Made with ReadAny",
     theme: "brand",
   };
 }
@@ -462,7 +474,8 @@ function buildMonthReadingCalendar(
       week.push({
         date: key,
         dayOfMonth: cursor.getDate(),
-        inCurrentMonth: cursor.getMonth() === date.getMonth() && cursor.getFullYear() === date.getFullYear(),
+        inCurrentMonth:
+          cursor.getMonth() === date.getMonth() && cursor.getFullYear() === date.getFullYear(),
         isToday: key === todayKey,
         totalTime: fact?.totalTime ?? 0,
         pagesRead: fact?.pagesRead ?? 0,
@@ -701,11 +714,7 @@ export function buildMonthReport(
   const summary = buildStatsSummary(periodFacts);
   const topBooks = buildTopBooksFromFacts(periodFacts, options.limitTopBooks);
   const heatmap = buildMonthlyHeatmapChart(periodFacts, period);
-  const readingCalendar = buildMonthReadingCalendar(
-    periodFacts,
-    date,
-    options.now ?? new Date(),
-  );
+  const readingCalendar = buildMonthReadingCalendar(periodFacts, date, options.now ?? new Date());
   const prevFacts = getPreviousPeriodFacts(facts, "month", date);
   const prevSummary = buildStatsSummary(prevFacts);
 
@@ -736,7 +745,11 @@ export function buildYearReport(
   const summary = buildStatsSummary(periodFacts);
   const topBooks = buildTopBooksFromFacts(periodFacts, options.limitTopBooks);
   const monthlyChart = buildYearlyMonthChart(periodFacts, date.getFullYear());
-  const timeOfDayChart = buildTimeOfDayChart(periodFacts, `year-${date.getFullYear()}-time-of-day`, "Preferred reading time");
+  const timeOfDayChart = buildTimeOfDayChart(
+    periodFacts,
+    `year-${date.getFullYear()}-time-of-day`,
+    "Preferred reading time",
+  );
   const categoryDistribution = buildCategoryDistributionChart(
     periodFacts,
     `year-${date.getFullYear()}-category-distribution`,
@@ -746,7 +759,12 @@ export function buildYearReport(
   const prevSummary = buildStatsSummary(prevFacts);
   const strongestMonth = monthlyChart.data.reduce<StatsMetricCard | undefined>((best, current) => {
     if (!best || Number(best.sublabel ?? "0") < current.value) {
-      return createMetricCard("strongest-month", "Strongest month", current.label, String(current.value));
+      return createMetricCard(
+        "strongest-month",
+        "Strongest month",
+        current.label,
+        String(current.value),
+      );
     }
     return best;
   }, undefined);
@@ -783,7 +801,11 @@ export function buildLifetimeReport(
   const summary = buildStatsSummary(sortedFacts);
   const topBooks = buildTopBooksFromFacts(sortedFacts, options.limitTopBooks);
   const yearlyChart = buildLifetimeYearChart(sortedFacts);
-  const timeOfDayChart = buildTimeOfDayChart(sortedFacts, "lifetime-time-of-day", "Preferred reading time");
+  const timeOfDayChart = buildTimeOfDayChart(
+    sortedFacts,
+    "lifetime-time-of-day",
+    "Preferred reading time",
+  );
   const categoryDistribution = buildCategoryDistributionChart(
     sortedFacts,
     "lifetime-category-distribution",
@@ -792,13 +814,13 @@ export function buildLifetimeReport(
   const yearlySnapshots = buildYearSnapshots(sortedFacts);
   const firstReadingDate = sortedFacts[0]?.date;
   const totalActiveDays = summary.activeDays;
-  const totalDays =
-    Math.max(
-      1,
-      Math.round(
-        (fromLocalDateKey(period.endDate).getTime() - fromLocalDateKey(period.startDate).getTime()) / 86400000,
-      ) + 1,
-    );
+  const totalDays = Math.max(
+    1,
+    Math.round(
+      (fromLocalDateKey(period.endDate).getTime() - fromLocalDateKey(period.startDate).getTime()) /
+        86400000,
+    ) + 1,
+  );
 
   return {
     dimension: "lifetime",

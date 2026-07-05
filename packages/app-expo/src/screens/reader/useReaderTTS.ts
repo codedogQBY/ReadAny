@@ -421,6 +421,21 @@ export function useReaderTTS({
     setTtsChunkOffset(nextOffset);
   }, []);
 
+  const resolveForegroundTTSCfi = useCallback(() => {
+    const state = useTTSStore.getState();
+    if (state.currentBookId !== bookId) return null;
+
+    const localIndex = state.currentChunkIndex - ttsChunkOffsetRef.current;
+    const indexSegment =
+      localIndex >= 0 && localIndex < ttsSegmentsRef.current.length
+        ? ttsSegmentsRef.current[localIndex] || null
+        : null;
+
+    return (
+      indexSegment?.cfi || state.currentLocationCfi || resolvedTTSSegmentCfi || currentCfi || null
+    );
+  }, [bookId, currentCfi, resolvedTTSSegmentCfi]);
+
   const dedupeTTSSegments = useCallback(
     (segments: TTSSegment[]) => {
       const seenIdentities = new Set<string>();
@@ -1523,7 +1538,6 @@ export function useReaderTTS({
       currentChapter,
       currentCfi,
       setShowControls,
-      setShowTTS,
       syncTTSChunkOffset,
       ttsCoverUri,
       ttsPlay,
@@ -2155,7 +2169,7 @@ export function useReaderTTS({
   ]);
 
   // ─── Foreground resync: force highlight update after returning from background ──
-  // When iOS suspends the app, React effects don't run but native audio continues.
+  // When the OS suspends the app, React effects don't run but native audio can continue.
   // On return to foreground, force-resync the WebView highlight to current TTS position.
   useEffect(() => {
     const handleAppStateChange = (nextState: AppStateStatus) => {
@@ -2165,15 +2179,14 @@ export function useReaderTTS({
       if (ttsPlayState !== "playing" && ttsPlayState !== "paused") return;
       if (ttsSourceKind !== "page") return;
 
-      const targetCfi = resolvedTTSSegmentCfi;
-      if (!targetCfi) return;
-
       // Small delay to let WebView fully resume before injecting JS
       setTimeout(() => {
+        const targetCfi = resolveForegroundTTSCfi();
+        if (!targetCfi) return;
         bridgeRef.current?.setTTSHighlight(targetCfi, ttsHighlightColor, true);
         // Also navigate to the current TTS position if user scrolled away
         bridgeRef.current?.goToCFI(targetCfi);
-      }, 300);
+      }, 450);
     };
 
     const subscription = AppState.addEventListener("change", handleAppStateChange);
@@ -2181,10 +2194,8 @@ export function useReaderTTS({
   }, [
     bookId,
     bridgeRef,
-    resolvedTTSSegmentCfi,
-    showTTS,
+    resolveForegroundTTSCfi,
     ttsCurrentBookId,
-    ttsHighlightColor,
     ttsPlayState,
     ttsSourceKind,
     webViewReady,

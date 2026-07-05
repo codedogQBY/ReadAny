@@ -16,20 +16,21 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAppStore } from "@/stores/app-store";
 import { useReadingSessionStore } from "@/stores/reading-session-store";
 import {
-  getWeekStartDate,
-  readingReportsService,
-  getAllGoalProgress,
-  evaluateBadges,
-  evaluateStreakStatus,
   ALL_BADGE_DEFINITIONS,
-  buildStatsSummary,
   type GoalType,
   type StatsDimension,
   type StatsReport,
+  buildStatsSummary,
+  evaluateBadges,
+  evaluateStreakStatus,
+  getAllGoalProgress,
+  getWeekStartDate,
+  isStatsRelevantBookUpdate,
+  readingReportsService,
 } from "@readany/core/stats";
+import { useGoalsStore } from "@readany/core/stores";
 import { cn } from "@readany/core/utils";
 import { eventBus } from "@readany/core/utils/event-bus";
-import { useGoalsStore } from "@readany/core/stores";
 import {
   BookOpenText,
   CalendarDays,
@@ -42,23 +43,10 @@ import {
   ScanSearch,
   TrendingUp,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { getStatsCopy } from "./stats-copy";
-import {
-  buildHeroNarrative,
-  DIMENSIONS,
-  formatCharacterCount,
-  formatCharactersPerMinute,
-  formatMinutes,
-  formatPeriodLabel,
-  localizeInsight,
-  shiftAnchorDate,
-  toDateInputValue,
-  toMonthInputValue,
-  type MetricTileData,
-} from "./stats-utils";
-import { EmptyState, MetricTile, SectionHeader, StatsCard } from "./StatsShared";
+import { BadgesDialog } from "./BadgesDialog";
+import { BadgesPreview } from "./BadgesPreview";
 import {
   ChartSurface,
   DaySummaryPanel,
@@ -69,8 +57,21 @@ import {
   RhythmProfileSection,
   TopBooksSection,
 } from "./StatsSections";
-import { BadgesPreview } from "./BadgesPreview";
-import { BadgesDialog } from "./BadgesDialog";
+import { EmptyState, MetricTile, SectionHeader, StatsCard } from "./StatsShared";
+import { getStatsCopy } from "./stats-copy";
+import {
+  DIMENSIONS,
+  type MetricTileData,
+  buildHeroNarrative,
+  formatCharacterCount,
+  formatCharactersPerMinute,
+  formatMinutes,
+  formatPeriodLabel,
+  localizeInsight,
+  shiftAnchorDate,
+  toDateInputValue,
+  toMonthInputValue,
+} from "./stats-utils";
 import { formatDateLabel } from "./stats-utils";
 
 /* ─── Hero metric builder (kept here because it uses lucide icons) ─── */
@@ -176,7 +177,7 @@ function buildHeroMetrics(
 export function ReadingStatsPanel() {
   const { t, i18n } = useTranslation();
   const isZh = i18n.language.startsWith("zh");
-  const copy = useMemo(() => getStatsCopy(t), [t, i18n.language]);
+  const copy = useMemo(() => getStatsCopy(t), [t]);
   const activeTabId = useAppStore((s) => s.activeTabId);
   const saveCurrentSession = useReadingSessionStore((s) => s.saveCurrentSession);
   const currentSession = useReadingSessionStore((s) => s.currentSession);
@@ -228,6 +229,14 @@ export function ReadingStatsPanel() {
     });
   }, [activeTabId, loadReport]);
 
+  useEffect(() => {
+    return eventBus.on("book:updated", ({ changedFields }) => {
+      if (activeTabId !== "stats") return;
+      if (!isStatsRelevantBookUpdate(changedFields)) return;
+      void loadReport();
+    });
+  }, [activeTabId, loadReport]);
+
   /* ── Derived data ── */
   const heroMetrics = useMemo(
     () => (report ? buildHeroMetrics(report, copy, isZh) : []),
@@ -274,7 +283,10 @@ export function ReadingStatsPanel() {
 
   useEffect(() => {
     if (report) {
-      readingReportsService.getAllDailyFacts(currentSession).then(setAllFacts).catch((err) => console.warn("[Stats] Failed to load daily facts:", err));
+      readingReportsService
+        .getAllDailyFacts(currentSession)
+        .then(setAllFacts)
+        .catch((err) => console.warn("[Stats] Failed to load daily facts:", err));
     }
   }, [currentSession, report]);
 
@@ -291,9 +303,7 @@ export function ReadingStatsPanel() {
 
   const visibleGoalProgress = useMemo(
     () =>
-      activeGoalPeriod
-        ? goalProgress.filter(({ goal }) => goal.period === activeGoalPeriod)
-        : [],
+      activeGoalPeriod ? goalProgress.filter(({ goal }) => goal.period === activeGoalPeriod) : [],
     [goalProgress, activeGoalPeriod],
   );
 
@@ -329,9 +339,7 @@ export function ReadingStatsPanel() {
 
     if (dimension === "day" || dimension === "week") {
       setAnchorDate(
-        getWeekStartDate(value) && dimension === "week"
-          ? getWeekStartDate(value)
-          : new Date(value),
+        getWeekStartDate(value) && dimension === "week" ? getWeekStartDate(value) : new Date(value),
       );
       if (dimension === "day") setAnchorDate(new Date(value));
       return;
@@ -364,7 +372,6 @@ export function ReadingStatsPanel() {
     <TooltipProvider delayDuration={120}>
       <div className="h-full min-w-0 overflow-y-auto overflow-x-hidden bg-background">
         <div className="mx-auto flex w-full min-w-0 max-w-[1800px] flex-col gap-6 px-5 py-6 sm:px-8 sm:py-8 lg:gap-8">
-
           {/* ════════ Sticky Header ════════ */}
           <div className="sticky top-0 z-30 -mx-5 border-b border-border/10 bg-background/92 px-5 py-3 backdrop-blur-md sm:-mx-8 sm:px-8 sm:py-4">
             <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end md:gap-5">
@@ -377,6 +384,7 @@ export function ReadingStatsPanel() {
               <nav className="-mx-1 flex w-full max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-border/30 bg-muted/25 p-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:mx-0 md:w-auto md:min-w-[420px] md:max-w-[560px] md:justify-end">
                 {DIMENSIONS.map((dim) => (
                   <button
+                    type="button"
                     key={dim}
                     className={cn(
                       "flex-none rounded-[10px] px-4 py-2 text-[13px] font-medium transition-all duration-150 sm:min-w-[72px] sm:px-4 lg:px-5",
@@ -452,9 +460,7 @@ export function ReadingStatsPanel() {
                             variant="ghost"
                             size="icon"
                             className="size-8 rounded-[10px] text-muted-foreground/50 hover:bg-muted/30 hover:text-foreground"
-                            onClick={() =>
-                              setAnchorDate((p) => shiftAnchorDate(p, dimension, -1))
-                            }
+                            onClick={() => setAnchorDate((p) => shiftAnchorDate(p, dimension, -1))}
                             disabled={!report.navigation.canGoPrev}
                           >
                             <ChevronLeft className="h-4 w-4" />
@@ -463,9 +469,7 @@ export function ReadingStatsPanel() {
                             variant="ghost"
                             size="icon"
                             className="size-8 rounded-[10px] text-muted-foreground/50 hover:bg-muted/30 hover:text-foreground"
-                            onClick={() =>
-                              setAnchorDate((p) => shiftAnchorDate(p, dimension, 1))
-                            }
+                            onClick={() => setAnchorDate((p) => shiftAnchorDate(p, dimension, 1))}
                             disabled={!report.navigation.canGoNext}
                           >
                             <ChevronRight className="h-4 w-4" />
@@ -548,7 +552,6 @@ export function ReadingStatsPanel() {
 
               {/* ════════ Content Grid ════════ */}
               <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(340px,1fr)] xl:gap-8">
-
                 {/* ─── Main column ─── */}
                 <div className="min-w-0 space-y-6">
                   {/* Day summary */}
@@ -579,10 +582,7 @@ export function ReadingStatsPanel() {
                         title={copy.readingCalendar}
                         description={copy.readingCalendarDesc}
                       />
-                      <MonthCalendarSection
-                        calendar={monthlyReport.readingCalendar}
-                        isZh={isZh}
-                      />
+                      <MonthCalendarSection calendar={monthlyReport.readingCalendar} isZh={isZh} />
                     </StatsCard>
                   )}
 
@@ -591,9 +591,7 @@ export function ReadingStatsPanel() {
                     (yearOrLifetimeReport.timeOfDayChart ||
                       yearOrLifetimeReport.categoryDistribution) && (
                       <StatsCard>
-                        <SectionHeader
-                          title={undefined}
-                        />
+                        <SectionHeader title={undefined} />
                         <RhythmProfileSection
                           timeOfDayChart={yearOrLifetimeReport.timeOfDayChart}
                           categoryChart={yearOrLifetimeReport.categoryDistribution}
@@ -619,6 +617,7 @@ export function ReadingStatsPanel() {
                         description={copy.badgesDesc}
                         action={
                           <button
+                            type="button"
                             onClick={() => setBadgesDialogOpen(true)}
                             className="flex items-center gap-0.5 text-[12px] font-medium text-primary/60 transition-colors hover:text-primary/80"
                           >
@@ -659,7 +658,12 @@ export function ReadingStatsPanel() {
                   {/* Top books — featured variant */}
                   <StatsCard variant="featured">
                     <SectionHeader title={copy.topBooks} description={copy.topBooksDesc} />
-                    <TopBooksSection books={report.topBooks} copy={copy} isZh={isZh} allFacts={allFacts} />
+                    <TopBooksSection
+                      books={report.topBooks}
+                      copy={copy}
+                      isZh={isZh}
+                      allFacts={allFacts}
+                    />
                   </StatsCard>
 
                   {/* Insights */}
@@ -675,7 +679,6 @@ export function ReadingStatsPanel() {
                       <InsightsSection insights={localizedMilestones} copy={copy} />
                     </StatsCard>
                   )}
-
                 </aside>
               </div>
             </>
