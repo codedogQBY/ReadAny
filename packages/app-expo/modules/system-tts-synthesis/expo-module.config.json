@@ -1,0 +1,11 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["SystemTtsSynthesisModule"],
+    "podspecPath": "ios/SystemTtsSynthesis.podspec",
+    "swiftModuleName": "SystemTtsSynthesis"
+  },
+  "android": {
+    "modules": ["expo.modules.systemttssynthesis.SystemTtsSynthesisModule"]
+  }
+}

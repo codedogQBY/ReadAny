@@ -5,9 +5,36 @@ import { StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
 
 const READER_HTML_ASSET = Asset.fromModule(require("../../../assets/reader/reader.html"));
+const EXTRACTION_TIMEOUT_MS = 45_000;
+
+const EXTRACTOR_EXTENSIONS_BY_MIME: Record<string, string> = {
+  "application/epub+zip": "epub",
+  "application/pdf": "pdf",
+  "application/x-mobipocket-ebook": "mobi",
+  "application/vnd.amazon.ebook": "azw3",
+  "application/vnd.comicbook+zip": "cbz",
+  "application/x-fictionbook+xml": "fb2",
+  "application/x-zip-compressed-fb2": "fbz",
+  "text/plain": "txt",
+};
+
+function getExtractorFileName(mimeType: string) {
+  const normalized = mimeType.split(";")[0]?.trim().toLowerCase() || "application/epub+zip";
+  return `book.${EXTRACTOR_EXTENSIONS_BY_MIME[normalized] || "epub"}`;
+}
+
+function isPDFMimeType(mimeType: string) {
+  return mimeType.split(";")[0]?.trim().toLowerCase() === "application/pdf";
+}
 
 export interface ExtractorRef {
   extractChapters: (base64BookData: string, mimeType?: string) => Promise<ChapterData[]>;
+}
+
+interface PendingExtraction {
+  resolve: (chapters: ChapterData[]) => void;
+  reject: (err: Error) => void;
+  timeoutId: ReturnType<typeof setTimeout>;
 }
 
 export const ExtractorWebView = forwardRef<ExtractorRef>((_, ref) => {
@@ -16,8 +43,17 @@ export const ExtractorWebView = forwardRef<ExtractorRef>((_, ref) => {
   const [ready, setReady] = useState(false);
 
   // Pending extraction requests
-  const pendingRequests = useRef<((chapters: ChapterData[]) => void)[]>([]);
-  const pendingErrors = useRef<((err: Error) => void)[]>([]);
+  const pendingRequests = useRef<PendingExtraction[]>([]);
+
+  useEffect(() => {
+    return () => {
+      for (const pending of pendingRequests.current) {
+        clearTimeout(pending.timeoutId);
+        pending.reject(new Error("Extractor WebView unmounted"));
+      }
+      pendingRequests.current = [];
+    };
+  }, []);
 
   useEffect(() => {
     const loadAsset = async () => {
@@ -50,21 +86,23 @@ export const ExtractorWebView = forwardRef<ExtractorRef>((_, ref) => {
           true;
         `);
       } else if (msg.type === "chaptersExtracted") {
-        const resolve = pendingRequests.current.shift();
-        const reject = pendingErrors.current.shift();
+        const pending = pendingRequests.current.shift();
+        if (!pending) return;
 
-        if (msg.error && reject) {
-          reject(new Error(msg.error));
-        } else if (msg.chapters && resolve) {
-          resolve(msg.chapters);
+        clearTimeout(pending.timeoutId);
+        if (msg.error) {
+          pending.reject(new Error(msg.error));
+        } else if (msg.chapters) {
+          pending.resolve(msg.chapters);
         }
+      } else if (msg.type === "debug") {
+        console.log("[ExtractorWebView]", msg.message);
       } else if (msg.type === "error") {
         console.error("[ExtractorWebView] WebView error:", msg.message);
-        // Only reject if we were waiting for it
-        if (pendingErrors.current.length > 0) {
-          const reject = pendingErrors.current.shift();
-          pendingRequests.current.shift(); // remove corresponding resolve
-          reject?.(new Error(msg.message));
+        const pending = pendingRequests.current.shift();
+        if (pending) {
+          clearTimeout(pending.timeoutId);
+          pending.reject(new Error(msg.message));
         }
       }
     } catch (err) {
@@ -79,16 +117,21 @@ export const ExtractorWebView = forwardRef<ExtractorRef>((_, ref) => {
           return reject(new Error("Extractor WebView not ready"));
         }
 
-        pendingRequests.current.push(resolve);
-        pendingErrors.current.push(reject);
+        const timeoutId = setTimeout(() => {
+          const index = pendingRequests.current.findIndex((pending) => pending.reject === reject);
+          if (index >= 0) pendingRequests.current.splice(index, 1);
+          reject(new Error("Timed out extracting book content"));
+        }, EXTRACTION_TIMEOUT_MS);
+
+        pendingRequests.current.push({ resolve, reject, timeoutId });
 
         // Command the webview to open the book first.
         // It will reply with "loaded" when it finishes rendering.
         const cmd = {
-          type: "openBook",
+          type: isPDFMimeType(mimeType) ? "extractBookChapters" : "openBook",
           base64: base64BookData,
-          fileName: "book.epub",
           mimeType,
+          fileName: getExtractorFileName(mimeType),
         };
 
         webViewRef.current.injectJavaScript(`

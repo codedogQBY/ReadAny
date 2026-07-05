@@ -10,6 +10,7 @@
  */
 
 import { getDB } from "../db/database";
+import { canonicalBookFilePath } from "./local-book-paths";
 import { getSyncAdapter } from "./sync-adapter";
 import type { ISyncBackend, RemoteFile } from "./sync-backend";
 import {
@@ -73,6 +74,12 @@ function isDirectFileTransferUnsupported(error: unknown): boolean {
   return /does not support direct file|Platform does not support direct file/i.test(message);
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+  return `${bytes} B`;
+}
+
 async function makeTempTransferPath(finalPath: string): Promise<string> {
   const adapter = getSyncAdapter();
   const tempDir = await adapter.getTempDir();
@@ -90,6 +97,7 @@ async function uploadFileToRemote(
   localPath: string,
   onProgress?: (loaded: number, total: number) => void,
 ): Promise<number | null> {
+  const adapter = getSyncAdapter();
   if (backend.putFile) {
     try {
       await backend.putFile(remotePath, localPath, onProgress);
@@ -102,7 +110,15 @@ async function uploadFileToRemote(
     }
   }
 
-  const adapter = getSyncAdapter();
+  if (adapter.maxBufferedTransferBytes != null) {
+    const fileSize = await adapter.getFileSize(localPath);
+    if (fileSize != null && fileSize > adapter.maxBufferedTransferBytes) {
+      throw new Error(
+        `Buffered upload would exceed platform memory limit for ${remotePath}: ${formatBytes(fileSize)} > ${formatBytes(adapter.maxBufferedTransferBytes)}`,
+      );
+    }
+  }
+
   const data = await adapter.readFileBytes(localPath);
   onProgress?.(0, data.length);
   await backend.put(remotePath, data);
@@ -151,9 +167,11 @@ async function downloadRemoteFileToPath(
 type BookRow = {
   id: string;
   file_path: string;
+  format: string;
   file_hash: string;
   cover_url: string;
   title: string;
+  sync_status: string;
 };
 
 type BookInfo = {
@@ -184,6 +202,8 @@ type RemoteListings = {
   legacyCoverNames: Set<string>; // names inside REMOTE_COVERS
   legacyFileSizeByName: Map<string, number>;
   legacyCoverSizeByName: Map<string, number>;
+  coverHashByBookId: Map<string, string>;
+  coverSourcePathByBookId: Map<string, string>;
   /** Folders under REMOTE_BOOKS_ROOT shaped like {title}-{uuid} whose uuid is not in the DB. */
   orphanBookDirs: { folderName: string; bookId: string }[];
   /** Folders under REMOTE_BOOKS_ROOT with no valid uuid suffix and not matched to any book. */
@@ -195,6 +215,8 @@ type MigrationResult = {
   coverAtNew: boolean;
   fileSize?: number;
   coverSize?: number;
+  coverHash?: string;
+  coverSourcePath?: string;
 };
 
 type RemoteFileManifestEntry = {
@@ -203,6 +225,8 @@ type RemoteFileManifestEntry = {
   coverPath?: string;
   fileSize?: number;
   coverSize?: number;
+  coverHash?: string;
+  coverSourcePath?: string;
   updatedAt?: number;
 };
 
@@ -220,6 +244,21 @@ type FileTask = {
 
 function isPositiveFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+async function hashFileSafe(filePath: string): Promise<string | null> {
+  const adapter = getSyncAdapter();
+  try {
+    const hash = await adapter.hashFile(filePath);
+    return hash || null;
+  } catch (e) {
+    console.warn(`[Sync] Failed to hash file ${filePath}:`, e);
+    return null;
+  }
 }
 
 async function runFileTasks(
@@ -340,7 +379,7 @@ export async function syncFiles(
   let filesDownloadFailed = 0;
 
   const books = await db.select<BookRow>(
-    "SELECT id, file_path, file_hash, cover_url, title FROM books WHERE deleted_at IS NULL",
+    "SELECT id, file_path, format, file_hash, cover_url, title, sync_status FROM books WHERE deleted_at IS NULL",
     [],
   );
 
@@ -349,13 +388,10 @@ export async function syncFiles(
 
   // --- Compute per-book info ---
   const bookInfos: BookInfo[] = books.map((book) => {
-    const fileExt = book.file_path ? getExt(book.file_path) || "epub" : "";
+    const canonicalFilePath = canonicalBookFilePath(book.id, book.file_path, book.format);
+    const fileExt = canonicalFilePath ? getExt(canonicalFilePath) || "epub" : "";
     const coverExt = book.cover_url ? getExt(book.cover_url) || "jpg" : "";
-    const localFilePath = book.file_path
-      ? isAbsoluteOrProtocolPath(book.file_path)
-        ? book.file_path
-        : adapter.joinPath(appDataDir, book.file_path)
-      : "";
+    const localFilePath = canonicalFilePath ? adapter.joinPath(appDataDir, canonicalFilePath) : "";
     const localCoverPath = book.cover_url
       ? isAbsoluteOrProtocolPath(book.cover_url)
         ? book.cover_url
@@ -373,7 +409,7 @@ export async function syncFiles(
       remoteCoverPath: coverExt ? buildBookRemoteCover(book, coverExt) : "",
       legacyRemoteFileName: fileExt ? `${book.id}.${fileExt}` : "",
       legacyRemoteCoverName: coverExt ? `${book.id}.${coverExt}` : "",
-      hasFile: !!book.file_path,
+      hasFile: !!canonicalFilePath,
       hasCover: !!book.cover_url,
     };
   });
@@ -393,6 +429,15 @@ export async function syncFiles(
   );
   const localSizeMap = new Map<string, number | null>();
   allLocalPaths.forEach((p, i) => localSizeMap.set(p, localSizeResults[i]));
+  const localCoverPaths = bookInfos
+    .filter((info) => info.hasCover && (localExistsMap.get(info.localCoverPath) ?? false))
+    .map((info) => info.localCoverPath);
+  const localCoverHashResults = await Promise.all(localCoverPaths.map((p) => hashFileSafe(p)));
+  const localCoverHashMap = new Map<string, string>();
+  localCoverPaths.forEach((p, i) => {
+    const hash = localCoverHashResults[i];
+    if (hash) localCoverHashMap.set(p, hash);
+  });
 
   // --- List remote directories (tolerant of failures) ---
   const listings = await loadRemoteListings(backend, bookInfos, localExistsMap, {
@@ -411,6 +456,8 @@ export async function syncFiles(
   const remoteCoverAtNew = new Map<string, boolean>();
   const remoteFileSizeAtNew = new Map<string, number>();
   const remoteCoverSizeAtNew = new Map<string, number>();
+  const remoteCoverHashAtNew = new Map<string, string>();
+  const remoteCoverSourcePathAtNew = new Map<string, string>();
   const migrationTasks = bookInfos.map((info) => async () => {
     const result = await migrateBookRemoteState(backend, info, listings);
     migrationResults.set(info.book.id, result);
@@ -421,6 +468,12 @@ export async function syncFiles(
     }
     if (isPositiveFiniteNumber(result.coverSize)) {
       remoteCoverSizeAtNew.set(info.book.id, result.coverSize);
+    }
+    if (result.coverHash) {
+      remoteCoverHashAtNew.set(info.book.id, result.coverHash);
+    }
+    if (result.coverSourcePath) {
+      remoteCoverSourcePathAtNew.set(info.book.id, result.coverSourcePath);
     }
   });
   if (migrationTasks.length > 0) {
@@ -439,6 +492,14 @@ export async function syncFiles(
     if (info.hasFile && info.fileExt) {
       const localExists = localExistsMap.get(info.localFilePath) ?? false;
       const remoteExists = migration.fileAtNew;
+
+      if (localExists && book.sync_status && book.sync_status !== "local") {
+        try {
+          await setBookSyncStatus(book.id, "local");
+        } catch (e) {
+          console.warn(`[Sync] Failed to mark existing local book as local: ${e}`);
+        }
+      }
 
       if (!disableUploads && localExists && (forceUploadAll || !remoteExists)) {
         const task = buildUploadFileTask(backend, info);
@@ -483,18 +544,47 @@ export async function syncFiles(
     if (info.hasCover && info.coverExt) {
       const localExists = localExistsMap.get(info.localCoverPath) ?? false;
       const localSize = localSizeMap.get(info.localCoverPath) ?? null;
+      const localHash = localCoverHashMap.get(info.localCoverPath);
       const remoteExists = migration.coverAtNew;
       const remoteSize = migration.coverSize;
+      const remoteHash = migration.coverHash;
+      const remoteSourcePath = migration.coverSourcePath;
       const coverFileName = info.book.cover_url.split(/[\\/]/).pop() ?? "";
       const isCustomCover = coverFileName.startsWith(`${book.id}-custom-`);
+      const coverSourceChanged = isCustomCover && remoteSourcePath !== info.book.cover_url;
+      const coverHashChanged =
+        isNonEmptyString(localHash) && isNonEmptyString(remoteHash) && localHash !== remoteHash;
       const coverChanged =
         remoteExists &&
         localExists &&
-        ((isPositiveFiniteNumber(localSize) &&
-          isPositiveFiniteNumber(remoteSize) &&
-          localSize !== remoteSize) ||
+        (coverSourceChanged ||
+          coverHashChanged ||
+          (isPositiveFiniteNumber(localSize) &&
+            isPositiveFiniteNumber(remoteSize) &&
+            localSize !== remoteSize) ||
           (isCustomCover &&
-            (!isPositiveFiniteNumber(localSize) || !isPositiveFiniteNumber(remoteSize))));
+            (!isPositiveFiniteNumber(localSize) ||
+              !isPositiveFiniteNumber(remoteSize) ||
+              !isNonEmptyString(remoteSourcePath))));
+      if (isCustomCover) {
+        console.log(
+          "[Sync] Cover decision",
+          JSON.stringify({
+            bookId: book.id,
+            coverUrl: info.book.cover_url,
+            localExists,
+            localSize,
+            localHash: isNonEmptyString(localHash),
+            remoteExists,
+            remoteSize,
+            remoteHash: isNonEmptyString(remoteHash),
+            remoteSourcePath,
+            coverSourceChanged,
+            coverHashChanged,
+            coverChanged,
+          }),
+        );
+      }
 
       if (!disableUploads && localExists && (forceUploadAll || !remoteExists || coverChanged)) {
         const task = buildUploadCoverTask(backend, info);
@@ -507,6 +597,12 @@ export async function syncFiles(
             if (ok) remoteCoverAtNew.set(book.id, true);
             if (ok && isPositiveFiniteNumber(sizeBytes)) {
               remoteCoverSizeAtNew.set(book.id, sizeBytes);
+            }
+            if (ok && localHash) {
+              remoteCoverHashAtNew.set(book.id, localHash);
+            }
+            if (ok) {
+              remoteCoverSourcePathAtNew.set(book.id, info.book.cover_url);
             }
             return ok;
           },
@@ -571,6 +667,8 @@ export async function syncFiles(
     remoteCoverAtNew,
     remoteFileSizeAtNew,
     remoteCoverSizeAtNew,
+    remoteCoverHashAtNew,
+    remoteCoverSourcePathAtNew,
     listings.manifest,
   );
 
@@ -631,6 +729,8 @@ async function loadRemoteListings(
   }
   const fileSizeByBookId = new Map<string, number>();
   const coverSizeByBookId = new Map<string, number>();
+  const coverHashByBookId = new Map<string, string>();
+  const coverSourcePathByBookId = new Map<string, string>();
 
   const orphanBookDirs: { folderName: string; bookId: string }[] = [];
   const unknownBookDirs: { folderName: string }[] = [];
@@ -664,6 +764,8 @@ async function loadRemoteListings(
         .filter((f) => !f.isDirectory && isPositiveFiniteNumber(f.size))
         .map((f) => [f.name, f.size]),
     ),
+    coverHashByBookId,
+    coverSourcePathByBookId,
     orphanBookDirs,
     unknownBookDirs,
   };
@@ -718,6 +820,8 @@ function buildListingsFromManifest(
   const coverPathByBookId = new Map<string, string>();
   const fileSizeByBookId = new Map<string, number>();
   const coverSizeByBookId = new Map<string, number>();
+  const coverHashByBookId = new Map<string, string>();
+  const coverSourcePathByBookId = new Map<string, string>();
 
   for (const [bookId, entry] of Object.entries(manifest.books)) {
     if (!currentBookIds.has(bookId)) continue;
@@ -726,6 +830,8 @@ function buildListingsFromManifest(
     if (entry.coverPath) coverPathByBookId.set(bookId, entry.coverPath);
     if (isPositiveFiniteNumber(entry.fileSize)) fileSizeByBookId.set(bookId, entry.fileSize);
     if (isPositiveFiniteNumber(entry.coverSize)) coverSizeByBookId.set(bookId, entry.coverSize);
+    if (entry.coverHash) coverHashByBookId.set(bookId, entry.coverHash);
+    if (entry.coverSourcePath) coverSourcePathByBookId.set(bookId, entry.coverSourcePath);
   }
 
   return {
@@ -740,6 +846,8 @@ function buildListingsFromManifest(
     legacyCoverNames: new Set(),
     legacyFileSizeByName: new Map(),
     legacyCoverSizeByName: new Map(),
+    coverHashByBookId,
+    coverSourcePathByBookId,
     orphanBookDirs: [],
     unknownBookDirs: [],
   };
@@ -752,6 +860,8 @@ async function saveRemoteFileManifest(
   remoteCoverAtNew: Map<string, boolean>,
   remoteFileSizeAtNew: Map<string, number>,
   remoteCoverSizeAtNew: Map<string, number>,
+  remoteCoverHashAtNew: Map<string, string>,
+  remoteCoverSourcePathAtNew: Map<string, string>,
   previousManifest: RemoteFileManifest | null,
 ): Promise<void> {
   const books: RemoteFileManifest["books"] = {};
@@ -768,6 +878,12 @@ async function saveRemoteFileManifest(
         : {}),
       ...(hasRemoteCover && remoteCoverSizeAtNew.has(info.book.id)
         ? { coverSize: remoteCoverSizeAtNew.get(info.book.id) }
+        : {}),
+      ...(hasRemoteCover && remoteCoverHashAtNew.has(info.book.id)
+        ? { coverHash: remoteCoverHashAtNew.get(info.book.id) }
+        : {}),
+      ...(hasRemoteCover && remoteCoverSourcePathAtNew.has(info.book.id)
+        ? { coverSourcePath: remoteCoverSourcePathAtNew.get(info.book.id) }
         : {}),
       updatedAt: Date.now(),
     };
@@ -811,7 +927,9 @@ function manifestBooksEqual(
       previousEntry.filePath !== nextEntry.filePath ||
       previousEntry.coverPath !== nextEntry.coverPath ||
       previousEntry.fileSize !== nextEntry.fileSize ||
-      previousEntry.coverSize !== nextEntry.coverSize
+      previousEntry.coverSize !== nextEntry.coverSize ||
+      previousEntry.coverHash !== nextEntry.coverHash ||
+      previousEntry.coverSourcePath !== nextEntry.coverSourcePath
     ) {
       return false;
     }
@@ -839,6 +957,8 @@ async function migrateBookRemoteState(
   let coverAtNew = false;
   let fileSize = listings.fileSizeByBookId.get(book.id);
   let coverSize = listings.coverSizeByBookId.get(book.id);
+  const coverHash = listings.coverHashByBookId.get(book.id);
+  const coverSourcePath = listings.coverSourcePathByBookId.get(book.id);
 
   if (existingFolderName) {
     if (existingFolderName !== info.expectedFolderName) {
@@ -891,7 +1011,7 @@ async function migrateBookRemoteState(
       if (listings.source === "manifest") {
         fileAtNew = listings.filePathByBookId.get(book.id) === info.remoteFilePath;
         coverAtNew = listings.coverPathByBookId.get(book.id) === info.remoteCoverPath;
-        return { fileAtNew, coverAtNew, fileSize, coverSize };
+        return { fileAtNew, coverAtNew, fileSize, coverSize, coverHash, coverSourcePath };
       }
 
       // Folder name matches. Peek inside to verify which files are present.
@@ -960,7 +1080,7 @@ async function migrateBookRemoteState(
     }
   }
 
-  return { fileAtNew, coverAtNew, fileSize, coverSize };
+  return { fileAtNew, coverAtNew, fileSize, coverSize, coverHash, coverSourcePath };
 }
 
 function buildUploadFileTask(backend: ISyncBackend, info: BookInfo): FileTask {
@@ -1242,10 +1362,11 @@ export async function downloadBookFile(
   onProgress?: (progress: { downloaded: number; total: number }) => void,
 ): Promise<DownloadBookOutcome> {
   const adapter = getSyncAdapter();
-  const { setBookSyncStatus } = await import("../db/database");
+  const { setBookSyncStatus, updateBook } = await import("../db/database");
 
   try {
-    const ext = getExt(filePath) || "epub";
+    const localRelativePath = canonicalBookFilePath(bookId, filePath);
+    const ext = getExt(localRelativePath) || "epub";
 
     // Resolve book title for new-path computation.
     const db = await getDB();
@@ -1270,9 +1391,7 @@ export async function downloadBookFile(
     };
 
     const appDataDir = await adapter.getAppDataDir();
-    const localPath = isAbsoluteOrProtocolPath(filePath)
-      ? filePath
-      : adapter.joinPath(appDataDir, filePath);
+    const localPath = adapter.joinPath(appDataDir, localRelativePath);
     const reportDownloadProgress = (loaded: number, total: number) => {
       if (total > 0) onProgress?.({ downloaded: loaded, total });
     };
@@ -1361,7 +1480,7 @@ export async function downloadBookFile(
     }
 
     onProgress?.({ downloaded: 100, total: 100 });
-    await setBookSyncStatus(bookId, "local");
+    await updateBook(bookId, { filePath: localRelativePath, syncStatus: "local" });
     console.log(`[Sync] ✓ Book ${bookId} downloaded and marked as local`);
     return "ok";
   } catch (e) {

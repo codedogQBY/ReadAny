@@ -11,6 +11,11 @@
  * (e.g. React Native) can override via `setTTSPlayerFactories()`.
  */
 import { create } from "zustand";
+import {
+  VOICE_RESPEAK_DEBOUNCE_MS,
+  isActivePlay,
+  shouldRespeakForSynthChange,
+} from "../tts/respeak";
 import { BrowserTTSPlayer, DashScopeTTSPlayer, EdgeTTSPlayer } from "../tts/tts-players";
 import type { ITTSPlayer, TTSConfig } from "../tts/types";
 import { DEFAULT_TTS_CONFIG, normalizeTTSConfig } from "../tts/types";
@@ -59,6 +64,7 @@ export function setTTSPlayerFactories(factories: Partial<TTSPlayerFactories>): v
 let _systemTTS: ITTSPlayer | null = null;
 let _edgeTTS: ITTSPlayer | null = null;
 let _dashscopeTTS: ITTSPlayer | null = null;
+let _activeTTS: ITTSPlayer | null = null;
 let _sessionSegments: string[] = [];
 let _sessionCurrentIndex = 0;
 /** Generation counter — incremented on every play/jumpToChunk to invalidate stale callbacks */
@@ -88,6 +94,106 @@ function clearSleepTimerHandle(): void {
     clearTimeout(_sleepTimerHandle);
     _sleepTimerHandle = null;
   }
+}
+
+let _respeakTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearRespeakTimer(): void {
+  if (_respeakTimer) {
+    clearTimeout(_respeakTimer);
+    _respeakTimer = null;
+  }
+}
+
+function scheduleRespeak(): void {
+  clearRespeakTimer();
+  _respeakTimer = setTimeout(() => {
+    _respeakTimer = null;
+    const { playState, jumpToChunk } = useTTSStore.getState();
+    if (isActivePlay(playState)) {
+      jumpToChunk(_sessionCurrentIndex);
+    }
+  }, VOICE_RESPEAK_DEBOUNCE_MS);
+}
+
+function detachAndStopPlayer(player: ITTSPlayer | null): void {
+  if (!player) return;
+  player.onStateChange = undefined;
+  player.onChunkChange = undefined;
+  player.onEnd = undefined;
+  try {
+    player.stop();
+  } catch (err) {
+    console.warn("[TTS] Failed to stop player:", err);
+  }
+}
+
+function detachAndStopAllPlayers(): void {
+  _activeTTS = null;
+  detachAndStopPlayer(_systemTTS);
+  detachAndStopPlayer(_edgeTTS);
+  detachAndStopPlayer(_dashscopeTTS);
+}
+
+function getPlayerForConfig(config: TTSConfig): ITTSPlayer {
+  if (config.engine === "dashscope" && config.dashscopeApiKey) {
+    return getDashScopeTTS();
+  }
+  if (config.engine === "edge") {
+    return getEdgeTTS();
+  }
+  return getSystemTTS();
+}
+
+function startPlayback(
+  segments: string[],
+  config: TTSConfig,
+  startIndex: number,
+  set: (partial: Partial<TTSState>) => void,
+  get: () => TTSState,
+): void {
+  const player = getPlayerForConfig(config);
+  const gen = _sessionGeneration;
+  _activeTTS = player;
+
+  player.onStateChange = (playState) => {
+    if (gen !== _sessionGeneration) return;
+    if (playState === "stopped") {
+      _activeTTS = null;
+    }
+    set({ playState });
+  };
+
+  player.onChunkChange = (chunkIndex, total) => {
+    if (gen !== _sessionGeneration) return;
+    const absoluteIndex = startIndex + chunkIndex;
+    _sessionCurrentIndex = absoluteIndex;
+    set({
+      currentChunkIndex: absoluteIndex,
+      totalChunks: Math.max(_sessionSegments.length, total),
+    });
+  };
+
+  player.onEnd = () => {
+    if (gen !== _sessionGeneration) return;
+    _activeTTS = null;
+    const lastIndex = Math.max(0, _sessionSegments.length - 1);
+    _sessionCurrentIndex = lastIndex;
+    set({
+      playState: "stopped",
+      currentChunkIndex: lastIndex,
+      totalChunks: _sessionSegments.length,
+    });
+    get().onEnd?.();
+  };
+
+  const playback = player.speak(segments, config);
+  void Promise.resolve(playback).catch((error) => {
+    if (gen !== _sessionGeneration) return;
+    console.error("[TTS] play failed:", error);
+    _activeTTS = null;
+    set({ playState: "stopped" });
+  });
 }
 
 export interface TTSState {
@@ -135,311 +241,237 @@ export interface TTSState {
 }
 
 export const useTTSStore = create<TTSState>()(
-  withPersist<TTSState>("tts", (set, get) => ({
-    playState: "stopped",
-    currentText: "",
-    config: DEFAULT_TTS_CONFIG,
-    onEnd: null,
-    currentChunkIndex: 0,
-    totalChunks: 0,
-    currentBookTitle: "",
-    currentChapterTitle: "",
-    currentBookId: "",
-    currentLocationCfi: "",
-    sleepTimerEndsAt: null,
-    sleepTimerDurationMinutes: null,
+  withPersist<TTSState>(
+    "tts",
+    (set, get) => ({
+      playState: "stopped",
+      currentText: "",
+      config: DEFAULT_TTS_CONFIG,
+      onEnd: null,
+      currentChunkIndex: 0,
+      totalChunks: 0,
+      currentBookTitle: "",
+      currentChapterTitle: "",
+      currentBookId: "",
+      currentLocationCfi: "",
+      sleepTimerEndsAt: null,
+      sleepTimerDurationMinutes: null,
 
-    play: (text: string | string[]) => {
-      const config = normalizeTTSConfig(get().config);
-      _dashscopeActiveVoice = config.dashscopeVoice;
-      const segments = Array.isArray(text) ? text.map((item) => item.trim()).filter(Boolean) : [text.trim()].filter(Boolean);
-      const sessionSegments = segments.length > 0 ? segments : [Array.isArray(text) ? text.join(" ").trim() : text.trim()].filter(Boolean);
-      _sessionSegments = sessionSegments;
-      _sessionCurrentIndex = 0;
-      _sessionGeneration += 1;
-      const gen = _sessionGeneration;
-      set({
-        playState: "loading",
-        currentText: sessionSegments.join(" "),
-        currentChunkIndex: 0,
-        totalChunks: sessionSegments.length,
-      });
+      play: (text: string | string[]) => {
+        clearRespeakTimer();
+        const config = normalizeTTSConfig(get().config);
+        _dashscopeActiveVoice = config.dashscopeVoice;
+        const segments = Array.isArray(text)
+          ? text.map((item) => item.trim()).filter(Boolean)
+          : [text.trim()].filter(Boolean);
+        const sessionSegments =
+          segments.length > 0
+            ? segments
+            : [Array.isArray(text) ? text.join(" ").trim() : text.trim()].filter(Boolean);
+        _sessionSegments = sessionSegments;
+        _sessionCurrentIndex = 0;
+        _sessionGeneration += 1;
+        detachAndStopAllPlayers();
+        set({
+          playState: "loading",
+          currentText: sessionSegments.join(" "),
+          currentChunkIndex: 0,
+          totalChunks: sessionSegments.length,
+        });
 
-      const onState = (state: "playing" | "paused" | "stopped") => {
-        if (gen !== _sessionGeneration) return;
-        set({ playState: state });
-      };
+        startPlayback(sessionSegments, config, 0, set, get);
+      },
 
-      const onChunk = (index: number, total: number) => {
-        if (gen !== _sessionGeneration) return;
-        _sessionCurrentIndex = index;
-        set({ currentChunkIndex: index, totalChunks: total });
-      };
+      pause: () => {
+        clearRespeakTimer();
+        const { playState } = get();
+        if (playState !== "playing") return;
+        _activeTTS?.pause();
+        set({ playState: "paused" });
+      },
 
-      const handleEnd = () => {
-        if (gen !== _sessionGeneration) return;
-        const currentOnEnd = get().onEnd;
-        currentOnEnd?.();
-      };
+      resume: () => {
+        const config = normalizeTTSConfig(get().config);
+        const { playState } = get();
+        if (playState !== "paused") return;
 
-      if (config.engine === "dashscope" && config.dashscopeApiKey) {
-        const player = getDashScopeTTS();
-        player.onStateChange = onState;
-        player.onChunkChange = onChunk;
-        player.onEnd = handleEnd;
-        player.speak(sessionSegments, config);
-      } else if (config.engine === "edge") {
-        const player = getEdgeTTS();
-        player.onStateChange = onState;
-        player.onChunkChange = onChunk;
-        player.onEnd = handleEnd;
-        player.speak(sessionSegments, config);
-      } else {
-        const player = getSystemTTS();
-        player.onStateChange = onState;
-        player.onChunkChange = onChunk;
-        player.onEnd = handleEnd;
-        player.speak(sessionSegments, config);
-      }
-    },
-
-    pause: () => {
-      const config = normalizeTTSConfig(get().config);
-      const { playState } = get();
-      if (playState !== "playing") return;
-      if (config.engine === "dashscope" && config.dashscopeApiKey) {
-        getDashScopeTTS().pause();
-      } else if (config.engine === "edge") {
-        getEdgeTTS().pause();
-      } else {
-        // expo-speech pause is unreliable on React Native; keep a stable store-level pause by stopping.
-        getSystemTTS().stop();
-      }
-      set({ playState: "paused" });
-    },
-
-    resume: () => {
-      const config = normalizeTTSConfig(get().config);
-      const { playState } = get();
-      if (playState !== "paused") return;
-
-      // DashScope supports true suspend/resume and derives progress from the audio
-      // clock (#358), so if it is actually suspended, continue exactly where paused —
-      // no re-synthesis, no API re-call, no jump. Do NOT bump generation or rebind
-      // callbacks; the original speak()'s callbacks keep driving progress.
-      // Edge is intentionally NOT true-resumed here: its highlight notifications are
-      // wall-clock timers cleared on pause and not rescheduled on resume, so a true
-      // resume would skip highlights — it stays on the re-speak path below (its main behavior).
-      if (config.engine === "dashscope" && config.dashscopeApiKey) {
-        const player = getDashScopeTTS();
-        if (player.paused && config.dashscopeVoice === _dashscopeActiveVoice) {
-          player.resume();
-          set({ playState: "playing" });
-          return;
+        // DashScope supports true suspend/resume and derives progress from the audio
+        // clock (#358), so if it is actually suspended, continue exactly where paused —
+        // no re-synthesis, no API re-call, no jump. Do NOT bump generation or rebind
+        // callbacks; the original speak()'s callbacks keep driving progress.
+        // Edge is intentionally NOT true-resumed here: its highlight notifications are
+        // wall-clock timers cleared on pause and not rescheduled on resume, so a true
+        // resume would skip highlights — it stays on the re-speak path below (its main behavior).
+        if (config.engine === "dashscope" && config.dashscopeApiKey) {
+          const player = getDashScopeTTS();
+          if (player.paused && config.dashscopeVoice === _dashscopeActiveVoice) {
+            player.resume();
+            set({ playState: "playing" });
+            return;
+          }
         }
-      }
 
-      if (_sessionSegments.length > 0) {
-        const nextIndex = Math.max(0, Math.min(_sessionCurrentIndex, _sessionSegments.length - 1));
-        const remainingSegments = _sessionSegments.slice(nextIndex);
-        if (remainingSegments.length > 0) {
-          _sessionGeneration += 1;
-          const gen = _sessionGeneration;
-          const onState = (state: "playing" | "paused" | "stopped") => {
-            if (gen !== _sessionGeneration) return;
-            set({ playState: state });
-          };
-          const onChunk = (index: number) => {
-            if (gen !== _sessionGeneration) return;
-            const absoluteIndex = nextIndex + index;
-            _sessionCurrentIndex = absoluteIndex;
-            set({ currentChunkIndex: absoluteIndex, totalChunks: _sessionSegments.length });
-          };
-          const handleEnd = () => {
-            if (gen !== _sessionGeneration) return;
-            const currentOnEnd = get().onEnd;
-            currentOnEnd?.();
-          };
-
-          if (config.engine === "dashscope" && config.dashscopeApiKey) {
-            const player = getDashScopeTTS();
+        if (_sessionSegments.length > 0) {
+          const nextIndex = Math.max(
+            0,
+            Math.min(_sessionCurrentIndex, _sessionSegments.length - 1),
+          );
+          const remainingSegments = _sessionSegments.slice(nextIndex);
+          if (remainingSegments.length > 0) {
+            _sessionGeneration += 1;
+            detachAndStopAllPlayers();
+            _sessionCurrentIndex = nextIndex;
             _dashscopeActiveVoice = config.dashscopeVoice;
-            player.onStateChange = onState;
-            player.onChunkChange = onChunk;
-            player.onEnd = handleEnd;
-            player.speak(remainingSegments, config);
+            set({
+              playState: "loading",
+              currentChunkIndex: nextIndex,
+              totalChunks: _sessionSegments.length,
+            });
+            startPlayback(remainingSegments, config, nextIndex, set, get);
             return;
           }
+        }
+        set({ playState: "stopped" });
+      },
 
-          if (config.engine === "edge") {
-            const player = getEdgeTTS();
-            player.onStateChange = onState;
-            player.onChunkChange = onChunk;
-            player.onEnd = handleEnd;
-            player.speak(remainingSegments, config);
-            return;
-          }
+      stop: () => {
+        clearSleepTimerHandle();
+        clearRespeakTimer();
+        _sessionGeneration += 1;
+        detachAndStopAllPlayers();
+        _sessionSegments = [];
+        _sessionCurrentIndex = 0;
+        _dashscopeActiveVoice = undefined;
+        set({
+          playState: "stopped",
+          currentText: "",
+          onEnd: null,
+          currentChunkIndex: 0,
+          totalChunks: 0,
+          currentBookTitle: "",
+          currentChapterTitle: "",
+          currentBookId: "",
+          currentLocationCfi: "",
+          sleepTimerEndsAt: null,
+          sleepTimerDurationMinutes: null,
+        });
+      },
 
-          const player = getSystemTTS();
-          player.onStateChange = onState;
-          player.onChunkChange = onChunk;
-          player.onEnd = handleEnd;
-          player.speak(remainingSegments, config);
+      toggle: (text?: string) => {
+        const { playState, currentText, play, pause, resume } = get();
+        if (playState === "playing") {
+          pause();
+        } else if (playState === "paused") {
+          resume();
+        } else if (text) {
+          play(text);
+        } else if (currentText) {
+          play(currentText);
+        }
+      },
+
+      updateConfig: (updates) => {
+        const previousConfig = normalizeTTSConfig(get().config);
+        const nextConfig = normalizeTTSConfig({ ...previousConfig, ...updates });
+        const engineChanged =
+          updates.engine !== undefined && nextConfig.engine !== previousConfig.engine;
+        const wasPlaying = isActivePlay(get().playState);
+        set({ config: nextConfig });
+
+        if (engineChanged && wasPlaying) {
+          clearRespeakTimer();
+          _sessionGeneration += 1;
+          detachAndStopAllPlayers();
+          _dashscopeActiveVoice = undefined;
+          set({ playState: "stopped" });
           return;
         }
-      }
-      set({ playState: "stopped" });
-    },
 
-    stop: () => {
-      clearSleepTimerHandle();
-      const system = getSystemTTS();
-      const edge = getEdgeTTS();
-      const dashscope = getDashScopeTTS();
-      system.onEnd = undefined;
-      edge.onEnd = undefined;
-      dashscope.onEnd = undefined;
-      system.stop();
-      edge.stop();
-      dashscope.stop();
-      _sessionSegments = [];
-      _sessionCurrentIndex = 0;
-      _dashscopeActiveVoice = undefined;
-      set({
-        playState: "stopped",
-        currentText: "",
-        onEnd: null,
-        currentChunkIndex: 0,
-        totalChunks: 0,
-        currentBookTitle: "",
-        currentChapterTitle: "",
-        currentBookId: "",
-        currentLocationCfi: "",
-        sleepTimerEndsAt: null,
-        sleepTimerDurationMinutes: null,
-      });
-    },
+        if (
+          shouldRespeakForSynthChange(previousConfig, nextConfig) &&
+          isActivePlay(get().playState)
+        ) {
+          scheduleRespeak();
+        } else {
+          // 非重读变更（切引擎、或改了当前引擎不关心的字段）必须取消上一次合成变更排下的
+          // 待执行 respeak，否则陈旧防抖定时器会 fire 并强制重启播放。
+          clearRespeakTimer();
+        }
+      },
 
-    toggle: (text?: string) => {
-      const { playState, currentText, play, pause, resume } = get();
-      if (playState === "playing") {
-        pause();
-      } else if (playState === "paused") {
-        resume();
-      } else if (text) {
-        play(text);
-      } else if (currentText) {
-        play(currentText);
-      }
-    },
+      setPlayState: (playState) => set({ playState }),
 
-    updateConfig: (updates) =>
-      set((s) => ({
-        config: normalizeTTSConfig({ ...s.config, ...updates }),
-      })),
+      setOnEnd: (cb) => set({ onEnd: cb }),
 
-    setPlayState: (playState) => set({ playState }),
+      setCurrentBook: (title, chapter, bookId) =>
+        set({ currentBookTitle: title, currentChapterTitle: chapter, currentBookId: bookId ?? "" }),
 
-    setOnEnd: (cb) => set({ onEnd: cb }),
+      setCurrentLocation: (cfi) => set({ currentLocationCfi: cfi ?? "" }),
 
-    setCurrentBook: (title, chapter, bookId) =>
-      set({ currentBookTitle: title, currentChapterTitle: chapter, currentBookId: bookId ?? "" }),
+      setChunkProgress: (index, total) => set({ currentChunkIndex: index, totalChunks: total }),
 
-    setCurrentLocation: (cfi) => set({ currentLocationCfi: cfi ?? "" }),
+      jumpToChunk: (index: number) => {
+        clearRespeakTimer();
+        if (index < 0 || index >= _sessionSegments.length) return;
+        const config = normalizeTTSConfig(get().config);
+        const remainingSegments = _sessionSegments.slice(index);
+        if (remainingSegments.length === 0) {
+          set({ playState: "stopped" });
+          return;
+        }
 
-    setChunkProgress: (index, total) => set({ currentChunkIndex: index, totalChunks: total }),
+        _sessionGeneration += 1;
+        detachAndStopAllPlayers();
+        _dashscopeActiveVoice = config.dashscopeVoice;
+        _sessionCurrentIndex = index;
+        set({
+          playState: "loading",
+          currentChunkIndex: index,
+          totalChunks: _sessionSegments.length,
+        });
 
-    jumpToChunk: (index: number) => {
-      if (index < 0 || index >= _sessionSegments.length) return;
-      const config = normalizeTTSConfig(get().config);
-      _dashscopeActiveVoice = config.dashscopeVoice;
-      getSystemTTS().stop();
-      getEdgeTTS().stop();
-      getDashScopeTTS().stop();
+        startPlayback(remainingSegments, config, index, set, get);
+      },
 
-      _sessionCurrentIndex = index;
-      _sessionGeneration += 1;
-      const gen = _sessionGeneration;
-      set({ playState: "loading", currentChunkIndex: index });
+      setSleepTimer: (minutes: number) => {
+        const durationMinutes = Math.max(1, Math.round(minutes));
+        const endsAt = Date.now() + durationMinutes * 60_000;
+        clearSleepTimerHandle();
+        _sleepTimerHandle = setTimeout(() => {
+          _sleepTimerHandle = null;
+          if (get().sleepTimerEndsAt !== endsAt) return;
+          set({
+            sleepTimerEndsAt: null,
+            sleepTimerDurationMinutes: null,
+          });
+          get().pause();
+        }, durationMinutes * 60_000);
+        set({
+          sleepTimerEndsAt: endsAt,
+          sleepTimerDurationMinutes: durationMinutes,
+        });
+      },
 
-      const remainingSegments = _sessionSegments.slice(index);
-      if (remainingSegments.length === 0) {
-        set({ playState: "stopped" });
-        return;
-      }
-
-      const onState = (state: "playing" | "paused" | "stopped") => {
-        if (gen !== _sessionGeneration) return;
-        set({ playState: state });
-      };
-      const onChunk = (chunkIdx: number) => {
-        if (gen !== _sessionGeneration) return;
-        const absoluteIndex = index + chunkIdx;
-        _sessionCurrentIndex = absoluteIndex;
-        set({ currentChunkIndex: absoluteIndex, totalChunks: _sessionSegments.length });
-      };
-      const handleEnd = () => {
-        if (gen !== _sessionGeneration) return;
-        get().onEnd?.();
-      };
-
-      if (config.engine === "dashscope" && config.dashscopeApiKey) {
-        const player = getDashScopeTTS();
-        player.onStateChange = onState;
-        player.onChunkChange = onChunk;
-        player.onEnd = handleEnd;
-        player.speak(remainingSegments, config);
-      } else if (config.engine === "edge") {
-        const player = getEdgeTTS();
-        player.onStateChange = onState;
-        player.onChunkChange = onChunk;
-        player.onEnd = handleEnd;
-        player.speak(remainingSegments, config);
-      } else {
-        const player = getSystemTTS();
-        player.onStateChange = onState;
-        player.onChunkChange = onChunk;
-        player.onEnd = handleEnd;
-        player.speak(remainingSegments, config);
-      }
-    },
-
-    setSleepTimer: (minutes: number) => {
-      const durationMinutes = Math.max(1, Math.round(minutes));
-      const endsAt = Date.now() + durationMinutes * 60_000;
-      clearSleepTimerHandle();
-      _sleepTimerHandle = setTimeout(() => {
-        _sleepTimerHandle = null;
-        if (get().sleepTimerEndsAt !== endsAt) return;
+      clearSleepTimer: () => {
+        clearSleepTimerHandle();
         set({
           sleepTimerEndsAt: null,
           sleepTimerDurationMinutes: null,
         });
-        get().pause();
-      }, durationMinutes * 60_000);
-      set({
-        sleepTimerEndsAt: endsAt,
-        sleepTimerDurationMinutes: durationMinutes,
-      });
-    },
-
-    clearSleepTimer: () => {
-      clearSleepTimerHandle();
-      set({
-        sleepTimerEndsAt: null,
-        sleepTimerDurationMinutes: null,
-      });
-    },
-  }), {
-    playState: "stopped" as const,
-    currentText: "",
-    currentChunkIndex: 0,
-    totalChunks: 0,
-    currentLocationCfi: "",
-    sleepTimerEndsAt: null,
-    sleepTimerDurationMinutes: null,
-  } as Partial<TTSState>, (persisted) => ({
-    ...persisted,
-    config: normalizeTTSConfig((persisted as TTSState).config),
-  })),
+      },
+    }),
+    {
+      playState: "stopped" as const,
+      currentText: "",
+      currentChunkIndex: 0,
+      totalChunks: 0,
+      currentLocationCfi: "",
+      sleepTimerEndsAt: null,
+      sleepTimerDurationMinutes: null,
+    } as Partial<TTSState>,
+    (persisted) => ({
+      ...persisted,
+      config: normalizeTTSConfig((persisted as TTSState).config),
+    }),
+  ),
 );

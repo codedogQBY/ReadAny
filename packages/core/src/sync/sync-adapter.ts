@@ -33,6 +33,9 @@ export interface ISyncAdapter {
   /** Get file size in bytes, or null when unavailable. */
   getFileSize(filePath: string): Promise<number | null>;
 
+  /** Max bytes this platform can safely buffer for fallback sync transfers. */
+  maxBufferedTransferBytes?: number;
+
   /** Write Uint8Array to a file */
   writeFileBytes(filePath: string, data: Uint8Array): Promise<void>;
 

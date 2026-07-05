@@ -17,6 +17,7 @@ import {
 } from "../db/database";
 import { runSerializedDbTask } from "../db/write-retry";
 import { getPlatformService } from "../services/platform";
+import { canonicalBookCoverPath, canonicalBookFilePath } from "./local-book-paths";
 import type { ISyncBackend } from "./sync-backend";
 import type { SyncFilesOptions } from "./sync-files";
 import type { SyncProgress } from "./sync-types";
@@ -31,6 +32,7 @@ interface SyncTableConfig {
 interface ExistingRecordState {
   timestamp: number;
   deletedAt?: number | null;
+  coverUrl?: string | null;
 }
 
 export interface SimpleSyncOptions {
@@ -334,7 +336,12 @@ export async function applyChanges(
             skipped++;
           } else {
             try {
-              await upsertRecord(db, tableName, safeRecord, pk);
+              await upsertRecord(
+                db,
+                tableName,
+                preserveLocalCustomBookCover(safeRecord, localState),
+                pk,
+              );
               applied++;
               existingRecords.set(String(pkValue), {
                 timestamp: remoteTs,
@@ -408,7 +415,8 @@ async function upsertRecord(
   record: Record<string, unknown>,
   pk: string,
 ): Promise<void> {
-  const filteredRecord = await filterRecordToExistingColumns(db, table, record);
+  const localRecord = table === "books" ? localizeSyncedBookRecord(record) : record;
+  const filteredRecord = await filterRecordToExistingColumns(db, table, localRecord);
   const columns = Object.keys(filteredRecord);
   if (columns.length === 0 || !columns.includes(pk)) return;
 
@@ -433,6 +441,48 @@ async function upsertRecord(
      ON CONFLICT(${pk}) DO UPDATE SET ${updateSet}`,
     values,
   );
+}
+
+function localizeSyncedBookRecord(record: Record<string, unknown>): Record<string, unknown> {
+  const id = record.id;
+  const filePath = canonicalBookFilePath(id, record.file_path, record.format);
+  if (!filePath) return record;
+
+  return {
+    ...record,
+    file_path: filePath,
+    cover_url: canonicalBookCoverPath(id, record.cover_url),
+    sync_status: "remote",
+  };
+}
+
+function preserveLocalCustomBookCover(
+  record: Record<string, unknown>,
+  localState: ExistingRecordState | undefined,
+): Record<string, unknown> {
+  const bookId = typeof record.id === "string" ? record.id : "";
+  const localCoverUrl = localState?.coverUrl;
+  if (!bookId || !isCustomCoverPath(bookId, localCoverUrl)) return record;
+
+  const remoteCoverUrl = record.cover_url;
+  if (isCustomCoverPath(bookId, remoteCoverUrl)) return record;
+  if (!isCanonicalCoverPath(bookId, remoteCoverUrl)) return record;
+
+  console.log(
+    `[SimpleSync] Preserving local custom cover for book ${bookId} while applying remote metadata`,
+  );
+  return {
+    ...record,
+    cover_url: localCoverUrl,
+  };
+}
+
+function isCustomCoverPath(bookId: string, value: unknown): value is string {
+  return typeof value === "string" && value.startsWith(`covers/${bookId}-custom-`);
+}
+
+function isCanonicalCoverPath(bookId: string, value: unknown): value is string {
+  return typeof value === "string" && value.startsWith(`covers/${bookId}.`);
 }
 
 function normalizeDeletedAt(value: unknown): number | null | undefined {
@@ -505,6 +555,8 @@ async function loadExistingRecordStates(
 
   const columns = await getTableColumns(db, tableName);
   const deletedAtSelect = columns.has("deleted_at") ? ", deleted_at AS deleted_at" : "";
+  const coverUrlSelect =
+    tableName === "books" && columns.has("cover_url") ? ", cover_url AS cover_url" : "";
 
   const chunkSize = 200;
   for (let offset = 0; offset < ids.length; offset += chunkSize) {
@@ -514,8 +566,9 @@ async function loadExistingRecordStates(
       id: string;
       timestamp: number | null;
       deleted_at?: number | null;
+      cover_url?: string | null;
     }>(
-      `SELECT ${pk} AS id, ${timestampCol} AS timestamp${deletedAtSelect} FROM ${tableName} WHERE ${pk} IN (${placeholders})`,
+      `SELECT ${pk} AS id, ${timestampCol} AS timestamp${deletedAtSelect}${coverUrlSelect} FROM ${tableName} WHERE ${pk} IN (${placeholders})`,
       chunk,
     );
 
@@ -523,6 +576,7 @@ async function loadExistingRecordStates(
       states.set(String(row.id), {
         timestamp: row.timestamp ?? 0,
         deletedAt: normalizeDeletedAt(row.deleted_at),
+        coverUrl: row.cover_url,
       });
     }
   }
