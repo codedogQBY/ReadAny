@@ -40,8 +40,16 @@ export class ExpoPlatformService implements IPlatformService {
   // ---- File system (expo-file-system v55 — File/Directory/Paths API) ----
 
   async readFile(path: string): Promise<Uint8Array> {
-    const file = new File(path);
-    return file.bytes();
+    try {
+      const file = new File(path);
+      return await file.bytes();
+    } catch (err) {
+      if (!path.startsWith("content://")) throw err;
+      const base64 = await LegacyFS.readAsStringAsync(path, {
+        encoding: LegacyFS.EncodingType.Base64,
+      });
+      return base64ToBytes(base64);
+    }
   }
 
   async writeFile(path: string, data: Uint8Array): Promise<void> {
@@ -759,6 +767,7 @@ export class ExpoPlatformService implements IPlatformService {
     let BufferMod: any;
     try {
       TcpSocket = (await import("react-native-tcp-socket")).default;
+      // biome-ignore lint/style/useNodejsImportProtocol: React Native needs the buffer polyfill package.
       BufferMod = (await import("buffer")).Buffer;
     } catch (e) {
       throw new Error(`Native TCP Socket unavailable: ${e instanceof Error ? e.message : e}`);
@@ -838,6 +847,15 @@ export class ExpoPlatformService implements IPlatformService {
   }
 }
 
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
 /** Map book file extensions to MIME types for document picker */
 function extensionToMime(ext: string): string {
   const map: Record<string, string> = {
@@ -852,6 +870,11 @@ function extensionToMime(ext: string): string {
     txt: "text/plain",
     umd: "application/octet-stream",
     zip: "application/zip",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+    gif: "image/gif",
   };
   return map[ext.toLowerCase()] || "application/octet-stream";
 }

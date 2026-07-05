@@ -1,14 +1,14 @@
 import type { ExtractorRef } from "@/components/rag/ExtractorWebView";
+import { inspectMobileBookForVectorize } from "@/lib/rag/auto-vectorize-book";
 import { triggerVectorizeBook } from "@/lib/rag/vectorize-trigger";
+import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { useVectorModelStore } from "@/stores/vector-model-store";
-import { getPlatformService } from "@readany/core/services";
-import type { Book } from "@readany/core/types";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { Book, VectorizeProgress } from "@readany/core/types";
 import * as FileSystem from "expo-file-system/legacy";
 import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert } from "react-native";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import type { RootStackParamList } from "@/navigation/RootNavigator";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -23,48 +23,66 @@ export function useVectorizationQueue({ extractorRef, nav }: UseVectorizationQue
   const vectorQueueRef = useRef<Book[]>([]);
   const [vectorizingBookId, setVectorizingBookId] = useState<string | null>(null);
   const [vectorizingBookTitle, setVectorizingBookTitle] = useState("");
-  const [vectorProgress, setVectorProgress] = useState<{
-    status: string;
-    processedChunks: number;
-    totalChunks: number;
-  } | null>(null);
+  const [vectorProgress, setVectorProgress] = useState<VectorizeProgress | null>(null);
   const isProcessingRef = useRef(false);
 
-  const processOneBook = useCallback(async (book: Book) => {
-    setVectorizingBookId(book.id);
-    setVectorizingBookTitle(book.meta.title);
-    setVectorProgress({ status: "chunking", processedChunks: 0, totalChunks: 0 });
-
-    try {
-      if (!extractorRef.current) {
-        throw new Error("Extractor WebView not ready");
-      }
-
-      const platform = getPlatformService();
-      const appData = await platform.getAppDataDir();
-      const absPath = await platform.joinPath(appData, book.filePath);
-
-      const base64 = await FileSystem.readAsStringAsync(absPath, {
-        encoding: FileSystem.EncodingType.Base64,
+  const processOneBook = useCallback(
+    async (book: Book) => {
+      setVectorizingBookId(book.id);
+      setVectorizingBookTitle(book.meta.title);
+      setVectorProgress({
+        bookId: book.id,
+        status: "chunking",
+        processedChunks: 0,
+        totalChunks: 0,
       });
 
-      const chapters = await extractorRef.current.extractChapters(base64, "application/epub+zip");
-      if (!chapters || chapters.length === 0) {
-        throw new Error("No chapters extracted from book");
+      try {
+        if (!extractorRef.current) {
+          throw new Error("Extractor WebView not ready");
+        }
+
+        const info = await inspectMobileBookForVectorize(book);
+        if (!info.canVectorize || !info.mimeType) {
+          throw new Error(`Book cannot be vectorized on mobile: ${info.reason ?? "unknown"}`);
+        }
+
+        const base64 = await FileSystem.readAsStringAsync(info.absPath, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        const chapters = await extractorRef.current.extractChapters(base64, info.mimeType);
+        if (!chapters || chapters.length === 0) {
+          throw new Error("No chapters extracted from book");
+        }
+
+        await triggerVectorizeBook(book.id, book.filePath, chapters, (progress) => {
+          setVectorProgress({ ...progress });
+        });
+
+        setVectorProgress({
+          bookId: book.id,
+          status: "completed",
+          processedChunks: 1,
+          totalChunks: 1,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      } catch (err) {
+        console.error(
+          `[useVectorizationQueue] Vectorization failed for "${book.meta.title}":`,
+          err,
+        );
+        setVectorProgress({
+          bookId: book.id,
+          status: "error",
+          processedChunks: 0,
+          totalChunks: 0,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
-
-      await triggerVectorizeBook(book.id, book.filePath, chapters, (progress) => {
-        setVectorProgress(progress);
-      });
-
-      setVectorProgress({ status: "completed", processedChunks: 1, totalChunks: 1 });
-      await new Promise((resolve) => setTimeout(resolve, 800));
-    } catch (err) {
-      console.error(`[useVectorizationQueue] Vectorization failed for "${book.meta.title}":`, err);
-      setVectorProgress({ status: "error", processedChunks: 0, totalChunks: 0 });
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-    }
-  }, [extractorRef]);
+    },
+    [extractorRef],
+  );
 
   const processQueue = useCallback(async () => {
     if (isProcessingRef.current) return;
@@ -72,8 +90,9 @@ export function useVectorizationQueue({ extractorRef, nav }: UseVectorizationQue
 
     try {
       while (vectorQueueRef.current.length > 0) {
-        const nextBook = vectorQueueRef.current[0]!;
-        vectorQueueRef.current = vectorQueueRef.current.slice(1);
+        const [nextBook, ...remainingBooks] = vectorQueueRef.current;
+        if (!nextBook) break;
+        vectorQueueRef.current = remainingBooks;
         setVectorQueue([...vectorQueueRef.current]);
         await processOneBook(nextBook);
       }
@@ -86,6 +105,39 @@ export function useVectorizationQueue({ extractorRef, nav }: UseVectorizationQue
 
   const handleVectorize = useCallback(
     (book: Book) => {
+      const prepareAndQueue = async () => {
+        const info = await inspectMobileBookForVectorize(book);
+        if (info.reason === "unsupported-format") {
+          Alert.alert(
+            t("vectorize.unsupportedFormatTitle", "Unsupported format"),
+            t(
+              "vectorize.unsupportedFormatDesc",
+              "Mobile vectorization currently supports EPUB, PDF, TXT, and UMD books.",
+            ),
+          );
+          return;
+        }
+        if (info.reason === "missing-file") {
+          Alert.alert(
+            t("common.error", "Error"),
+            t(
+              "vectorize.missingFileDesc",
+              "The local book file is missing. Please download or re-import it.",
+            ),
+          );
+          return;
+        }
+        const alreadyQueued = vectorQueueRef.current.some((b) => b.id === book.id);
+        if (alreadyQueued || vectorizingBookId === book.id) return;
+
+        vectorQueueRef.current = [...vectorQueueRef.current, book];
+        setVectorQueue([...vectorQueueRef.current]);
+
+        if (!isProcessingRef.current) {
+          processQueue();
+        }
+      };
+
       const hasCapability = useVectorModelStore.getState().hasVectorCapability();
       if (!hasCapability) {
         Alert.alert(t("settings.vectorModel"), t("vectorize.notConfiguredDesc"), [
@@ -98,15 +150,13 @@ export function useVectorizationQueue({ extractorRef, nav }: UseVectorizationQue
         return;
       }
 
-      const alreadyQueued = vectorQueueRef.current.some((b) => b.id === book.id);
-      if (alreadyQueued || vectorizingBookId === book.id) return;
-
-      vectorQueueRef.current = [...vectorQueueRef.current, book];
-      setVectorQueue([...vectorQueueRef.current]);
-
-      if (!isProcessingRef.current) {
-        processQueue();
-      }
+      prepareAndQueue().catch((err) => {
+        console.error(`[useVectorizationQueue] Failed to prepare "${book.meta.title}":`, err);
+        Alert.alert(
+          t("common.error", "Error"),
+          t("vectorize.prepareFailed", "Failed to prepare vectorization."),
+        );
+      });
     },
     [nav, t, vectorizingBookId, processQueue],
   );
