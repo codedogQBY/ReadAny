@@ -35,6 +35,7 @@ import {
   mergeMissingBookMetadataValues,
   splitEditableList,
 } from "@readany/core/utils";
+import * as ImagePicker from "expo-image-picker";
 import type { TFunction } from "i18next";
 import { Star } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -88,6 +89,11 @@ type TextEditorTarget =
       value: string;
       placeholder: string;
     };
+
+type PickedCoverSource = {
+  uri: string;
+  extension: string;
+};
 
 const LANGUAGE_PRESETS = [
   { value: "", label: "—" },
@@ -222,6 +228,51 @@ function resolveGroupName(
   return groups.find((group) => group.id === book.groupId)?.name ?? uncategorized;
 }
 
+function extensionFromMimeType(mimeType?: string | null): string | null {
+  switch (mimeType?.toLowerCase()) {
+    case "image/jpeg":
+    case "image/jpg":
+      return "jpg";
+    case "image/png":
+      return "png";
+    case "image/webp":
+      return "webp";
+    case "image/gif":
+      return "gif";
+    case "image/heic":
+      return "heic";
+    case "image/heif":
+      return "heif";
+    default:
+      return null;
+  }
+}
+
+function extensionFromPath(path: string): string | null {
+  const cleanPath = path.split("?")[0] ?? path;
+  const ext = cleanPath.split(".").pop()?.toLowerCase();
+  if (!ext || ext === cleanPath.toLowerCase()) return null;
+  return ext === "jpeg" ? "jpg" : ext;
+}
+
+async function pickCoverFromPhotoLibrary(): Promise<PickedCoverSource | null> {
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ["images"],
+    quality: 1,
+  });
+  if (result.canceled || result.assets.length === 0) return null;
+
+  const asset = result.assets[0];
+  return {
+    uri: asset.uri,
+    extension:
+      extensionFromMimeType(asset.mimeType) ||
+      extensionFromPath(asset.fileName || "") ||
+      extensionFromPath(asset.uri) ||
+      "jpg",
+  };
+}
+
 export function BookDetailsScreen({ route }: Props) {
   const { bookId } = route.params;
   const colors = useColors();
@@ -323,11 +374,13 @@ export function BookDetailsScreen({ route }: Props) {
   );
 
   const persistCoverUrl = useCallback(
-    (coverUrl: string) => {
-      if (!book) return;
-      setField("coverUrl", coverUrl);
+    async (coverUrl: string) => {
+      if (!book || !values) return;
+      const nextValues = { ...values, coverUrl };
+      setValues(nextValues);
+      await updateBook(book.id, buildBookMetadataUpdate(book, nextValues));
     },
-    [book, setField],
+    [book, updateBook, values],
   );
 
   const setRating = useCallback(
@@ -395,31 +448,44 @@ export function BookDetailsScreen({ route }: Props) {
   );
 
   const handleChangeCover = useCallback(async () => {
-    if (!book) return;
+    if (!book || !values) return;
     try {
       const platform = getPlatformService();
-      const selected = await platform.pickFile({
-        multiple: false,
-        filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "webp"] }],
-      });
-      if (!selected || Array.isArray(selected)) return;
+      let selected: PickedCoverSource | null = null;
+      try {
+        selected = await pickCoverFromPhotoLibrary();
+      } catch (error) {
+        console.warn(
+          "[BookDetailsScreen] Photo library picker failed, falling back to file picker:",
+          error,
+        );
+        const file = await platform.pickFile({
+          multiple: false,
+          filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "webp", "gif"] }],
+        });
+        if (!file || Array.isArray(file)) return;
+        selected = {
+          uri: file,
+          extension: extensionFromPath(file) || "jpg",
+        };
+      }
+      if (!selected) return;
 
-      const ext = selected.split(".").pop()?.split("?")[0]?.toLowerCase();
-      const safeExt = ext === "jpeg" ? "jpg" : ext || "jpg";
+      const safeExt = selected.extension === "jpeg" ? "jpg" : selected.extension;
       const appData = await platform.getAppDataDir();
       const coversDir = await platform.joinPath(appData, "covers");
       await platform.mkdir(coversDir);
       const relativePath = `covers/${book.id}-custom-${Date.now()}.${safeExt}`;
       const targetPath = await platform.joinPath(appData, relativePath);
-      const bytes = await platform.readFile(selected);
+      const bytes = await platform.readFile(selected.uri);
       await platform.writeFile(targetPath, bytes);
-      persistCoverUrl(relativePath);
+      await persistCoverUrl(relativePath);
       Alert.alert(t("common.success", "成功"), t("library.detailsCoverSaved", "封面已保存"));
     } catch (error) {
       console.warn("[BookDetailsScreen] Failed to change cover:", error);
       Alert.alert(t("common.failed", "失败"), t("common.failed", "失败"));
     }
-  }, [book, persistCoverUrl, t]);
+  }, [book, persistCoverUrl, t, values]);
 
   if (!book || !values) {
     return (
@@ -497,7 +563,7 @@ export function BookDetailsScreen({ route }: Props) {
                   style={[styles.coverAction, !values.coverUrl && styles.coverActionDisabled]}
                   disabled={!values.coverUrl}
                   activeOpacity={0.78}
-                  onPress={() => persistCoverUrl("")}
+                  onPress={() => void persistCoverUrl("")}
                 >
                   <Trash2Icon size={12} color={colors.mutedForeground} />
                   <Text style={styles.coverActionText}>

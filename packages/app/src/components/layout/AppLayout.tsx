@@ -103,7 +103,7 @@ export function AppLayout() {
                   ? `url('${f.remoteUrl}') format('woff')`
                   : "";
               return src
-                ? `@font-face { font-family: '${f.fontFamily}'; src: ${src}; font-display: swap; }`
+                ? `@font-face { font-family: ${JSON.stringify(f.fontFamily)}; src: ${src}; font-display: swap; }`
                 : "";
             }
             if (!f.filePath) return "";
@@ -116,7 +116,7 @@ export function AppLayout() {
                   : f.format === "woff2"
                     ? "woff2"
                     : "truetype";
-            return `@font-face { font-family: '${f.fontFamily}'; src: url('${fileUrl}') format('${fmt}'); }`;
+            return `@font-face { font-family: ${JSON.stringify(f.fontFamily)}; src: url('${fileUrl}') format('${fmt}'); }`;
           })
           .filter(Boolean)
           .join("\n");

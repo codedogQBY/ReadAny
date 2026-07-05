@@ -1,25 +1,21 @@
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  createCustomFontFamily,
+  generateFontId,
+  saveFontFile,
+  useFontStore,
+} from "@readany/core/stores";
+import type { CustomFont } from "@readany/core/types/font";
+import { PRESET_FONTS } from "@readany/core/types/font";
+import { Download, FileText, Globe, Trash2 } from "lucide-react";
 /**
  * FontSettings — custom font management for desktop
  */
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, FileText, Globe, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
-import {
-  useFontStore,
-  generateFontId,
-  saveFontFile,
-} from "@readany/core/stores";
-import type { CustomFont } from "@readany/core/types/font";
-import { PRESET_FONTS } from "@readany/core/types/font";
 
 export function FontSettings() {
   const { t, i18n } = useTranslation();
@@ -31,7 +27,9 @@ export function FontSettings() {
   const [importing, setImporting] = useState(false);
   const [nameModalOpen, setNameModalOpen] = useState(false);
   const [urlModalOpen, setUrlModalOpen] = useState(false);
-  const [pendingFontFile, setPendingFontFile] = useState<{ path: string; name: string } | null>(null);
+  const [pendingFontFile, setPendingFontFile] = useState<{ path: string; name: string } | null>(
+    null,
+  );
   const [fontNameInput, setFontNameInput] = useState("");
 
   const [remoteUrl, setRemoteUrl] = useState("");
@@ -58,7 +56,7 @@ export function FontSettings() {
         remoteUrlWoff2: preset.remoteUrlWoff2,
         remoteUrl: preset.remoteUrl,
       };
-      addFont(font);
+      addFont(font, { select: true });
     },
     [addFont, i18n.language],
   );
@@ -103,27 +101,27 @@ export function FontSettings() {
     setImporting(true);
 
     try {
-      const { filePath, fileName: savedName, size } = await saveFontFile(
-        pendingFontFile.path,
-        fontNameInput.trim(),
-      );
+      const {
+        filePath,
+        fileName: savedName,
+        size,
+      } = await saveFontFile(pendingFontFile.path, fontNameInput.trim(), pendingFontFile.name);
 
-      const fontFamily = `Custom-${fontNameInput.trim().replace(/\s+/g, "-")}`;
+      const id = generateFontId();
       const font: CustomFont = {
-        id: generateFontId(),
+        id,
         name: fontNameInput.trim(),
         fileName: savedName,
         filePath,
-        fontFamily,
+        fontFamily: createCustomFontFamily(id),
         format:
-          (savedName.split(".").pop()?.toLowerCase() as "ttf" | "otf" | "woff" | "woff2") ||
-          "ttf",
+          (savedName.split(".").pop()?.toLowerCase() as "ttf" | "otf" | "woff" | "woff2") || "ttf",
         size,
         addedAt: Date.now(),
         source: "local",
       };
 
-      addFont(font);
+      addFont(font, { select: true });
     } catch (err) {
       console.error("[FontSettings] Import error:", err);
     } finally {
@@ -141,16 +139,16 @@ export function FontSettings() {
     setImporting(true);
 
     try {
-      const fontFamily = `Custom-${remoteFontName.trim().replace(/\s+/g, "-")}`;
+      const id = generateFontId();
       const url = remoteUrl.trim();
       const woff2Url = remoteUrlWoff2.trim();
       const format = woff2Url ? "woff2" : url.endsWith(".woff2") ? "woff2" : "woff";
 
       const font: CustomFont = {
-        id: generateFontId(),
+        id,
         name: remoteFontName.trim(),
         fileName: `remote-${Date.now()}.${format}`,
-        fontFamily,
+        fontFamily: createCustomFontFamily(id),
         format,
         addedAt: Date.now(),
         source: "remote",
@@ -158,7 +156,7 @@ export function FontSettings() {
         remoteUrlWoff2: woff2Url || undefined,
       };
 
-      addFont(font);
+      addFont(font, { select: true });
     } catch (err) {
       console.error("[FontSettings] Import remote error:", err);
     } finally {
@@ -266,9 +264,7 @@ export function FontSettings() {
         {fonts.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border py-12 text-center">
             <FileText className="mb-2 h-10 w-10 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">
-              {t("fonts.empty", "暂无自定义字体")}
-            </p>
+            <p className="text-sm text-muted-foreground">{t("fonts.empty", "暂无自定义字体")}</p>
             <p className="mt-1 text-xs text-muted-foreground/60">
               {t("fonts.emptyHint", "点击上方按钮导入字体文件")}
             </p>
@@ -283,7 +279,10 @@ export function FontSettings() {
                 <div className="flex items-center gap-2">
                   <span className="truncate text-sm font-medium text-foreground">{font.name}</span>
                   {font.source === "remote" && (
-                    <Badge variant="secondary" className="flex items-center gap-1 px-1.5 py-0 text-xs">
+                    <Badge
+                      variant="secondary"
+                      className="flex items-center gap-1 px-1.5 py-0 text-xs"
+                    >
                       <Globe className="h-3 w-3" />
                       {t("fonts.remote", "在线")}
                     </Badge>
@@ -296,10 +295,7 @@ export function FontSettings() {
                 </div>
                 {/* Preview */}
                 <div className="mt-2 rounded border border-border bg-muted/40 px-2.5 py-1.5">
-                  <span
-                    className="text-xs text-foreground"
-                    style={{ fontFamily: font.fontFamily }}
-                  >
+                  <span className="text-xs text-foreground" style={{ fontFamily: font.fontFamily }}>
                     {t("fonts.preview", "预览文字：阅读改变世界 The quick brown fox")}
                   </span>
                 </div>
@@ -327,7 +323,9 @@ export function FontSettings() {
             {t("fonts.nameFontDesc", "请输入字体的显示名称")}
           </p>
           <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground">{t("fonts.name", "字体名称")}</label>
+            <label className="text-sm font-medium text-foreground">
+              {t("fonts.name", "字体名称")}
+            </label>
             <Input
               value={fontNameInput}
               onChange={(e) => setFontNameInput(e.target.value)}
@@ -337,7 +335,14 @@ export function FontSettings() {
             />
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => { setNameModalOpen(false); setPendingFontFile(null); setFontNameInput(""); }}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setNameModalOpen(false);
+                setPendingFontFile(null);
+                setFontNameInput("");
+              }}
+            >
               {t("common.cancel", "取消")}
             </Button>
             <Button onClick={handleConfirmImport} disabled={!fontNameInput.trim()}>
@@ -353,12 +358,12 @@ export function FontSettings() {
           <DialogHeader>
             <DialogTitle>{t("fonts.fromUrl", "在线链接")}</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            {t("fonts.urlHint", "输入字体 CDN 链接")}
-          </p>
+          <p className="text-sm text-muted-foreground">{t("fonts.urlHint", "输入字体 CDN 链接")}</p>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">{t("fonts.name", "字体名称")}</label>
+              <label className="text-sm font-medium text-foreground">
+                {t("fonts.name", "字体名称")}
+              </label>
               <Input
                 value={remoteFontName}
                 onChange={(e) => setRemoteFontName(e.target.value)}
@@ -366,7 +371,9 @@ export function FontSettings() {
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">{t("fonts.urlWoff2", "WOFF2 链接")}</label>
+              <label className="text-sm font-medium text-foreground">
+                {t("fonts.urlWoff2", "WOFF2 链接")}
+              </label>
               <Input
                 value={remoteUrlWoff2}
                 onChange={(e) => setRemoteUrlWoff2(e.target.value)}
@@ -375,7 +382,9 @@ export function FontSettings() {
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">{t("fonts.urlWoff", "WOFF 链接 (备选)")}</label>
+              <label className="text-sm font-medium text-foreground">
+                {t("fonts.urlWoff", "WOFF 链接 (备选)")}
+              </label>
               <Input
                 value={remoteUrl}
                 onChange={(e) => setRemoteUrl(e.target.value)}

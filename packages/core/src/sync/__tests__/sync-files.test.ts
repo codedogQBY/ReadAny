@@ -12,8 +12,10 @@ const mockAdapter = {
   getTempDir: vi.fn().mockResolvedValue("/tmp"),
   joinPath: vi.fn((...segs: string[]) => segs.join("/")),
   fileExists: vi.fn(),
+  hashFile: vi.fn().mockResolvedValue("local-hash"),
   readFileBytes: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
   getFileSize: vi.fn().mockResolvedValue(null),
+  maxBufferedTransferBytes: undefined as number | undefined,
   writeFileBytes: vi.fn(),
   copyFile: vi.fn(),
   deleteFile: vi.fn(),
@@ -26,9 +28,11 @@ vi.mock("../sync-adapter", () => ({
 
 const mockSelect = vi.fn();
 const mockSetBookSyncStatus = vi.fn();
+const mockUpdateBook = vi.fn();
 vi.mock("../../db/database", () => ({
   getDB: vi.fn(async () => ({ select: mockSelect })),
   setBookSyncStatus: mockSetBookSyncStatus,
+  updateBook: mockUpdateBook,
 }));
 
 const { syncFiles, downloadBookFile } = await import("../sync-files");
@@ -56,6 +60,7 @@ describe("sync-files", () => {
     vi.clearAllMocks();
     mockSelect.mockResolvedValue([]);
     mockAdapter.listFiles.mockResolvedValue([]);
+    mockAdapter.maxBufferedTransferBytes = undefined;
   });
 
   afterEach(() => {
@@ -126,6 +131,32 @@ describe("sync-files", () => {
         "/appdata/books/book-1.epub",
         expect.any(Function),
       );
+      expect(mockAdapter.readFileBytes).not.toHaveBeenCalled();
+      expect(backend.put).not.toHaveBeenCalled();
+    });
+
+    it("does not buffer oversized uploads when the platform sets a transfer limit", async () => {
+      mockSelect.mockResolvedValue([
+        {
+          id: "book-1",
+          file_path: "books/book-1.epub",
+          file_hash: "h1",
+          cover_url: null,
+          title: "Huge Book",
+        },
+      ]);
+
+      mockAdapter.fileExists.mockResolvedValue(true);
+      mockAdapter.getFileSize.mockResolvedValue(20 * 1024 * 1024);
+      mockAdapter.maxBufferedTransferBytes = 16 * 1024 * 1024;
+
+      const backend = createMockBackend({
+        listDir: vi.fn().mockResolvedValue([]),
+      });
+
+      const result = await syncFiles(backend);
+      expect(result.filesUploaded).toBe(0);
+      expect(result.filesUploadFailed).toBe(1);
       expect(mockAdapter.readFileBytes).not.toHaveBeenCalled();
       expect(backend.put).not.toHaveBeenCalled();
     });
@@ -727,6 +758,113 @@ describe("sync-files", () => {
       );
     });
 
+    it("uploads a replaced custom cover when the local cover path changes but size stays the same", async () => {
+      mockSelect.mockResolvedValue([
+        {
+          id: "book-1",
+          file_path: "books/book-1.txt",
+          file_hash: "h1",
+          cover_url: "covers/book-1-custom-456.jpg",
+          title: "Text Book",
+        },
+      ]);
+      mockAdapter.fileExists.mockResolvedValue(true);
+      mockAdapter.getFileSize.mockImplementation(async (path: string) => {
+        if (path === "/appdata/books/book-1.txt") return 500;
+        if (path === "/appdata/covers/book-1-custom-456.jpg") return 100;
+        return null;
+      });
+      mockAdapter.hashFile.mockResolvedValue("new-cover-hash");
+
+      const manifest = {
+        version: 1 as const,
+        generatedAt: 1000,
+        books: {
+          "book-1": {
+            folderName: "Text Book-book-1",
+            filePath: `${REMOTE_BOOKS_ROOT}/Text Book-book-1/Text Book.txt`,
+            fileSize: 500,
+            coverPath: `${REMOTE_BOOKS_ROOT}/Text Book-book-1/Text Book.jpg`,
+            coverSize: 100,
+            coverHash: "old-cover-hash",
+            coverSourcePath: "covers/book-1-custom-123.jpg",
+            updatedAt: 1000,
+          },
+        },
+      };
+      const backend = createMockBackend({
+        getJSON: vi.fn().mockResolvedValue(manifest),
+        listDir: vi.fn().mockResolvedValue([]),
+      });
+
+      const result = await syncFiles(backend);
+
+      expect(result.filesUploaded).toBe(1);
+      expect(backend.put).toHaveBeenCalledWith(
+        `${REMOTE_BOOKS_ROOT}/Text Book-book-1/Text Book.jpg`,
+        expect.any(Uint8Array),
+      );
+      expect(backend.putJSON).toHaveBeenCalledWith(
+        REMOTE_FILE_MANIFEST,
+        expect.objectContaining({
+          books: expect.objectContaining({
+            "book-1": expect.objectContaining({
+              coverHash: "new-cover-hash",
+              coverSourcePath: "covers/book-1-custom-456.jpg",
+            }),
+          }),
+        }),
+      );
+    });
+
+    it("uploads a custom cover when the content hash changes even if the path and size match", async () => {
+      mockSelect.mockResolvedValue([
+        {
+          id: "book-1",
+          file_path: "books/book-1.txt",
+          file_hash: "h1",
+          cover_url: "covers/book-1-custom-123.jpg",
+          title: "Text Book",
+        },
+      ]);
+      mockAdapter.fileExists.mockResolvedValue(true);
+      mockAdapter.getFileSize.mockImplementation(async (path: string) => {
+        if (path === "/appdata/books/book-1.txt") return 500;
+        if (path === "/appdata/covers/book-1-custom-123.jpg") return 100;
+        return null;
+      });
+      mockAdapter.hashFile.mockResolvedValue("new-cover-hash");
+
+      const manifest = {
+        version: 1 as const,
+        generatedAt: 1000,
+        books: {
+          "book-1": {
+            folderName: "Text Book-book-1",
+            filePath: `${REMOTE_BOOKS_ROOT}/Text Book-book-1/Text Book.txt`,
+            fileSize: 500,
+            coverPath: `${REMOTE_BOOKS_ROOT}/Text Book-book-1/Text Book.jpg`,
+            coverSize: 100,
+            coverHash: "old-cover-hash",
+            coverSourcePath: "covers/book-1-custom-123.jpg",
+            updatedAt: 1000,
+          },
+        },
+      };
+      const backend = createMockBackend({
+        getJSON: vi.fn().mockResolvedValue(manifest),
+        listDir: vi.fn().mockResolvedValue([]),
+      });
+
+      const result = await syncFiles(backend);
+
+      expect(result.filesUploaded).toBe(1);
+      expect(backend.put).toHaveBeenCalledWith(
+        `${REMOTE_BOOKS_ROOT}/Text Book-book-1/Text Book.jpg`,
+        expect.any(Uint8Array),
+      );
+    });
+
     it("downloads a newly referenced custom cover when it is missing locally", async () => {
       mockSelect.mockResolvedValue([
         {
@@ -847,7 +985,10 @@ describe("sync-files", () => {
         `${REMOTE_BOOKS_ROOT}/Test Book-book-1/Test Book.epub`,
       );
       expect(mockAdapter.writeFileBytes).toHaveBeenCalled();
-      expect(mockSetBookSyncStatus).toHaveBeenCalledWith("book-1", "local");
+      expect(mockUpdateBook).toHaveBeenCalledWith("book-1", {
+        filePath: "books/book-1.epub",
+        syncStatus: "local",
+      });
     });
 
     it("downloads on-demand via direct file transfer when available", async () => {
@@ -871,7 +1012,34 @@ describe("sync-files", () => {
       );
       expect(mockAdapter.writeFileBytes).not.toHaveBeenCalled();
       expect(backend.get).not.toHaveBeenCalled();
-      expect(mockSetBookSyncStatus).toHaveBeenCalledWith("book-1", "local");
+      expect(mockUpdateBook).toHaveBeenCalledWith("book-1", {
+        filePath: "books/book-1.epub",
+        syncStatus: "local",
+      });
+    });
+
+    it("downloads source-device absolute paths into the local managed book path", async () => {
+      mockSelect.mockResolvedValue([{ id: "book-1", title: "Test Book" }]);
+
+      const backend = createMockBackend({
+        getFileToPath: vi.fn().mockResolvedValue(undefined),
+      });
+
+      const result = await downloadBookFile(
+        backend,
+        "book-1",
+        "file:///data/user/0/com.readany.app/files/books/source-device-copy.epub",
+      );
+
+      expect(result).toBe("ok");
+      expect(mockAdapter.copyFile).toHaveBeenCalledWith(
+        expect.stringMatching(/^\/tmp\/readany-transfer-.*\.epub$/),
+        "/appdata/books/book-1.epub",
+      );
+      expect(mockUpdateBook).toHaveBeenCalledWith("book-1", {
+        filePath: "books/book-1.epub",
+        syncStatus: "local",
+      });
     });
 
     it("falls back to the legacy path when the new path is missing", async () => {
@@ -894,7 +1062,10 @@ describe("sync-files", () => {
 
       expect(result).toBe("ok");
       expect(getMock).toHaveBeenCalledWith(`${REMOTE_FILES}/book-1.epub`);
-      expect(mockSetBookSyncStatus).toHaveBeenCalledWith("book-1", "local");
+      expect(mockUpdateBook).toHaveBeenCalledWith("book-1", {
+        filePath: "books/book-1.epub",
+        syncStatus: "local",
+      });
     });
 
     it("returns 'not-found' and marks book as remote when neither path has the file", async () => {

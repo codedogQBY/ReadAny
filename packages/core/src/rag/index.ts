@@ -1,7 +1,22 @@
 export type { TextSegment, ChapterData } from "./rag-types";
 
+export { buildChapterSectionGroups } from "./chapter-structure";
+export type {
+  ChapterSectionGroup,
+  SectionRefLike,
+  TocTreeItemLike,
+} from "./chapter-structure";
+
 export { chunkContent, estimateTokens } from "./chunker";
 export type { ChunkerConfig } from "./chunker";
+
+export { requestRemoteEmbeddingBatch, isOllamaEmbeddingUrl } from "./remote-embedding";
+export type {
+  RemoteEmbeddingBatchOptions,
+  RemoteEmbeddingBatchResult,
+  RemoteEmbeddingFetch,
+  RemoteEmbeddingModel,
+} from "./remote-embedding";
 
 export { EmbeddingService } from "./embedding-service";
 export type { EmbeddingConfig } from "./embedding-service";

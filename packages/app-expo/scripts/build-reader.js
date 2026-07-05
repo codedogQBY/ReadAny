@@ -5,8 +5,8 @@
  * Run: node scripts/build-reader.js
  */
 const esbuild = require("esbuild");
-const fs = require("fs");
-const path = require("path");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const FOLIATE_DIR = path.resolve(__dirname, "../../foliate-js");
 const ASSETS_DIR = path.resolve(__dirname, "../assets/reader");
@@ -21,7 +21,7 @@ async function buildReader() {
     import * as CFI from "${FOLIATE_DIR.replace(/\\/g, "/")}/epubcfi.js";
     import { configure, ZipReader, BlobReader, TextWriter, BlobWriter } from "${FOLIATE_DIR.replace(/\\/g, "/")}/vendor/zip.js";
     import { EPUB } from "${FOLIATE_DIR.replace(/\\/g, "/")}/epub.js";
-    import { makePDFFromURL } from "${FOLIATE_DIR.replace(/\\/g, "/")}/pdf.js";
+    import { extractPDFChapters, makePDFFromURL } from "${FOLIATE_DIR.replace(/\\/g, "/")}/pdf.js";
 
     window.makeBook = makeBook;
     window.Overlayer = Overlayer;
@@ -31,6 +31,7 @@ async function buildReader() {
     window._zipJs = { configure, ZipReader, BlobReader, TextWriter, BlobWriter };
     window._EPUB = EPUB;
     window._makePDFFromURL = makePDFFromURL;
+    window._extractPDFChapters = extractPDFChapters;
 
     if (!customElements.get('foliate-view')) {
       customElements.define('foliate-view', View);
@@ -64,7 +65,7 @@ async function buildReader() {
     // Use split/join instead of replace to avoid $ replacement patterns in JS bundle
     const MARKER = "<!-- __READANY_FOLIATE_BUNDLE_INSERT_POINT_7f3a9b2e__ -->";
     const parts = template.split(MARKER);
-    const html = parts[0] + "<script>\n" + bundledJS + "\n</script>" + parts.slice(1).join(MARKER);
+    const html = `${parts[0]}<script>\n${bundledJS}\n</script>${parts.slice(1).join(MARKER)}`;
 
     // Write to output file (separate from template)
     fs.writeFileSync(OUTPUT, html);

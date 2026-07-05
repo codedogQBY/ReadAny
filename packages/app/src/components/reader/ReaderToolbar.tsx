@@ -5,8 +5,8 @@ import { useAnnotationStore } from "@/stores/annotation-store";
 import { useAppStore } from "@/stores/app-store";
 import { useNotebookStore } from "@/stores/notebook-store";
 import { useReaderStore } from "@/stores/reader-store";
-import { generateId } from "@readany/core/utils";
 import type { ChapterTranslationState } from "@readany/core/hooks";
+import { generateId } from "@readany/core/utils";
 import {
   ArrowLeft,
   Bookmark,
@@ -16,9 +16,12 @@ import {
   MessageSquare,
   NotebookPen,
   Pin,
+  RotateCcw,
   Search,
   Settings,
   Undo,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -46,6 +49,11 @@ interface ReaderToolbarProps {
   isChatOpen?: boolean;
   isTTSActive?: boolean;
   isFixedLayout?: boolean;
+  fixedLayoutZoom?: number;
+  fixedLayoutZoomMin?: number;
+  fixedLayoutZoomMax?: number;
+  fixedLayoutZoomStep?: number;
+  onFixedLayoutZoomChange?: (zoom: number) => void;
   isPinned?: boolean;
   onTogglePinned?: () => void;
   onMouseEnter?: () => void;
@@ -73,7 +81,12 @@ export function ReaderToolbar({
   onChapterTranslationReset,
   isChatOpen,
   isTTSActive,
-  isFixedLayout: _isFixedLayout = false,
+  isFixedLayout = false,
+  fixedLayoutZoom = 1,
+  fixedLayoutZoomMin = 0.5,
+  fixedLayoutZoomMax = 3,
+  fixedLayoutZoomStep = 0.1,
+  onFixedLayoutZoomChange,
   isPinned = false,
   onTogglePinned,
   onMouseEnter,
@@ -95,6 +108,10 @@ export function ReaderToolbar({
   const bookId = tab?.bookId || "";
   const existingBookmark = bookmarks.find((b) => b.bookId === bookId && b.cfi === currentCfi);
   const isBookmarked = !!existingBookmark;
+  const fixedLayoutZoomPercent = Math.round(fixedLayoutZoom * 100);
+  const canZoomOut = fixedLayoutZoom > fixedLayoutZoomMin + 0.001;
+  const canZoomIn = fixedLayoutZoom < fixedLayoutZoomMax - 0.001;
+  const canResetZoom = Math.abs(fixedLayoutZoom - 1) > 0.001;
 
   const handleToggleBookmark = () => {
     if (!currentCfi || !bookId) return;
@@ -211,6 +228,49 @@ export function ReaderToolbar({
           onReset={onChapterTranslationReset}
         />
         <SyncButton iconSize={14} className="h-7 w-7" />
+        {isFixedLayout && (
+          <div
+            className="mx-0.5 flex h-7 items-center gap-0.5 rounded-sm border border-border/50 bg-muted/40 px-0.5"
+            aria-label={t("reader.pdfZoom")}
+          >
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => onFixedLayoutZoomChange?.(fixedLayoutZoom - fixedLayoutZoomStep)}
+              disabled={!onFixedLayoutZoomChange || !canZoomOut}
+              title={t("reader.zoomOut")}
+              aria-label={t("reader.zoomOut")}
+            >
+              <ZoomOut className="h-3.5 w-3.5" />
+            </Button>
+            <span className="w-10 text-center text-[11px] tabular-nums text-muted-foreground">
+              {fixedLayoutZoomPercent}%
+            </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => onFixedLayoutZoomChange?.(fixedLayoutZoom + fixedLayoutZoomStep)}
+              disabled={!onFixedLayoutZoomChange || !canZoomIn}
+              title={t("reader.zoomIn")}
+              aria-label={t("reader.zoomIn")}
+            >
+              <ZoomIn className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => onFixedLayoutZoomChange?.(1)}
+              disabled={!onFixedLayoutZoomChange || !canResetZoom}
+              title={t("reader.resetZoom")}
+              aria-label={t("reader.resetZoom")}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        )}
         <Button
           variant="ghost"
           size="icon"

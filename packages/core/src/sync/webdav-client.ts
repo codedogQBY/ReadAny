@@ -27,8 +27,7 @@ export function sanitizeWebDavRemoteRoot(remoteRoot: string): string {
   const normalized = stripControlChars(remoteRoot)
     .trim()
     .replace(/^\/+|\/+$/g, "")
-    .replace(/\/{2,}/g, "/")
-    .toLowerCase();
+    .replace(/\/{2,}/g, "/");
   return normalized;
 }
 
@@ -91,6 +90,17 @@ function summarizeStatus(status: number, statusText?: string): string {
 function toCollectionPath(path: string): string {
   if (path === "/") return "/";
   return path.endsWith("/") ? path : `${path}/`;
+}
+
+function getParentCollectionPath(path: string): { parent: string; name: string } | null {
+  const collectionPath = toCollectionPath(path);
+  if (collectionPath === "/") return null;
+
+  const trimmed = collectionPath.replace(/\/+$/g, "");
+  const lastSlash = trimmed.lastIndexOf("/");
+  const name = trimmed.slice(lastSlash + 1);
+  const parent = lastSlash <= 0 ? "/" : trimmed.slice(0, lastSlash);
+  return { parent: toCollectionPath(parent), name };
 }
 
 function createHttpWebDavError(
@@ -407,7 +417,7 @@ export class WebDavClient {
     try {
       resp = await this.request("MKCOL", collectionPath);
     } catch (e) {
-      if (await this.propfindExists(collectionPath, { timeoutMs: DIRECTORY_PROBE_TIMEOUT_MS })) {
+      if (await this.collectionExists(collectionPath)) {
         console.warn(`[WebDAV] MKCOL ${path} failed but directory exists; continuing`);
         return;
       }
@@ -418,6 +428,10 @@ export class WebDavClient {
       return;
     }
     if (status === 405 || status === 409) {
+      return;
+    }
+    if ((status === 401 || status === 403) && (await this.collectionExists(collectionPath))) {
+      console.warn(`[WebDAV] MKCOL ${path} returned ${status} but directory exists; continuing`);
       return;
     }
     throw new Error(`WebDAV MKCOL failed for ${path}: ${status} ${resp.statusText || ""}`);
@@ -659,6 +673,27 @@ export class WebDavClient {
     } catch {
       return false;
     }
+  }
+
+  private async parentListingContainsCollection(path: string): Promise<boolean> {
+    const parentInfo = getParentCollectionPath(path);
+    if (!parentInfo) return true;
+
+    try {
+      const resources = await this.propfind(parentInfo.parent);
+      return resources.some(
+        (resource) => resource.isCollection && resource.name === parentInfo.name,
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private async collectionExists(path: string): Promise<boolean> {
+    if (await this.propfindExists(path, { timeoutMs: DIRECTORY_PROBE_TIMEOUT_MS })) {
+      return true;
+    }
+    return this.parentListingContainsCollection(path);
   }
 
   /** List directory contents (PROPFIND Depth 1) */

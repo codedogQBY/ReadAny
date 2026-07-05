@@ -19,7 +19,18 @@ export { useReaderStore } from "./reader-store";
 export type { NavigationHistoryItem, ReaderTab, ReaderState } from "./reader-store";
 
 // Font store
-export { useFontStore, generateFontId, getFontFormat, saveFontFile, deleteFontFile, getCSSFontFace, getRemoteCssImports, getFontFamilyCSS, getFontsDir } from "./font-store";
+export {
+  useFontStore,
+  generateFontId,
+  createCustomFontFamily,
+  getFontFormat,
+  saveFontFile,
+  deleteFontFile,
+  getCSSFontFace,
+  getRemoteCssImports,
+  getFontFamilyCSS,
+  getFontsDir,
+} from "./font-store";
 export type { FontState } from "./font-store";
 
 // Persisted stores (FS JSON)
