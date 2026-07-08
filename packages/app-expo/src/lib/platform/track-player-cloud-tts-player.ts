@@ -1,10 +1,10 @@
 import {
+  type ITTSPlayer,
+  type TTSConfig,
   fetchOpenAITTSAudio,
   fetchXiaomiTTSWav,
   isTTSAbortError,
   splitIntoChunks,
-  type ITTSPlayer,
-  type TTSConfig,
 } from "@readany/core/tts";
 import { File, Paths } from "expo-file-system";
 import { Image } from "react-native";
