@@ -92,4 +92,22 @@ describe("buildSystemPrompt citations", () => {
     expect(prompt).toContain("- getSurroundingContext");
     expect(prompt).toContain("- addCitation");
   });
+
+  it("does not describe tools that are unavailable in the current turn", () => {
+    const prompt = buildSystemPrompt({
+      book: makeBook(),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: true,
+      userLanguage: "en",
+      allowedToolNames: ["getCurrentChapter", "addCitation"],
+    });
+
+    expect(prompt).toContain("- getCurrentChapter");
+    expect(prompt).toContain("- addCitation");
+    expect(prompt).not.toContain("- getReadingProgress");
+    expect(prompt).not.toContain("Get overall reading progress");
+    expect(prompt).not.toContain("- ragSearch");
+    expect(prompt).not.toContain("Semantic/keyword search across book content");
+  });
 });

@@ -380,6 +380,10 @@ export function useStreamingChat(options?: StreamingChatOptions) {
               currentReasoningPart.status = "completed";
               currentReasoningPart.updatedAt = Date.now();
             }
+            markRunningToolCallPartsAsError(
+              currentParts,
+              i18n.t("streaming.toolNoResult", "工具没有返回结果"),
+            );
 
             const textContent = currentParts
               .filter((p) => p.type === "text")

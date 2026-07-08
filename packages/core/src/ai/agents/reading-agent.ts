@@ -114,6 +114,7 @@ const CATEGORY_TOOL_ORDER: Record<ReadingQuestionCategory, string[]> = {
   current_chapter_context: [
     "getCurrentChapter",
     "getSurroundingContext",
+    "getReadingProgress",
     "resolveChapterReference",
     "ragSearch",
     "ragContext",
@@ -284,6 +285,7 @@ function getFocusedToolNames(
           ? [
               "getCurrentChapter",
               "getSurroundingContext",
+              "getReadingProgress",
               "resolveChapterReference",
               "ragSearch",
               "ragContext",
@@ -291,7 +293,13 @@ function getFocusedToolNames(
               "findQuotes",
               "addCitation",
             ]
-          : ["getCurrentChapter", "getSurroundingContext", "fallbackChapterContext", "addCitation"],
+          : [
+              "getCurrentChapter",
+              "getSurroundingContext",
+              "getReadingProgress",
+              "fallbackChapterContext",
+              "addCitation",
+            ],
       );
     case "specific_chapter_request":
       return new Set(
