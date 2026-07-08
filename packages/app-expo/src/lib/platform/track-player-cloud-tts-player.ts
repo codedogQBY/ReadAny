@@ -13,6 +13,7 @@ import TrackPlayer, { Event, State } from "react-native-track-player";
 const CHUNK_MAX_CHARS = 500;
 const PREFETCH_AHEAD_CHUNKS = 2;
 const END_ADVANCE_TOLERANCE_SECONDS = 0.35;
+const END_WATCHDOG_INTERVAL_MS = 700;
 const MEDIA_ARTIST = "ReadAny";
 const DEFAULT_ARTWORK = (() => {
   try {
@@ -49,6 +50,7 @@ export class TrackPlayerCloudTTSPlayer implements ITTSPlayer {
   private _lastNotifiedIndex = -1;
   private _prefetches = new Map<number, Promise<string>>();
   private _trackStartedAt = 0;
+  private _endWatchdog: ReturnType<typeof setInterval> | null = null;
 
   get paused(): boolean {
     return this._paused;
@@ -79,6 +81,7 @@ export class TrackPlayerCloudTTSPlayer implements ITTSPlayer {
     this._lastNotifiedIndex = -1;
     this._prefetches.clear();
     this._trackStartedAt = 0;
+    this._clearEndWatchdog();
 
     if (this._chunks.length === 0) {
       this._finishPlayback();
@@ -150,6 +153,7 @@ export class TrackPlayerCloudTTSPlayer implements ITTSPlayer {
       this._prefetchUpcomingChunks(index, gen);
       const uri = await uriPromise;
       if (gen !== this._speakGen || this._stopped) return;
+      this._clearEndWatchdog();
       this._trackStartedAt = 0;
       await TrackPlayer.reset();
       await TrackPlayer.add({
@@ -164,40 +168,71 @@ export class TrackPlayerCloudTTSPlayer implements ITTSPlayer {
         if (gen !== this._speakGen || this._stopped || this._paused) return;
         this._trackStartedAt = Date.now();
         this._notifyChunkChange(index);
+        this._startEndWatchdog(gen);
         this.onStateChange?.("playing");
       }
     } catch (error) {
       if ((error as Error)?.message === "aborted" || isTTSAbortError(error)) return;
       console.warn("[TrackPlayerCloudTTSPlayer] chunk error:", error);
-      await this._playNext(gen);
+      await this._skipFailedChunk(index, gen);
     }
   }
 
   private async _handlePlaybackEnded(
     gen: number,
-    options: { force?: boolean } = {},
+    options: { force?: boolean; allowUnknownDuration?: boolean } = {},
   ): Promise<void> {
     if (gen !== this._speakGen || this._stopped || this._paused || this._advancing) return;
     if (!options.force) {
-      const canAdvance = await this._isCurrentTrackReallyFinished(gen);
+      const canAdvance = await this._isCurrentTrackReallyFinished(
+        gen,
+        options.allowUnknownDuration ?? true,
+      );
       if (!canAdvance) return;
     }
     await this._playNext(gen);
   }
 
-  private async _isCurrentTrackReallyFinished(gen: number): Promise<boolean> {
+  private async _isCurrentTrackReallyFinished(
+    gen: number,
+    allowUnknownDuration: boolean,
+  ): Promise<boolean> {
     if (gen !== this._speakGen || this._stopped || this._paused) return false;
     if (this._trackStartedAt <= 0) return false;
 
     const progress = await TrackPlayer.getProgress().catch(() => null);
     if (gen !== this._speakGen || this._stopped || this._paused) return false;
-    if (!progress || progress.duration <= 0) return true;
+    if (!progress || progress.duration <= 0) return allowUnknownDuration;
 
     const remaining = progress.duration - progress.position;
-    return (
-      progress.position > 0 &&
-      remaining <= END_ADVANCE_TOLERANCE_SECONDS
-    );
+    return progress.position > 0 && remaining <= END_ADVANCE_TOLERANCE_SECONDS;
+  }
+
+  private _startEndWatchdog(gen: number): void {
+    this._clearEndWatchdog();
+    this._endWatchdog = setInterval(() => {
+      if (gen !== this._speakGen || this._stopped || this._paused) {
+        this._clearEndWatchdog();
+        return;
+      }
+      void this._handlePlaybackEnded(gen, { allowUnknownDuration: false });
+    }, END_WATCHDOG_INTERVAL_MS);
+  }
+
+  private _clearEndWatchdog(): void {
+    if (!this._endWatchdog) return;
+    clearInterval(this._endWatchdog);
+    this._endWatchdog = null;
+  }
+
+  private async _skipFailedChunk(index: number, gen: number): Promise<void> {
+    if (gen !== this._speakGen || this._stopped || this._paused) return;
+    const next = index + 1;
+    if (next >= this._chunks.length) {
+      this._finishPlayback();
+      return;
+    }
+    await this._playChunk(next, gen);
   }
 
   private _prefetchUpcomingChunks(index: number, gen: number): void {
@@ -255,6 +290,7 @@ export class TrackPlayerCloudTTSPlayer implements ITTSPlayer {
   pause(): void {
     if (this._stopped || this._paused) return;
     this._paused = true;
+    this._clearEndWatchdog();
     TrackPlayer.pause();
     this.onStateChange?.("paused");
   }
@@ -263,6 +299,7 @@ export class TrackPlayerCloudTTSPlayer implements ITTSPlayer {
     if (this._stopped || !this._paused) return;
     this._paused = false;
     TrackPlayer.play();
+    this._startEndWatchdog(this._speakGen);
     this.onStateChange?.("playing");
   }
 
@@ -273,6 +310,7 @@ export class TrackPlayerCloudTTSPlayer implements ITTSPlayer {
     this._speakGen += 1;
     this._prefetches.clear();
     this._trackStartedAt = 0;
+    this._clearEndWatchdog();
     TrackPlayer.stop();
     TrackPlayer.reset();
     this._cleanupEvents();
@@ -284,6 +322,7 @@ export class TrackPlayerCloudTTSPlayer implements ITTSPlayer {
     if (this._stopped) return;
     this._stopped = true;
     this._paused = false;
+    this._clearEndWatchdog();
     this._cleanupEvents();
     this.onStateChange?.("stopped");
     this.onEnd?.();
@@ -296,11 +335,13 @@ export class TrackPlayerCloudTTSPlayer implements ITTSPlayer {
     await TrackPlayer.reset().catch(() => {});
     this._prefetches.clear();
     this._trackStartedAt = 0;
+    this._clearEndWatchdog();
     this._cleanupEvents();
     this._cleanupTempFiles();
   }
 
   private _cleanupEvents(): void {
+    this._clearEndWatchdog();
     for (const unsub of this._unsubscribers) unsub();
     this._unsubscribers = [];
   }
