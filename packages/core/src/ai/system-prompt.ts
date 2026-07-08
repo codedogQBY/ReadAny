@@ -274,7 +274,9 @@ function buildWorkflowSection(isVectorized: boolean, hasBookContext: boolean): s
     steps.push(
       "   - **resolveChapterReference**: first step for user-mentioned chapter numbers/titles; do not convert human chapter numbers to chapterIndex yourself",
     );
-    steps.push("   - **ragSearch**: for finding specific content by topic/keyword");
+    steps.push(
+      "   - **ragSearch**: primary path for indexed book-content questions by topic/keyword",
+    );
     steps.push("   - **ragToc**: for compact/paginated structure browsing");
     steps.push(
       "   - **summarize/extractEntities/analyzeArguments/findQuotes**: for indexed content analysis",
@@ -393,7 +395,9 @@ function buildWorkflowSection(isVectorized: boolean, hasBookContext: boolean): s
     "- If a tool returns no results or an error, tell the user honestly. Do NOT retry with rephrased queries.",
   );
   steps.push(
-    "- Prefer current selection, current page, and current chapter context before wider retrieval whenever the user is asking about what they are reading right now.",
+    isVectorized
+      ? "- For indexed books, prefer ragSearch/ragContext for broad content questions. Use current selection/page/chapter context first only when the user explicitly asks about what they are reading right now, then fall back to indexed retrieval if needed."
+      : "- For non-indexed books, prefer fallbackSearch/fallbackChapterContext for broad content questions. Use current selection/page/chapter context first only when the user explicitly asks about what they are reading right now, then fall back to original-file retrieval if needed.",
   );
   steps.push(
     "- For a specific chapter request, call resolveChapterReference first. If matched=false, present the candidates or ask for clarification instead of guessing chapterIndex.",

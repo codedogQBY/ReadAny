@@ -455,7 +455,7 @@ describe("streamReadingAgent tool registration", () => {
     expect(fourth.attemptedQueries).toEqual(["张三疯那一章讲了什么", "张三疯", "张三疯"]);
   });
 
-  it("routes current-page questions to current-context tools only", async () => {
+  it("keeps RAG fallback available for current-page questions on indexed books", async () => {
     let capturedTools: any[] = [];
     createReactAgentMock.mockImplementation((config) => {
       capturedTools = config.tools;
@@ -487,8 +487,10 @@ describe("streamReadingAgent tool registration", () => {
     expect(toolNames).toContain("getCurrentChapter");
     expect(toolNames).toContain("getSurroundingContext");
     expect(toolNames).toContain("getReadingProgress");
-    expect(toolNames).not.toContain("ragSearch");
+    expect(toolNames).toContain("ragSearch");
+    expect(toolNames).toContain("ragContext");
     expect(toolNames).not.toContain("resolveChapterReference");
+    expect(toolNames.indexOf("getSurroundingContext")).toBeLessThan(toolNames.indexOf("ragSearch"));
   });
 
   it("does not misroute generic analysis requests into current-page-only tools", async () => {
@@ -524,6 +526,45 @@ describe("streamReadingAgent tool registration", () => {
     expect(toolNames).toContain("ragContext");
     expect(toolNames).toContain("summarize");
     expect(toolNames).toContain("getCurrentChapter");
+    expect(toolNames.indexOf("ragSearch")).toBeLessThan(toolNames.indexOf("getCurrentChapter"));
+  });
+
+  it("keeps indexed search and toc fallbacks for specific chapter requests", async () => {
+    let capturedTools: any[] = [];
+    createReactAgentMock.mockImplementation((config) => {
+      capturedTools = config.tools;
+      return {
+        streamEvents: vi.fn(() => ({
+          [Symbol.asyncIterator]: async function* () {
+            // no-op stream
+          },
+        })),
+      };
+    });
+
+    for await (const event of streamReadingAgent(
+      {
+        aiConfig: makeAIConfig(),
+        book: null,
+        bookId: "book-1",
+        semanticContext: null,
+        enabledSkills: [],
+        isVectorized: true,
+        getAvailableTools,
+      },
+      "第十二章里主角为什么离开",
+    )) {
+      void event;
+    }
+
+    const toolNames = capturedTools.map((tool) => tool.name);
+    expect(toolNames).toContain("resolveChapterReference");
+    expect(toolNames).toContain("ragSearch");
+    expect(toolNames).toContain("ragToc");
+    expect(toolNames).toContain("ragContext");
+    expect(toolNames.indexOf("resolveChapterReference")).toBeLessThan(
+      toolNames.indexOf("ragSearch"),
+    );
   });
 
   it("routes library requests away from book-content tools", async () => {
