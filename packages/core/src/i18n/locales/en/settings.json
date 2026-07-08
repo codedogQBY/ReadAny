@@ -477,7 +477,9 @@
       "output": {
         "notRun": "Not run yet.",
         "success": "Command completed successfully.",
-        "exitStatus": "Command exited with status {{status}}"
+        "exitStatus": "Command exited with status {{status}}",
+        "accessUninstalled": "External AI access has been uninstalled.",
+        "cliUninstalled": "ReadAny CLI has been uninstalled."
       },
       "skillPrompt": {
         "intro": "Please directly install and enable the ReadAny external AI Skill for me.",

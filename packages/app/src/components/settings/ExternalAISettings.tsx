@@ -16,21 +16,26 @@ import {
   ChevronDown,
   Clipboard,
   FileCheck2,
+  Loader2,
   PackageCheck,
   RefreshCw,
   ShieldCheck,
   Terminal,
+  Trash2,
   Wrench,
   XCircle,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
 type CliAction =
   | "version"
   | "install"
+  | "uninstall"
   | "repair"
   | "agent_setup"
+  | "agent_uninstall"
   | "doctor"
   | "mcp_config"
   | "tools_list"
@@ -626,6 +631,28 @@ export function ExternalAISettings() {
     await refreshAll();
   }
 
+  async function handleUninstallExternalAccess() {
+    const result = await runCli("agent_uninstall");
+    const parsed = parseCliJson(result);
+    if (result.ok && parsed?.ok !== false) {
+      toast.success(t("settings.externalAiSettings.output.accessUninstalled"));
+    } else {
+      toast.error(outputSummary(result, parsed, outputLabels));
+    }
+    await refreshAll();
+  }
+
+  async function handleCliUninstall() {
+    const result = await runCli("uninstall");
+    const parsed = parseCliJson(result);
+    if (result.ok && parsed?.ok !== false) {
+      toast.success(t("settings.externalAiSettings.output.cliUninstalled"));
+    } else {
+      toast.error(outputSummary(result, parsed, outputLabels));
+    }
+    await refreshAll();
+  }
+
   async function copyMcpConfig() {
     if (!canCopyMcpConfig) return;
     const result = await runCli("mcp_config", { mcpProfile, mcpClient });
@@ -687,6 +714,8 @@ export function ExternalAISettings() {
   }, []);
 
   const busy = loadingAction !== null;
+  const uninstallingAccess = loadingAction === "agent_uninstall";
+  const uninstallingCli = loadingAction === "uninstall";
 
   return (
     <div className="space-y-3 p-4 pt-3">
@@ -718,6 +747,20 @@ export function ExternalAISettings() {
             >
               <Wrench className="mr-1.5 h-3.5 w-3.5" />
               {t("settings.externalAiSettings.actions.repairExternalAI")}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleUninstallExternalAccess}
+              disabled={busy}
+              className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            >
+              {uninstallingAccess ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {t("settings.externalAiSettings.actions.uninstallAccess")}
             </Button>
           </div>
         </div>
@@ -937,6 +980,20 @@ export function ExternalAISettings() {
             </Button>
             <Button size="sm" variant="outline" onClick={handleCliRepair} disabled={busy}>
               {t("settings.externalAiSettings.actions.repair")}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleCliUninstall}
+              disabled={busy}
+              className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            >
+              {uninstallingCli ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {t("settings.externalAiSettings.actions.uninstall")}
             </Button>
             <Button size="sm" variant="outline" onClick={copyEvidenceSnapshot} disabled={busy}>
               {copiedTarget === "evidence"

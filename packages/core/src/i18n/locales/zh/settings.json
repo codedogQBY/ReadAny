@@ -477,7 +477,9 @@
       "output": {
         "notRun": "尚未运行。",
         "success": "命令执行成功。",
-        "exitStatus": "命令退出码 {{status}}"
+        "exitStatus": "命令退出码 {{status}}",
+        "accessUninstalled": "外部 AI 接入已卸载。",
+        "cliUninstalled": "ReadAny CLI 已卸载。"
       },
       "skillPrompt": {
         "intro": "请你直接帮我安装并启用 ReadAny 外部 AI Skill。",

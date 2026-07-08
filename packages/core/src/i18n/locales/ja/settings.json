@@ -477,7 +477,9 @@
       "output": {
         "notRun": "まだ実行していません。",
         "success": "コマンドが正常に完了しました。",
-        "exitStatus": "コマンド終了コード {{status}}"
+        "exitStatus": "コマンド終了コード {{status}}",
+        "accessUninstalled": "外部AI接続を削除しました。",
+        "cliUninstalled": "ReadAny CLI をアンインストールしました。"
       },
       "skillPrompt": {
         "intro": "ReadAny 外部AI Skill を直接インストールして有効化してください。",

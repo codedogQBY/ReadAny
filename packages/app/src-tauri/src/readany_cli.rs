@@ -487,13 +487,98 @@ fn is_executable_file(path: &Path) -> bool {
     path.is_file()
 }
 
+fn node_executable_name() -> &'static str {
+    if cfg!(windows) {
+        "node.exe"
+    } else {
+        "node"
+    }
+}
+
+fn command_from_path(command: &str) -> Option<PathBuf> {
+    let paths = env::var_os("PATH")?;
+    env::split_paths(&paths)
+        .map(|dir| dir.join(command))
+        .find(|path| is_executable_file(path))
+}
+
+fn configured_node_program() -> Option<PathBuf> {
+    for key in ["READANY_DESKTOP_NODE_BIN", "READANY_NODE_BIN"] {
+        if let Some(path) = env::var_os(key).map(PathBuf::from) {
+            if is_executable_file(&path) {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+fn nvm_node_candidates() -> Vec<PathBuf> {
+    let home = env::var_os("HOME")
+        .or_else(|| env::var_os("USERPROFILE"))
+        .map(PathBuf::from);
+    let Some(home) = home else {
+        return Vec::new();
+    };
+    let versions_dir = home.join(".nvm/versions/node");
+    let Ok(entries) = fs::read_dir(versions_dir) else {
+        return Vec::new();
+    };
+
+    let mut candidates: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path().join("bin").join(node_executable_name()))
+        .filter(|path| is_executable_file(path))
+        .collect();
+    candidates.sort();
+    candidates.reverse();
+    candidates
+}
+
+fn common_node_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if cfg!(target_os = "macos") {
+        candidates.extend([
+            PathBuf::from("/opt/homebrew/bin/node"),
+            PathBuf::from("/usr/local/bin/node"),
+            PathBuf::from("/opt/local/bin/node"),
+        ]);
+    } else if cfg!(target_os = "linux") {
+        candidates.extend([
+            PathBuf::from("/usr/local/bin/node"),
+            PathBuf::from("/usr/bin/node"),
+            PathBuf::from("/snap/bin/node"),
+        ]);
+    } else if cfg!(windows) {
+        if let Some(program_files) = env::var_os("ProgramFiles") {
+            candidates.push(PathBuf::from(program_files).join("nodejs/node.exe"));
+        }
+        if let Some(program_files_x86) = env::var_os("ProgramFiles(x86)") {
+            candidates.push(PathBuf::from(program_files_x86).join("nodejs/node.exe"));
+        }
+    }
+    candidates.extend(nvm_node_candidates());
+    candidates
+}
+
+fn find_node_program() -> Option<String> {
+    configured_node_program()
+        .or_else(|| command_from_path(node_executable_name()))
+        .or_else(|| {
+            common_node_candidates()
+                .into_iter()
+                .find(|path| is_executable_file(path))
+        })
+        .map(|path| path.to_string_lossy().to_string())
+}
+
 fn node_cli_command(script_path: PathBuf, source: &str) -> Option<CliCommand> {
     if !is_executable_file(&script_path) {
         return None;
     }
 
     Some(CliCommand {
-        program: "node".to_string(),
+        program: find_node_program().unwrap_or_else(|| "node".to_string()),
         prefix_args: vec![script_path.to_string_lossy().to_string()],
         source: source.to_string(),
     })
@@ -562,6 +647,33 @@ fn resolve_cli_command(action: &str, resource_dir: Option<PathBuf>) -> CliComman
     path_cli_command()
 }
 
+fn command_display(cli_command: &CliCommand) -> String {
+    if cli_command.prefix_args.is_empty() {
+        cli_command.program.clone()
+    } else {
+        format!(
+            "{} {}",
+            cli_command.program,
+            cli_command.prefix_args.join(" ")
+        )
+    }
+}
+
+fn format_cli_spawn_error(cli_command: &CliCommand, error: &std::io::Error) -> String {
+    if cli_command.source == "bundle" && error.kind() == std::io::ErrorKind::NotFound {
+        return format!(
+            "Failed to run bundled ReadAny CLI because Node.js was not found. Install Node.js or make it available in PATH, then try again. Tried command: {}. Original error: {}",
+            command_display(cli_command),
+            error
+        );
+    }
+
+    format!(
+        "Failed to run ReadAny CLI via {}: {}",
+        cli_command.source, error
+    )
+}
+
 #[tauri::command]
 pub async fn readany_cli_run(
     app: AppHandle,
@@ -603,19 +715,30 @@ pub async fn readany_cli_run(
     let cli_command = resolve_cli_command(&action, resource_dir);
     let action_for_result = action.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let output = Command::new(&cli_command.program)
+        let command = command_display(&cli_command);
+        let output = match Command::new(&cli_command.program)
             .args(&cli_command.prefix_args)
             .args(&args)
             .output()
-            .map_err(|error| {
+        {
+            Ok(output) => output,
+            Err(error) => {
                 if let Some(path) = temp_patch.as_deref() {
                     let _ = fs::remove_file(path);
                 }
-                format!(
-                    "Failed to run ReadAny CLI via {}: {}",
-                    cli_command.source, error
-                )
-            })?;
+                let stderr = format_cli_spawn_error(&cli_command, &error);
+                return Ok(ReadAnyCliRunResult {
+                    ok: false,
+                    action: action_for_result,
+                    command,
+                    command_source: cli_command.source,
+                    args,
+                    status: None,
+                    stdout: String::new(),
+                    stderr,
+                });
+            }
+        };
         if let Some(path) = temp_patch.as_deref() {
             let _ = fs::remove_file(path);
         }
@@ -623,15 +746,7 @@ pub async fn readany_cli_run(
         Ok(ReadAnyCliRunResult {
             ok: output.status.success(),
             action: action_for_result,
-            command: if cli_command.prefix_args.is_empty() {
-                cli_command.program
-            } else {
-                format!(
-                    "{} {}",
-                    cli_command.program,
-                    cli_command.prefix_args.join(" ")
-                )
-            },
+            command,
             command_source: cli_command.source,
             args,
             status: output.status.code(),
@@ -646,10 +761,11 @@ pub async fn readany_cli_run(
 #[cfg(test)]
 mod tests {
     use super::{
-        args_for_action, bundled_cli_command, resolve_cli_command, ReadAnyCliRunOptions,
-        BUNDLED_CLI_RESOURCE_PATH,
+        args_for_action, bundled_cli_command, format_cli_spawn_error, resolve_cli_command,
+        CliCommand, ReadAnyCliRunOptions, BUNDLED_CLI_RESOURCE_PATH,
     };
     use std::fs;
+    use std::io;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -661,6 +777,16 @@ mod tests {
         let path = std::env::temp_dir().join(format!("readany-cli-{}-{}", name, id));
         fs::create_dir_all(&path).expect("create temp dir");
         path
+    }
+
+    fn assert_node_program(program: &str) {
+        assert!(
+            program == "node"
+                || program.ends_with("/node")
+                || program.ends_with("\\node.exe")
+                || program.ends_with("/node.exe"),
+            "expected node executable, got {program}",
+        );
     }
 
     #[test]
@@ -1218,7 +1344,7 @@ mod tests {
         fs::write(&cli, "#!/usr/bin/env node\n").expect("write cli");
 
         let command = resolve_cli_command("install", Some(root.clone()));
-        assert_eq!(command.program, "node");
+        assert_node_program(&command.program);
         assert_eq!(command.prefix_args, vec![cli.to_string_lossy().to_string()]);
         assert_eq!(command.source, "bundle");
         let _ = fs::remove_dir_all(root);
@@ -1232,7 +1358,7 @@ mod tests {
         fs::write(&cli, "#!/usr/bin/env node\n").expect("write cli");
 
         let command = resolve_cli_command("agent_setup", Some(root.clone()));
-        assert_eq!(command.program, "node");
+        assert_node_program(&command.program);
         assert_eq!(command.prefix_args, vec![cli.to_string_lossy().to_string()]);
         assert_eq!(command.source, "bundle");
         let _ = fs::remove_dir_all(root);
@@ -1258,7 +1384,7 @@ mod tests {
             "skill_uninstall",
         ] {
             let command = resolve_cli_command(action, Some(root.clone()));
-            assert_eq!(command.program, "node", "{action}");
+            assert_node_program(&command.program);
             assert_eq!(command.prefix_args, vec![cli.to_string_lossy().to_string()]);
             assert_eq!(command.source, "bundle", "{action}");
         }
@@ -1286,6 +1412,21 @@ mod tests {
         }
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn explains_missing_node_for_bundled_cli_spawn_failures() {
+        let command = CliCommand {
+            program: "node".to_string(),
+            prefix_args: vec!["/Applications/ReadAny.app/readany-cli/bin/readany.js".to_string()],
+            source: "bundle".to_string(),
+        };
+        let error = io::Error::from(io::ErrorKind::NotFound);
+        let message = format_cli_spawn_error(&command, &error);
+
+        assert!(message.contains("bundled ReadAny CLI"));
+        assert!(message.contains("Node.js was not found"));
+        assert!(message.contains("readany.js"));
     }
 
     #[test]

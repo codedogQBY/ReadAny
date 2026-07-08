@@ -475,7 +475,9 @@
       "output": {
         "notRun": "Aún no se ejecutó.",
         "success": "Comando completado correctamente.",
-        "exitStatus": "El comando salió con código {{status}}"
+        "exitStatus": "El comando salió con código {{status}}",
+        "accessUninstalled": "Se quitó el acceso de IA externa.",
+        "cliUninstalled": "ReadAny CLI se desinstaló."
       },
       "skillPrompt": {
         "intro": "Instala y activa directamente la Skill de IA externa de ReadAny.",

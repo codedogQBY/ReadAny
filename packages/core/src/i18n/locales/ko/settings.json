@@ -477,7 +477,9 @@
       "output": {
         "notRun": "아직 실행하지 않았어요.",
         "success": "명령이 성공적으로 완료됐어요.",
-        "exitStatus": "명령 종료 코드 {{status}}"
+        "exitStatus": "명령 종료 코드 {{status}}",
+        "accessUninstalled": "외부 AI 접속이 제거되었습니다.",
+        "cliUninstalled": "ReadAny CLI가 제거되었습니다."
       },
       "skillPrompt": {
         "intro": "ReadAny 외부 AI Skill을 바로 설치하고 활성화해 주세요.",
