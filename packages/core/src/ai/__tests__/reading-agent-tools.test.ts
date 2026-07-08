@@ -616,6 +616,9 @@ describe("streamReadingAgent tool registration", () => {
     expect(first.totalResults).toBe(1);
     expect(second.totalResults).toBe(1);
     expect(third.totalResults).toBe(1);
+    expect(third.repeatedToolCall).toBe(true);
+    expect(third.stopToolCalls).toBe(true);
+    expect(third.instruction).toContain("Stop calling tools now");
     expect(searchCalls).toEqual(["主角是谁"]);
   });
 });

@@ -8,7 +8,7 @@ import {
   toolCallPartToMessageToolCall,
 } from "../ai/tool-call-state";
 import { getAvailableTools } from "../ai/tools";
-import { getSkills as getDbSkills } from "../db/database";
+import { getBook, getSkills as getDbSkills } from "../db/database";
 import i18n from "../i18n";
 import { getChatStreamingKey, useChatStore } from "../stores/chat-store";
 import { useSettingsStore } from "../stores/settings-store";
@@ -95,6 +95,19 @@ export interface StreamingState {
 const activeStreams = new Map<string, StreamingChat>();
 const STREAMING_PUBLISH_INTERVAL_MS = 160;
 
+async function resolveFreshBook(
+  bookId: string | undefined,
+  fallback?: Book | null,
+): Promise<Book | null> {
+  if (!bookId) return fallback ?? null;
+  try {
+    return (await getBook(bookId)) ?? fallback ?? null;
+  } catch (err) {
+    console.warn("[AI] Failed to refresh book state before streaming:", err);
+    return fallback ?? null;
+  }
+}
+
 export function useStreamingChat(options?: StreamingChatOptions) {
   const streamingKey = getChatStreamingKey(options?.bookId);
   const streamingSession = useChatStore(
@@ -177,10 +190,7 @@ export function useStreamingChat(options?: StreamingChatOptions) {
       const bookId = overrideBookId ?? options?.bookId;
       const sessionKey = getChatStreamingKey(bookId);
       const activeSession = useChatStore.getState().streamingSessions[sessionKey];
-      if (
-        (!content.trim() && (!quotes || quotes.length === 0)) ||
-        activeSession?.isStreaming
-      ) {
+      if ((!content.trim() && (!quotes || quotes.length === 0)) || activeSession?.isStreaming) {
         return;
       }
 
@@ -321,10 +331,13 @@ export function useStreamingChat(options?: StreamingChatOptions) {
           const elapsed = now - lastPublishedAt;
 
           if (!pendingPublishTimer) {
-            pendingPublishTimer = setTimeout(() => {
-              pendingPublishTimer = null;
-              publishCurrentMessage(pendingCurrentStep);
-            }, lastPublishedAt === 0 ? 0 : Math.max(STREAMING_PUBLISH_INTERVAL_MS - elapsed, 0));
+            pendingPublishTimer = setTimeout(
+              () => {
+                pendingPublishTimer = null;
+                publishCurrentMessage(pendingCurrentStep);
+              },
+              lastPublishedAt === 0 ? 0 : Math.max(STREAMING_PUBLISH_INTERVAL_MS - elapsed, 0),
+            );
           }
         };
 
@@ -334,13 +347,16 @@ export function useStreamingChat(options?: StreamingChatOptions) {
           finishStreamingSession(sessionKey);
         };
 
+        const streamBook = await resolveFreshBook(bookId, options?.book);
+        const streamIsVectorized = streamBook?.isVectorized ?? false;
+
         await stream.stream({
           thread: threadForStream,
-          book: options?.book || null,
+          book: streamBook,
           bookId,
           semanticContext: options?.semanticContext || null,
           enabledSkills,
-          isVectorized: options?.book?.isVectorized || false,
+          isVectorized: streamIsVectorized,
           aiConfig: aiConfigOverride || aiConfig,
           deepThinking,
           spoilerFree,

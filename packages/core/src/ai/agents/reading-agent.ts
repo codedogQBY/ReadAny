@@ -27,6 +27,8 @@ const CHAPTER_TOOL_EXECUTION_LIMIT = 8;
 const DEFAULT_RECURSION_LIMIT = 24;
 const CHAPTER_TASK_RECURSION_LIMIT = 24;
 const DEFAULT_TOOL_TIMEOUT_MS = 45_000;
+const TOOL_EXECUTION_LIMIT = 12;
+const REPEATED_TOOL_CALL_LIMIT = 2;
 
 const CHAPTER_LOOKUP_STOP_TOOL_NAMES = new Set([
   "resolveChapterReference",
@@ -305,6 +307,32 @@ function buildChapterReferenceLimitResult(
   };
 }
 
+function buildRepeatedToolCallResult(
+  lastResult: unknown,
+  toolName: string,
+  reason: "duplicate" | "limit",
+): Record<string, unknown> {
+  const base =
+    lastResult && typeof lastResult === "object" && !Array.isArray(lastResult)
+      ? (lastResult as Record<string, unknown>)
+      : lastResult === undefined
+        ? {}
+        : { previousResult: lastResult };
+  return {
+    ...base,
+    ...(toolName === "addCitation" ? { type: "notice" } : {}),
+    repeatedToolCall: true,
+    toolName,
+    stopToolCalls: true,
+    reason:
+      reason === "duplicate"
+        ? "This tool call repeats information already returned in this turn."
+        : "Tool execution limit reached for this turn.",
+    instruction:
+      "Stop calling tools now. Use the tool results already available in the conversation to answer the user directly. If the available results are insufficient, ask one concise clarification question.",
+  };
+}
+
 // --- Stream Event Types ---
 
 export type AgentStreamEvent =
@@ -515,6 +543,9 @@ export async function* streamReadingAgent(
   };
   const toolResultCache = new Map<string, unknown>();
   const searchResultCache = new Map<string, unknown>();
+  const toolExecutionCounts = new Map<string, number>();
+  const lastToolResults = new Map<string, unknown>();
+  let totalToolExecutions = 0;
   const pendingToolCallNames: string[] = [];
   const isChapterTask =
     questionCategory === "specific_chapter_request" || CHAPTER_REFERENCE_RE.test(userInput);
@@ -715,13 +746,34 @@ export async function* streamReadingAgent(
             chapterReferenceState.attemptedQueries.push(effectiveQuery);
           }
 
+          const progressKey =
+            tool.name === "ragSearch" || tool.name === "fallbackSearch"
+              ? buildSearchToolCacheKey(tool.name, toolInput) ||
+                buildToolCacheKey(tool.name, toolInput)
+              : buildToolCacheKey(tool.name, toolInput);
+          const previousExecutions = toolExecutionCounts.get(progressKey) ?? 0;
+          if (previousExecutions >= REPEATED_TOOL_CALL_LIMIT) {
+            return JSON.stringify(
+              buildRepeatedToolCallResult(lastToolResults.get(progressKey), tool.name, "duplicate"),
+            );
+          }
+          if (totalToolExecutions >= TOOL_EXECUTION_LIMIT) {
+            return JSON.stringify(
+              buildRepeatedToolCallResult(lastToolResults.get(progressKey), tool.name, "limit"),
+            );
+          }
+          toolExecutionCounts.set(progressKey, previousExecutions + 1);
+          totalToolExecutions += 1;
+
           const skipExactCache =
             tool.name === "addCitation" || tool.name === "resolveChapterReference";
           const exactCacheKey = skipExactCache
             ? undefined
             : buildToolCacheKey(tool.name, toolInput);
           if (exactCacheKey && toolResultCache.has(exactCacheKey)) {
-            return JSON.stringify(toolResultCache.get(exactCacheKey));
+            const cachedResult = toolResultCache.get(exactCacheKey);
+            lastToolResults.set(progressKey, cachedResult);
+            return JSON.stringify(cachedResult);
           }
 
           const searchCacheKey =
@@ -729,7 +781,9 @@ export async function* streamReadingAgent(
               ? buildSearchToolCacheKey(tool.name, toolInput)
               : undefined;
           if (searchCacheKey && searchResultCache.has(searchCacheKey)) {
-            return JSON.stringify(searchResultCache.get(searchCacheKey));
+            const cachedResult = searchResultCache.get(searchCacheKey);
+            lastToolResults.set(progressKey, cachedResult);
+            return JSON.stringify(cachedResult);
           }
 
           const result = await executeTool(tool, toolInput, toolTimeoutMs);
@@ -750,6 +804,7 @@ export async function* streamReadingAgent(
               chapterReferenceState.limitReached = true;
             }
           }
+          lastToolResults.set(progressKey, result);
           return JSON.stringify(result);
         },
       });
