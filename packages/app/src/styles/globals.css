@@ -143,6 +143,7 @@
 
 /* ── Chat markdown prose styles ─────────────────────────────── */
 .chat-markdown {
+  color: var(--foreground);
   line-height: 1.7;
   word-break: break-word;
 }

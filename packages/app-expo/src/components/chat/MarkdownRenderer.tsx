@@ -5,7 +5,8 @@ import type { CitationPart } from "@readany/core/types/message";
 import * as Clipboard from "expo-clipboard";
 import { Fragment, type ReactNode, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import type { StyleProp, TextStyle } from "react-native";
 import Markdown, { type RenderRules, type ASTNode } from "react-native-markdown-display";
 
 interface MarkdownRendererProps {
@@ -14,6 +15,26 @@ interface MarkdownRendererProps {
   styleOverrides?: Record<string, any>;
   citations?: CitationPart[];
   onCitationClick?: (citation: CitationPart) => void;
+}
+
+function isUnsafeMarkdownTextColor(color: unknown): boolean {
+  if (typeof color !== "string") return true;
+  const normalized = color.replace(/\s+/g, "").toLowerCase();
+  return (
+    !normalized ||
+    normalized === "black" ||
+    normalized === "#000" ||
+    normalized === "#000000" ||
+    normalized === "rgb(0,0,0)" ||
+    normalized === "rgba(0,0,0,1)"
+  );
+}
+
+function getReadableTextColor(style: unknown, fallbackColor: string): string {
+  const flattened = StyleSheet.flatten(style as StyleProp<TextStyle>) as
+    | { color?: unknown }
+    | undefined;
+  return isUnsafeMarkdownTextColor(flattened?.color) ? fallbackColor : String(flattened?.color);
 }
 
 function CodeBlockWithCopy({
@@ -128,8 +149,11 @@ function renderTextWithCitations(
 
   const parts = text.split(/(\[\d+\])/g);
   const result: React.ReactNode[] = [];
+  let offset = 0;
 
-  parts.forEach((part, i) => {
+  for (const part of parts) {
+    const keyOffset = offset;
+    offset += part.length;
     const match = part.match(/\[(\d+)\]/);
     if (match) {
       const num = Number.parseInt(match[1]);
@@ -137,20 +161,20 @@ function renderTextWithCitations(
       if (citation) {
         result.push(
           <CitationLink
-            key={`citation-${i}`}
+            key={`citation-${keyOffset}-${num}`}
             num={num}
             citation={citation}
             onCitationClick={onCitationClick}
             colors={colors}
           />,
         );
-        return;
+        continue;
       }
     }
     if (part) {
-      result.push(<Fragment key={`text-${i}`}>{part}</Fragment>);
+      result.push(<Fragment key={`text-${keyOffset}`}>{part}</Fragment>);
     }
-  });
+  }
 
   return result;
 }
@@ -194,15 +218,16 @@ export function MarkdownRenderer({
       },
       text: (node: ASTNode, children: ReactNode[], parentNodes: ASTNode[], style: any) => {
         const text = node.content || "";
+        const readableStyle = [style, { color: getReadableTextColor(style, colors.foreground) }];
         if (citations && citations.length > 0 && /\[\d+\]/.test(text)) {
           return (
-            <Text key={node.key} style={style}>
+            <Text key={node.key} style={readableStyle}>
               {renderTextWithCitations(text, citations, onCitationClick, colors)}
             </Text>
           );
         }
         return (
-          <Text key={node.key} style={style}>
+          <Text key={node.key} style={readableStyle}>
             {text}
           </Text>
         );
@@ -226,6 +251,12 @@ const makeMarkdownStyles = (colors: ThemeColors) =>
       color: colors.foreground,
       fontSize: fs.sm,
       lineHeight: 20,
+    },
+    text: {
+      color: colors.foreground,
+    },
+    textgroup: {
+      color: colors.foreground,
     },
     heading1: {
       color: colors.foreground,
@@ -255,10 +286,12 @@ const makeMarkdownStyles = (colors: ThemeColors) =>
       marginBottom: 8,
       marginTop: 0,
     },
-    strong: { fontWeight: "700" },
-    em: { fontStyle: "italic" },
+    strong: { color: colors.foreground, fontWeight: "700" },
+    em: { color: colors.foreground, fontStyle: "italic" },
+    s: { color: colors.foreground },
     link: { color: colors.blue, textDecorationLine: "none" },
     blockquote: {
+      color: colors.mutedForeground,
       borderLeftWidth: 3,
       borderLeftColor: colors.border,
       paddingLeft: 12,
@@ -317,12 +350,17 @@ const makeMarkdownStyles = (colors: ThemeColors) =>
       borderBottomWidth: 0.5,
       borderColor: colors.border,
     },
-    bullet_list: { marginVertical: 4 },
-    ordered_list: { marginVertical: 4 },
+    bullet_list: { color: colors.foreground, marginVertical: 4 },
+    ordered_list: { color: colors.foreground, marginVertical: 4 },
     list_item: {
+      color: colors.foreground,
       marginBottom: 4,
       flexDirection: "row",
     },
+    bullet_list_icon: { color: colors.foreground },
+    bullet_list_content: { color: colors.foreground },
+    ordered_list_icon: { color: colors.foreground },
+    ordered_list_content: { color: colors.foreground },
     hr: {
       backgroundColor: colors.border,
       height: 1,
