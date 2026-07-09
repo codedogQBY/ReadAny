@@ -1,7 +1,7 @@
-import { ConfigGuideDialog, type ConfigGuideType } from "@/components/shared/ConfigGuideDialog";
 /**
  * ChatPage — standalone full-page chat for general conversations.
  */
+import { ConfigGuideDialog, type ConfigGuideType } from "@/components/shared/ConfigGuideDialog";
 import { useStreamingChat } from "@/hooks/use-streaming-chat";
 import { getBook as getBookRecord } from "@/lib/db/database";
 import { openDesktopBook } from "@/lib/library/open-book";
@@ -65,7 +65,9 @@ function ThreadsSidebar({
     <div
       className={`absolute inset-0 z-50 ${open ? "pointer-events-auto" : "pointer-events-none"}`}
     >
-      <div
+      <button
+        type="button"
+        aria-label={t("common.close")}
         className={`absolute inset-0 transition-opacity duration-300 ${open ? "bg-black/5 opacity-100" : "opacity-0"}`}
         onClick={onClose}
       />
@@ -99,11 +101,17 @@ function ThreadsSidebar({
               if (!olderByMonth.has(monthLabel)) {
                 olderByMonth.set(monthLabel, []);
               }
-              olderByMonth.get(monthLabel)!.push(thread);
+              const monthThreads = olderByMonth.get(monthLabel);
+              if (monthThreads) {
+                monthThreads.push(thread);
+              }
             }
             const sortedMonths = [...olderByMonth.keys()].sort((a, b) => b.localeCompare(a));
             for (const month of sortedMonths) {
-              sections.push({ key: month, label: month, threads: olderByMonth.get(month)! });
+              const monthThreads = olderByMonth.get(month);
+              if (monthThreads) {
+                sections.push({ key: month, label: month, threads: monthThreads });
+              }
             }
 
             return sections.map(({ key, label, threads }) => {
@@ -125,6 +133,13 @@ function ThreadsSidebar({
                         onClick={() => {
                           onSelect(thread.id);
                           onClose();
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            onSelect(thread.id);
+                            onClose();
+                          }
                         }}
                         className={`group flex cursor-pointer items-start gap-2 rounded-lg px-3 py-2.5 transition-colors ${thread.id === activeThreadId ? "bg-primary/10 text-primary" : "text-foreground hover:bg-muted"}`}
                       >
@@ -190,14 +205,15 @@ function EmptyState({ onSuggestionClick }: { onSuggestionClick: (text: string) =
             </h2>
             <div className="grid grid-cols-2 gap-3">
               {SUGGESTIONS.map(({ key, icon: Icon }) => (
-                <div
+                <button
+                  type="button"
                   key={key}
                   onClick={() => onSuggestionClick(t(key))}
-                  className="flex cursor-pointer flex-col items-start gap-3 rounded-xl bg-muted/70 p-4 transition-colors hover:bg-muted"
+                  className="flex cursor-pointer flex-col items-start gap-3 rounded-xl bg-muted/70 p-4 text-left transition-colors hover:bg-muted"
                 >
                   <Icon className="size-5 text-muted-foreground" />
                   <span className="text-sm text-foreground">{t(key)}</span>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -287,8 +303,7 @@ export function ChatPage() {
       }
 
       const trimmedCfi = citation.cfi?.trim();
-      const initialCfi =
-        trimmedCfi || `chapter:${Math.max(0, Number(citation.chapterIndex) || 0)}`;
+      const initialCfi = trimmedCfi || `chapter:${Math.max(0, Number(citation.chapterIndex) || 0)}`;
 
       const opened = await openDesktopBook({
         book,
@@ -304,8 +319,13 @@ export function ChatPage() {
   );
 
   const displayMessages = convertToMessageV2(activeThread?.messages || []);
-  const activeCurrentMessage = activeThread?.id === currentMessage?.threadId ? currentMessage : null;
-  const allMessages = mergeMessagesWithStreaming(displayMessages, activeCurrentMessage, isStreaming);
+  const activeCurrentMessage =
+    activeThread?.id === currentMessage?.threadId ? currentMessage : null;
+  const allMessages = mergeMessagesWithStreaming(
+    displayMessages,
+    activeCurrentMessage,
+    isStreaming,
+  );
 
   const exportTitle = activeThread?.title || t("chat.aiAssistant");
 
@@ -363,7 +383,7 @@ export function ChatPage() {
           </button>
           {bookTitle && (
             <span className="text-xs text-muted-foreground">
-              {t("chat.context")}: <span className="font-medium text-neutral-700">{bookTitle}</span>
+              {t("chat.context")}: <span className="font-medium text-foreground">{bookTitle}</span>
             </span>
           )}
         </div>

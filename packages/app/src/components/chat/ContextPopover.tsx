@@ -28,7 +28,7 @@ export function ContextPopover() {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs text-neutral-600 transition-colors hover:bg-muted"
+        className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
         <BookOpen className="size-3.5" />
         <span>

@@ -81,7 +81,7 @@ export function ModelSelector() {
                       type="button"
                       onClick={() => handleSelect(ep.id, model)}
                       className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
-                        isActive ? "bg-primary/10 text-primary" : "text-neutral-700 hover:bg-muted"
+                        isActive ? "bg-primary/10 text-primary" : "text-foreground hover:bg-muted"
                       }`}
                     >
                       <span className="truncate">{model}</span>

@@ -48,23 +48,23 @@ export function MindmapView({ markdown, title }: MindmapViewProps) {
           color: () => getThemePrimaryColor(),
           style: (id: string) => `
           .${id} {
-            --markmap-text-color: #333;
-            --markmap-code-bg: #f5f5f5;
-            --markmap-code-color: #333;
-            --markmap-circle-open-bg: #fff;
+            --markmap-text-color: var(--foreground);
+            --markmap-code-bg: var(--muted);
+            --markmap-code-color: var(--foreground);
+            --markmap-circle-open-bg: var(--card);
           }
           .${id} .markmap-foreign {
-            color: #333;
+            color: var(--foreground);
           }
           .${id} .markmap-foreign a {
-            color: #0066cc;
+            color: var(--primary);
           }
           .${id} .markmap-foreign a:hover {
-            color: #0052a3;
+            color: var(--primary);
           }
           .${id} .markmap-foreign code {
-            color: #333;
-            background-color: #f5f5f5;
+            color: var(--foreground);
+            background-color: var(--muted);
           }
         `,
         },
@@ -93,23 +93,23 @@ export function MindmapView({ markdown, title }: MindmapViewProps) {
           color: () => getThemePrimaryColor(),
           style: (id: string) => `
           .${id} {
-            --markmap-text-color: #333;
-            --markmap-code-bg: #f5f5f5;
-            --markmap-code-color: #333;
-            --markmap-circle-open-bg: #fff;
+            --markmap-text-color: var(--foreground);
+            --markmap-code-bg: var(--muted);
+            --markmap-code-color: var(--foreground);
+            --markmap-circle-open-bg: var(--card);
           }
           .${id} .markmap-foreign {
-            color: #333;
+            color: var(--foreground);
           }
           .${id} .markmap-foreign a {
-            color: #0066cc;
+            color: var(--primary);
           }
           .${id} .markmap-foreign a:hover {
-            color: #0052a3;
+            color: var(--primary);
           }
           .${id} .markmap-foreign code {
-            color: #333;
-            background-color: #f5f5f5;
+            color: var(--foreground);
+            background-color: var(--muted);
           }
         `,
         },
@@ -156,10 +156,10 @@ export function MindmapView({ markdown, title }: MindmapViewProps) {
     if (!svgElement) return;
 
     const gElement = svgElement.querySelector("g");
-    let contentX = -500,
-      contentY = -500,
-      contentWidth = 2000,
-      contentHeight = 1500;
+    let contentX = -500;
+    let contentY = -500;
+    let contentWidth = 2000;
+    let contentHeight = 1500;
 
     if (gElement) {
       try {
@@ -169,7 +169,7 @@ export function MindmapView({ markdown, title }: MindmapViewProps) {
         contentY = bbox.y - padding;
         contentWidth = bbox.width + padding * 2;
         contentHeight = bbox.height + padding * 2;
-      } catch (e) {}
+      } catch {}
     }
 
     const clonedSvg = svgElement.cloneNode(true) as SVGSVGElement;
@@ -223,7 +223,7 @@ export function MindmapView({ markdown, title }: MindmapViewProps) {
     toast.success(t("common.downloadSuccess", "图表已下载"));
   }, [expanded, title, t]);
 
-  const displayTitle = title && title.length > 20 ? title.slice(0, 20) + "..." : title;
+  const displayTitle = title && title.length > 20 ? `${title.slice(0, 20)}...` : title;
 
   const fullscreenOverlay = expanded
     ? createPortal(

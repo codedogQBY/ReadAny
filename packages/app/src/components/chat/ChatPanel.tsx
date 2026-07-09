@@ -1,9 +1,9 @@
-import { ConfigGuideDialog, type ConfigGuideType } from "@/components/shared/ConfigGuideDialog";
 /**
  * ChatPanel — book-scoped sidebar chat panel.
  */
-import { useReadingContext } from "@/lib/ai/reading-context-service";
+import { ConfigGuideDialog, type ConfigGuideType } from "@/components/shared/ConfigGuideDialog";
 import { useStreamingChat } from "@/hooks/use-streaming-chat";
+import { useReadingContext } from "@/lib/ai/reading-context-service";
 import { useChatStore } from "@/stores/chat-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { getPlatformService } from "@readany/core/services";
@@ -223,7 +223,8 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
 
   // Build message list with streaming message
   const storeMessages = convertToMessageV2(displayMessages);
-  const activeCurrentMessage = activeThread?.id === currentMessage?.threadId ? currentMessage : null;
+  const activeCurrentMessage =
+    activeThread?.id === currentMessage?.threadId ? currentMessage : null;
   const allMessages = mergeMessagesWithStreaming(storeMessages, activeCurrentMessage, isStreaming);
 
   const exportTitle = activeThread?.title || book?.meta?.title || t("chat.aiAssistant");
@@ -370,11 +371,17 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
                     if (!olderByMonth.has(monthLabel)) {
                       olderByMonth.set(monthLabel, []);
                     }
-                    olderByMonth.get(monthLabel)!.push(thread);
+                    const monthThreads = olderByMonth.get(monthLabel);
+                    if (monthThreads) {
+                      monthThreads.push(thread);
+                    }
                   }
                   const sortedMonths = [...olderByMonth.keys()].sort((a, b) => b.localeCompare(a));
                   for (const month of sortedMonths) {
-                    sections.push({ key: month, label: month, threads: olderByMonth.get(month)! });
+                    const monthThreads = olderByMonth.get(month);
+                    if (monthThreads) {
+                      sections.push({ key: month, label: month, threads: monthThreads });
+                    }
                   }
 
                   return sections.map(({ key, label, threads }) => {
@@ -396,9 +403,15 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
                               className={`group flex cursor-pointer items-start gap-2 rounded-md px-2.5 py-2 transition-colors ${
                                 thread.id === activeThreadId
                                   ? "bg-primary/10 text-primary"
-                                  : "text-neutral-600 hover:bg-muted"
+                                  : "text-foreground hover:bg-muted"
                               }`}
                               onClick={() => handleSelectThread(thread.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  handleSelectThread(thread.id);
+                                }
+                              }}
                             >
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5">
@@ -443,7 +456,9 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <p className="truncate text-[11px] font-medium text-foreground">
-                {activeReaderContext.currentChapter.title || book?.meta?.title || t("chat.aiAssistant")}
+                {activeReaderContext.currentChapter.title ||
+                  book?.meta?.title ||
+                  t("chat.aiAssistant")}
               </p>
               <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
                 {Math.round(activeReaderContext.currentPosition.percentage * 100)}%
@@ -479,7 +494,7 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
             <div className="flex flex-col items-start gap-3 pl-1">
               <img src="/think.svg" alt="" className="h-28 w-28 shrink-0 dark:invert" />
               <div className="space-y-1">
-                <h3 className="text-lg font-semibold text-neutral-900">{t("chat.aiAssistant")}</h3>
+                <h3 className="text-lg font-semibold text-foreground">{t("chat.aiAssistant")}</h3>
                 <p className="max-w-sm text-sm text-muted-foreground">
                   {t("chat.aiAssistantDesc")}
                 </p>
@@ -491,7 +506,7 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
                   key={text}
                   type="button"
                   onClick={() => handleSend(text)}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-neutral-700 transition-colors hover:bg-muted/70"
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/70"
                 >
                   {text}
                 </button>
