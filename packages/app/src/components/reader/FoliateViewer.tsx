@@ -120,6 +120,9 @@ function getRangeTextWithoutRuby(range: Range, fallback = ""): string {
     for (const node of fragment.querySelectorAll("rt, rp")) {
       node.remove();
     }
+    for (const node of fragment.querySelectorAll("br")) {
+      node.replaceWith(fragment.ownerDocument.createTextNode("\n"));
+    }
     const text = fragment.textContent?.trim();
     if (text) return text;
   } catch {
