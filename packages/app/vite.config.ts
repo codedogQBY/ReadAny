@@ -18,14 +18,8 @@ export default defineConfig(async () => ({
       "@": path.resolve(__dirname, "./src"),
       "pdfjs-dist/build/pdf.worker.mjs": path.join(pdfjsDist, "build/pdf.worker.mjs"),
       "pdfjs-dist": pdfjsDist,
-      // Map @pdfjs/* to foliate-js vendored pdfjs (v4.7, compatible with foliate-js)
-      "@pdfjs": path.resolve(__dirname, "../../foliate-js/vendor/pdfjs"),
     },
     dedupe: ["i18next", "react-i18next", "react", "react-dom"],
-  },
-  optimizeDeps: {
-    // Exclude foliate-js pdf.js from pre-bundling so that @pdfjs alias works
-    exclude: ["foliate-js/pdf.js"],
   },
   clearScreen: false,
   server: {

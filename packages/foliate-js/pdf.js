@@ -20,6 +20,65 @@ const PDFJS_DOCUMENT_OPTIONS = {
   standardFontDataUrl: `${PDFJS_CDN_BASE}/standard_fonts/`,
 };
 
+// The OS accessibility "font size" setting scales every piece of WebView-rendered
+// text (including this transparent selection/highlight text layer) but leaves the
+// page's canvas bitmap untouched. Only the glyph *size* (a font-size) is scaled;
+// the text layer's positions are percentages of the `--total-scale-factor`-sized
+// container and are not. Left uncorrected the glyphs render `fontScale`x larger
+// than the ones baked into the canvas, so selection and highlight rectangles
+// overshoot the text into the blank margins and sit too low (readest #4480).
+// Measure the scale here so render() can divide it back out of the glyph-size
+// lever only. offsetHeight of a 100px/line-height-1 box reflects the OS font
+// scaling but not devicePixelRatio or CSS transforms, so it isolates it.
+const getFontScale = (doc) => {
+  const probe = doc.createElement("div");
+  probe.style.cssText =
+    "position:absolute;left:-9999px;top:0;visibility:hidden;font-size:100px;line-height:1;text-size-adjust:none;-webkit-text-size-adjust:none";
+  probe.textContent = "x";
+  doc.body.append(probe);
+  const fontScale = probe.offsetHeight / 100;
+  probe.remove();
+  return fontScale > 0 ? fontScale : 1;
+};
+
+// iOS WKWebView has a ~2GB per-process memory ceiling. Both a page's canvas
+// bitmap and its WebKit backing layer are allocated at the render scale, so
+// their memory grows with the SQUARE of the device pixel ratio. Phones report
+// dpr 3, which is the tipping factor. Rendering at 2x instead of 3x is still
+// retina-sharp but uses ~2.25x less memory per page (the crisp, selectable
+// text layer is a separate DOM layer, unaffected).
+const MAX_RENDER_DPR = 2;
+// Hard ceiling on a single page's bitmap area (~3.1 Mpx ≈ 12.6 MB) so a large
+// tablet page can't blow the budget even after the dpr clamp.
+const MAX_CANVAS_PIXELS = 2048 * 1536;
+
+// Only mobile WebViews get that budget. Desktop browsers have no per-process
+// memory ceiling, so clamping there bought nothing and cost sharpness: the
+// raster ended up coarser than the screen, the browser upscaled it into the
+// CSS box, and PDF text looked blurry (readest #5251). iPadOS reports a
+// desktop ("Macintosh") user agent, so touch points are what give a tablet
+// away.
+const isMobileWebView = () => {
+  const ua = navigator.userAgent;
+  return (
+    /Android|iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)
+  );
+};
+
+// The device pixel ratio to rasterise this page at: the real dpr on desktop,
+// or on mobile the dpr clamped by both MAX_RENDER_DPR and the per-canvas pixel
+// budget. Never below 1 (CSS resolution).
+const getRenderDpr = (page, zoom) => {
+  let dpr = globalThis.devicePixelRatio || 1;
+  if (isMobileWebView()) {
+    dpr = Math.min(dpr, MAX_RENDER_DPR);
+    const { width, height } = page.getViewport({ scale: zoom || 1 });
+    const area = width * height * dpr * dpr;
+    if (area > MAX_CANVAS_PIXELS) dpr *= Math.sqrt(MAX_CANVAS_PIXELS / area);
+  }
+  return Math.max(1, dpr);
+};
+
 // Inline text_layer_builder CSS
 const TEXT_LAYER_CSS = `
 .textLayer {
@@ -216,7 +275,7 @@ const getSelectedText = (selection, container) => {
 const render = async (page, doc, zoom) => {
   if (!doc) return;
   const scale = zoom;
-  const outputScale = globalThis.devicePixelRatio || 1;
+  const renderDpr = getRenderDpr(page, zoom);
 
   doc.documentElement.style.removeProperty("transform");
   doc.documentElement.style.removeProperty("transform-origin");
@@ -227,14 +286,17 @@ const render = async (page, doc, zoom) => {
 
   const viewport = page.getViewport({ scale });
 
-  // Render canvas (in main document for font loading, then adopt into iframe)
+  // Render canvas (in main document for font loading, then adopt into iframe).
+  // The bitmap is over-sampled at renderDpr but the CSS box is the display size,
+  // so the raster stays crisp WITHOUT scaling the document (scaling the document
+  // with `transform` misplaces text selection and the annotation toolbar).
   const canvas = document.createElement("canvas");
-  canvas.height = Math.floor(viewport.height * outputScale);
-  canvas.width = Math.floor(viewport.width * outputScale);
+  canvas.height = Math.floor(viewport.height * renderDpr);
+  canvas.width = Math.floor(viewport.width * renderDpr);
   canvas.style.width = `${Math.floor(viewport.width)}px`;
   canvas.style.height = `${Math.floor(viewport.height)}px`;
   const canvasContext = canvas.getContext("2d");
-  const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
+  const transform = renderDpr !== 1 ? [renderDpr, 0, 0, renderDpr, 0, 0] : null;
   await page.render({ canvasContext, transform, viewport }).promise;
 
   const canvasContainer = doc.querySelector("#canvas");
@@ -257,6 +319,18 @@ const render = async (page, doc, zoom) => {
       await textLayer.render();
     } catch (error) {
       console.error(`Failed to render PDF text layer for page ${page.pageNumber}.`, error);
+    }
+
+    // Counteract the OS font-size accessibility scaling on the text layer's glyph
+    // size only (see getFontScale). `--text-scale-factor` feeds `font-size` and
+    // nothing else, so dividing it leaves positions (which scale with
+    // `--total-scale-factor`) aligned with the canvas at any font-size setting.
+    const fontScale = getFontScale(doc);
+    if (fontScale !== 1) {
+      textContainer.style.setProperty(
+        "--text-scale-factor",
+        `calc(var(--total-scale-factor) * var(--min-font-size) / ${fontScale})`,
+      );
     }
 
     // Hide offscreen canvases created by TextLayer
@@ -466,6 +540,10 @@ const render = async (page, doc, zoom) => {
     const linkService = {
       goToDestination: () => {},
       getDestinationHash: (dest) => JSON.stringify(dest),
+      // pdf.js AnnotationLayer calls getAnchorUrl for named-action / GoTo link
+      // annotations; without it the render rejects. Match pdf.js SimpleLinkService,
+      // which returns ''.
+      getAnchorUrl: () => "",
       addLinkAttributes: (link, url) => {
         link.href = url;
       },

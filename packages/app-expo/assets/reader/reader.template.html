@@ -171,7 +171,9 @@
     function postToRN(type, data) {
       if (RN) RN.postMessage(JSON.stringify({ type, ...data }));
     }
-    window.__READANY_READER_BUILD_ID = 'android-local-server-cors';
+    // build-reader.js stamps a real build id (git sha + timestamp) into this
+    // line; a stale committed bundle is detectable via the RN 'debug' message.
+    window.__READANY_READER_BUILD_ID = 'build-id-placeholder';
     postToRN('debug', { message: '[ReaderBuild] ' + window.__READANY_READER_BUILD_ID });
     Promise.withResolvers ??= function () {
       let resolve;
@@ -1773,6 +1775,30 @@
     }
 
     // ─── Settings ───
+
+    // Safe style block for fixed-layout docs (PDF/CBZ). PDF.js TextLayer glyphs
+    // are transparent spans whose size/position are computed from CSS variables;
+    // injecting font-size/font-family/line-height or `color: inherit` would
+    // break glyph sizing and make the text layer visible over the canvas.
+    function buildFixedLayoutStyles(bg, fg, primary) {
+      return `
+        :root {
+          --readany-font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        }
+        html, body {
+          background-color: ${bg} !important;
+          color: ${fg} !important;
+        }
+        .textLayer,
+        .textLayer :is(span, br) {
+          color: transparent !important;
+        }
+        ::selection {
+          background: rgba(59, 130, 246, 0.3) !important;
+        }
+      `;
+    }
+
     function applySettings(settings) {
       if (!view || !view.renderer) return;
       const renderer = view.renderer;
@@ -1836,7 +1862,19 @@
         const layoutScale = currentFontSize / BASELINE_FONT_SIZE;
         const ps = Math.round(currentParagraphSpacing * layoutScale);
 
-        const baseStyles = `
+        // Fixed layout (PDF/CBZ): never inject font-size/font-family/line-height
+        // reflow overrides — they would break the pdf.js TextLayer (glyph sizes
+        // are computed from CSS variables in PDF.js 5.x, not set inline). Only a
+        // theme-safe block is used, mirroring the desktop FoliateViewer
+        // fixed-layout guard.
+        const isFixedLayout = !!(view && view.isFixedLayout);
+        const baseStyles = isFixedLayout
+          ? buildFixedLayoutStyles(
+              currentThemeColors.bg,
+              currentThemeColors.fg,
+              currentThemeColors.primary,
+            )
+          : `
           :root {
             --readany-font-family: ${fontFamily};
           }
@@ -1897,12 +1935,17 @@
           ${getVerticalWritingCompatibilityStyles()}
         `;
         lastRendererStyles = baseStyles;
-        const themedStyles = injectThemeIntoStyles(
-          baseStyles,
-          currentThemeColors.bg,
-          currentThemeColors.fg,
-          currentThemeColors.primary,
-        );
+        // For fixed layout baseStyles is already a self-contained safe block;
+        // re-wrapping it with injectThemeIntoStyles would re-add the
+        // `color: inherit` rule that makes PDF TextLayer glyphs visible.
+        const themedStyles = isFixedLayout
+          ? baseStyles
+          : injectThemeIntoStyles(
+              baseStyles,
+              currentThemeColors.bg,
+              currentThemeColors.fg,
+              currentThemeColors.primary,
+            );
         if (typeof renderer.setStyles === 'function') {
           renderer.setStyles(themedStyles);
         }
@@ -2055,8 +2098,15 @@
       document.body.style.color = fg;
 
       if (view && view.renderer && view.renderer.setStyles) {
-        const currentStyles = lastRendererStyles || '';
-        const themedStyles = injectThemeIntoStyles(currentStyles, bg, fg, primary);
+        const isFixedLayout = !!(view && view.isFixedLayout);
+        // For fixed layout, lastRendererStyles carries baked-in theme colors, so
+        // rebuild the safe block with the new colors; injectThemeIntoStyles
+        // would re-add the `color: inherit` rule that makes PDF TextLayer glyphs
+        // visible.
+        const themedStyles = isFixedLayout
+          ? buildFixedLayoutStyles(bg, fg, primary)
+          : injectThemeIntoStyles(lastRendererStyles || '', bg, fg, primary);
+        lastRendererStyles = themedStyles;
         view.renderer.setStyles(themedStyles);
         syncReaderOverrideStylesForAllDocs(themedStyles);
       }
@@ -2213,6 +2263,15 @@ a { color: ${primary} !important; }
     }
 
     function applyDocStyles(doc) {
+      const isFixedLayout = !!(view && view.isFixedLayout);
+      // Fixed layout (PDF/CBZ): the pdf.js TextLayer glyphs are transparent spans
+      // positioned by CSS variables — `color: inherit` would make them visible and
+      // reflow overrides would misalign selection. Keep only the safe baseline.
+      const fixedLayoutStyles = buildFixedLayoutStyles(
+        currentThemeColors.bg,
+        currentThemeColors.fg,
+        currentThemeColors.primary,
+      );
       syncCustomFontStylesForDoc(doc, currentCustomFontFaceCSS);
       const verticalDoc = isVerticalDoc(doc);
       if (!verticalDoc) {
@@ -2225,7 +2284,18 @@ a { color: ${primary} !important; }
       }
       const style = doc.createElement('style');
       const { bg, fg, primary } = currentThemeColors;
-      style.textContent = `
+      style.textContent = isFixedLayout
+        ? `
+        * { -webkit-touch-callout: none !important; -webkit-user-select: text !important; user-select: text !important; }
+        html, body { background-color: ${bg} !important; color: ${fg} !important; }
+        img, picture, svg, image, canvas {
+          -webkit-user-drag: none !important;
+          touch-action: manipulation !important;
+        }
+        ${fixedLayoutStyles}
+        ${verticalDoc ? getVerticalWritingCompatibilityStyles() : ''}
+      `
+        : `
         * { -webkit-touch-callout: none !important; -webkit-user-select: text !important; user-select: text !important; }
         html, body { background-color: ${bg} !important; color: ${fg} !important; }
         img, picture, svg, image, canvas {
@@ -2239,13 +2309,25 @@ a { color: ${primary} !important; }
       `;
       doc.head.appendChild(style);
       if (lastRendererStyles) {
-        const themedStyles = injectThemeIntoStyles(
-          lastRendererStyles,
-          currentThemeColors.bg,
-          currentThemeColors.fg,
-          currentThemeColors.primary,
-        );
-        syncReaderOverrideStylesForDoc(doc, themedStyles);
+        if (isFixedLayout) {
+          // For PDF/CBZ, sync the freshly computed safe block instead of
+          // lastRendererStyles: lastRendererStyles is never reset in openBook,
+          // so after an EPUB→PDF switch in the same WebView it can still hold
+          // stale reflow styles (font-size/font-family/line-height !important)
+          // that would break the pdf.js TextLayer. fixedLayoutStyles is derived
+          // from the current theme colors, so it is always correct. Re-wrapping
+          // it with injectThemeIntoStyles would re-add `color: inherit`, so
+          // inject it verbatim.
+          syncReaderOverrideStylesForDoc(doc, fixedLayoutStyles);
+        } else {
+          const themedStyles = injectThemeIntoStyles(
+            lastRendererStyles,
+            currentThemeColors.bg,
+            currentThemeColors.fg,
+            currentThemeColors.primary,
+          );
+          syncReaderOverrideStylesForDoc(doc, themedStyles);
+        }
       }
       doc.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); return false; }, true);
     }

@@ -22,9 +22,8 @@
     "@rollup/plugin-terser": "^0.4.4",
     "@zip.js/zip.js": "^2.7.52",
     "fflate": "^0.8.2",
-    "fs-extra": "^11.2.0",
     "globals": "^15.9.0",
-    "pdfjs-dist": "^4.7.76",
+    "pdfjs-dist": "^5.5.207",
     "rollup": "^4.22.4"
   },
   "scripts": {

@@ -13,6 +13,21 @@ const ASSETS_DIR = path.resolve(__dirname, "../assets/reader");
 const TEMPLATE = path.resolve(ASSETS_DIR, "reader.template.html");
 const OUTPUT = path.resolve(ASSETS_DIR, "reader.html");
 
+// Build id: git short SHA + build timestamp. Injected into the bundle so a stale
+// committed reader.html (bundle older than the source it was built from) is
+// immediately detectable via the RN 'debug' message `[ReaderBuild] <id>`.
+function getBuildId() {
+  const { execSync } = require("node:child_process");
+  let sha = "unknown";
+  try {
+    sha = execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
+  } catch {
+    // not a git checkout — fall back to a fixed marker
+  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return `${sha}-${stamp}`;
+}
+
 async function buildReader() {
   // Create a temporary entry point
   const entryContent = `
@@ -65,7 +80,14 @@ async function buildReader() {
     // Use split/join instead of replace to avoid $ replacement patterns in JS bundle
     const MARKER = "<!-- __READANY_FOLIATE_BUNDLE_INSERT_POINT_7f3a9b2e__ -->";
     const parts = template.split(MARKER);
-    const html = `${parts[0]}<script>\n${bundledJS}\n</script>${parts.slice(1).join(MARKER)}`;
+    let html = `${parts[0]}<script>\n${bundledJS}\n</script>${parts.slice(1).join(MARKER)}`;
+
+    // Stamp a real build id (git sha + time) so stale bundles are detectable.
+    // The template keeps a placeholder value that gets replaced here.
+    html = html.replace(
+      "__READANY_READER_BUILD_ID = 'build-id-placeholder'",
+      `__READANY_READER_BUILD_ID = ${JSON.stringify(getBuildId())}`,
+    );
 
     // Write to output file (separate from template)
     fs.writeFileSync(OUTPUT, html);
