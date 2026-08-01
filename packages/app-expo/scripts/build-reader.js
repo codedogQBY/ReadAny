@@ -5,6 +5,7 @@
  * Run: node scripts/build-reader.js
  */
 const esbuild = require("esbuild");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -13,19 +14,12 @@ const ASSETS_DIR = path.resolve(__dirname, "../assets/reader");
 const TEMPLATE = path.resolve(ASSETS_DIR, "reader.template.html");
 const OUTPUT = path.resolve(ASSETS_DIR, "reader.html");
 
-// Build id: git short SHA + build timestamp. Injected into the bundle so a stale
-// committed reader.html (bundle older than the source it was built from) is
-// immediately detectable via the RN 'debug' message `[ReaderBuild] <id>`.
-function getBuildId() {
-  const { execSync } = require("node:child_process");
-  let sha = "unknown";
-  try {
-    sha = execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
-  } catch {
-    // not a git checkout — fall back to a fixed marker
-  }
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  return `${sha}-${stamp}`;
+// Build id: content hash of the complete output with its deterministic
+// placeholder still present. It changes for either template or bundled-source
+// changes, so rebuilding makes a stale committed reader.html easy to diagnose
+// without depending on a commit SHA that cannot include the generated artifact.
+function getBuildId(html) {
+  return `sha256-${crypto.createHash("sha256").update(html).digest("hex")}`;
 }
 
 async function buildReader() {
@@ -82,11 +76,12 @@ async function buildReader() {
     const parts = template.split(MARKER);
     let html = `${parts[0]}<script>\n${bundledJS}\n</script>${parts.slice(1).join(MARKER)}`;
 
-    // Stamp a real build id (git sha + time) so stale bundles are detectable.
+    // Stamp a deterministic content id so stale bundles are detectable while
+    // identical source and dependencies produce byte-identical output.
     // The template keeps a placeholder value that gets replaced here.
     html = html.replace(
       "__READANY_READER_BUILD_ID = 'build-id-placeholder'",
-      `__READANY_READER_BUILD_ID = ${JSON.stringify(getBuildId())}`,
+      `__READANY_READER_BUILD_ID = ${JSON.stringify(getBuildId(html))}`,
     );
 
     // Write to output file (separate from template)

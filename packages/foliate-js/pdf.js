@@ -307,6 +307,23 @@ const render = async (page, doc, zoom) => {
   const textContainer = doc.querySelector(".textLayer");
   if (textContainer) {
     textContainer.replaceChildren();
+
+    // `replaceChildren` leaves inline styles intact, so reset a scale left by a
+    // previous accessibility-font-size render before rendering this page.
+    textContainer.style.removeProperty("--text-scale-factor");
+
+    // Counteract the OS font-size accessibility scaling on the text layer's glyph
+    // size only (see getFontScale). `--text-scale-factor` feeds `font-size` and
+    // nothing else, so dividing it leaves positions (which scale with
+    // `--total-scale-factor`) aligned with the canvas at any font-size setting.
+    const fontScale = getFontScale(doc);
+    if (fontScale !== 1) {
+      textContainer.style.setProperty(
+        "--text-scale-factor",
+        `calc(var(--total-scale-factor) * var(--min-font-size) / ${fontScale})`,
+      );
+    }
+
     try {
       const textLayer = new pdfjsLib.TextLayer({
         textContentSource: await page.streamTextContent({
@@ -319,18 +336,6 @@ const render = async (page, doc, zoom) => {
       await textLayer.render();
     } catch (error) {
       console.error(`Failed to render PDF text layer for page ${page.pageNumber}.`, error);
-    }
-
-    // Counteract the OS font-size accessibility scaling on the text layer's glyph
-    // size only (see getFontScale). `--text-scale-factor` feeds `font-size` and
-    // nothing else, so dividing it leaves positions (which scale with
-    // `--total-scale-factor`) aligned with the canvas at any font-size setting.
-    const fontScale = getFontScale(doc);
-    if (fontScale !== 1) {
-      textContainer.style.setProperty(
-        "--text-scale-factor",
-        `calc(var(--total-scale-factor) * var(--min-font-size) / ${fontScale})`,
-      );
     }
 
     // Hide offscreen canvases created by TextLayer

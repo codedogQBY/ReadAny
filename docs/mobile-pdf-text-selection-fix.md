@@ -64,7 +64,7 @@
 在 `render(page, doc, zoom)` 内接入：
 
 - `outputScale = devicePixelRatio` → `renderDpr = getRenderDpr(page, zoom)`，canvas 的 `width/height/transform` 全部改用它。**保持"canvas 过采样 + CSS 盒是显示尺寸"的结构不变**，只是把过采样系数换成了受钳制的 `renderDpr` —— 等价 readest 的 renderViewport/displayViewport 分离，但不重写已经工作的桌面路径。
-- `await textLayer.render()` 之后：若 `fontScale !== 1`，把 `--text-scale-factor` 设为 `calc(var(--total-scale-factor) * var(--min-font-size) / ${fontScale})` —— **只除字形字号杠杆，不动位置杠杆**（`--total-scale-factor`）。桌面 `fontScale === 1` → no-op。
+- `textContainer.replaceChildren()` 之后、`textLayer.render()` 之前：先清除旧的 inline `--text-scale-factor`，再在 `fontScale !== 1` 时设为 `calc(var(--total-scale-factor) * var(--min-font-size) / ${fontScale})` —— **只除字形字号杠杆，不动位置杠杆**（`--total-scale-factor`）。这保证同一 iframe 从大字号回到 `fontScale === 1` 时不会保留旧除数。
 - 补健壮性：annotation linkService 加 `getAnchorUrl: () => ""`（pdf.js AnnotationLayer 对 named-action 注解会调用，缺失会 reject）。
 
 ### Part 2 — 模板层加 fixed-layout 样式注入守卫（对照桌面）
@@ -90,7 +90,7 @@
 
 改完源码后执行 `node packages/app-expo/scripts/build-reader.js` 重新生成 `reader.html` 并**提交**（维持"提交产物"机制，`Asset.fromModule` 需要 Metro 构建期的静态资源）。
 
-**加固构建脚本**（`build-reader.js`）：build id 从硬编码 `'android-local-server-cors'` 改为 `git rev-parse --short HEAD` + ISO 时间戳，注入模板里的 `__READANY_READER_BUILD_ID = 'build-id-placeholder'`。之后 bundle 与源码漂移可通过 RN debug 消息 `[ReaderBuild] <id>` 立即发现。
+**加固构建脚本**（`build-reader.js`）：build id 从硬编码 `'android-local-server-cors'` 改为待注入 id 的完整 HTML（模板 + bundle）的确定性 SHA-256，注入模板里的 `__READANY_READER_BUILD_ID = 'build-id-placeholder'`。相同源码和依赖会生成字节相同的 `reader.html`；重建后的 id 或文件差异可诊断 bundle 漂移，且不依赖无法包含生成产物的 commit SHA。
 
 ### Part 4 — 统一 pdfjs-dist 版本
 
@@ -127,10 +127,10 @@
 
 | 文件 | 改动 |
 |---|---|
-| `packages/foliate-js/pdf.js` | +88 行。新增 `getFontScale` / `isMobileWebView` / `getRenderDpr` / `MAX_RENDER_DPR=2` / `MAX_CANVAS_PIXELS=2048*1536`；`render()` 里 `outputScale` → `renderDpr`；`textLayer.render()` 后加 fontScale 校正；annotation linkService 补 `getAnchorUrl` |
+| `packages/foliate-js/pdf.js` | +88 行。新增 `getFontScale` / `isMobileWebView` / `getRenderDpr` / `MAX_RENDER_DPR=2` / `MAX_CANVAS_PIXELS=2048*1536`；`render()` 里 `outputScale` → `renderDpr`；每次重建 TextLayer 前重置并按当前 fontScale 校正字号变量；annotation linkService 补 `getAnchorUrl` |
 | `packages/app-expo/assets/reader/reader.template.html` | +112 行。新增 `buildFixedLayoutStyles()`；`applySettings()` / `applyDocStyles()` / `setThemeColors()` 三处加 `view.isFixedLayout` 守卫，fixed-layout 不注入 reflow 样式、不走 `injectThemeIntoStyles`；build id 占位符改 `'build-id-placeholder'`。**复核修复**：`applyDocStyles` 的 fixed-layout 分支改同步 `fixedLayoutStyles`（当前主题色）而非 `lastRendererStyles`，修复 EPUB→PDF 同 WebView 切换时陈旧 reflow 样式泄漏进 PDF 第一页（见"五·补"） |
 | `packages/app-expo/assets/reader/reader.html` | 重建产物。内嵌 pdfjs **5.5.207** + 全部新 workaround；旧的 `scale(1/devicePixelRatio)` 缩放消失 |
-| `packages/app-expo/scripts/build-reader.js` | +24 行。`getBuildId()`（git sha + 时间戳）替换模板中的 build id 占位符 |
+| `packages/app-expo/scripts/build-reader.js` | +24 行。`getBuildId(html)` 以待注入 id 的完整 HTML 计算确定性 SHA-256，并替换模板中的 build id 占位符 |
 | `packages/foliate-js/package.json` | `pdfjs-dist ^4.7.76` → `^5.5.207`；删除未用的 `fs-extra` |
 | `packages/foliate-js/rollup.config.js` | 删除 `copyPDFJS()` 插件及 `fs-extra` import |
 | `packages/foliate-js/package-lock.json` | **删除**（npm 遗留，钉死 4.7.76） |
@@ -145,6 +145,7 @@
 | cli 构建 | ✅ exit 0 |
 | app（vite）构建 | ✅ exit 0 |
 | biome lint | ✅ 通过 |
+| `reader.html` 可复现性 | ✅ 连续两次 `pnpm --filter @readany/app-expo build:reader` 产物字节相同；当前 id 为 `sha256-b06a46ef05bc16354adb4ea35e2267d3b61ba8a65a2d07dc579aa4f39c57873d` |
 | bundle 标记 | ✅ 含 probe `font-size:100px` / `maxTouchPoints` / `2048*1536` / `5.5.207`，旧 `scale(1/dpr)` 已消失（注：esbuild 压缩后函数名被改名，`getFontScale`→`dJ` 等，核对需按代码特征而非名字） |
 | lockfile | ✅ 无 4.x pdfjs 残留 |
 
@@ -180,9 +181,9 @@
 - **Minor — 选区颜色不一致**：fixed-layout 用蓝 `rgba(59,130,246,0.3)`，reflow 用黄 `rgba(250,204,21,0.4)`。PDF 选区高亮与 EPUB 不同。**未改，仅记录。**
 - **Minor — build-reader.js 的 `replace` 不匹配时静默失败**：模板占位符若漂移，bundle 会带着 `'build-id-placeholder'` 发出且构建期无警告。**未改，仅记录。**
 
-### build-id 时序提醒（重要）
+### build-id 与可复现性（重要）
 
-当前 bundle build id 是 `9c601b82-…`，而 `9c601b82` 是**修复前的 commit**（源码改动未提交）。bundle 与源码一起提交后，`[ReaderBuild]` 会显示一个与"修复 commit"不匹配的 sha。**正确流程：commit 之后需再跑一次 `node packages/app-expo/scripts/build-reader.js` 并提交重建的 bundle**，否则漂移检测机制会在落地后立刻显示 stale。
+当前 bundle build id 是 `sha256-b06a46ef05bc16354adb4ea35e2267d3b61ba8a65a2d07dc579aa4f39c57873d`。它是待注入 id 的完整 HTML（模板 + bundle）的内容 SHA-256，不含 git SHA 或时间戳；因此相同源码和依赖重建会得到相同的 `reader.html` 与 `[ReaderBuild]` 值。提交产物后不需要为了匹配新的 commit SHA 而额外重建；若重建后的 id 或文件内容变化，则说明提交的 bundle 与当前构建输入发生了漂移。
 
 ---
 
