@@ -33,6 +33,14 @@ export const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
     placeholder: "https://api.openai.com",
     keyPlaceholder: "sk-...",
   },
+  atlascloud: {
+    id: "atlascloud",
+    name: "Atlas Cloud",
+    defaultBaseUrl: "https://api.atlascloud.ai/v1",
+    needsV1Suffix: false,
+    placeholder: "https://api.atlascloud.ai/v1",
+    keyPlaceholder: "sk-...",
+  },
   deepseek: {
     id: "deepseek",
     name: "DeepSeek",
@@ -536,6 +544,7 @@ export function detectProviderFromUrl(url: string): string {
   if (!url) return "custom";
   const urlLower = url.toLowerCase();
 
+  if (urlLower.includes("api.atlascloud.ai")) return "atlascloud";
   if (urlLower.includes("openai.com")) return "openai";
   if (urlLower.includes("deepseek.com")) return "deepseek";
   if (urlLower.includes("anthropic.com")) return "anthropic";

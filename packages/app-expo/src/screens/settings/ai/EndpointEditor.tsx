@@ -25,6 +25,7 @@ import { makeStyles } from "./ai-settings-styles";
 
 const PROVIDERS: { id: AIProviderType; label: string }[] = [
   { id: "openai", label: "OpenAI" },
+  { id: "atlascloud", label: "Atlas Cloud" },
   { id: "anthropic", label: "Anthropic" },
   { id: "google", label: "Google Gemini" },
   { id: "deepseek", label: "DeepSeek" },

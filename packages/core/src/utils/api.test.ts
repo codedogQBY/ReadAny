@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildOpenAICompatibleUrl,
   buildProviderModelsUrl,
+  detectProviderFromUrl,
   ensureUrlProtocol,
   formatApiHost,
+  getDefaultBaseUrl,
   isOllamaEmbeddingEndpointUrl,
   normalizeEmbeddingEndpointUrl,
   providerSupportsExactRequestUrl,
@@ -61,6 +63,8 @@ describe("AI API URL helpers", () => {
   });
 
   it("respects providers that should not auto-append /v1", () => {
+    expect(getDefaultBaseUrl("atlascloud")).toBe("https://api.atlascloud.ai/v1");
+    expect(resolveProviderBaseUrl("atlascloud")).toBe("https://api.atlascloud.ai/v1");
     expect(resolveProviderBaseUrl("anthropic", "https://api.anthropic.com")).toBe(
       "https://api.anthropic.com",
     );
@@ -73,12 +77,17 @@ describe("AI API URL helpers", () => {
     expect(buildProviderModelsUrl("openai", "https://api.openai.com")).toBe(
       "https://api.openai.com/v1/models",
     );
+    expect(buildProviderModelsUrl("atlascloud")).toBe("https://api.atlascloud.ai/v1/models");
     expect(buildProviderModelsUrl("ollama", "http://localhost:11434")).toBe(
       "http://localhost:11434/api/tags",
     );
     expect(
       buildProviderModelsUrl("google", "https://generativelanguage.googleapis.com", "AIza-test"),
     ).toBe("https://generativelanguage.googleapis.com/v1beta/models?key=AIza-test");
+  });
+
+  it("detects Atlas Cloud endpoints", () => {
+    expect(detectProviderFromUrl("https://api.atlascloud.ai/v1")).toBe("atlascloud");
   });
 
   describe("ensureUrlProtocol / scheme-less inputs", () => {
