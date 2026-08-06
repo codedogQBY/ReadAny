@@ -1,24 +1,22 @@
-import { useSettingsStore } from "@/stores";
+import { KeyboardAwareScrollView } from "@/components/ui/KeyboardAwareScrollView";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
+import { useSettingsStore } from "@/stores";
 import type { AIConfig, AIEndpoint } from "@readany/core/types";
-import { getDefaultBaseUrl, PROVIDER_CONFIGS } from "@readany/core/utils";
+import { PROVIDER_CONFIGS, getDefaultBaseUrl } from "@readany/core/utils";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { ConfigTransfer } from "../../components/settings/ConfigTransfer";
 import { MinusIcon, PlusIcon } from "../../components/ui/Icon";
 import { useColors } from "../../styles/theme";
 import { fontSize, fontWeight, spacing } from "../../styles/theme";
-import { ConfigTransfer } from "../../components/settings/ConfigTransfer";
 import { SettingsHeader } from "./SettingsHeader";
 import { EndpointEditor } from "./ai/EndpointEditor";
 import { makeStyles } from "./ai/ai-settings-styles";
@@ -104,21 +102,15 @@ export default function AISettingsScreen() {
         subtitle={t("settings.realtimeHint")}
         right={addButton}
       />
-      <KeyboardAvoidingView
-        style={styles.keyboardView}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      <KeyboardAwareScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.scrollContent, { alignItems: "center" }]}
+        showsVerticalScrollIndicator={true}
+        alwaysBounceVertical={false}
+        scrollEventThrottle={16}
+        overScrollMode="never"
+        bounces={true}
       >
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={[styles.scrollContent, { alignItems: "center" }]}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          showsVerticalScrollIndicator={true}
-          alwaysBounceVertical={false}
-          scrollEventThrottle={16}
-          overScrollMode="never"
-          bounces={true}
-        >
           <View style={[styles.contentColumn, { width: "100%", maxWidth: layout.centeredContentWidth }]}>
             {/* Endpoints */}
             <View style={styles.endpointList}>
@@ -254,8 +246,7 @@ export default function AISettingsScreen() {
               />
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 }

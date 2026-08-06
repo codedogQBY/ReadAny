@@ -1,30 +1,30 @@
-import { useTTSStore } from "@/stores";
+import { KeyboardAwareScrollView } from "@/components/ui/KeyboardAwareScrollView";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import {
   DEFAULT_SYSTEM_VOICE_VALUE,
+  type NativeSystemVoiceOption,
   findSystemVoiceLabel,
   getSystemVoiceOptionsAsync,
   groupSystemVoiceOptions,
   resolveSystemVoiceValue,
-  type NativeSystemVoiceOption,
 } from "@/lib/platform/system-voices";
 import { previewTTSConfig, stopTTSPreview } from "@/lib/platform/tts-preview";
+import { useTTSStore } from "@/stores";
 import {
   DASHSCOPE_VOICES,
   DEFAULT_XIAOMI_STYLE_PROMPT,
   EDGE_TTS_VOICES,
+  type TTSProfile,
+  type TTSProviderType,
   XIAOMI_TTS_VOICES,
   getActiveTTSProfile,
   getLocaleDisplayLabel,
   groupEdgeTTSVoices,
-  type TTSProviderType,
-  type TTSProfile,
 } from "@readany/core/tts";
+import type { TFunction } from "i18next";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -32,7 +32,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import type { TFunction } from "i18next";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { PasswordInput } from "../../components/ui/PasswordInput";
 import {
@@ -193,16 +192,10 @@ export default function TTSSettingsScreen() {
         right={previewBtn}
       />
 
-      <KeyboardAvoidingView
-        style={styles.keyboardView}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      <KeyboardAwareScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.scrollContent, { alignItems: "center" }]}
       >
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={[styles.scrollContent, { alignItems: "center" }]}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-        >
           <View style={[styles.contentColumn, { width: "100%", maxWidth: layout.centeredContentWidth }]}>
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>{t("tts.voiceProfile", "朗读方案")}</Text>
@@ -628,8 +621,7 @@ export default function TTSSettingsScreen() {
               </View>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 }

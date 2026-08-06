@@ -1,3 +1,4 @@
+import { useColors, withOpacity } from "@/styles/theme";
 /**
  * GoalsSection.tsx — Mobile goal progress rings + inline add form.
  * Feature-parity with desktop GoalsSection (packages/app/src/components/stats/GoalsSection.tsx).
@@ -5,9 +6,18 @@
 import type { GoalPeriod, GoalProgress, GoalType, StatsDimension } from "@readany/core/stats";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import Svg, { Circle } from "react-native-svg";
-import { useColors, withOpacity } from "@/styles/theme";
 import { formatCharacterCount } from "./stats-utils";
 
 const GOAL_TYPE_DEFAULTS: Record<GoalType, number> = {
@@ -385,28 +395,32 @@ function GoalAddFormModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: "rgba(0,0,0,0.5)",
-          alignItems: "center",
-          justifyContent: "center",
-          paddingHorizontal: 20,
-        }}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        <Pressable onPress={onClose} style={StyleSheet.absoluteFill} />
         <View
           style={{
-            width: "100%",
-            maxWidth: 360,
-            borderRadius: 20,
-            backgroundColor: colors.card,
-            borderWidth: StyleSheet.hairlineWidth,
-            borderColor: withOpacity(colors.border, 0.5),
-            padding: 18,
-            gap: 16,
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            alignItems: "center",
+            justifyContent: "center",
+            paddingHorizontal: 20,
           }}
         >
+          <Pressable onPress={onClose} style={StyleSheet.absoluteFill} />
+          <View
+            style={{
+              width: "100%",
+              maxWidth: 360,
+              borderRadius: 20,
+              backgroundColor: colors.card,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: withOpacity(colors.border, 0.5),
+              padding: 18,
+              gap: 16,
+            }}
+          >
           <Text
             style={{
               fontSize: 16,
@@ -540,8 +554,9 @@ function GoalAddFormModal({
               </Text>
             </TouchableOpacity>
           </View>
+          </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

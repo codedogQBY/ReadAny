@@ -28,6 +28,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LogBox, Platform, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AnimatedSplash } from "@/components/splash/AnimatedSplash";
@@ -274,14 +275,16 @@ function AppInner() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
-      <SafeAreaProvider>
-        <NavigationContainer theme={navTheme} ref={navigationRef}>
-          <StatusBar style={mode === "dark" ? "light" : "dark"} />
-          <RootNavigator />
-        </NavigationContainer>
-        <UpdateDialog />
-        <FloatingTTSBubble />
-      </SafeAreaProvider>
+      <KeyboardProvider>
+        <SafeAreaProvider>
+          <NavigationContainer theme={navTheme} ref={navigationRef}>
+            <StatusBar style={mode === "dark" ? "light" : "dark"} />
+            <RootNavigator />
+          </NavigationContainer>
+          <UpdateDialog />
+          <FloatingTTSBubble />
+        </SafeAreaProvider>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }

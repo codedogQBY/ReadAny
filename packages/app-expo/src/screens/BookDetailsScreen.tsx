@@ -6,7 +6,7 @@ import {
   PlusIcon,
   Trash2Icon,
 } from "@/components/ui/Icon";
-import { useKeyboardInsets } from "@/hooks/use-keyboard-insets";
+import { KeyboardAwareScrollView } from "@/components/ui/KeyboardAwareScrollView";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { extractLocalBookMetadata } from "@/lib/book/auto-metadata";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
@@ -47,7 +47,6 @@ import {
   Modal,
   Platform,
   Pressable,
-  ScrollView,
   type StyleProp,
   StyleSheet,
   Text,
@@ -56,6 +55,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 type Props = NativeStackScreenProps<RootStackParamList, "BookDetails">;
@@ -279,7 +279,6 @@ export function BookDetailsScreen({ route }: Props) {
   const layout = useResponsiveLayout();
   const { t, i18n } = useTranslation();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const keyboardInsets = useKeyboardInsets();
   const books = useLibraryStore((state) => state.books);
   const groups = useLibraryStore((state) => state.groups);
   const allTags = useLibraryStore((state) => state.allTags);
@@ -512,15 +511,12 @@ export function BookDetailsScreen({ route }: Props) {
     >
       <SettingsHeader title={t("library.detailsTitle", "书籍详情")} />
       <View style={styles.flex}>
-        <ScrollView
+        <KeyboardAwareScrollView
           style={styles.flex}
-          automaticallyAdjustKeyboardInsets={false}
           contentContainerStyle={[
             styles.scrollContent,
             { maxWidth: layout.centeredContentWidth, alignSelf: "center" },
-            keyboardInsets.isVisible ? { paddingBottom: 64 + keyboardInsets.bottomInset } : null,
           ]}
-          keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.heroStage}>
@@ -782,7 +778,7 @@ export function BookDetailsScreen({ route }: Props) {
               colors={colors}
             />
           )}
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </View>
       <TextEditSheet
         target={textEditorTarget}
@@ -1301,7 +1297,6 @@ function TextEditSheet({
 }) {
   const [draft, setDraft] = useState("");
   const inputRef = useRef<TextInput>(null);
-  const keyboardInsets = useKeyboardInsets();
   const multiline = Boolean(target && (target.kind !== "field" || target.multiline));
 
   useEffect(() => {
@@ -1321,7 +1316,7 @@ function TextEditSheet({
 
   return (
     <Modal visible={Boolean(target)} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={[styles.sheetRoot, { paddingBottom: keyboardInsets.bottomInset }]}>
+      <KeyboardAvoidingView behavior="padding" style={styles.sheetRoot}>
         <Pressable style={styles.sheetOverlay} onPress={onClose} />
         <View style={[styles.textSheet, multiline && styles.textSheetTall]}>
           <View style={styles.sheetHandle} />
@@ -1358,7 +1353,7 @@ function TextEditSheet({
             }}
           />
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

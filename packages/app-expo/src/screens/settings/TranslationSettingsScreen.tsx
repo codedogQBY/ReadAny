@@ -1,15 +1,15 @@
-import { useSettingsStore } from "@/stores";
+import { KeyboardAwareScrollView } from "@/components/ui/KeyboardAwareScrollView";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
+import { useSettingsStore } from "@/stores";
 import {
   TRANSLATOR_LANGS,
   TRANSLATOR_PROVIDERS,
   type TranslationTargetLang,
 } from "@readany/core/types/translation";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -28,7 +28,6 @@ import {
   useColors,
 } from "../../styles/theme";
 import { SettingsHeader } from "./SettingsHeader";
-import { useState } from "react";
 
 export default function TranslationSettingsScreen() {
   const colors = useColors();
@@ -78,16 +77,10 @@ export default function TranslationSettingsScreen() {
         subtitle={t("settings.realtimeHint")}
       />
 
-      <KeyboardAvoidingView
-        style={styles.keyboardView}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      <KeyboardAwareScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.scrollContent, { alignItems: "center" }]}
       >
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={[styles.scrollContent, { alignItems: "center" }]}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-        >
           <View style={[styles.contentColumn, { width: "100%", maxWidth: layout.centeredContentWidth }]}>
             {/* Provider */}
             <View style={styles.section}>
@@ -231,8 +224,7 @@ export default function TranslationSettingsScreen() {
               </View>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
 
       {/* Model Picker Modal */}
       <Modal

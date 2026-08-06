@@ -5,8 +5,11 @@ import { fontSize, fontWeight, radius, useColors, withOpacity } from "@/styles/t
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -70,6 +73,7 @@ export function TTSSleepTimerSheet({ visible, onClose }: TTSSleepTimerSheetProps
           backgroundColor: "rgba(0,0,0,0.36)",
           justifyContent: "flex-end",
         },
+        keyboardRoot: { flex: 1 },
         sheet: {
           backgroundColor: colors.background,
           borderTopLeftRadius: 24,
@@ -77,8 +81,9 @@ export function TTSSleepTimerSheet({ visible, onClose }: TTSSleepTimerSheetProps
           paddingHorizontal: 20,
           paddingTop: 12,
           paddingBottom: Math.max(insets.bottom, 16) + 12,
-          gap: 16,
+          maxHeight: "90%",
         },
+        sheetContent: { gap: 16 },
         handle: {
           alignSelf: "center",
           width: 36,
@@ -206,90 +211,102 @@ export function TTSSleepTimerSheet({ visible, onClose }: TTSSleepTimerSheetProps
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={s.overlay} onPress={onClose}>
-        <Pressable
-          style={[
-            s.sheet,
-            layout.isTablet && {
-              width: "100%",
-            },
-          ]}
-          onPress={(event) => event.stopPropagation()}
-        >
-          <View style={s.handle} />
-          <View style={s.header}>
-            <ClockIcon size={18} color={colors.primary} />
-            <View>
-              <Text style={s.title}>{t("tts.sleepTimer", "定时停止")}</Text>
-              <Text style={s.subtitle}>
-                {t("tts.sleepTimerSubtitle", "让朗读在你设定的时间后自动停止")}
-              </Text>
-            </View>
-          </View>
+      <KeyboardAvoidingView
+        style={s.keyboardRoot}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <Pressable style={s.overlay} onPress={onClose}>
+          <Pressable
+            style={[
+              s.sheet,
+              layout.isTablet && {
+                width: "100%",
+              },
+            ]}
+            onPress={(event) => event.stopPropagation()}
+          >
+            <ScrollView
+              contentContainerStyle={s.sheetContent}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={s.handle} />
+              <View style={s.header}>
+                <ClockIcon size={18} color={colors.primary} />
+                <View>
+                  <Text style={s.title}>{t("tts.sleepTimer", "定时停止")}</Text>
+                  <Text style={s.subtitle}>
+                    {t("tts.sleepTimerSubtitle", "让朗读在你设定的时间后自动停止")}
+                  </Text>
+                </View>
+              </View>
 
-          {sleepTimerEndsAt ? (
-            <View style={s.current}>
-              <Text style={s.currentLabel}>{t("tts.sleepTimerActive", "已开启睡眠定时")}</Text>
-              <Text style={s.currentValue}>
-                {remainingLabel
-                  ? t("tts.sleepTimerRemaining", {
-                      time: remainingLabel,
-                      defaultValue: `Remaining ${remainingLabel}`,
-                    })
-                  : t("tts.sleepTimerSoon", "即将停止")}
-              </Text>
-            </View>
-          ) : null}
+              {sleepTimerEndsAt ? (
+                <View style={s.current}>
+                  <Text style={s.currentLabel}>{t("tts.sleepTimerActive", "已开启睡眠定时")}</Text>
+                  <Text style={s.currentValue}>
+                    {remainingLabel
+                      ? t("tts.sleepTimerRemaining", {
+                          time: remainingLabel,
+                          defaultValue: `Remaining ${remainingLabel}`,
+                        })
+                      : t("tts.sleepTimerSoon", "即将停止")}
+                  </Text>
+                </View>
+              ) : null}
 
-          <View style={s.presets}>
-            {PRESET_MINUTES.map((minutes) => (
-              <TouchableOpacity
-                key={minutes}
-                style={s.presetBtn}
-                onPress={() => {
-                  setSleepTimer(minutes);
-                  onClose();
-                }}
-              >
-                <Text style={s.presetBtnText}>
-                  {t("tts.sleepTimerPresetShort", { minutes, defaultValue: `${minutes} 分钟` })}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+              <View style={s.presets}>
+                {PRESET_MINUTES.map((minutes) => (
+                  <TouchableOpacity
+                    key={minutes}
+                    style={s.presetBtn}
+                    onPress={() => {
+                      setSleepTimer(minutes);
+                      onClose();
+                    }}
+                  >
+                    <Text style={s.presetBtnText}>
+                      {t("tts.sleepTimerPresetShort", { minutes, defaultValue: `${minutes} 分钟` })}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
-          <View style={s.inputRow}>
-            <TextInput
-              style={s.input}
-              keyboardType="number-pad"
-              value={customMinutes}
-              onChangeText={setCustomMinutes}
-              placeholder={t("tts.sleepTimerCustomPlaceholder", "自定义分钟数")}
-              placeholderTextColor={colors.mutedForeground}
-            />
-            <TouchableOpacity style={s.applyBtn} onPress={applyCustomMinutes}>
-              <Text style={s.applyBtnText}>{t("tts.sleepTimerApply", "开始计时")}</Text>
-            </TouchableOpacity>
-          </View>
+              <View style={s.inputRow}>
+                <TextInput
+                  style={s.input}
+                  keyboardType="number-pad"
+                  value={customMinutes}
+                  onChangeText={setCustomMinutes}
+                  placeholder={t("tts.sleepTimerCustomPlaceholder", "自定义分钟数")}
+                  placeholderTextColor={colors.mutedForeground}
+                />
+                <TouchableOpacity style={s.applyBtn} onPress={applyCustomMinutes}>
+                  <Text style={s.applyBtnText}>{t("tts.sleepTimerApply", "开始计时")}</Text>
+                </TouchableOpacity>
+              </View>
 
-          <View style={s.footer}>
-            {sleepTimerEndsAt ? (
-              <TouchableOpacity
-                style={s.ghostBtn}
-                onPress={() => {
-                  clearSleepTimer();
-                  onClose();
-                }}
-              >
-                <Text style={s.ghostBtnText}>{t("tts.sleepTimerCancel", "关闭定时")}</Text>
-              </TouchableOpacity>
-            ) : null}
-            <TouchableOpacity style={s.ghostBtn} onPress={onClose}>
-              <Text style={s.ghostBtnText}>{t("common.cancel", "取消")}</Text>
-            </TouchableOpacity>
-          </View>
+              <View style={s.footer}>
+                {sleepTimerEndsAt ? (
+                  <TouchableOpacity
+                    style={s.ghostBtn}
+                    onPress={() => {
+                      clearSleepTimer();
+                      onClose();
+                    }}
+                  >
+                    <Text style={s.ghostBtnText}>{t("tts.sleepTimerCancel", "关闭定时")}</Text>
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity style={s.ghostBtn} onPress={onClose}>
+                  <Text style={s.ghostBtnText}>{t("common.cancel", "取消")}</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

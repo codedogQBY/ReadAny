@@ -1,4 +1,5 @@
 import { ChevronLeftIcon, EditIcon, PlusIcon, Trash2Icon, XIcon } from "@/components/ui/Icon";
+import { KeyboardAwareScrollView } from "@/components/ui/KeyboardAwareScrollView";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { useVectorModelStore } from "@/stores/vector-model-store";
 import {
@@ -6,6 +7,7 @@ import {
   fontSize,
   fontWeight,
   radius,
+  spacing,
   useColors,
   withOpacity,
 } from "@/styles/theme";
@@ -23,9 +25,6 @@ import {
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   StyleSheet,
   Switch,
   Text,
@@ -62,17 +61,14 @@ export default function VectorModelSettingsScreen() {
         </View>
       </View>
 
-      <KeyboardAvoidingView
-        style={s.keyboardView}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      <KeyboardAwareScrollView
+        style={s.scrollView}
+        contentContainerStyle={s.scrollContent}
+        showsVerticalScrollIndicator={false}
+        bottomOffset={spacing.xxl * 3}
+        extraKeyboardSpace={spacing.xxl * 2}
+        contentBottomInset={spacing.xxl * 3}
       >
-        <ScrollView
-          style={s.scrollView}
-          contentContainerStyle={s.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-        >
           <View style={{ width: "100%", maxWidth: layout.centeredContentWidth }}>
             {/* Enable switch */}
             <View style={s.section}>
@@ -169,8 +165,7 @@ export default function VectorModelSettingsScreen() {
 
             <View style={{ height: 24 }} />
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 }

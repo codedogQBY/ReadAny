@@ -4,16 +4,16 @@ import type { BookGroup } from "@readany/core/types";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface GroupPickerSheetProps {
@@ -56,19 +56,18 @@ export function GroupPickerSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose}>
-        <KeyboardAvoidingView
-          style={styles.keyboardWrap}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-        >
+      <KeyboardAvoidingView style={styles.keyboardRoot} behavior="height">
+        <Pressable style={styles.overlay} onPress={onClose}>
           <Pressable style={styles.sheet} onPress={(event) => event.stopPropagation()}>
             <View style={styles.handle} />
-            <Text style={styles.title}>
-              {t("library.moveToGroup", "移入分组")}
-            </Text>
+            <Text style={styles.title}>{t("library.moveToGroup", "移入分组")}</Text>
 
             {groups.length > 0 && (
-              <View style={styles.groupList}>
+              <ScrollView
+                style={styles.groupList}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
+              >
                 {groups.map((group) => (
                   <TouchableOpacity
                     key={group.id}
@@ -79,7 +78,7 @@ export function GroupPickerSheet({
                     <Text style={styles.groupName}>{group.name}</Text>
                   </TouchableOpacity>
                 ))}
-              </View>
+              </ScrollView>
             )}
 
             {isCreating ? (
@@ -109,9 +108,7 @@ export function GroupPickerSheet({
                 onPress={() => setIsCreating(true)}
               >
                 <FolderPlusIcon size={20} color={colors.primary} />
-                <Text style={styles.newGroupText}>
-                  {t("library.createGroup", "新建分组")}
-                </Text>
+                <Text style={styles.newGroupText}>{t("library.createGroup", "新建分组")}</Text>
               </TouchableOpacity>
             )}
 
@@ -121,14 +118,12 @@ export function GroupPickerSheet({
                 activeOpacity={0.7}
                 onPress={() => handleSelect(undefined)}
               >
-                <Text style={styles.ungroupedText}>
-                  {t("library.removeFromGroup", "移出分组")}
-                </Text>
+                <Text style={styles.ungroupedText}>{t("library.removeFromGroup", "移出分组")}</Text>
               </TouchableOpacity>
             )}
           </Pressable>
-        </KeyboardAvoidingView>
-      </Pressable>
+        </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -148,15 +143,12 @@ const makeStyles = (colors: ThemeColors, bottomInset: number) =>
       paddingBottom: Math.max(34, bottomInset + 18),
       paddingHorizontal: spacing.lg,
     },
-    keyboardWrap: {
-      width: "100%",
-      justifyContent: "flex-end",
-    },
+    keyboardRoot: { flex: 1 },
     handle: {
       width: 36,
       height: 4,
       borderRadius: 2,
-      backgroundColor: colors.mutedForeground + "40",
+      backgroundColor: `${colors.mutedForeground}40`,
       alignSelf: "center",
       marginBottom: spacing.md,
     },
@@ -168,6 +160,7 @@ const makeStyles = (colors: ThemeColors, bottomInset: number) =>
       paddingHorizontal: 4,
     },
     groupList: {
+      maxHeight: 280,
       borderRadius: radius.lg,
       borderWidth: 1,
       borderColor: colors.border,

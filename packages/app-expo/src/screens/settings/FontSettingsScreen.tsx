@@ -550,7 +550,13 @@ export default function FontSettingsScreen() {
           style={s.modalOverlay}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
-          <View style={[s.modalContent, { backgroundColor: colors.card }]}>
+          <ScrollView
+            style={[s.modalContent, s.scrollModal, { backgroundColor: colors.card }]}
+            contentContainerStyle={s.scrollModalContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+          >
             <Text style={[s.modalTitle, { color: colors.foreground }]}>
               {t("fonts.fromUrl", "在线链接")}
             </Text>
@@ -641,7 +647,7 @@ export default function FontSettingsScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
@@ -712,7 +718,15 @@ function makeStyles(_colors: ReturnType<typeof useColors>) {
       justifyContent: "center",
       alignItems: "center",
     },
-    modalContent: { borderRadius: radius.xl, padding: 20, width: "85%", maxWidth: 340 },
+    modalContent: {
+      borderRadius: radius.xl,
+      padding: 20,
+      width: "85%",
+      maxWidth: 340,
+      maxHeight: "85%",
+    },
+    scrollModal: { padding: 0 },
+    scrollModalContent: { padding: 20 },
     modalTitle: { fontSize: fontSize.lg, fontWeight: fontWeight.semibold, marginBottom: 8 },
     modalDesc: { fontSize: fontSize.sm, marginBottom: 16 },
     inputLabel: { fontSize: fontSize.sm, fontWeight: fontWeight.medium, marginBottom: 4 },

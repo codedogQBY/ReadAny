@@ -19,7 +19,9 @@ import { radius, useColors } from "@/styles/theme";
 import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -265,44 +267,49 @@ export function RichTextEditor({
         animationType="fade"
         onRequestClose={() => setShowLinkModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.linkModal}>
-            <View style={styles.linkModalHeader}>
-              <Text style={styles.linkModalTitle}>{t("common.insertLink", "插入链接")}</Text>
-              <TouchableOpacity onPress={() => setShowLinkModal(false)}>
-                <XIcon size={20} color={colors.mutedForeground} />
-              </TouchableOpacity>
-            </View>
-            <TextInput
-              style={styles.linkInput}
-              value={linkText}
-              onChangeText={setLinkText}
-              placeholder={t("common.linkText", "链接文字")}
-              placeholderTextColor={colors.mutedForeground}
-            />
-            <TextInput
-              style={styles.linkInput}
-              value={linkUrl}
-              onChangeText={setLinkUrl}
-              placeholder={t("common.enterLinkUrl", "输入链接地址")}
-              placeholderTextColor={colors.mutedForeground}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-            />
-            <View style={styles.linkModalActions}>
-              <TouchableOpacity
-                style={styles.linkCancelBtn}
-                onPress={() => setShowLinkModal(false)}
-              >
-                <Text style={styles.linkCancelText}>{t("common.cancel", "取消")}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.linkConfirmBtn} onPress={handleInsertLink}>
-                <Text style={styles.linkConfirmText}>{t("common.confirm", "确定")}</Text>
-              </TouchableOpacity>
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardRoot}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.linkModal}>
+              <View style={styles.linkModalHeader}>
+                <Text style={styles.linkModalTitle}>{t("common.insertLink", "插入链接")}</Text>
+                <TouchableOpacity onPress={() => setShowLinkModal(false)}>
+                  <XIcon size={20} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              </View>
+              <TextInput
+                style={styles.linkInput}
+                value={linkText}
+                onChangeText={setLinkText}
+                placeholder={t("common.linkText", "链接文字")}
+                placeholderTextColor={colors.mutedForeground}
+              />
+              <TextInput
+                style={styles.linkInput}
+                value={linkUrl}
+                onChangeText={setLinkUrl}
+                placeholder={t("common.enterLinkUrl", "输入链接地址")}
+                placeholderTextColor={colors.mutedForeground}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+              />
+              <View style={styles.linkModalActions}>
+                <TouchableOpacity
+                  style={styles.linkCancelBtn}
+                  onPress={() => setShowLinkModal(false)}
+                >
+                  <Text style={styles.linkCancelText}>{t("common.cancel", "取消")}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.linkConfirmBtn} onPress={handleInsertLink}>
+                  <Text style={styles.linkConfirmText}>{t("common.confirm", "确定")}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -409,6 +416,7 @@ const makeStyles = (colors: ReturnType<typeof useColors>) =>
       fontSize: 15,
       lineHeight: 24,
     },
+    modalKeyboardRoot: { flex: 1 },
     modalOverlay: {
       flex: 1,
       backgroundColor: "rgba(0,0,0,0.5)",

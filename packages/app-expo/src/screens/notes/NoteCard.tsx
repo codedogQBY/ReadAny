@@ -5,7 +5,7 @@ import { useColors } from "@/styles/theme";
 import type { HighlightWithBook } from "@readany/core/db/database";
 import { HIGHLIGHT_COLOR_HEX } from "@readany/core/types";
 import type { TFunction } from "i18next";
-import { KeyboardAvoidingView, Platform, Text, TouchableOpacity, View } from "react-native";
+import { Text, TouchableOpacity, View } from "react-native";
 import { makeStyles } from "./notes-styles";
 
 export function NoteCard({
@@ -37,12 +37,19 @@ export function NoteCard({
   return (
     <View style={s.noteCard}>
       <TouchableOpacity style={s.noteCardTop} onPress={onNavigate}>
-        <View style={[s.colorDot, { backgroundColor: HIGHLIGHT_COLOR_HEX[highlight.color] || colors.amber }]} />
-        <Text style={s.noteQuote} numberOfLines={2}>"{highlight.text}"</Text>
+        <View
+          style={[
+            s.colorDot,
+            { backgroundColor: HIGHLIGHT_COLOR_HEX[highlight.color] || colors.amber },
+          ]}
+        />
+        <Text style={s.noteQuote} numberOfLines={2}>
+          "{highlight.text}"
+        </Text>
       </TouchableOpacity>
 
       {isEditing ? (
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={s.editArea}>
+        <View style={s.editArea}>
           <View style={s.editorContainer}>
             <RichTextEditor
               initialContent={editNote}
@@ -61,7 +68,7 @@ export function NoteCard({
               <Text style={s.editSaveText}>{t("common.save", "保存")}</Text>
             </TouchableOpacity>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       ) : (
         <>
           {highlight.note && (

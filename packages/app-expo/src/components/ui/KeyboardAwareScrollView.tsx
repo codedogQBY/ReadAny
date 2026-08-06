@@ -1,60 +1,43 @@
-import { useKeyboardInsets } from "@/hooks/use-keyboard-insets";
+import { StyleSheet, type ViewStyle } from "react-native";
 import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  type ScrollViewProps,
-  type StyleProp,
-  StyleSheet,
-  type ViewStyle,
-} from "react-native";
+  KeyboardAwareScrollView as ControllerKeyboardAwareScrollView,
+  type KeyboardAwareScrollViewProps as ControllerKeyboardAwareScrollViewProps,
+} from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { spacing } from "../../styles/theme";
 
-interface KeyboardAwareScrollViewProps extends ScrollViewProps {
-  keyboardViewStyle?: StyleProp<ViewStyle>;
+interface KeyboardAwareScrollViewProps extends ControllerKeyboardAwareScrollViewProps {
   contentBottomInset?: number;
-  keyboardVerticalOffset?: number;
 }
 
 export function KeyboardAwareScrollView({
   children,
-  keyboardViewStyle,
   contentContainerStyle,
   contentBottomInset = spacing.xl,
-  keyboardVerticalOffset = 0,
+  bottomOffset = spacing.md,
   keyboardShouldPersistTaps = "handled",
   keyboardDismissMode = "on-drag",
   ...props
 }: KeyboardAwareScrollViewProps) {
-  const keyboardInsets = useKeyboardInsets();
+  const safeAreaInsets = useSafeAreaInsets();
   const flattenedContent = StyleSheet.flatten(contentContainerStyle) as ViewStyle | undefined;
   const existingPaddingBottom =
     typeof flattenedContent?.paddingBottom === "number" ? flattenedContent.paddingBottom : 0;
-  const bottomInset =
-    keyboardInsets.safeAreaBottom + (keyboardInsets.isVisible ? keyboardInsets.bottomInset : 0);
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.keyboardView, keyboardViewStyle]}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={keyboardVerticalOffset}
+    <ControllerKeyboardAwareScrollView
+      {...props}
+      bottomOffset={bottomOffset}
+      contentContainerStyle={[
+        contentContainerStyle,
+        {
+          paddingBottom: existingPaddingBottom + contentBottomInset + safeAreaInsets.bottom,
+        },
+      ]}
+      keyboardDismissMode={keyboardDismissMode}
+      keyboardShouldPersistTaps={keyboardShouldPersistTaps}
     >
-      <ScrollView
-        {...props}
-        automaticallyAdjustKeyboardInsets={false}
-        contentContainerStyle={[
-          contentContainerStyle,
-          { paddingBottom: existingPaddingBottom + contentBottomInset + bottomInset },
-        ]}
-        keyboardDismissMode={keyboardDismissMode}
-        keyboardShouldPersistTaps={keyboardShouldPersistTaps}
-      >
-        {children}
-      </ScrollView>
-    </KeyboardAvoidingView>
+      {children}
+    </ControllerKeyboardAwareScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  keyboardView: { flex: 1 },
-});

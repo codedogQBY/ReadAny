@@ -14,7 +14,9 @@ import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -312,58 +314,69 @@ export default function SkillsScreen() {
         animationType="slide"
         onRequestClose={() => setEditorOpen(false)}
       >
-        <Pressable style={s.editorOverlay} onPress={() => setEditorOpen(false)} />
-        <View style={[s.editorSheet, layout.isTablet && s.editorSheetTablet]}>
-          <View style={s.editorHandle} />
-          <Text style={s.editorTitle}>
-            {editingSkill ? t("skills.editSkill", "编辑技能") : t("skills.createSkill", "创建技能")}
-          </Text>
+        <KeyboardAvoidingView
+          style={s.editorModalRoot}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <Pressable style={s.editorOverlay} onPress={() => setEditorOpen(false)} />
+          <View style={[s.editorSheet, layout.isTablet && s.editorSheetTablet]}>
+            <View style={s.editorHandle} />
+            <Text style={s.editorTitle}>
+              {editingSkill
+                ? t("skills.editSkill", "编辑技能")
+                : t("skills.createSkill", "创建技能")}
+            </Text>
 
-          <ScrollView style={s.editorContent}>
-            <Text style={s.fieldLabel}>{t("skills.name", "名称")} *</Text>
-            <TextInput
-              style={[s.fieldInput, editingSkill?.builtIn && s.fieldInputDisabled]}
-              value={formName}
-              onChangeText={setFormName}
-              placeholder={t("skills.namePlaceholder", "技能名称")}
-              placeholderTextColor={colors.mutedForeground}
-              editable={!editingSkill?.builtIn}
-            />
-
-            <Text style={s.fieldLabel}>{t("skills.description", "描述")}</Text>
-            <TextInput
-              style={s.fieldInput}
-              value={formDescription}
-              onChangeText={setFormDescription}
-              placeholder={t("skills.descriptionPlaceholder", "简要描述...")}
-              placeholderTextColor={colors.mutedForeground}
-            />
-
-            <Text style={s.fieldLabel}>{t("skills.prompt", "提示词")}</Text>
-            <TextInput
-              style={[s.fieldInput, s.fieldTextarea]}
-              value={formPrompt}
-              onChangeText={setFormPrompt}
-              placeholder={t("skills.promptPlaceholder", "输入提示词...")}
-              placeholderTextColor={colors.mutedForeground}
-              multiline
-              textAlignVertical="top"
-            />
-          </ScrollView>
-
-          <View style={s.editorActions}>
-            <TouchableOpacity style={s.editorCancelBtn} onPress={() => setEditorOpen(false)}>
-              <Text style={s.editorCancelText}>{t("common.cancel", "取消")}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.editorSaveBtn, !formName.trim() && s.editorSaveBtnDisabled]}
-              onPress={handleSaveSkill}
-              disabled={!formName.trim()}
+            <ScrollView
+              style={s.editorContent}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
             >
-              <Text style={s.editorSaveText}>{t("common.save", "保存")}</Text>
-            </TouchableOpacity>
+              <Text style={s.fieldLabel}>{t("skills.name", "名称")} *</Text>
+              <TextInput
+                style={[s.fieldInput, editingSkill?.builtIn && s.fieldInputDisabled]}
+                value={formName}
+                onChangeText={setFormName}
+                placeholder={t("skills.namePlaceholder", "技能名称")}
+                placeholderTextColor={colors.mutedForeground}
+                editable={!editingSkill?.builtIn}
+              />
+
+              <Text style={s.fieldLabel}>{t("skills.description", "描述")}</Text>
+              <TextInput
+                style={s.fieldInput}
+                value={formDescription}
+                onChangeText={setFormDescription}
+                placeholder={t("skills.descriptionPlaceholder", "简要描述...")}
+                placeholderTextColor={colors.mutedForeground}
+              />
+
+              <Text style={s.fieldLabel}>{t("skills.prompt", "提示词")}</Text>
+              <TextInput
+                style={[s.fieldInput, s.fieldTextarea]}
+                value={formPrompt}
+                onChangeText={setFormPrompt}
+                placeholder={t("skills.promptPlaceholder", "输入提示词...")}
+                placeholderTextColor={colors.mutedForeground}
+                multiline
+                textAlignVertical="top"
+              />
+            </ScrollView>
+
+            <View style={s.editorActions}>
+              <TouchableOpacity style={s.editorCancelBtn} onPress={() => setEditorOpen(false)}>
+                <Text style={s.editorCancelText}>{t("common.cancel", "取消")}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.editorSaveBtn, !formName.trim() && s.editorSaveBtnDisabled]}
+                onPress={handleSaveSkill}
+                disabled={!formName.trim()}
+              >
+                <Text style={s.editorSaveText}>{t("common.save", "保存")}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -456,6 +469,7 @@ const makeStyles = (colors: ThemeColors) =>
     },
     customEmptyBtnText: { fontSize: fontSize.sm, color: colors.primaryForeground },
     // Editor
+    editorModalRoot: { flex: 1 },
     editorOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)" },
     editorSheet: {
       backgroundColor: colors.background,

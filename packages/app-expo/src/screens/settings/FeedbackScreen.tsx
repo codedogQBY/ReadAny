@@ -1,10 +1,10 @@
+import { KeyboardAwareScrollView } from "@/components/ui/KeyboardAwareScrollView";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 /**
  * FeedbackScreen — Submit bug reports / feature requests and track history.
  * Submissions are sent to a Cloudflare Worker that creates GitHub Issues.
  */
-import { useColors } from "@/styles/theme";
-import type { ThemeColors } from "@/styles/theme";
+import { type ThemeColors, spacing, useColors } from "@/styles/theme";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
@@ -18,19 +18,17 @@ import {
   submitFeedback,
 } from "@readany/core/feedback";
 import type { DeviceInfo, FeedbackRecord, FeedbackType } from "@readany/core/feedback";
+import Constants from "expo-constants";
 import type { TFunction } from "i18next";
 import { Bug, Check, Lightbulb, MessageSquare } from "lucide-react-native";
 import type { LucideIcon } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import Constants from "expo-constants";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
-  KeyboardAvoidingView,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -194,15 +192,13 @@ function SubmitTab({ colors, t, locale }: FeedbackTabProps & { locale: string })
   }, [canSubmit, submitting, type, title, description, includeLogs, deviceInfo, t]);
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    <KeyboardAwareScrollView
+      style={styles.scrollView}
+      contentContainerStyle={styles.formContent}
+      bottomOffset={spacing.xxl * 3}
+      extraKeyboardSpace={spacing.xxl * 2}
+      contentBottomInset={spacing.xxl * 3}
     >
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.formContent}
-        keyboardShouldPersistTaps="handled"
-      >
         <View style={[styles.introBlock, { borderBottomColor: colors.border }]}>
           <Text style={[styles.introTitle, { color: colors.foreground }]}>
             {t("feedback.title", "反馈建议")}
@@ -329,8 +325,7 @@ function SubmitTab({ colors, t, locale }: FeedbackTabProps & { locale: string })
         <Text style={[styles.remainingText, { color: colors.mutedForeground }]}>
           {t("feedback.remaining", "今日还可提交 {{count}} 次", { count: remaining })}
         </Text>
-      </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardAwareScrollView>
   );
 }
 
