@@ -17,12 +17,12 @@ export function getMobileVectorizeMimeType(format: string | undefined): string |
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
-  const chunkSize = 0x8000;
+  const chunkSize = 0x1000;
   let binary = "";
 
   for (let i = 0; i < bytes.length; i += chunkSize) {
     const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
+    binary += Array.from(chunk, (b) => String.fromCharCode(b)).join("");
   }
 
   return btoa(binary);
