@@ -40,6 +40,8 @@
     "fontSize": "Taille de police",
     "lineHeight": "Interligne",
     "fontTheme": "Thème de police",
+    "useBookFonts": "Utiliser les polices du livre",
+    "useBookFontsDesc": "Afficher en priorité les polices du livre (polices intégrées).",
     "viewMode": "Mode d'affichage",
     "paginated": "Paginé",
     "scrollMode": "Défilement",

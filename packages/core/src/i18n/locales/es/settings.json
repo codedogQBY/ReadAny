@@ -64,6 +64,8 @@
     "fontSize": "Tamaño de fuente: {{size}}px",
     "lineHeight": "Altura de línea: {{height}}",
     "fontTheme": "Tema de fuente",
+    "useBookFonts": "Usar fuentes del libro",
+    "useBookFontsDesc": "Mostrar prioritariamente las fuentes del libro (fuentes incrustadas).",
     "paragraphSpacing": "Espaciado entre párrafos",
     "showTopTitleProgress": "Título y progreso superior",
     "showBottomTimeBattery": "Hora y batería inferior",

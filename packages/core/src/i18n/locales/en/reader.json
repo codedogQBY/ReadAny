@@ -40,6 +40,8 @@
     "fontSize": "Font Size",
     "lineHeight": "Line Height",
     "fontTheme": "Font Theme",
+    "useBookFonts": "Use book fonts",
+    "useBookFontsDesc": "Honor the book's own fonts (e.g. embedded fonts) where specified.",
     "viewMode": "View Mode",
     "paginated": "Paginated",
     "scrollMode": "Scroll",

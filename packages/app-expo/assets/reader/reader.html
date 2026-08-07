@@ -202,6 +202,7 @@
     let currentFontTheme = 'default';
     let currentCustomFontFaceCSS = '';
     let currentCustomFontFamily = '';
+    let currentUseBookFonts = true;
     let tapNavigationInFlight = false;
     let tapNavigationResetTimer = null;
     let readerElement = null;
@@ -1785,6 +1786,9 @@
       if (settings.customFontFamily !== undefined) {
         currentCustomFontFamily = settings.customFontFamily || '';
       }
+      if (settings.useBookFonts !== undefined) {
+        currentUseBookFonts = settings.useBookFonts !== false;
+      }
 
       if (settings.fontSize !== undefined) {
         currentFontSize = settings.fontSize;
@@ -1804,7 +1808,7 @@
       }
 
       if (settings.fontSize !== undefined || settings.lineHeight !== undefined || settings.fontTheme !== undefined || settings.paragraphSpacing !== undefined
-          || settings.customFontFamily !== undefined || settings.customFontFaceCSS !== undefined) {
+          || settings.customFontFamily !== undefined || settings.customFontFaceCSS !== undefined || settings.useBookFonts !== undefined) {
         const fontThemes = {
           default: { cjk: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif', serif: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif' },
           system: { cjk: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif', serif: '-apple-system, BlinkMacSystemFont, system-ui, sans-serif' },
@@ -1836,6 +1840,15 @@
         const layoutScale = currentFontSize / BASELINE_FONT_SIZE;
         const ps = Math.round(currentParagraphSpacing * layoutScale);
 
+        // When useBookFonts is enabled (default), do not force the reader
+        // font family onto every element so the book's own fonts (e.g.
+        // embedded @font-face families) render where the book specifies them.
+        const bodyStarFontOverride = currentUseBookFonts
+          ? ''
+          : `:root:not(.vrtl):not(.vltr) body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *) {
+  font-family: var(--readany-font-family) !important;
+}`;
+
         const baseStyles = `
           :root {
             --readany-font-family: ${fontFamily};
@@ -1847,9 +1860,7 @@
             -webkit-text-size-adjust: none;
             text-size-adjust: none;
           }
-          :root:not(.vrtl):not(.vltr) body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *) {
-            font-family: var(--readany-font-family) !important;
-          }
+          ${bodyStarFontOverride}
           :root:not(.vrtl):not(.vltr) body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *):not(rt):not(rp) {
             font-size: ${fSize}px !important;
           }

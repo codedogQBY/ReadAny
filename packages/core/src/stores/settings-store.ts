@@ -47,6 +47,7 @@ const defaultReadSettings: ReadSettings = {
   fontSize: 16,
   lineHeight: 1.6,
   fontTheme: "system",
+  useBookFonts: true,
   viewMode: "paginated",
   paginatedLayout: "double",
   fixedLayoutZoom: 1,
@@ -85,14 +86,26 @@ const defaultAIConfig: AIConfig = {
 };
 
 function migrateSettingsState(state: SettingsState): SettingsState {
-  if (state.aiConfig.maxTokens !== 4096) return state;
-  return {
-    ...state,
-    aiConfig: {
-      ...state.aiConfig,
-      maxTokens: defaultAIConfig.maxTokens,
-    },
-  };
+  let next = state;
+  if (next.aiConfig.maxTokens === 4096) {
+    next = {
+      ...next,
+      aiConfig: {
+        ...next.aiConfig,
+        maxTokens: defaultAIConfig.maxTokens,
+      },
+    };
+  }
+  if (next.readSettings?.useBookFonts === undefined) {
+    next = {
+      ...next,
+      readSettings: {
+        ...next.readSettings,
+        useBookFonts: true,
+      },
+    };
+  }
+  return next;
 }
 
 /**

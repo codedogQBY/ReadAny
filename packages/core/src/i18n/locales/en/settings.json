@@ -64,6 +64,8 @@
     "fontSize": "Font Size: {{size}}px",
     "lineHeight": "Line Height: {{height}}",
     "fontTheme": "Font Theme",
+    "useBookFonts": "Use book fonts",
+    "useBookFontsDesc": "Honor the book's own fonts (e.g. embedded fonts) where specified.",
     "paragraphSpacing": "Paragraph Spacing",
     "showTopTitleProgress": "Top Title & Progress",
     "showBottomTimeBattery": "Bottom Time & Battery",

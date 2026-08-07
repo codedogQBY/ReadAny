@@ -64,6 +64,8 @@
     "fontSize": "文字サイズ: {{size}}px",
     "lineHeight": "行間: {{height}}",
     "fontTheme": "フォントテーマ",
+    "useBookFonts": "書籍のフォントを使用",
+    "useBookFontsDesc": "書籍内で指定されたフォント（埋め込みフォントなど）を優先表示します。",
     "paragraphSpacing": "段落間隔",
     "showTopTitleProgress": "上部タイトル＆進捗表示",
     "showBottomTimeBattery": "下部時刻＆バッテリー表示",

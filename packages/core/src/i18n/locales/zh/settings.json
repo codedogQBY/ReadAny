@@ -64,6 +64,8 @@
     "fontSize": "字体大小：{{size}}px",
     "lineHeight": "行高：{{height}}",
     "fontTheme": "字体主题",
+    "useBookFonts": "使用书籍字体",
+    "useBookFontsDesc": "优先显示书籍自带的字体（如内嵌字体）。",
     "paragraphSpacing": "段落间距",
     "showTopTitleProgress": "顶部标题与进度",
     "showBottomTimeBattery": "底部时间与电量",

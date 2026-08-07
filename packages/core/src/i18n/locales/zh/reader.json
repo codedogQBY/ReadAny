@@ -40,6 +40,8 @@
     "fontSize": "字号",
     "lineHeight": "行高",
     "fontTheme": "字体主题",
+    "useBookFonts": "使用书籍字体",
+    "useBookFontsDesc": "优先显示书籍自带的字体（如内嵌字体）。",
     "viewMode": "阅读模式",
     "paginated": "翻页",
     "scrollMode": "滚动",

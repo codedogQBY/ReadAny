@@ -2751,6 +2751,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       viewSettings.customFontFamily,
       viewSettings.customFontFaceCSS,
       viewSettings.customFontCssUrls,
+      viewSettings.useBookFonts,
       viewSettings.paragraphSpacing,
       isFixedLayout,
       appTheme,
@@ -3174,6 +3175,17 @@ function getRendererStyles(settings: ViewSettings, theme: AppTheme): string {
   const layoutScale = settings.fontSize / BASELINE_FONT_SIZE;
   const scaledParagraphSpacing = Math.round(settings.paragraphSpacing * layoutScale);
 
+  // When useBookFonts is enabled (default), do not force the reader font
+  // family onto every element so the book's own fonts (e.g. embedded
+  // @font-face families) render where the book specifies them.
+  const bodyStarFontOverride =
+    settings.useBookFonts === false
+      ? `body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *) {
+  font-family: var(--readany-font-family) !important;
+}
+`
+      : "";
+
   return `${settings.customFontFaceCSS ? `/* Custom font faces */\n${settings.customFontFaceCSS}\n\n` : ""}/* Font styles */
 html {
   --theme-bg-color: ${bgColor};
@@ -3192,10 +3204,7 @@ html, body {
   text-size-adjust: none;
 }
 
-body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *) {
-  font-family: var(--readany-font-family) !important;
-}
-
+${bodyStarFontOverride}
 body :not(#__readany_font_size_override):not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *):not(rt):not(rp) {
   font-size: ${settings.fontSize}px !important;
 }

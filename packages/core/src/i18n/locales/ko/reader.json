@@ -40,6 +40,8 @@
     "fontSize": "글꼴 크기",
     "lineHeight": "줄 간격",
     "fontTheme": "글꼴 테마",
+    "useBookFonts": "책의 글꼴 사용",
+    "useBookFontsDesc": "책에 지정된 글꼴(내장 글꼴 등)을 우선 표시합니다.",
     "viewMode": "보기 모드",
     "paginated": "페이지 넘기기",
     "scrollMode": "스크롤",

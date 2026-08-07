@@ -83,6 +83,7 @@ export interface ViewSettings {
   customFontFamily?: string; // custom font family (overrides fontTheme)
   customFontFaceCSS?: string; // @font-face CSS to inject (not persisted in store)
   customFontCssUrls?: string[]; // remote font stylesheet URLs to inject into renderer docs
+  useBookFonts?: boolean; // default true: honor the book's own (embedded) fonts
   viewMode: ViewMode;
   paginatedLayout: PaginatedLayout;
   fixedLayoutZoom?: number; // relative zoom multiplier for PDF/CBZ fixed layouts

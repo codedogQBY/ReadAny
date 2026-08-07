@@ -40,6 +40,8 @@
     "fontSize": "文字サイズ",
     "lineHeight": "行間",
     "fontTheme": "フォントテーマ",
+    "useBookFonts": "書籍のフォントを使用",
+    "useBookFontsDesc": "書籍内で指定されたフォント（埋め込みフォントなど）を優先表示します。",
     "viewMode": "表示モード",
     "paginated": "ページ送り",
     "scrollMode": "スクロール",

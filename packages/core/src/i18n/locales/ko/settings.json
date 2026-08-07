@@ -64,6 +64,8 @@
     "fontSize": "글꼴 크기: {{size}}px",
     "lineHeight": "줄 간격: {{height}}",
     "fontTheme": "글꼴 테마",
+    "useBookFonts": "책의 글꼴 사용",
+    "useBookFontsDesc": "책에 지정된 글꼴(내장 글꼴 등)을 우선 표시합니다.",
     "paragraphSpacing": "문단 간격",
     "showTopTitleProgress": "상단 제목 및 진행률",
     "showBottomTimeBattery": "하단 시간 및 배터리",

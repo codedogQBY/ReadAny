@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { useAppStore } from "@/stores/app-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useFontStore } from "@readany/core/stores";
@@ -92,6 +93,20 @@ export function ReadSettingsPanel() {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Use book fonts */}
+          <div className="flex items-center justify-between pt-1">
+            <div>
+              <span className="text-sm text-foreground">{t("settings.useBookFonts")}</span>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t("settings.useBookFontsDesc")}
+              </p>
+            </div>
+            <Switch
+              checked={readSettings.useBookFonts !== false}
+              onCheckedChange={(checked) => updateReadSettings({ useBookFonts: checked })}
+            />
           </div>
 
           {/* Font Size */}

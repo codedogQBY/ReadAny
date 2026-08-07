@@ -186,6 +186,21 @@ export function ReaderSettingsPanel({ visible, readSettings, bookId, onClose, on
               </View>
             </ScrollView>
           </View>
+          {/* Use book fonts */}
+          <View style={s.settingRow}>
+            <View style={s.settingLabelBlock}>
+              <Text style={s.settingLabel}>{t("reader.useBookFonts")}</Text>
+              <Text style={s.settingHint}>{t("reader.useBookFontsDesc")}</Text>
+            </View>
+            <TouchableOpacity
+              style={[s.settingToggleBtn, readSettings.useBookFonts !== false && s.settingToggleBtnActive]}
+              onPress={() => onUpdateSetting("useBookFonts", readSettings.useBookFonts === false)}
+            >
+              <Text style={[s.settingToggleText, readSettings.useBookFonts !== false && s.settingToggleTextActive]}>
+                {readSettings.useBookFonts !== false ? t("settings.enabled") : t("settings.disabled")}
+              </Text>
+            </TouchableOpacity>
+          </View>
           {/* View Mode */}
           <View style={s.settingRow}>
             <Text style={s.settingLabel}>{t("reader.viewMode", "阅读模式")}</Text>

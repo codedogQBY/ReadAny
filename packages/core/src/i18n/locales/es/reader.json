@@ -40,6 +40,8 @@
     "fontSize": "Tamaño de fuente",
     "lineHeight": "Altura de línea",
     "fontTheme": "Tema de fuente",
+    "useBookFonts": "Usar fuentes del libro",
+    "useBookFontsDesc": "Mostrar prioritariamente las fuentes del libro (fuentes incrustadas).",
     "viewMode": "Modo de vista",
     "paginated": "Paginado",
     "scrollMode": "Desplazamiento",
