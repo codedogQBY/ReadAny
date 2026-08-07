@@ -20,6 +20,65 @@ const PDFJS_DOCUMENT_OPTIONS = {
   standardFontDataUrl: `${PDFJS_CDN_BASE}/standard_fonts/`,
 };
 
+// The OS accessibility "font size" setting scales every piece of WebView-rendered
+// text (including this transparent selection/highlight text layer) but leaves the
+// page's canvas bitmap untouched. Only the glyph *size* (a font-size) is scaled;
+// the text layer's positions are percentages of the `--total-scale-factor`-sized
+// container and are not. Left uncorrected the glyphs render `fontScale`x larger
+// than the ones baked into the canvas, so selection and highlight rectangles
+// overshoot the text into the blank margins and sit too low (readest #4480).
+// Measure the scale here so render() can divide it back out of the glyph-size
+// lever only. offsetHeight of a 100px/line-height-1 box reflects the OS font
+// scaling but not devicePixelRatio or CSS transforms, so it isolates it.
+const getFontScale = (doc) => {
+  const probe = doc.createElement("div");
+  probe.style.cssText =
+    "position:absolute;left:-9999px;top:0;visibility:hidden;font-size:100px;line-height:1;text-size-adjust:none;-webkit-text-size-adjust:none";
+  probe.textContent = "x";
+  doc.body.append(probe);
+  const fontScale = probe.offsetHeight / 100;
+  probe.remove();
+  return fontScale > 0 ? fontScale : 1;
+};
+
+// iOS WKWebView has a ~2GB per-process memory ceiling. Both a page's canvas
+// bitmap and its WebKit backing layer are allocated at the render scale, so
+// their memory grows with the SQUARE of the device pixel ratio. Phones report
+// dpr 3, which is the tipping factor. Rendering at 2x instead of 3x is still
+// retina-sharp but uses ~2.25x less memory per page (the crisp, selectable
+// text layer is a separate DOM layer, unaffected).
+const MAX_RENDER_DPR = 2;
+// Hard ceiling on a single page's bitmap area (~3.1 Mpx ≈ 12.6 MB) so a large
+// tablet page can't blow the budget even after the dpr clamp.
+const MAX_CANVAS_PIXELS = 2048 * 1536;
+
+// Only mobile WebViews get that budget. Desktop browsers have no per-process
+// memory ceiling, so clamping there bought nothing and cost sharpness: the
+// raster ended up coarser than the screen, the browser upscaled it into the
+// CSS box, and PDF text looked blurry (readest #5251). iPadOS reports a
+// desktop ("Macintosh") user agent, so touch points are what give a tablet
+// away.
+const isMobileWebView = () => {
+  const ua = navigator.userAgent;
+  return (
+    /Android|iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)
+  );
+};
+
+// The device pixel ratio to rasterise this page at: the real dpr on desktop,
+// or on mobile the dpr clamped by both MAX_RENDER_DPR and the per-canvas pixel
+// budget. Never below 1 (CSS resolution).
+const getRenderDpr = (page, zoom) => {
+  let dpr = globalThis.devicePixelRatio || 1;
+  if (isMobileWebView()) {
+    dpr = Math.min(dpr, MAX_RENDER_DPR);
+    const { width, height } = page.getViewport({ scale: zoom || 1 });
+    const area = width * height * dpr * dpr;
+    if (area > MAX_CANVAS_PIXELS) dpr *= Math.sqrt(MAX_CANVAS_PIXELS / area);
+  }
+  return Math.max(1, dpr);
+};
+
 // Inline text_layer_builder CSS
 const TEXT_LAYER_CSS = `
 .textLayer {
@@ -34,6 +93,8 @@ const TEXT_LAYER_CSS = `
   transform-origin: 0 0;
   caret-color: CanvasText;
   z-index: 0;
+  letter-spacing: normal;
+  word-spacing: normal;
 }
 .textLayer.highlighting { touch-action: none; }
 .textLayer :is(span, br) {
@@ -43,7 +104,6 @@ const TEXT_LAYER_CSS = `
   cursor: text;
   transform-origin: 0% 0%;
 }
-.textLayer --min-font-size: 1;
 .textLayer {
   --min-font-size: 1;
   --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
@@ -104,7 +164,109 @@ const ANNOTATION_LAYER_CSS = `
 .annotationLayer .linkAnnotation.hasBorder:hover {
   background-color: rgb(255 255 0 / 0.2);
 }
+.textLayer.selecting ~ .annotationLayer section {
+  pointer-events: none;
+}
 `;
+
+const NULL_CHAR = String.fromCharCode(0);
+const removeNullCharacters = (str) => str.replaceAll(NULL_CHAR, "");
+const normalizeSelectedText = (str) => removeNullCharacters(pdfjsLib.normalizeUnicode(str)).trim();
+
+const getRangeTextWithLineBreaks = (range) => {
+  try {
+    const fragment = range.cloneContents();
+    for (const node of fragment.querySelectorAll(".endOfContent")) {
+      node.remove();
+    }
+    for (const node of fragment.querySelectorAll("br")) {
+      node.replaceWith(fragment.ownerDocument.createTextNode("\n"));
+    }
+    return fragment.textContent || "";
+  } catch {
+    return "";
+  }
+};
+
+const getSelectedText = (selection, container) => {
+  const doc = container.ownerDocument;
+  const view = doc.defaultView;
+  const segments = [];
+  let textWithExplicitLineBreaks = "";
+
+  const walker = doc.createTreeWalker(container, view.NodeFilter.SHOW_TEXT);
+  for (let i = 0; i < selection.rangeCount; i++) {
+    const range = selection.getRangeAt(i);
+    if (!range.intersectsNode(container)) continue;
+
+    const rangeText = getRangeTextWithLineBreaks(range);
+    if (rangeText.trim()) {
+      textWithExplicitLineBreaks += `${textWithExplicitLineBreaks ? "\n" : ""}${rangeText}`;
+    }
+
+    walker.currentNode = container;
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const parent = node.parentElement;
+      if (!parent || parent.closest(".endOfContent")) continue;
+      if (!range.intersectsNode(node)) continue;
+
+      let start = 0;
+      let end = node.nodeValue.length;
+      if (range.startContainer === node) start = range.startOffset;
+      if (range.endContainer === node) end = range.endOffset;
+      const text = node.nodeValue.slice(start, end);
+      if (!text) continue;
+
+      const rect = parent.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) continue;
+      segments.push({
+        text,
+        left: rect.left,
+        centerY: rect.top + rect.height / 2,
+        height: rect.height || 1,
+      });
+    }
+  }
+
+  if (textWithExplicitLineBreaks.trim()) {
+    return normalizeSelectedText(textWithExplicitLineBreaks);
+  }
+
+  if (segments.length === 0) {
+    return normalizeSelectedText(selection.toString());
+  }
+
+  segments.sort((a, b) => {
+    const tolerance = Math.max(2, Math.min(a.height, b.height) * 0.6);
+    if (Math.abs(a.centerY - b.centerY) > tolerance) return a.centerY - b.centerY;
+    return a.left - b.left;
+  });
+
+  const lines = [];
+  for (const segment of segments) {
+    const line = lines.at(-1);
+    const tolerance = Math.max(2, segment.height * 0.6);
+    if (!line || Math.abs(line.centerY - segment.centerY) > tolerance) {
+      lines.push({ centerY: segment.centerY, height: segment.height, parts: [segment] });
+      continue;
+    }
+    line.parts.push(segment);
+    line.centerY = (line.centerY * (line.parts.length - 1) + segment.centerY) / line.parts.length;
+    line.height = Math.max(line.height, segment.height);
+  }
+
+  const text = lines
+    .map((line) =>
+      line.parts
+        .sort((a, b) => a.left - b.left)
+        .map((segment) => segment.text)
+        .join(""),
+    )
+    .join("\n");
+
+  return normalizeSelectedText(text);
+};
 
 /**
  * Render canvas + text layer + annotation layer for a PDF page inside an iframe document.
@@ -112,10 +274,11 @@ const ANNOTATION_LAYER_CSS = `
  */
 const render = async (page, doc, zoom) => {
   if (!doc) return;
-  const scale = zoom * devicePixelRatio;
+  const scale = zoom;
+  const renderDpr = getRenderDpr(page, zoom);
 
-  doc.documentElement.style.transform = `scale(${1 / devicePixelRatio})`;
-  doc.documentElement.style.transformOrigin = "top left";
+  doc.documentElement.style.removeProperty("transform");
+  doc.documentElement.style.removeProperty("transform-origin");
   doc.documentElement.style.setProperty("--total-scale-factor", scale);
   doc.documentElement.style.setProperty("--user-unit", "1");
   doc.documentElement.style.setProperty("--scale-round-x", "1px");
@@ -123,12 +286,18 @@ const render = async (page, doc, zoom) => {
 
   const viewport = page.getViewport({ scale });
 
-  // Render canvas (in main document for font loading, then adopt into iframe)
+  // Render canvas (in main document for font loading, then adopt into iframe).
+  // The bitmap is over-sampled at renderDpr but the CSS box is the display size,
+  // so the raster stays crisp WITHOUT scaling the document (scaling the document
+  // with `transform` misplaces text selection and the annotation toolbar).
   const canvas = document.createElement("canvas");
-  canvas.height = viewport.height;
-  canvas.width = viewport.width;
+  canvas.height = Math.floor(viewport.height * renderDpr);
+  canvas.width = Math.floor(viewport.width * renderDpr);
+  canvas.style.width = `${Math.floor(viewport.width)}px`;
+  canvas.style.height = `${Math.floor(viewport.height)}px`;
   const canvasContext = canvas.getContext("2d");
-  await page.render({ canvasContext, viewport }).promise;
+  const transform = renderDpr !== 1 ? [renderDpr, 0, 0, renderDpr, 0, 0] : null;
+  await page.render({ canvasContext, transform, viewport }).promise;
 
   const canvasContainer = doc.querySelector("#canvas");
   if (!canvasContainer) return;
@@ -138,12 +307,36 @@ const render = async (page, doc, zoom) => {
   const textContainer = doc.querySelector(".textLayer");
   if (textContainer) {
     textContainer.replaceChildren();
-    const textLayer = new pdfjsLib.TextLayer({
-      textContentSource: await page.streamTextContent(),
-      container: textContainer,
-      viewport,
-    });
-    await textLayer.render();
+
+    // `replaceChildren` leaves inline styles intact, so reset a scale left by a
+    // previous accessibility-font-size render before rendering this page.
+    textContainer.style.removeProperty("--text-scale-factor");
+
+    // Counteract the OS font-size accessibility scaling on the text layer's glyph
+    // size only (see getFontScale). `--text-scale-factor` feeds `font-size` and
+    // nothing else, so dividing it leaves positions (which scale with
+    // `--total-scale-factor`) aligned with the canvas at any font-size setting.
+    const fontScale = getFontScale(doc);
+    if (fontScale !== 1) {
+      textContainer.style.setProperty(
+        "--text-scale-factor",
+        `calc(var(--total-scale-factor) * var(--min-font-size) / ${fontScale})`,
+      );
+    }
+
+    try {
+      const textLayer = new pdfjsLib.TextLayer({
+        textContentSource: await page.streamTextContent({
+          includeMarkedContent: true,
+          disableNormalization: true,
+        }),
+        container: textContainer,
+        viewport,
+      });
+      await textLayer.render();
+    } catch (error) {
+      console.error(`Failed to render PDF text layer for page ${page.pageNumber}.`, error);
+    }
 
     // Hide offscreen canvases created by TextLayer
     for (const c of document.querySelectorAll(".hiddenCanvasElement")) {
@@ -157,10 +350,87 @@ const render = async (page, doc, zoom) => {
       });
     }
 
-    // Fix text selection end-of-content marker
-    const endOfContent = document.createElement("div");
+    doc.__readanyPdfTextSelectionAbortController?.abort();
+    const selectionAbortController = new AbortController();
+    doc.__readanyPdfTextSelectionAbortController = selectionAbortController;
+    const { signal } = selectionAbortController;
+    const SelectionRange = doc.defaultView.Range;
+    const endOfContent = doc.createElement("div");
     endOfContent.className = "endOfContent";
     textContainer.append(endOfContent);
+    let previousSelectionRange = null;
+
+    const resetEndOfContent = () => {
+      textContainer.append(endOfContent);
+      endOfContent.style.width = "";
+      endOfContent.style.height = "";
+      endOfContent.style.userSelect = "";
+      textContainer.classList.remove("selecting");
+      previousSelectionRange = null;
+    };
+
+    const moveEndOfContent = (selection) => {
+      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+        resetEndOfContent();
+        return;
+      }
+
+      let range = null;
+      for (let i = 0; i < selection.rangeCount; i++) {
+        const candidate = selection.getRangeAt(i);
+        if (candidate.intersectsNode(textContainer)) {
+          range = candidate;
+          break;
+        }
+      }
+
+      if (!range) {
+        resetEndOfContent();
+        return;
+      }
+
+      textContainer.classList.add("selecting");
+
+      const isModifyingStart =
+        previousSelectionRange &&
+        (range.compareBoundaryPoints(SelectionRange.END_TO_END, previousSelectionRange) === 0 ||
+          range.compareBoundaryPoints(SelectionRange.START_TO_END, previousSelectionRange) === 0);
+
+      let anchor = isModifyingStart ? range.startContainer : range.endContainer;
+      if (anchor.nodeType === Node.TEXT_NODE) anchor = anchor.parentNode;
+      if (anchor.classList?.contains("highlight")) anchor = anchor.parentNode;
+
+      if (!isModifyingStart && range.endOffset === 0) {
+        while (anchor && anchor !== textContainer && !anchor.previousSibling) {
+          anchor = anchor.parentNode;
+        }
+        if (anchor?.previousSibling) anchor = anchor.previousSibling;
+      }
+
+      const parentTextLayer = anchor?.parentElement?.closest(".textLayer");
+      if (parentTextLayer === textContainer && anchor.parentElement) {
+        endOfContent.style.width = `${Math.ceil(viewport.width)}px`;
+        endOfContent.style.height = `${Math.ceil(viewport.height)}px`;
+        endOfContent.style.userSelect = "text";
+        anchor.parentElement.insertBefore(
+          endOfContent,
+          isModifyingStart ? anchor : anchor.nextSibling,
+        );
+      }
+
+      previousSelectionRange = range.cloneRange();
+    };
+
+    const handleCopy = (event) => {
+      const selection = doc.getSelection();
+      const text = selection ? getSelectedText(selection, textContainer) : "";
+      if (!text || !event.clipboardData) return;
+      event.clipboardData.setData("text/plain", text);
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    textContainer.oncopy = handleCopy;
+    doc.addEventListener("copy", handleCopy, { signal });
 
     // Panning + text selection cursor logic
     let isPanning = false;
@@ -240,7 +510,7 @@ const render = async (page, doc, zoom) => {
         isPanning = false;
         scrollParent = null;
         textContainer.style.cursor = "grab";
-      } else textContainer.classList.remove("selecting");
+      } else resetEndOfContent();
     };
 
     textContainer.onpointerleave = () => {
@@ -251,11 +521,19 @@ const render = async (page, doc, zoom) => {
       }
     };
 
-    doc.addEventListener("selectionchange", () => {
-      const selection = doc.getSelection();
-      if (selection && selection.toString().length > 0) textContainer.style.cursor = "text";
-      else if (!isPanning) textContainer.style.cursor = "grab";
-    });
+    doc.addEventListener(
+      "selectionchange",
+      () => {
+        const selection = doc.getSelection();
+        moveEndOfContent(selection);
+        if (selection && selection.toString().length > 0) textContainer.style.cursor = "text";
+        else if (!isPanning) textContainer.style.cursor = "grab";
+      },
+      { signal },
+    );
+    doc.addEventListener("pointerup", resetEndOfContent, { signal });
+    doc.addEventListener("keyup", resetEndOfContent, { signal });
+    doc.defaultView.addEventListener("blur", resetEndOfContent, { signal });
 
     textContainer.style.cursor = "grab";
   }
@@ -267,6 +545,10 @@ const render = async (page, doc, zoom) => {
     const linkService = {
       goToDestination: () => {},
       getDestinationHash: (dest) => JSON.stringify(dest),
+      // pdf.js AnnotationLayer calls getAnchorUrl for named-action / GoTo link
+      // annotations; without it the render rejects. Match pdf.js SimpleLinkService,
+      // which returns ''.
+      getAnchorUrl: () => "",
       addLinkAttributes: (link, url) => {
         link.href = url;
       },
@@ -274,7 +556,7 @@ const render = async (page, doc, zoom) => {
     try {
       await new pdfjsLib.AnnotationLayer({
         page,
-        viewport,
+        viewport: viewport.clone({ dontFlip: true }),
         div: annotationDiv,
         linkService,
       }).render({ annotations: await page.getAnnotations() });
