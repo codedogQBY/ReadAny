@@ -1088,12 +1088,27 @@
       return String(cloned.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 600);
     }
 
+    // Well-formed books put the footnote id on a block container (<aside>),
+    // but many real-world books put it on the inline marker itself ("[2]")
+    // whose parent block carries the actual note. Walk up while a node's own
+    // (marker-stripped) text is empty and return the first ancestor that
+    // yields note text - no tag-name or length heuristics.
+    function findFootnotePreviewElement(element) {
+      var doc = element.ownerDocument;
+      var node = element;
+      while (node && node !== doc.body) {
+        if (getFootnoteElementText(node).trim()) return node;
+        node = node.parentElement;
+      }
+      return element;
+    }
+
     async function resolveFootnoteTipText(anchor, href) {
       const rawHref = anchor?.getAttribute?.('href') || href || '';
       const sourceDoc = anchor?.ownerDocument;
       const localTarget = findElementByFragmentId(sourceDoc, getHrefFragmentId(rawHref));
       if (localTarget && (isFootnoteLikeElement(localTarget) || isLikelyFootnoteLink(anchor, href))) {
-        return getFootnoteElementText(localTarget);
+        return getFootnoteElementText(findFootnotePreviewElement(localTarget));
       }
 
       if (!view || !href) return '';
@@ -1113,7 +1128,10 @@
             : null);
         if (!targetDoc) return '';
         const target = typeof resolved.anchor === 'function' ? resolved.anchor(targetDoc) : null;
-        return getFootnoteElementText(target);
+        if (!target) return '';
+        return getFootnoteElementText(
+          target && target.nodeType === 1 ? findFootnotePreviewElement(target) : target,
+        );
       } catch {
         return '';
       }
@@ -1653,12 +1671,14 @@
             .then((text) => {
               if (!text) {
                 hideFootnoteTip();
+                // Fallback: navigate to the footnote instead of a dead click.
+                if (href && typeof view.goTo === 'function') view.goTo(href);
                 return;
               }
               activeFootnoteTipKey = key;
               if (!positionFootnoteTip(anchor, text)) hideFootnoteTip();
             })
-            .catch(() => hideFootnoteTip());
+            .catch(() => { hideFootnoteTip(); if (href && typeof view.goTo === 'function') view.goTo(href); });
         });
 
         container.appendChild(el);

@@ -446,6 +446,24 @@ function getElementPreviewText(element: Element | Range | null): string {
   return cleanText(cloned.textContent || "").slice(0, 600);
 }
 
+/**
+ * Resolve the element whose text should preview a footnote. Well-formed books
+ * put the footnote id on a block container (<aside>), but many real-world
+ * books put it on the inline marker itself ("[2]" / "(1)") whose parent block
+ * carries the actual note. Walk up while a node's own (marker-stripped) text
+ * is empty and return the first ancestor that yields note text - no tag-name
+ * or length heuristics, independent of markup style.
+ */
+function findFootnotePreviewElement(element: Element): Element {
+  const doc = element.ownerDocument;
+  let node: Element | null = element;
+  while (node && node !== doc.body) {
+    if (getElementPreviewText(node).trim()) return node;
+    node = node.parentElement;
+  }
+  return element;
+}
+
 async function resolveFootnotePreviewText(
   view: FoliateView | null,
   anchor: HTMLAnchorElement,
@@ -455,7 +473,7 @@ async function resolveFootnotePreviewText(
   const sourceDoc = anchor.ownerDocument;
   const localTarget = findElementByFragmentId(sourceDoc, getHrefFragmentId(rawHref));
   if (localTarget && (isFootnoteLikeElement(localTarget) || isLikelyFootnoteLink(anchor, href))) {
-    return getElementPreviewText(localTarget);
+    return getElementPreviewText(findFootnotePreviewElement(localTarget));
   }
 
   if (!view?.resolveNavigation || !href) return "";
@@ -471,7 +489,10 @@ async function resolveFootnotePreviewText(
       (await view.book?.sections?.[targetIndex]?.createDocument?.());
     if (!targetDoc) return "";
     const target = typeof resolved.anchor === "function" ? resolved.anchor(targetDoc) : null;
-    return getElementPreviewText(target);
+    if (!target) return "";
+    return getElementPreviewText(
+      target instanceof Element ? findFootnotePreviewElement(target) : target,
+    );
   } catch {
     return "";
   }
@@ -2026,6 +2047,9 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         if (!text || !position) {
           activeFootnoteKeyRef.current = null;
           setFootnotePreview(null);
+          // Fallback: if a preview can't be produced, navigate to the
+          // footnote instead of swallowing the click.
+          if (href) viewRef.current?.goTo(href);
           return;
         }
         activeFootnoteKeyRef.current = key;
