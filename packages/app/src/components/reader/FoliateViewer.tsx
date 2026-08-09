@@ -2923,13 +2923,6 @@ function applyDocumentStyles(
   normalizeBrOnlyParagraphs(doc);
   syncRemoteFontStylesInDocument(doc, settings.customFontCssUrls);
   syncReaderOverrideStylesInDocument(doc, getRendererStyles(settings, theme));
-
-  // Basic styles for images
-  const images = doc.querySelectorAll("img");
-  for (const img of images) {
-    img.style.maxWidth = "100%";
-    img.style.height = "auto";
-  }
 }
 
 function syncReaderOverrideStylesInDocument(doc: Document, css: string) {
@@ -3233,7 +3226,7 @@ a, a:any-link {
 /* Images */
 img, svg {
   max-width: 100% !important;
-  height: auto !important;
+  height: auto;
 }
 
 /* Selection */

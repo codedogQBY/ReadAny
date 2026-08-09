@@ -1903,7 +1903,10 @@
           :root:not(.vrtl):not(.vltr) img,
           :root:not(.vrtl):not(.vltr) svg {
             max-width: 100% !important;
-            height: auto !important;
+          }
+          img,
+          svg {
+            height: auto;
           }
           ${getVerticalWritingCompatibilityStyles()}
         `;
@@ -2228,8 +2231,6 @@ a { color: ${primary} !important; }
       const verticalDoc = isVerticalDoc(doc);
       if (!verticalDoc) {
         for (const img of doc.querySelectorAll('img')) {
-          img.style.maxWidth = '100%';
-          img.style.height = 'auto';
           img.style.webkitUserDrag = 'none';
           img.style.touchAction = 'manipulation';
         }
