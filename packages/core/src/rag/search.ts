@@ -1,4 +1,4 @@
-import { getChunks } from "../db/database";
+import { getChunks, getVectorIndexProvenance } from "../db/database";
 /**
  * Hybrid search — vector + BM25 with configurable weighting
  *
@@ -8,18 +8,62 @@ import { getChunks } from "../db/database";
  * - In-memory caching for chunks and indexes
  * - Graceful fallback when vector search fails
  */
-import type { Chunk, SearchQuery, SearchResult } from "../types";
+import type { Chunk, EmbeddingProvenance, SearchQuery, SearchResult, VectorIndexProvenance } from "../types";
 import { cosineSimilarity } from "./embedding";
-import type { EmbeddingService } from "./embedding-service";
+import { normalizeEmbeddingEndpoint } from "./embedding-provenance";
 import { type InvertedIndex, buildInvertedIndex, searchInvertedIndex } from "./inverted-index";
 import { tokenize, tokenizeQuery } from "./tokenizer";
 import { getVectorDB, hasVectorDB } from "./vector-db";
 
-let embeddingService: EmbeddingService | null = null;
+/** Minimal contract needed by vector search. Both remote and builtin engines implement it. */
+export interface QueryEmbeddingService {
+  embed(text: string): Promise<number[]>;
+  provenance?: EmbeddingProvenance;
+}
+
+let embeddingService: QueryEmbeddingService | null = null;
 
 /** Configure the embedding service for vector search */
-export function configureSearch(service: EmbeddingService): void {
+export function configureSearch(service: QueryEmbeddingService, provenance?: EmbeddingProvenance): void {
+  if (provenance && !service.provenance) {
+    service.provenance = provenance;
+  }
   embeddingService = service;
+}
+
+function provenanceMatches(
+  query: EmbeddingProvenance,
+  index: VectorIndexProvenance,
+): boolean {
+  return (
+    query.kind === index.kind &&
+    query.modelId === index.modelId &&
+    // Some remote providers do not expose dimensions in their saved settings.
+    // In that case the actual query vector is checked immediately after embedding.
+    (query.dimensions === 0 || index.dimensions === 0 || query.dimensions === index.dimensions) &&
+    (query.kind === "builtin" ||
+      normalizeEmbeddingEndpoint(query.endpoint || "") === normalizeEmbeddingEndpoint(index.endpoint || ""))
+  );
+}
+
+async function assertCompatibleIndex(bookId: string): Promise<VectorIndexProvenance> {
+  if (!embeddingService?.provenance) {
+    throw new Error("Embedding service has no model identity; cannot safely query this vector index.");
+  }
+  const index = await getVectorIndexProvenance(bookId);
+  if (!index) {
+    throw new Error(
+      "This book's vector index has no embedding provenance. Re-vectorize it before semantic search.",
+    );
+  }
+  if (!provenanceMatches(embeddingService.provenance, index)) {
+    throw new Error(
+      `Vector index model mismatch: book uses ${index.kind}:${index.modelId} (${index.dimensions}d), ` +
+        `but the active query model is ${embeddingService.provenance.kind}:${embeddingService.provenance.modelId} ` +
+        `(${embeddingService.provenance.dimensions}d). Re-vectorize this book with the active model.`,
+    );
+  }
+  return index;
 }
 
 /** Clear configured embedding service for vector search */
@@ -106,8 +150,16 @@ async function vectorSearch(query: SearchQuery): Promise<SearchResult[]> {
     throw new Error("Embedding service not configured. Call configureSearch() first.");
   }
 
+  const indexProvenance = await assertCompatibleIndex(query.bookId);
+
   // Get query embedding
   const queryEmbedding = await embeddingService.embed(query.query);
+  if (indexProvenance.dimensions > 0 && queryEmbedding.length !== indexProvenance.dimensions) {
+    throw new Error(
+      `Vector index dimension mismatch: book uses ${indexProvenance.dimensions}d, ` +
+        `but the query model returned ${queryEmbedding.length}d. Re-vectorize this book with the active model.`,
+    );
+  }
 
   // Try vector database first (sqlite-vec)
   if (hasVectorDB()) {
@@ -195,6 +247,13 @@ async function hybridSearch(query: SearchQuery): Promise<SearchResult[]> {
     vectorResults = await vectorSearch(expandedQuery);
   } catch (err) {
     console.warn("[Search] Vector search failed, falling back to BM25 only:", err);
+    const vectorError = err instanceof Error ? err.message : String(err);
+    bm25Results = await bm25Search(expandedQuery);
+    return bm25Results.slice(0, query.topK).map((result) => ({
+      ...result,
+      vectorStatus: "unavailable" as const,
+      vectorError,
+    }));
   }
 
   bm25Results = await bm25Search(expandedQuery);

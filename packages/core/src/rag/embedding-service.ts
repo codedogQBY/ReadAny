@@ -3,7 +3,7 @@
  */
 import type { EmbeddingModel } from "../types";
 
-import { buildOpenAICompatibleUrl } from "../utils/api";
+import { normalizeEmbeddingEndpointUrl } from "../utils/api";
 
 export interface EmbeddingConfig {
   model: EmbeddingModel;
@@ -92,7 +92,11 @@ export class EmbeddingService {
   }
 
   private async callOpenAI(texts: string[]): Promise<number[][]> {
-    const url = buildOpenAICompatibleUrl(this.config.baseUrl, "embeddings");
+    // Vector-model settings persist the complete embeddings request URL so the
+    // vectorization path can call it directly. Accept that form here as well as
+    // a plain OpenAI-compatible base URL; appending `/embeddings` unconditionally
+    // would otherwise produce `.../embeddings/embeddings` for Reader queries.
+    const url = normalizeEmbeddingEndpointUrl(this.config.baseUrl);
 
     const response = await this.fetchWithRetry(url, {
       method: "POST",
