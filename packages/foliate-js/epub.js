@@ -1109,6 +1109,13 @@ class Loader {
         el.setAttribute(attr, await this.loadHref(el.getAttribute(attr), href, parents));
       const replaceSrcset = async (el, attr) =>
         el.setAttribute(attr, await this.replaceSrcset(el.getAttribute(attr), href, parents));
+      // remember whether the document originally linked any external
+      // stylesheet; used below for the malformed-book fallback
+      const stylesheetHrefs = new Set(
+        Array.from(doc.querySelectorAll('link[rel~="stylesheet" i]'), (el) =>
+          el.getAttribute("href"),
+        ),
+      );
       for (const el of doc.querySelectorAll("link[href]")) await replace(el, "href");
       for (const el of doc.querySelectorAll("[src]")) await replace(el, "src");
       for (const el of doc.querySelectorAll("[srcset]")) await replaceSrcset(el, "srcset");
@@ -1131,6 +1138,23 @@ class Loader {
         if (el.textContent) el.textContent = await this.replaceCSS(el.textContent, href, parents);
       for (const el of doc.querySelectorAll("[style]"))
         el.setAttribute("style", await this.replaceCSS(el.getAttribute("style"), href, parents));
+      // Malformed-book fallback: if the document has no <link rel="stylesheet">
+      // at all, inject every CSS file declared in the package manifest (in
+      // manifest order) so the book's styling is still applied.
+      if (stylesheetHrefs.size === 0) {
+        const head = doc.head;
+        if (head) {
+          for (const cssItem of this.manifest) {
+            if (cssItem.mediaType !== MIME.CSS) continue;
+            const url = await this.loadItem(cssItem, parents.concat(href));
+            if (!url) continue;
+            const link = doc.createElementNS(NS.XHTML, "link");
+            link.rel = "stylesheet";
+            link.href = url;
+            head.appendChild(link);
+          }
+        }
+      }
       // TODO: replace inline scripts? probably not worth the trouble
       const result = new XMLSerializer().serializeToString(doc);
       return this.createURL(href, result, item.mediaType, parent);
