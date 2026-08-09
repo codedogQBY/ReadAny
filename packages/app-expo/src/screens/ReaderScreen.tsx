@@ -82,6 +82,8 @@ const MAX_TRACKED_PAGE_DELTA = 20;
 const MAX_TRACKED_FRACTION_DELTA = 0.08;
 const INITIAL_PROGRESS_RESTORE_GUARD_MS = 1800;
 const PROGRAMMATIC_NAV_GUARD_MS = 1200;
+const RELOCATE_UI_UPDATE_MS = 250;
+const RELOCATE_CONTEXT_UPDATE_MS = 1000;
 const BOOK_MIME_TYPES = [
   "application/epub+zip",
   "application/pdf",
@@ -149,11 +151,7 @@ const NOTE_TOOLTIP_TOP_THRESHOLD = 180;
 import { useRubyStore } from "@readany/core/stores/ruby-store";
 import { ReaderSettingsPanel } from "./reader/ReaderSettingsPanel";
 import { ReaderTOCPanel } from "./reader/ReaderTOCPanel";
-import {
-  CONTROLS_TIMEOUT,
-  SCREEN_HEIGHT,
-  SCREEN_WIDTH,
-} from "./reader/reader-constants";
+import { CONTROLS_TIMEOUT, SCREEN_HEIGHT, SCREEN_WIDTH } from "./reader/reader-constants";
 import { BatteryIcon, ListIcon, SettingsIcon } from "./reader/reader-icons";
 import { makeStyles, noteTooltipMdStyles } from "./reader/reader-styles";
 import { useReaderBookmark } from "./reader/useReaderBookmark";
@@ -167,6 +165,22 @@ const LOCAL_FONT_SERVER_DIR = "readany-fonts";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Reader">;
 type TTSSegment = VisibleTTSSegment;
+type PendingRelocateState = {
+  bookId: string;
+  fraction?: number;
+  cfi?: string;
+  pageCurrent: number;
+  pageTotal: number;
+  chapter?: string;
+};
+type PendingReadingContextState = {
+  bookId: string;
+  cfi?: string;
+  chapterIndex: number;
+  chapterTitle: string;
+  chapterHref: string;
+  percentage: number;
+};
 
 // ──────────────────────────── helpers ────────────────────────────
 
@@ -201,6 +215,24 @@ function buildCustomFontFaceCSS(
     })
     .filter(Boolean)
     .join("\n");
+}
+
+function syncReadingContextFromRelocate(pending: PendingReadingContextState | null): void {
+  if (!pending) return;
+  const currentBook = useLibraryStore.getState().books.find((item) => item.id === pending.bookId);
+  readingContextService.updateContext({
+    bookId: pending.bookId,
+    bookTitle: currentBook?.meta?.title || "",
+    currentChapter: {
+      index: pending.chapterIndex,
+      title: pending.chapterTitle,
+      href: pending.chapterHref,
+    },
+    currentPosition: {
+      cfi: pending.cfi || "",
+      percentage: pending.percentage,
+    },
+  });
 }
 
 // ──────────────────────────── ReaderScreen ────────────────────────────
@@ -349,6 +381,9 @@ export function ReaderScreen({ route, navigation }: Props) {
   const locationHistoryRef = useRef<string[]>([]);
   const lastNavigatedCfiRef = useRef<string | undefined>(undefined);
   const fileServerRef = useRef<string | null>(null);
+  const pendingRelocateStateRef = useRef<PendingRelocateState | null>(null);
+  const pendingReadingContextRef = useRef<PendingReadingContextState | null>(null);
+  const isMountedRef = useRef(true);
   const sessionProgressRef = useRef<{
     mode: "location" | "page" | "characters";
     current: number;
@@ -373,6 +408,31 @@ export function ReaderScreen({ route, navigation }: Props) {
         currentCfi: cfi,
       });
     }, 5000),
+  ).current;
+  const flushPendingRelocateState = useRef(
+    throttle(() => {
+      if (!isMountedRef.current) return;
+      const pending = pendingRelocateStateRef.current;
+      if (!pending) return;
+      pendingRelocateStateRef.current = null;
+
+      if (pending.fraction != null) {
+        progressRef.current = pending.fraction;
+        setProgress(pending.fraction);
+      }
+      setCurrentPage(pending.pageCurrent);
+      setTotalPages(pending.pageTotal);
+      if (pending.chapter) setCurrentChapter(pending.chapter);
+      if (pending.cfi) setCurrentCfi(pending.cfi);
+    }, RELOCATE_UI_UPDATE_MS),
+  ).current;
+  const flushPendingReadingContext = useRef(
+    throttle(() => {
+      if (!isMountedRef.current) return;
+      const pending = pendingReadingContextRef.current;
+      pendingReadingContextRef.current = null;
+      syncReadingContextFromRelocate(pending);
+    }, RELOCATE_CONTEXT_UPDATE_MS),
   ).current;
   const {
     addHighlight,
@@ -625,13 +685,6 @@ export function ReaderScreen({ route, navigation }: Props) {
       totalBookCharactersRef.current = totalCharacters > 0 ? totalCharacters : null;
     },
     onRelocate: (detail: RelocateEvent) => {
-      console.log("[ReaderScreen] onRelocate", {
-        section: detail.section,
-        fraction: detail.fraction,
-        cfi: detail.cfi,
-        routeCfi: cfi,
-        lastNavigated: lastNavigatedCfiRef.current,
-      });
       if (loading) {
         setLoading(false);
       }
@@ -642,20 +695,17 @@ export function ReaderScreen({ route, navigation }: Props) {
         setTranslationReady(false);
         chapterTranslation.reset();
       }
+      const previousProgress = progressRef.current;
 
-      if (detail.fraction != null) setProgress(detail.fraction);
-
+      let nextPageCurrent = 0;
+      let nextPageTotal = 0;
       if (detail.page) {
-        setCurrentPage(Math.max(1, detail.page.current));
-        setTotalPages(Math.max(1, detail.page.total));
+        nextPageCurrent = Math.max(1, detail.page.current);
+        nextPageTotal = Math.max(1, detail.page.total);
       } else if (detail.section?.total && !detail.location?.total) {
         // Fixed-layout documents can still expose stable section pages.
-        setCurrentPage(Math.max(1, detail.section.current + 1));
-        setTotalPages(Math.max(1, detail.section.total));
-      } else {
-        // Reflowable books without renderer-backed pagination should fall back to percent.
-        setCurrentPage(0);
-        setTotalPages(0);
+        nextPageCurrent = Math.max(1, detail.section.current + 1);
+        nextPageTotal = Math.max(1, detail.section.total);
       }
 
       const trackingSuppressed = Date.now() < progressTrackingGuardUntilRef.current;
@@ -732,10 +782,9 @@ export function ReaderScreen({ route, navigation }: Props) {
         }
         sessionProgressRef.current = { mode: "page", current: detail.section.current };
       }
-      if (detail.tocItem?.label) setCurrentChapter(detail.tocItem.label);
       if (detail.cfi) {
         if (lastCfiRef.current && detail.cfi !== lastCfiRef.current) {
-          const fractionDiff = Math.abs((detail.fraction ?? 0) - progress);
+          const fractionDiff = Math.abs((detail.fraction ?? 0) - previousProgress);
           if (fractionDiff > 0.02 || locationHistoryRef.current.length === 0) {
             locationHistoryRef.current.push(lastCfiRef.current);
             if (locationHistoryRef.current.length > 50) {
@@ -744,10 +793,28 @@ export function ReaderScreen({ route, navigation }: Props) {
           }
         }
         lastCfiRef.current = detail.cfi;
-        setCurrentCfi(detail.cfi);
         // Use throttled save instead of immediate update
         throttledSaveProgress(bookId, detail.fraction ?? 0, detail.cfi);
       }
+
+      pendingRelocateStateRef.current = {
+        bookId,
+        fraction: detail.fraction,
+        cfi: detail.cfi,
+        pageCurrent: nextPageCurrent,
+        pageTotal: nextPageTotal,
+        chapter: detail.tocItem?.label,
+      };
+      flushPendingRelocateState();
+      pendingReadingContextRef.current = {
+        bookId,
+        cfi: detail.cfi,
+        chapterIndex: detail.section?.current ?? 0,
+        chapterTitle: detail.tocItem?.label || "",
+        chapterHref: detail.tocItem?.href || "",
+        percentage: (detail.fraction ?? 0) * 100,
+      };
+      flushPendingReadingContext();
 
       // Mark translation ready after first successful relocate (CFI navigation done)
       if (!translationReady) setTranslationReady(true);
@@ -755,7 +822,6 @@ export function ReaderScreen({ route, navigation }: Props) {
       // If TTS is waiting for a page turn to complete, fire the continuation callback now
       // that the renderer has fully updated its position (renderer.start reflects new page).
       if (ttsPendingContinueRef.current?.pendingTTSContinueCallbackRef.current) {
-        console.log("[ReaderScreen][TTS] onRelocate triggered pending TTS continuation");
         const cb = ttsPendingContinueRef.current.pendingTTSContinueCallbackRef.current;
         ttsPendingContinueRef.current.pendingTTSContinueCallbackRef.current = null;
         // Cancel the safety timer since onRelocate fired successfully
@@ -767,20 +833,7 @@ export function ReaderScreen({ route, navigation }: Props) {
         void cb();
       }
 
-      // Sync reading context for AI tools
-      readingContextService.updateContext({
-        bookId,
-        bookTitle: book?.meta?.title || "",
-        currentChapter: {
-          index: detail.section?.current ?? 0,
-          title: detail.tocItem?.label || "",
-          href: detail.tocItem?.href || "",
-        },
-        currentPosition: {
-          cfi: detail.cfi || "",
-          percentage: (detail.fraction ?? 0) * 100,
-        },
-      });
+      // Reading context is synchronized by the throttled relocate flush above.
     },
     onTocReady: (items: TOCItem[]) => {
       setToc(items);
@@ -907,10 +960,25 @@ export function ReaderScreen({ route, navigation }: Props) {
       appActive,
     // 维护约定：任何新增遮盖正文/输入态/导航跳转，必须在此追加判定。
     [
-      readSettings.volumeButtonsPageTurn, webViewReady, loading, error, isReimporting,
-      showSearch, showTOC, showSettings, showNotebook, showTTS,
-      showTranslation, showChapterTranslation, chapterTranslation.state.status,
-      selection, noteViewHighlight, noteTooltip, ttsPlayState, isFocused, appActive,
+      readSettings.volumeButtonsPageTurn,
+      webViewReady,
+      loading,
+      error,
+      isReimporting,
+      showSearch,
+      showTOC,
+      showSettings,
+      showNotebook,
+      showTTS,
+      showTranslation,
+      showChapterTranslation,
+      chapterTranslation.state.status,
+      selection,
+      noteViewHighlight,
+      noteTooltip,
+      ttsPlayState,
+      isFocused,
+      appActive,
     ],
   );
 
@@ -1080,6 +1148,17 @@ export function ReaderScreen({ route, navigation }: Props) {
   // Save progress immediately on unmount
   useEffect(() => {
     return () => {
+      const pendingRelocate = pendingRelocateStateRef.current;
+      if (pendingRelocate?.fraction != null) {
+        progressRef.current = pendingRelocate.fraction;
+      }
+      if (pendingRelocate?.cfi) {
+        lastCfiRef.current = pendingRelocate.cfi;
+      }
+      syncReadingContextFromRelocate(pendingReadingContextRef.current);
+      pendingRelocateStateRef.current = null;
+      pendingReadingContextRef.current = null;
+      isMountedRef.current = false;
       if (fileServerRef.current) {
         stopFileServer();
         fileServerRef.current = null;
