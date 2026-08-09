@@ -42,6 +42,7 @@ export async function triggerVectorizeBook(
         url: selected.url,
         apiKey: selected.apiKey,
         modelId: selected.modelId,
+        dimension: selected.dimension,
       };
     })(),
   };

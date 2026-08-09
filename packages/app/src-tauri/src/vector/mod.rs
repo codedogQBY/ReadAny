@@ -1,9 +1,10 @@
 use crate::storage;
 use anyhow::Result;
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,6 +24,12 @@ pub struct VectorSearchResult {
 pub struct VectorDB {
     conn: Connection,
     dimension: usize,
+}
+
+fn dimension_from_vec_schema(sql: &str) -> Option<usize> {
+    let start = sql.find("float[")? + "float[".len();
+    let end = sql[start..].find(']')? + start;
+    sql[start..end].parse().ok()
 }
 
 fn parse_embedding_blob(blob: &[u8]) -> Vec<f32> {
@@ -60,7 +67,7 @@ impl VectorDB {
             )));
         }
 
-        conn.execute("PRAGMA busy_timeout=5000", [])?;
+        conn.busy_timeout(Duration::from_millis(5000))?;
         let _: String = conn.query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))?;
 
         conn.execute(
@@ -72,54 +79,53 @@ impl VectorDB {
             [],
         )?;
 
-        // Check if vec_embeddings already exists with a different dimension.
-        // If so, drop and recreate to avoid dimension mismatch.
+        // A vec0 table's dimension is fixed at creation. On startup, opening a
+        // persisted table must never discard vectors merely because the fallback
+        // dimension changed (for example, a 1024d remote model vs. 384d builtin).
+        // The vectorization path can explicitly reinitialize an *empty* table.
         let table_exists: bool = conn.query_row(
             "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='vec_embeddings'",
             [],
             |row| row.get(0),
         )?;
 
-        if table_exists {
-            // Probe actual dimension by checking the schema via sqlite_master
-            // sqlite-vec stores the dimension in the table's SQL definition
-            let existing_sql: Option<String> = conn.query_row(
+        let actual_dimension = if table_exists {
+            let existing_sql: String = conn.query_row(
                 "SELECT sql FROM sqlite_master WHERE type='table' AND name='vec_embeddings'",
                 [],
                 |row| row.get(0),
-            ).ok();
-
-            let needs_recreate = if let Some(sql) = existing_sql {
-                // sql looks like: CREATE VIRTUAL TABLE vec_embeddings USING vec0(embedding float[4096])
-                let dim_str = format!("float[{}]", dimension);
-                !sql.contains(&dim_str)
-            } else {
-                true
-            };
-
-            if needs_recreate {
-                println!("[VectorDB] Existing vec_embeddings has wrong dimension, recreating for {}", dimension);
-                conn.execute("DROP TABLE IF EXISTS vec_embeddings", [])?;
-                conn.execute("DELETE FROM id_mapping", [])?;
-            }
-        }
+            )?;
+            dimension_from_vec_schema(&existing_sql).ok_or_else(|| {
+                anyhow::anyhow!("Could not determine existing vec_embeddings dimension")
+            })?
+        } else {
+            conn.execute(
+                &format!(
+                    "CREATE VIRTUAL TABLE vec_embeddings USING vec0(
+                        embedding float[{}]
+                    )",
+                    dimension
+                ),
+                [],
+            )?;
+            dimension
+        };
 
         conn.execute(
-            &format!(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS vec_embeddings USING vec0(
-                    embedding float[{}]
-                )",
-                dimension
-            ),
+            "CREATE INDEX IF NOT EXISTS idx_id_mapping_book ON id_mapping(book_id)",
             [],
         )?;
 
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_id_mapping_book ON id_mapping(book_id)", [])?;
-
         let version: String = conn.query_row("SELECT vec_version()", [], |row| row.get(0))?;
-        println!("[VectorDB] sqlite-vec version: {}, dimension: {}", version, dimension);
+        println!(
+            "[VectorDB] sqlite-vec version: {}, dimension: {}",
+            version, actual_dimension
+        );
 
-        Ok(Self { conn, dimension })
+        Ok(Self {
+            conn,
+            dimension: actual_dimension,
+        })
     }
 
     pub fn insert(&self, records: &[VectorRecord]) -> Result<()> {
@@ -290,6 +296,29 @@ impl VectorDB {
         )?;
 
         Ok((count as usize, self.dimension))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dimension_from_vec_schema;
+
+    #[test]
+    fn reads_dimension_from_existing_vec0_schema() {
+        assert_eq!(
+            dimension_from_vec_schema(
+                "CREATE VIRTUAL TABLE vec_embeddings USING vec0(embedding float[1024])"
+            ),
+            Some(1024),
+        );
+    }
+
+    #[test]
+    fn rejects_a_schema_without_an_embedding_dimension() {
+        assert_eq!(
+            dimension_from_vec_schema("CREATE TABLE vec_embeddings (id TEXT)"),
+            None
+        );
     }
 }
 

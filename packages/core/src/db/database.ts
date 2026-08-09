@@ -103,6 +103,9 @@ export {
   getChunks,
   insertChunks,
   deleteChunks,
+  getVectorIndexProvenance,
+  setVectorIndexProvenance,
+  deleteVectorIndexProvenance,
   clearVectorizationFlagsWithoutLocalChunks,
 } from "./chunk-queries";
 

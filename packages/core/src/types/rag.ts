@@ -18,6 +18,9 @@ export interface SearchResult {
   score: number;
   matchType: "vector" | "bm25" | "hybrid";
   highlights?: string[]; // matched text segments
+  /** Present when hybrid search deliberately returned BM25-only results. */
+  vectorStatus?: "unavailable";
+  vectorError?: string;
 }
 
 export type SearchMode = "hybrid" | "vector" | "bm25";
@@ -36,6 +39,22 @@ export interface EmbeddingModel {
   dimensions: number;
   maxTokens: number;
   provider: "openai" | "local";
+}
+
+/**
+ * Stable, non-secret identity of the embedding space used to build a book index.
+ * API keys deliberately never belong here.
+ */
+export interface EmbeddingProvenance {
+  kind: "builtin" | "remote";
+  modelId: string;
+  endpoint?: string;
+  dimensions: number;
+}
+
+export interface VectorIndexProvenance extends EmbeddingProvenance {
+  bookId: string;
+  createdAt: number;
 }
 
 export interface VectorConfig {

@@ -1,4 +1,4 @@
-import type { Chunk } from "../types";
+import type { Chunk, VectorIndexProvenance } from "../types";
 import { getDB, getLocalDB, serializeEmbedding, deserializeEmbedding } from "./db-core";
 
 export async function getChunks(bookId: string): Promise<Chunk[]> {
@@ -57,11 +57,57 @@ export async function deleteChunks(bookId: string): Promise<void> {
   await database.execute("DELETE FROM chunks WHERE book_id = ?", [bookId]);
 }
 
+export async function getVectorIndexProvenance(bookId: string): Promise<VectorIndexProvenance | null> {
+  const database = await getLocalDB();
+  const rows = await database.select<{
+    book_id: string;
+    model_kind: "builtin" | "remote";
+    model_id: string;
+    endpoint: string | null;
+    dimensions: number;
+    created_at: number;
+  }>("SELECT * FROM vector_index_provenance WHERE book_id = ?", [bookId]);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    bookId: row.book_id,
+    kind: row.model_kind,
+    modelId: row.model_id,
+    endpoint: row.endpoint || undefined,
+    dimensions: row.dimensions,
+    createdAt: row.created_at,
+  };
+}
+
+export async function setVectorIndexProvenance(provenance: VectorIndexProvenance): Promise<void> {
+  const database = await getLocalDB();
+  await database.execute(
+    `INSERT OR REPLACE INTO vector_index_provenance
+      (book_id, model_kind, model_id, endpoint, dimensions, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      provenance.bookId,
+      provenance.kind,
+      provenance.modelId,
+      provenance.endpoint || null,
+      provenance.dimensions,
+      provenance.createdAt,
+    ],
+  );
+}
+
+export async function deleteVectorIndexProvenance(bookId: string): Promise<void> {
+  const database = await getLocalDB();
+  await database.execute("DELETE FROM vector_index_provenance WHERE book_id = ?", [bookId]);
+}
+
 export async function clearVectorizationFlagsWithoutLocalChunks(): Promise<void> {
   const database = await getDB();
   const localDatabase = await getLocalDB();
   const rows = await localDatabase.select<{ book_id: string }>(
-    "SELECT DISTINCT book_id FROM chunks",
+    `SELECT DISTINCT chunks.book_id
+     FROM chunks
+     INNER JOIN vector_index_provenance ON vector_index_provenance.book_id = chunks.book_id`,
   );
   const bookIds = rows.map((row) => row.book_id).filter((bookId) => !!bookId);
 

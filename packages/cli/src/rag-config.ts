@@ -96,13 +96,19 @@ export async function configureRagSearchForCli(
   const key = `${model.url}\n${model.modelId}\n${model.apiKey}`;
   if (configuredEmbeddingKey === key) return { embeddingConfigured: true };
 
-  const { EmbeddingService, configureSearch } = await import("@readany/core/rag");
+  const { EmbeddingService, configureSearch, normalizeEmbeddingEndpoint } = await import("@readany/core/rag");
   configureSearch(
     new EmbeddingService({
       model: toEmbeddingModel(model),
       apiKey: model.apiKey || "local",
       baseUrl: model.url,
     }),
+    {
+      kind: "remote",
+      modelId: model.modelId,
+      endpoint: normalizeEmbeddingEndpoint(model.url),
+      dimensions: model.dimension ?? 0,
+    },
   );
   configuredEmbeddingKey = key;
   return { embeddingConfigured: true };

@@ -1,7 +1,12 @@
 import { BUILTIN_EMBEDDING_MODELS } from "../ai/builtin-embedding-models";
 import { generateLocalEmbeddings, loadEmbeddingPipeline } from "../ai/local-embedding-service";
-import { deleteChunks, insertChunks } from "../db/database";
-import type { VectorizeProgress } from "../types";
+import {
+  deleteChunks,
+  deleteVectorIndexProvenance,
+  insertChunks,
+  setVectorIndexProvenance,
+} from "../db/database";
+import type { EmbeddingProvenance, VectorizeProgress } from "../types";
 /**
  * Vectorize Trigger — high-level service that orchestrates book vectorization.
  * Connects: chapter data → chunking → embedding → database indexing → state update.
@@ -13,6 +18,7 @@ import type { VectorizeProgress } from "../types";
  */
 import { eventBus } from "../utils/event-bus";
 import { chunkContent } from "./chunker";
+import { normalizeEmbeddingEndpoint } from "./embedding-provenance";
 import type { ChapterData } from "./rag-types";
 import { requestRemoteEmbeddingBatch } from "./remote-embedding";
 import { invalidateChunkCache } from "./search";
@@ -30,6 +36,7 @@ export interface VectorizeTriggerConfig {
     url: string;
     apiKey: string;
     modelId: string;
+    dimension?: number;
   } | null;
 }
 
@@ -44,6 +51,14 @@ export interface VectorizeTriggerCallbacks {
 
 /** Yield to the event loop so UI can repaint */
 const yieldToUI = () => new Promise<void>((r) => setTimeout(r, 0));
+
+/** sqlite-vec currently owns one global vector dimension. */
+export function canStoreInSharedVectorDB(
+  stats: { totalVectors: number; dimension: number },
+  embeddingDimension: number,
+): boolean {
+  return stats.totalVectors === 0 || stats.dimension === embeddingDimension;
+}
 
 /**
  * Trigger full vectorization for a book.
@@ -154,6 +169,7 @@ export async function triggerVectorizeBook(
     await yieldToUI();
 
     await deleteChunks(bookId);
+    await deleteVectorIndexProvenance(bookId);
     // Insert in batches of 50 to avoid huge single transaction
     const insertBatchSize = 50;
     for (let i = 0; i < allChunks.length; i += insertBatchSize) {
@@ -179,17 +195,34 @@ export async function triggerVectorizeBook(
             ];
           });
 
+          let storedInVectorDb = false;
           if (vectorRecords.length > 0) {
             // Detect actual embedding dimension and reinit vector DB if needed
             const detectedDimension = vectorRecords[0].embedding.length;
-            if (detectedDimension > 0 && vectorDB.reinit) {
+            const stats = await vectorDB.getStats();
+            let canInsertIntoVectorDb = canStoreInSharedVectorDB(stats, detectedDimension);
+            if (detectedDimension > 0 && vectorDB.reinit && stats.totalVectors === 0) {
               await vectorDB.reinit(detectedDimension);
+              canInsertIntoVectorDb = true;
+            } else if (stats.dimension !== detectedDimension) {
+              // sqlite-vec currently has one global vector dimension. Never drop
+              // other books' acceleration indexes just to insert this one: search
+              // will safely use the persisted chunk embeddings for this book.
+              console.warn(
+                `[Vectorize] Skipping sqlite-vec insert for ${bookId}: ${detectedDimension}d index is incompatible with existing ${stats.dimension}d database.`,
+              );
             }
-
-            await vectorDB.insert(vectorRecords);
+            if (canInsertIntoVectorDb) {
+              await vectorDB.insert(vectorRecords);
+              storedInVectorDb = true;
+            }
           }
 
-          console.log(`[Vectorize] Stored ${vectorRecords.length} vectors in sqlite-vec`);
+          console.log(
+            storedInVectorDb
+              ? `[Vectorize] Stored ${vectorRecords.length} vectors in sqlite-vec`
+              : `[Vectorize] Persisted ${vectorRecords.length} vectors in chunk storage only`,
+          );
         } else {
           console.warn("[Vectorize] Vector database not ready, skipping vector storage");
         }
@@ -197,6 +230,9 @@ export async function triggerVectorizeBook(
         console.error("[Vectorize] Failed to store vectors:", err);
       }
     }
+
+    const provenance = getEmbeddingProvenance(config, allChunks[0]?.embedding?.length ?? 0);
+    await setVectorIndexProvenance({ bookId, ...provenance, createdAt: Date.now() });
 
     // Invalidate search cache so next query picks up new embeddings
     invalidateChunkCache(bookId);
@@ -226,6 +262,25 @@ export async function triggerVectorizeBook(
     eventBus.emit("vectorize:error", { bookId, error: message });
     throw err;
   }
+}
+
+function getEmbeddingProvenance(
+  config: VectorizeTriggerConfig,
+  actualDimensions: number,
+): EmbeddingProvenance {
+  if (config.vectorModelMode === "builtin") {
+    const model = BUILTIN_EMBEDDING_MODELS.find((candidate) => candidate.id === config.selectedBuiltinModelId);
+    if (!model) throw new Error("Cannot save provenance for an unknown built-in embedding model.");
+    return { kind: "builtin", modelId: model.id, dimensions: actualDimensions || model.dimension };
+  }
+
+  if (!config.remoteModel) throw new Error("Cannot save provenance without a selected remote embedding model.");
+  return {
+    kind: "remote",
+    modelId: config.remoteModel.modelId,
+    endpoint: normalizeEmbeddingEndpoint(config.remoteModel.url),
+    dimensions: actualDimensions || config.remoteModel.dimension || 0,
+  };
 }
 
 /** Generate embeddings using a built-in Transformers.js model (via Web Worker) */

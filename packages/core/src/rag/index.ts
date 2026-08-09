@@ -20,6 +20,8 @@ export type {
 
 export { EmbeddingService } from "./embedding-service";
 export type { EmbeddingConfig } from "./embedding-service";
+export { createBuiltinEmbeddingService } from "./builtin-embedding-service";
+export { normalizeEmbeddingEndpoint } from "./embedding-provenance";
 
 export {
   getEmbeddingModels,
@@ -36,6 +38,8 @@ export {
   invalidateChunkCache,
   clearChunkCache,
 } from "./search";
+export type { QueryEmbeddingService } from "./search";
+export type { EmbeddingProvenance, VectorIndexProvenance } from "../types";
 
 // Tokenizer exports
 export { tokenize, tokenizeQuery, getTokenFrequencies } from "./tokenizer";
