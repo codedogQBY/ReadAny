@@ -171,6 +171,46 @@
     function postToRN(type, data) {
       if (RN) RN.postMessage(JSON.stringify({ type, ...data }));
     }
+    const SCROLL_RELOCATE_POST_INTERVAL_MS = 500;
+    let pendingScrollRelocatePayload = null;
+    let scrollRelocatePostTimer = null;
+    let lastScrollRelocatePostAt = 0;
+
+    function flushPendingScrollRelocate() {
+      if (scrollRelocatePostTimer) {
+        clearTimeout(scrollRelocatePostTimer);
+        scrollRelocatePostTimer = null;
+      }
+      if (!pendingScrollRelocatePayload) return;
+      lastScrollRelocatePostAt = Date.now();
+      postToRN('relocate', pendingScrollRelocatePayload);
+      pendingScrollRelocatePayload = null;
+    }
+
+    function postRelocateToRN(payload) {
+      const isContinuousScroll =
+        currentViewMode === 'scroll' &&
+        view &&
+        view.renderer &&
+        view.renderer.scrolled &&
+        !view.isFixedLayout;
+      if (!isContinuousScroll) {
+        flushPendingScrollRelocate();
+        postToRN('relocate', payload);
+        return;
+      }
+
+      pendingScrollRelocatePayload = payload;
+      const now = Date.now();
+      const remaining = SCROLL_RELOCATE_POST_INTERVAL_MS - (now - lastScrollRelocatePostAt);
+      if (remaining <= 0) {
+        flushPendingScrollRelocate();
+        return;
+      }
+      if (!scrollRelocatePostTimer) {
+        scrollRelocatePostTimer = setTimeout(flushPendingScrollRelocate, remaining);
+      }
+    }
     window.__READANY_READER_BUILD_ID = 'android-local-server-cors';
     postToRN('debug', { message: '[ReaderBuild] ' + window.__READANY_READER_BUILD_ID });
     Promise.withResolvers ??= function () {
@@ -314,6 +354,7 @@
       if (currentViewMode === 'scroll') {
         renderer.removeAttribute('no-continuous-scroll');
         renderer.setAttribute('flow', 'scrolled');
+        renderer.setAttribute('max-block-size', '100%');
         renderer.setAttribute('max-inline-size', '9999px');
         return;
       }
@@ -1208,9 +1249,6 @@
           if (!hit) return;
           armNoteTapGuard(doc, 900);
 
-          // Prevent subsequent click / show-annotation
-          e.preventDefault && e.preventDefault();
-
           const rect = hit.range.getBoundingClientRect();
           const iframe = doc.defaultView && doc.defaultView.frameElement;
           const iframeRect = iframe ? iframe.getBoundingClientRect() : { left: 0, top: 0 };
@@ -1225,7 +1263,7 @@
             },
           });
         }, LONG_PRESS_MS);
-      }, { passive: false });
+      }, { passive: true });
 
       doc.addEventListener('touchmove', (e) => {
         if (!timer) return;
@@ -1570,7 +1608,7 @@
                 total: Math.max(1, rendererPages - 2),
               }
             : null;
-          postToRN('relocate', {
+          postRelocateToRN({
             fraction: detail.fraction,
             section: { current: currentSectionIndex, total: relocatedSectionTotal },
             location: detail.location,
