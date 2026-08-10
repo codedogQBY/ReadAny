@@ -1152,6 +1152,7 @@ export function ReaderScreen({ route, navigation }: Props) {
           foreground: colors.foreground,
           muted: colors.mutedForeground,
           primary: colors.primary,
+          themeMode,
         });
       } catch (err: any) {
         console.error("[ReaderScreen] Failed to load book:", err);
