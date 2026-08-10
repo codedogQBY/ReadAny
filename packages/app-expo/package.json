@@ -86,6 +86,7 @@
     "expo-status-bar": "~3.0.9",
     "i18next": "^25.8.13",
     "lucide-react-native": "^0.577.0",
+    "onnxruntime-react-native": "1.24.3",
     "pako": "^2.1.0",
     "punycode": "^2.3.1",
     "react": "19.1.0",

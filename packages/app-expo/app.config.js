@@ -77,6 +77,8 @@ module.exports = {
       "expo-secure-store",
       "expo-sqlite",
       "expo-asset",
+      "onnxruntime-react-native",
+      "./plugins/withOnnxruntimePackage",
       "./plugins/withVolumeKeyPaging",
       [
         "expo-camera",

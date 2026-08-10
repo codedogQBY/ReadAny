@@ -45,7 +45,7 @@ export const BUILTIN_EMBEDDING_MODELS: BuiltinEmbeddingModel[] = [
     id: "bge-small-zh-v1.5",
     hfModelId: "Xenova/bge-small-zh-v1.5",
     name: "BGE Small ZH v1.5",
-    size: "~47 MB",
+    size: "~24 MB",
     dimension: 512,
     descriptionKey: "settings.vm_model_desc_bgeZh",
     languagesKey: "settings.vm_lang_zh",

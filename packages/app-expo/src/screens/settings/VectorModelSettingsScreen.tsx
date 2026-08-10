@@ -12,6 +12,9 @@ import {
   withOpacity,
 } from "@/styles/theme";
 import { useNavigation } from "@react-navigation/native";
+import { BUILTIN_EMBEDDING_MODELS } from "@readany/core/ai/builtin-embedding-models";
+import { clearModelCache, loadEmbeddingPipeline } from "@readany/core/ai/local-embedding-service";
+import { ensureNativeEmbeddingEngine } from "@/lib/rag/configure-search";
 import type { VectorModelConfig } from "@readany/core/types";
 import {
   EmbeddingEndpointTestError,
@@ -113,6 +116,7 @@ export default function VectorModelSettingsScreen() {
                 </View>
 
                 <RemoteModelsSection />
+                <BuiltinModelsSection />
               </>
             )}
 
@@ -167,6 +171,124 @@ export default function VectorModelSettingsScreen() {
           </View>
       </KeyboardAwareScrollView>
     </SafeAreaView>
+  );
+}
+
+function BuiltinModelsSection() {
+  const colors = useColors();
+  const s = makeStyles(colors);
+    const model = BUILTIN_EMBEDDING_MODELS.find((candidate) => candidate.id === "bge-small-zh-v1.5");
+  const {
+    selectedBuiltinModelId, builtinModelStates, vectorModelMode, setSelectedBuiltinModelId,
+    setVectorModelMode, updateBuiltinModelState,
+  } = useVectorModelStore();
+  const [clearing, setClearing] = useState(false);
+  if (!model) return null;
+  const state = builtinModelStates[model.id];
+  const ready = state?.status === "ready";
+  const downloading = state?.status === "downloading";
+  const selected = selectedBuiltinModelId === model.id && vectorModelMode === "builtin";
+
+  const select = async () => {
+    if (ready) { setSelectedBuiltinModelId(model.id); setVectorModelMode("builtin"); return; }
+      updateBuiltinModelState(model.id, { status: "downloading", progress: 0, error: undefined });
+      try {
+        await ensureNativeEmbeddingEngine();
+        await loadEmbeddingPipeline(model.id, (progress) => updateBuiltinModelState(model.id, { progress }));
+      updateBuiltinModelState(model.id, { status: "ready", progress: 100 });
+      setSelectedBuiltinModelId(model.id); setVectorModelMode("builtin");
+    } catch (error) {
+      updateBuiltinModelState(model.id, { status: "error", error: error instanceof Error ? error.message : String(error) });
+    }
+  };
+  const clear = async () => {
+    setClearing(true);
+    try { await clearModelCache(model.id); setSelectedBuiltinModelId(null); updateBuiltinModelState(model.id, { status: "idle", progress: 0, error: undefined }); }
+    catch (error) { updateBuiltinModelState(model.id, { status: "error", error: error instanceof Error ? error.message : String(error) }); }
+    finally { setClearing(false); }
+  };
+
+  return (
+    <View style={s.section}>
+      <Text style={s.sectionTitle}>本地模型</Text>
+      <Text style={s.sectionDesc}>模型下载到本机后离线运行，不会发送书籍内容。BGE 适合中文，MiniLM 适合英文；不同模型需要分别重新向量化。</Text>
+      <View style={[s.modelCard, selected && s.modelCardActive]}>
+          <View style={s.modelCardTop}>
+            <View style={s.modelInfo}><Text style={s.modelName}>{model.name}</Text><Text style={s.modelSize}>{model.dimension} 维 · {model.size}</Text></View>
+          {ready ? <Switch value={selected} onValueChange={(value) => value ? select() : setSelectedBuiltinModelId(null)} trackColor={{ false: colors.muted, true: colors.primary }} thumbColor={colors.card} /> :
+            <TouchableOpacity style={s.downloadBtn} disabled={downloading} onPress={select}><Text style={s.downloadBtnText}>{downloading ? `下载 ${state?.progress ?? 0}%` : "下载并使用"}</Text></TouchableOpacity>}
+        </View>
+        {ready && <TouchableOpacity style={s.clearBtn} disabled={clearing} onPress={clear}><Text style={s.clearBtnText}>{clearing ? "正在清理…" : "删除本地模型"}</Text></TouchableOpacity>}
+        {state?.error ? <Text style={[s.testResult, s.testError]}>{state.error}</Text> : null}
+      </View>
+      <BuiltinEnglishModelCard />
+    </View>
+  );
+}
+
+function BuiltinEnglishModelCard() {
+  const colors = useColors();
+  const s = makeStyles(colors);
+  const model = BUILTIN_EMBEDDING_MODELS.find((candidate) => candidate.id === "all-MiniLM-L6-v2");
+  const {
+    selectedBuiltinModelId, builtinModelStates, vectorModelMode, setSelectedBuiltinModelId,
+    setVectorModelMode, updateBuiltinModelState,
+  } = useVectorModelStore();
+  const [clearing, setClearing] = useState(false);
+  if (!model) return null;
+  const state = builtinModelStates[model.id];
+  const ready = state?.status === "ready";
+  const downloading = state?.status === "downloading";
+  const selected = selectedBuiltinModelId === model.id && vectorModelMode === "builtin";
+
+  const select = async () => {
+    if (ready) {
+      setSelectedBuiltinModelId(model.id);
+      setVectorModelMode("builtin");
+      return;
+    }
+    updateBuiltinModelState(model.id, { status: "downloading", progress: 0, error: undefined });
+    try {
+      await ensureNativeEmbeddingEngine();
+      await loadEmbeddingPipeline(model.id, (progress) => updateBuiltinModelState(model.id, { progress }));
+      updateBuiltinModelState(model.id, { status: "ready", progress: 100 });
+      setSelectedBuiltinModelId(model.id);
+      setVectorModelMode("builtin");
+    } catch (error) {
+      updateBuiltinModelState(model.id, { status: "error", error: error instanceof Error ? error.message : String(error) });
+    }
+  };
+  const clear = async () => {
+    setClearing(true);
+    try {
+      await clearModelCache(model.id);
+      setSelectedBuiltinModelId(null);
+      updateBuiltinModelState(model.id, { status: "idle", progress: 0, error: undefined });
+    } catch (error) {
+      updateBuiltinModelState(model.id, { status: "error", error: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  return (
+    <View style={[s.modelCard, selected && s.modelCardActive]}>
+      <View style={s.modelCardTop}>
+        <View style={s.modelInfo}>
+          <Text style={s.modelName}>{model.name}</Text>
+          <Text style={s.modelSize}>{model.dimension} 维 · {model.size} · 英文</Text>
+        </View>
+        {ready ? (
+          <Switch value={selected} onValueChange={(value) => value ? select() : setSelectedBuiltinModelId(null)} trackColor={{ false: colors.muted, true: colors.primary }} thumbColor={colors.card} />
+        ) : (
+          <TouchableOpacity style={s.downloadBtn} disabled={downloading} onPress={select}>
+            <Text style={s.downloadBtnText}>{downloading ? `下载 ${state?.progress ?? 0}%` : "下载并使用"}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+      {ready && <TouchableOpacity style={s.clearBtn} disabled={clearing} onPress={clear}><Text style={s.clearBtnText}>{clearing ? "正在清理…" : "删除本地模型"}</Text></TouchableOpacity>}
+      {state?.error ? <Text style={[s.testResult, s.testError]}>{state.error}</Text> : null}
+    </View>
   );
 }
 

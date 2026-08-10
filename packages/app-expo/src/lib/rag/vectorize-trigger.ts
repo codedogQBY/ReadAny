@@ -17,19 +17,6 @@ export async function triggerVectorizeBook(
 ): Promise<void> {
   const vmState = useVectorModelStore.getState();
 
-  // Auto-fix: if user has remote model configured but mode is still "builtin", switch to remote
-  const selectedRemoteModel = vmState.getSelectedVectorModel();
-  if (vmState.vectorModelMode === "builtin" && selectedRemoteModel) {
-    console.log("[Vectorize] Auto-switching to remote mode since remote model is configured");
-    vmState.setVectorModelMode("remote");
-  }
-
-  if (vmState.vectorModelMode === "builtin") {
-    throw new Error(
-      "移动端不支持本地向量模型，请在「设置 → 向量模型」中配置远程 API（如硅基流动、OpenAI 等）。",
-    );
-  }
-
   // 1. Build configuration for the core pipeline
   const config: VectorizeTriggerConfig = {
     vectorModelEnabled: vmState.vectorModelEnabled,
