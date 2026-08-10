@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AIConfig } from "../../types";
-import { streamReadingAgent } from "../agents/reading-agent";
+import { isOutputLimitTermination, streamReadingAgent } from "../agents/reading-agent";
 import type { ToolDefinition } from "../tools";
 import { getAvailableTools } from "../tools";
 
@@ -48,6 +48,22 @@ beforeEach(() => {
   getReadingContextSnapshotMock.mockReset();
   getReadingContextSnapshotMock.mockReturnValue(null);
   vi.useRealTimers();
+});
+
+describe("isOutputLimitTermination", () => {
+  it.each([
+    { response_metadata: { finish_reason: "length" } },
+    { response_metadata: { finishReason: "max_tokens" } },
+    { additional_kwargs: { finish_reason: "MAX_COMPLETION_TOKENS" } },
+  ])("recognizes explicit output-limit finish reasons", (output) => {
+    expect(isOutputLimitTermination(output)).toBe(true);
+  });
+
+  it("does not guess from normal completion metadata", () => {
+    expect(isOutputLimitTermination({ response_metadata: { finish_reason: "stop" } })).toBe(false);
+    expect(isOutputLimitTermination({ additional_kwargs: { finish_reason: "tool_calls" } })).toBe(false);
+    expect(isOutputLimitTermination(undefined)).toBe(false);
+  });
 });
 
 describe("streamReadingAgent tool registration", () => {

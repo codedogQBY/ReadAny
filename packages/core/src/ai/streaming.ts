@@ -125,14 +125,22 @@ export class StreamingChat {
         if (signal.aborted) {
           return { done: true, value: undefined };
         }
+        let onAbort: (() => void) | undefined;
         const abortPromise = new Promise<IteratorResult<unknown>>((resolve) => {
-          const onAbort = () => {
-            signal.removeEventListener("abort", onAbort);
+          const handler = () => {
+            signal.removeEventListener("abort", handler);
             resolve({ done: true, value: undefined });
           };
-          signal.addEventListener("abort", onAbort);
+          onAbort = handler;
+          signal.addEventListener("abort", handler);
         });
-        return Promise.race([iterator.next(), abortPromise]);
+        try {
+          return await Promise.race([iterator.next(), abortPromise]);
+        } finally {
+          // iterator.next() usually wins. Remove its unused abort listener so a
+          // long conversation does not accumulate one listener per event.
+          if (onAbort) signal.removeEventListener("abort", onAbort);
+        }
       };
 
       const iterator = stream[Symbol.asyncIterator]();
@@ -189,6 +197,15 @@ export class StreamingChat {
       if (signal.aborted) {
         options.onAbort?.(fullText, toolCalls.length > 0 ? toolCalls : undefined);
       } else {
+        const incompleteToolCalls = toolCalls.filter((toolCall) => toolCall.result === undefined);
+        if (incompleteToolCalls.length > 0) {
+          options.onError(
+            new Error(
+              "The response stream ended before its tool call completed. Please try again.",
+            ),
+          );
+          return;
+        }
         options.onComplete(fullText, toolCalls.length > 0 ? toolCalls : undefined);
       }
     } catch (error) {

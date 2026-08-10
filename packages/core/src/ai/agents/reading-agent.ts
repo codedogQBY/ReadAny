@@ -30,6 +30,31 @@ const DEFAULT_TOOL_TIMEOUT_MS = 45_000;
 const TOOL_EXECUTION_LIMIT = 12;
 const REPEATED_TOOL_CALL_LIMIT = 2;
 
+const OUTPUT_LIMIT_FINISH_REASONS = new Set([
+  "length",
+  "max_tokens",
+  "max_completion_tokens",
+  "token_limit",
+]);
+
+/**
+ * Providers expose the stop reason in slightly different places. Only treat
+ * explicit output-limit reasons as truncation: guessing from punctuation would
+ * turn legitimate short answers into false failures.
+ */
+export function isOutputLimitTermination(output: unknown): boolean {
+  if (!output || typeof output !== "object") return false;
+  const record = output as Record<string, unknown>;
+  const metadata = [record.response_metadata, record.additional_kwargs];
+
+  return metadata.some((value) => {
+    if (!value || typeof value !== "object") return false;
+    const reason = (value as Record<string, unknown>).finish_reason ??
+      (value as Record<string, unknown>).finishReason;
+    return typeof reason === "string" && OUTPUT_LIMIT_FINISH_REASONS.has(reason.toLowerCase());
+  });
+}
+
 const CHAPTER_LOOKUP_STOP_TOOL_NAMES = new Set([
   "resolveChapterReference",
   "ragSearch",
@@ -1003,14 +1028,22 @@ export async function* streamReadingAgent(
       if (isAborted()) {
         return { done: true, value: undefined };
       }
+      let onAbort: (() => void) | undefined;
       const abortPromise = new Promise<IteratorResult<unknown>>((resolve) => {
-        const onAbort = () => {
-          signal?.removeEventListener("abort", onAbort);
+        const handler = () => {
+          signal?.removeEventListener("abort", handler);
           resolve({ done: true, value: undefined });
         };
-        signal?.addEventListener("abort", onAbort);
+        onAbort = handler;
+        signal?.addEventListener("abort", handler);
       });
-      return Promise.race([iterator.next(), abortPromise]);
+      try {
+        return await Promise.race([iterator.next(), abortPromise]);
+      } finally {
+        // The next event normally arrives before cancellation. Do not retain
+        // an abort listener for every streamed event in that case.
+        if (onAbort) signal?.removeEventListener("abort", onAbort);
+      }
     };
 
     const iterator = eventStream[Symbol.asyncIterator]();
@@ -1129,6 +1162,15 @@ export async function* streamReadingAgent(
 
         // Clear streaming accumulator for the next LLM turn
         streamingToolCalls.clear();
+
+        if (isOutputLimitTermination(output)) {
+          yield {
+            type: "error",
+            error:
+              "The model reached its output limit before finishing. Increase Max Tokens or try again.",
+          };
+          return;
+        }
 
         if (output) {
           if (Array.isArray(toolCalls)) {
