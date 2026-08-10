@@ -56,7 +56,9 @@ function getThemeColors(theme: AppTheme) {
 /** Per-theme CSS filter applied to PDF pages (fixed layout) in dark/sepia mode. */
 const PDF_THEME_FILTERS: Partial<Record<AppTheme, string>> = {
   dark: "invert(0.93)",
-  sepia: "sepia(0.6) contrast(0.92) brightness(1.04)",
+  // sepia() alone keeps white ~white, so first nudge the page down with a small
+  // invert, then the sepia tint becomes visible (white -> warm cream).
+  sepia: "invert(0.1) sepia(0.8) contrast(0.9) brightness(1.02)",
 };
 
 /**
@@ -75,14 +77,13 @@ function analyzeCanvasIsLight(canvas: HTMLCanvasElement): boolean {
     ctx.drawImage(canvas, 0, 0, size, size);
     const data = ctx.getImageData(0, 0, size, size).data;
     let light = 0;
-    let dark = 0;
     for (let i = 0; i < data.length; i += 4) {
       const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
       if (lum > 200) light++;
-      else if (lum < 55) dark++;
     }
-    const total = size * size;
-    return light / total > 0.55 && dark / total > 0.01;
+    // A text page is predominantly light; downsampling washes thin text into
+    // gray, so only rely on how much of the page is clearly light.
+    return light / (size * size) > 0.55;
   } catch {
     return true;
   }
@@ -807,7 +808,10 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       async (doc: Document, index: number, theme: AppTheme) => {
         const filter = PDF_THEME_FILTERS[theme];
         const iframe = doc.defaultView?.frameElement as HTMLIFrameElement | null;
-        if (!iframe) return;
+        if (!iframe) {
+          console.log("[PdfTheme] no iframe for doc", index);
+          return;
+        }
         if (!filter) {
           iframe.style.filter = "";
           return;
@@ -822,8 +826,10 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           const canvas = await waitForPdfPageCanvas(doc);
           isLight = canvas ? analyzeCanvasIsLight(canvas) : true;
           cache.set(index, isLight);
+          console.log("[PdfTheme] analyzed", { index, canvas: !!canvas, isLight });
         }
         iframe.style.filter = isLight ? filter : "";
+        console.log("[PdfTheme] apply", { index, isLight, filter: isLight ? filter : null });
       },
       [bookKey],
     );
@@ -2000,6 +2006,11 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         // PDF: follow the app theme with per-page smart inversion (dark/sepia)
         if (format === "PDF" && detail.doc) {
           pdfDocIndexRef.current.set(detail.doc, detail.index ?? 0);
+          console.log("[PdfTheme] section load", {
+            index: detail.index,
+            theme: appTheme,
+            filter: PDF_THEME_FILTERS[appTheme] ?? null,
+          });
           void applyPdfPageThemeFilter(detail.doc, detail.index ?? 0, appTheme);
         }
 
@@ -2747,6 +2758,9 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       isViewCreated.current = true;
 
       const openBook = async () => {
+        // Reset PDF theme-filter caches when (re)opening a book
+        pdfPageLightCacheRef.current = new Map();
+        pdfDocIndexRef.current = new WeakMap();
         try {
           await import("foliate-js/view.js");
 
