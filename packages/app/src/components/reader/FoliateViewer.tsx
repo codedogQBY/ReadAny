@@ -53,6 +53,69 @@ function getThemeColors(theme: AppTheme) {
   return THEME_COLORS[theme];
 }
 
+/** Per-theme CSS filter applied to PDF pages (fixed layout) in dark/sepia mode. */
+const PDF_THEME_FILTERS: Partial<Record<AppTheme, string>> = {
+  dark: "invert(0.93)",
+  sepia: "sepia(0.6) contrast(0.92) brightness(1.04)",
+};
+
+/**
+ * Decide whether a PDF page is a "light text page" that should be theme-filtered
+ * (inverted / sepia-tinted) in dark/sepia mode. Photo-heavy or already-dark
+ * pages are left untouched so images don't turn into negatives.
+ */
+function analyzeCanvasIsLight(canvas: HTMLCanvasElement): boolean {
+  const size = 48;
+  const out = document.createElement("canvas");
+  out.width = size;
+  out.height = size;
+  const ctx = out.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return true;
+  try {
+    ctx.drawImage(canvas, 0, 0, size, size);
+    const data = ctx.getImageData(0, 0, size, size).data;
+    let light = 0;
+    let dark = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      if (lum > 200) light++;
+      else if (lum < 55) dark++;
+    }
+    const total = size * size;
+    return light / total > 0.55 && dark / total > 0.01;
+  } catch {
+    return true;
+  }
+}
+
+/** The PDF page canvas is rendered asynchronously (pdf.js); wait until it appears. */
+function waitForPdfPageCanvas(
+  doc: Document,
+  timeoutMs = 5000,
+): Promise<HTMLCanvasElement | null> {
+  return new Promise((resolve) => {
+    const win = doc.defaultView ?? window;
+    const raf =
+      typeof win.requestAnimationFrame === "function"
+        ? win.requestAnimationFrame.bind(win)
+        : (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 50);
+    const start = performance.now();
+    const check = () => {
+      const canvas = doc.querySelector<HTMLCanvasElement>("#canvas canvas");
+      if (canvas && canvas.width > 0 && canvas.height > 0) {
+        resolve(canvas);
+        return;
+      }
+      if (performance.now() - start > timeoutMs) {
+        resolve(null);
+        return;
+      }
+      raf(check);
+    };
+    check();
+  });
+}
+
 function getActiveContentDocument(view: FoliateView | null): Document | null {
   const contents = view?.renderer?.getContents?.();
   return (contents?.[0]?.doc as Document | undefined) ?? null;
@@ -733,9 +796,61 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
     const containerRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<FoliateView | null>(null);
     const isViewCreated = useRef(false);
+    // PDF theme-filter state: per-book per-page light decision + doc -> index mapping
+    const pdfPageLightCacheRef = useRef<Map<string, Map<number, boolean>>>(new Map());
+    const pdfDocIndexRef = useRef<WeakMap<Document, number>>(new WeakMap());
     const [loading, setLoading] = useState(true);
     const [footnotePreview, setFootnotePreview] = useState<FootnotePreview | null>(null);
     const activeFootnoteKeyRef = useRef<string | null>(null);
+
+    const applyPdfPageThemeFilter = useCallback(
+      async (doc: Document, index: number, theme: AppTheme) => {
+        const filter = PDF_THEME_FILTERS[theme];
+        const iframe = doc.defaultView?.frameElement as HTMLIFrameElement | null;
+        if (!iframe) return;
+        if (!filter) {
+          iframe.style.filter = "";
+          return;
+        }
+        let cache = pdfPageLightCacheRef.current.get(bookKey);
+        if (!cache) {
+          cache = new Map();
+          pdfPageLightCacheRef.current.set(bookKey, cache);
+        }
+        let isLight = cache.get(index);
+        if (isLight === undefined) {
+          const canvas = await waitForPdfPageCanvas(doc);
+          isLight = canvas ? analyzeCanvasIsLight(canvas) : true;
+          cache.set(index, isLight);
+        }
+        iframe.style.filter = isLight ? filter : "";
+      },
+      [bookKey],
+    );
+
+    const reapplyPdfThemeFilters = useCallback(
+      (theme: AppTheme) => {
+        const view = viewRef.current;
+        if (!view || format !== "PDF") return;
+        const filter = PDF_THEME_FILTERS[theme];
+        const cache = pdfPageLightCacheRef.current.get(bookKey);
+        const contents = view.renderer?.getContents?.() ?? [];
+        for (const content of contents) {
+          const doc = content?.doc as Document | undefined;
+          const iframe = doc?.defaultView?.frameElement as HTMLIFrameElement | null;
+          if (!doc || !iframe) continue;
+          const index = pdfDocIndexRef.current.get(doc);
+          if (index == null) continue;
+          if (!filter) {
+            iframe.style.filter = "";
+            continue;
+          }
+          const isLight = cache?.get(index);
+          iframe.style.filter = isLight === false ? "" : filter;
+        }
+      },
+      [format, bookKey],
+    );
 
     const isFixedLayout = isFixedLayoutBook(format, bookDoc);
     // Track when view is ready so hooks/events re-bind
@@ -759,6 +874,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
             const view = viewRef.current;
             if (view && viewReady) {
               applyRendererStyles(view, viewSettings, isFixedLayout, newTheme);
+              reapplyPdfThemeFilters(newTheme);
             }
             return newTheme;
           }
@@ -772,7 +888,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       });
 
       return () => observer.disconnect();
-    }, [viewSettings, isFixedLayout, viewReady]);
+    }, [viewSettings, isFixedLayout, viewReady, reapplyPdfThemeFilters]);
 
     const ttsHighlightKeyRef = useRef<string | null>(null);
 
@@ -1881,6 +1997,12 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           onSectionLoad?.(detail.index);
         }
 
+        // PDF: follow the app theme with per-page smart inversion (dark/sepia)
+        if (format === "PDF" && detail.doc) {
+          pdfDocIndexRef.current.set(detail.doc, detail.index ?? 0);
+          void applyPdfPageThemeFilter(detail.doc, detail.index ?? 0, appTheme);
+        }
+
         // Inject ruby annotations if enabled for this book
         void (async () => {
           try {
@@ -1903,7 +2025,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           }
         })();
       },
-      [appTheme, bookKey, viewSettings, onLoaded, onSectionLoad, isFixedLayout],
+      [appTheme, bookKey, viewSettings, onLoaded, onSectionLoad, isFixedLayout, format, applyPdfPageThemeFilter],
     );
     const docLoadHandlerRef = useRef(docLoadHandlerImpl);
     docLoadHandlerRef.current = docLoadHandlerImpl;
