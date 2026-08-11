@@ -16,42 +16,42 @@
     },
     {
       "repo": "wenhui426/read-box",
-      "role": "Candidate reading service",
-      "integration_intent": "Evaluate adapter-based reuse in a later, separately reviewed PR.",
-      "status": "FROZEN_FUTURE",
+      "role": "Required reading service integration",
+      "integration_intent": "Must be connected through a real adapter before the first formal release; PR-000 records the requirement but does not integrate it.",
+      "status": "REQUIRED_FOR_FIRST_RELEASE",
       "exact_ref": null,
       "license": "UNKNOWN",
       "integration_mode": "ADAPTER"
     },
     {
       "repo": "vitalysim/the-knowledge-guy",
-      "role": "Candidate knowledge workflow",
-      "integration_intent": "Evaluate isolated worker reuse in a later, separately reviewed PR.",
-      "status": "FROZEN_FUTURE",
+      "role": "Required knowledge workflow integration",
+      "integration_intent": "Must be connected through a real isolated worker before the first formal release; PR-000 records the requirement but does not integrate it.",
+      "status": "REQUIRED_FOR_FIRST_RELEASE",
       "exact_ref": null,
       "license": "UNKNOWN",
       "integration_mode": "WORKER"
     },
     {
       "repo": "HKUDS/DeepTutor",
-      "role": "Candidate tutoring engine",
-      "integration_intent": "Evaluate isolated tutoring-worker integration after alignment review.",
-      "status": "FROZEN_FUTURE",
+      "role": "Required tutoring engine integration",
+      "integration_intent": "Must be connected through a real isolated tutoring worker before the first formal release; PR-000 records the requirement but does not integrate it.",
+      "status": "REQUIRED_FOR_FIRST_RELEASE",
       "exact_ref": null,
       "license": "UNKNOWN",
       "integration_mode": "WORKER"
     },
     {
       "repo": "garethbjohnson/gutendex",
-      "role": "Candidate public-domain catalog service",
-      "integration_intent": "Evaluate API-only catalog access in a later PR.",
-      "status": "FROZEN_FUTURE",
+      "role": "Required public-domain catalog integration",
+      "integration_intent": "Must be connected through its real API before the first formal release; PR-000 records the requirement but does not integrate it.",
+      "status": "REQUIRED_FOR_FIRST_RELEASE",
       "exact_ref": null,
       "license": "UNKNOWN",
       "integration_mode": "API"
     },
     {
-      "repo": "OpenTutor",
+      "repo": "zijinz456/OpenTutor",
       "role": "Tutoring approach watchlist",
       "integration_intent": "Reference during future alignment and reuse evaluation.",
       "status": "WATCHLIST",
@@ -60,7 +60,7 @@
       "integration_mode": "REFERENCE"
     },
     {
-      "repo": "pyBKT",
+      "repo": "CAHLR/pyBKT",
       "role": "Knowledge-tracing watchlist",
       "integration_intent": "Reference during future learner-model evaluation.",
       "status": "WATCHLIST",
@@ -69,7 +69,7 @@
       "integration_mode": "REFERENCE"
     },
     {
-      "repo": "ts-fsrs",
+      "repo": "open-spaced-repetition/ts-fsrs",
       "role": "Scheduling algorithm watchlist",
       "integration_intent": "Evaluate as a dependency only after a later alignment gate.",
       "status": "WATCHLIST",
@@ -78,7 +78,7 @@
       "integration_mode": "REFERENCE"
     },
     {
-      "repo": "GenMentor",
+      "repo": "GeminiLight/gen-mentor",
       "role": "Mentoring approach watchlist",
       "integration_intent": "Reference during future agent-planning evaluation.",
       "status": "WATCHLIST",
@@ -87,7 +87,7 @@
       "integration_mode": "REFERENCE"
     },
     {
-      "repo": "LearnGraph",
+      "repo": "fenago/LearnGraph",
       "role": "Learning-graph approach watchlist",
       "integration_intent": "Reference during future knowledge-model evaluation.",
       "status": "WATCHLIST",
@@ -96,7 +96,7 @@
       "integration_mode": "REFERENCE"
     },
     {
-      "repo": "OpenMAIC",
+      "repo": "THU-MAIC/OpenMAIC",
       "role": "Multi-agent learning approach watchlist",
       "integration_intent": "Reference during future agent architecture evaluation.",
       "status": "WATCHLIST",
