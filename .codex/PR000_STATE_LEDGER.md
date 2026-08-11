@@ -12,7 +12,8 @@ Last updated: 2026-08-11 (Asia/Shanghai)
 - Branch: `chore/pr000-open-source-baseline`
 - Upstream `main` observed at task start: `3f8826c37391721289f4d6db47bacc0c73788572`
 - Base full SHA: `3f8826c37391721289f4d6db47bacc0c73788572`
-- Current HEAD: `3f8826c37391721289f4d6db47bacc0c73788572`
+- Implementation commit before final ledger reconciliation: `1886d9b12a0ffeacae8b795f13db89a5b87edfa1`
+- Final branch HEAD: the commit containing the final ledger reconciliation; its exact SHA is verified from Git and GitHub after that commit because a Git commit cannot contain its own SHA.
 
 ## Frozen scope
 
@@ -38,8 +39,8 @@ Last updated: 2026-08-11 (Asia/Shanghai)
 - `origin`: `https://github.com/dongxuelian11/ReadAny.git`
 - GitHub CLI account: `dongxuelian11`; authentication re-verified PASS on 2026-08-11 with `repo` and `workflow` scopes.
 - Public fork: PASS — `https://github.com/dongxuelian11/ReadAny` is PUBLIC, `isFork=true`, parent `codedogQBY/ReadAny`, and fork `main` is `3f8826c37391721289f4d6db47bacc0c73788572`.
-- PR URL/state: NOT_RUN.
-- CI checks: NOT_RUN.
+- PR URL/state: OPEN — `https://github.com/codedogQBY/ReadAny/pull/648`; base `main` at `3f8826c37391721289f4d6db47bacc0c73788572`, head `chore/pr000-open-source-baseline` at `1886d9b12a0ffeacae8b795f13db89a5b87edfa1` before final ledger reconciliation.
+- CI checks: BLOCKED (`action_required`) — GitHub created `Windows PR` run `31447662495`, but an upstream maintainer must approve the first-time fork workflow before jobs can start: `https://github.com/codedogQBY/ReadAny/actions/runs/31447662495`.
 
 ## Materially changed files
 
@@ -65,14 +66,17 @@ Last updated: 2026-08-11 (Asia/Shanghai)
 - PASS — recovery on 2026-08-11 reread the authoritative prompt and ledger, then re-verified branch, HEAD, log, remotes, live upstream SHA, GitHub identity, fork absence, PR absence, and material files before continuing.
 - PASS — created the real public GitHub fork and configured it as `origin`; preserved `codedogQBY/ReadAny` as `upstream`.
 - PASS — completed bounded post-change regression verification: Core 566/566, Expo 3/3, and frontend build passed; lint and CLI reproduced their exact pre-existing Windows baseline failures without new counts or failure classes.
+- PASS — committed and pushed the reviewed PR-000 change set to `dongxuelian11/ReadAny:chore/pr000-open-source-baseline` without rewriting history.
+- PASS — created upstream pull request `https://github.com/codedogQBY/ReadAny/pull/648` against the exact pinned `main` base.
+- BLOCKED — upstream pull-request CI was created but cannot start until an upstream maintainer approves the fork workflow; current run conclusion is `action_required` and the contributor account cannot approve repository Actions policy.
 
 ## Pending / next action
 
-- PENDING — commit, push, create PR, and inspect CI.
+- BLOCKED — upstream maintainer approval is required for GitHub Actions run `31447662495`; no further contributor-side code or Git action can start these jobs.
 - PASS — refreshed the Git index stat cache; `packages/app/src-tauri/Cargo.toml` is clean and has no staged or unstaged content change.
 - PASS — reviewed the complete staged diff and confirmed that it contains only the seven intended PR-000 files.
 - PASS — validated both JSON files, parsed the workflow YAML, and passed `git diff --cached --check`.
-- Next bounded action: commit the reviewed PR-000 change set.
+- Next bounded action after external approval: inspect the completed PR checks only; do not enter PR-001.
 
 ## Test and build truth
 
@@ -88,7 +92,14 @@ Last updated: 2026-08-11 (Asia/Shanghai)
 | Automated tests | FAIL | Core: PASS, 75 files/566 tests. Expo: PASS, 2 files/3 tests. CLI: `BASELINE_FAILURE`, 5/7 files and 124/135 tests passed; 11 failures remained after an approved unsandboxed rerun and concern Windows Unix/Darwin path simulation plus symlink creation. PR-000 changes no CLI source/tests. |
 | Windows desktop production build | PASS | Baseline `pnpm tauri build` compiled Rust release and produced `app.exe`, MSI, and NSIS, then exited 1 because release-only updater signing lacked `TAURI_SIGNING_PRIVATE_KEY` (`BASELINE_FAILURE`). The PR-only NSIS/no-updater-artifact config was then verified with `pnpm --filter app tauri build --config src-tauri/tauri.ci.conf.json --ci`: exit 0 and `ReadAny_1.3.5_x64-setup.exe` produced. |
 | Post-change regression verification | FAIL (`BASELINE_FAILURE`) | Re-run on 2026-08-11: lint reproduced 1,621 errors/284 warnings; CLI reproduced 11 failures with 124/135 passing. Core PASS 566/566, Expo PASS 3/3, frontend production build PASS. The bounded PR-only Windows Tauri NSIS build had already passed after the CI override was created. |
-| Pull-request CI | NOT_RUN | PR not yet created. |
+| Pull-request CI | BLOCKED (`action_required`) | `Windows PR` run `31447662495` exists for the exact PR head, but GitHub requires upstream-maintainer approval before jobs start. No CI job result exists yet. |
+
+## Completion determination
+
+- Fork, commit, push, and PR creation: COMPLETE.
+- Required local verification: COMPLETE with the exact pre-existing lint and CLI `BASELINE_FAILURE` results retained above.
+- Pull-request CI execution: BLOCKED by upstream-maintainer workflow approval; not falsely declared PASS or NOT_RUN.
+- PR-001: NOT_STARTED and out of scope.
 
 ## Recovery protocol
 
