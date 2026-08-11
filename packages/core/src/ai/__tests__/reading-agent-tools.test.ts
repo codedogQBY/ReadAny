@@ -51,6 +51,28 @@ beforeEach(() => {
 });
 
 describe("streamReadingAgent tool registration", () => {
+  it("returns a friendly message without calling the model for oversized input", async () => {
+    const events = [];
+
+    for await (const event of streamReadingAgent(
+      {
+        aiConfig: makeAIConfig(),
+        book: null,
+        bookId: "book-1",
+        semanticContext: null,
+        enabledSkills: [],
+        isVectorized: false,
+        getAvailableTools,
+      },
+      "a".repeat(32_001),
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([{ type: "token", content: "内容过长，请分段提问。" }]);
+    expect(createReactAgentMock).not.toHaveBeenCalled();
+  });
+
   it("registers fallback tools when only bookId is available", async () => {
     createReactAgentMock.mockReturnValue({
       streamEvents: vi.fn(() => ({

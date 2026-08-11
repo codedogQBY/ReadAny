@@ -3,6 +3,7 @@ import type { BaseMessage } from "@langchain/core/messages";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import i18n from "i18next";
 import { z } from "zod";
+import { estimateTokens } from "../../rag/chunker";
 /**
  * Reading Agent — AI-powered reading assistant using LangGraph ReAct agent
  *
@@ -29,6 +30,8 @@ const CHAPTER_TASK_RECURSION_LIMIT = 24;
 const DEFAULT_TOOL_TIMEOUT_MS = 45_000;
 const TOOL_EXECUTION_LIMIT = 12;
 const REPEATED_TOOL_CALL_LIMIT = 2;
+const MAX_USER_INPUT_TOKENS = 8_000;
+const USER_INPUT_TOO_LONG_MESSAGE = "内容过长，请分段提问。";
 
 const CHAPTER_LOOKUP_STOP_TOOL_NAMES = new Set([
   "resolveChapterReference",
@@ -714,6 +717,12 @@ export async function* streamReadingAgent(
   try {
     // Early abort check
     if (isAborted()) return;
+
+    // Reject oversized input before creating a model or making an API request.
+    if (estimateTokens(userInput.normalize("NFKC").trim()) > MAX_USER_INPUT_TOKENS) {
+      yield { type: "token", content: USER_INPUT_TOO_LONG_MESSAGE };
+      return;
+    }
 
     // Create chat model
     const model = await createChatModel(aiConfig, {
