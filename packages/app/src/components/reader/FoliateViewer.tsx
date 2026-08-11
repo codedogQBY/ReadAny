@@ -808,10 +808,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       async (doc: Document, index: number, theme: AppTheme) => {
         const filter = PDF_THEME_FILTERS[theme];
         const iframe = doc.defaultView?.frameElement as HTMLIFrameElement | null;
-        if (!iframe) {
-          console.log("[PdfTheme] no iframe for doc", index);
-          return;
-        }
+        if (!iframe) return;
         if (!filter) {
           iframe.style.filter = "";
           return;
@@ -826,10 +823,8 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           const canvas = await waitForPdfPageCanvas(doc);
           isLight = canvas ? analyzeCanvasIsLight(canvas) : true;
           cache.set(index, isLight);
-          console.log("[PdfTheme] analyzed", { index, canvas: !!canvas, isLight });
         }
         iframe.style.filter = isLight ? filter : "";
-        console.log("[PdfTheme] apply", { index, isLight, filter: isLight ? filter : null });
       },
       [bookKey],
     );
@@ -2006,11 +2001,6 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         // PDF: follow the app theme with per-page smart inversion (dark/sepia)
         if (format === "PDF" && detail.doc) {
           pdfDocIndexRef.current.set(detail.doc, detail.index ?? 0);
-          console.log("[PdfTheme] section load", {
-            index: detail.index,
-            theme: appTheme,
-            filter: PDF_THEME_FILTERS[appTheme] ?? null,
-          });
           void applyPdfPageThemeFilter(detail.doc, detail.index ?? 0, appTheme);
         }
 
