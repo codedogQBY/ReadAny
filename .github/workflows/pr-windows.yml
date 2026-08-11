@@ -1,0 +1,83 @@
+name: Windows PR
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint, tests, and typecheck
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Core tests
+        if: ${{ !cancelled() }}
+        run: pnpm test
+
+      - name: CLI tests
+        if: ${{ !cancelled() }}
+        run: pnpm cli:test
+
+      - name: Expo tests
+        if: ${{ !cancelled() }}
+        run: pnpm --filter @readany/app-expo test
+
+      - name: Typecheck and frontend production build
+        if: ${{ !cancelled() }}
+        run: pnpm build
+
+  windows-desktop:
+    name: Windows desktop production build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./packages/app/src-tauri -> target"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Windows desktop installer
+        run: pnpm --filter app tauri build --config src-tauri/tauri.ci.conf.json --ci
