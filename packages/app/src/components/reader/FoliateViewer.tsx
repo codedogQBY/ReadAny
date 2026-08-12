@@ -2472,6 +2472,20 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         };
 
         const handlePointerUp = (ev: PointerEvent) => {
+          // Clicks on links are handled by their own navigation (internal
+          // links / footnotes); never treat them as page-turn taps. Use
+          // composedPath() with a realm-independent nodeType check: ev.target
+          // can be a Text node, and elements from content iframes fail
+          // `instanceof Element` (different realm than the parent window).
+          let pointerUpOnLink = false;
+          try {
+            const path = ev.composedPath?.() ?? [];
+            pointerUpOnLink = path.some((node) => {
+              if (!node || (node as Node).nodeType !== 1) return false;
+              const el = node as Element;
+              return typeof el.closest === "function" && Boolean(el.closest("a[href]"));
+            });
+          } catch {}
           // Capture coordinates immediately (before setTimeout)
           const clientX = ev.clientX;
           const clientY = ev.clientY;
@@ -2530,7 +2544,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
             } else {
               // No previous selection and no new selection
               // This is a simple click - toggle toolbar if there was no selection before
-              if (!hadSelectionOnPointerDown.current && !hasSelectionNow) {
+              if (!hadSelectionOnPointerDown.current && !hasSelectionNow && !pointerUpOnLink) {
                 // Send message to toggle toolbar
                 console.log("[ReaderTap][iframe:post]", {
                   bookKey,
