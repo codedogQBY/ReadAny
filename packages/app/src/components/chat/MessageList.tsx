@@ -208,7 +208,7 @@ function MessageBubble({ message, onCitationClick, isStreaming, currentStep }: M
 
     return (
       <div className="group mt-6 flex max-w-full select-text flex-col first:mt-0">
-        <div className="max-w-[85%] self-end rounded-2xl bg-muted px-3 py-2 text-sm leading-relaxed">
+        <div className="min-w-0 max-w-[85%] self-end rounded-2xl bg-muted px-3 py-2 text-sm leading-relaxed">
           {hasQuotes && (
             <div className="mb-2 flex flex-col gap-1.5">
               {quoteParts.map((q) => (
@@ -217,7 +217,7 @@ function MessageBubble({ message, onCitationClick, isStreaming, currentStep }: M
             </div>
           )}
           {textParts.length > 0 && (
-            <div className="whitespace-pre-wrap">
+            <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">
               {textParts.map((part) => {
                 if (part.type === "text") {
                   return <span key={part.id}>{part.text}</span>;
