@@ -495,7 +495,16 @@ const renderPage = async (page) => {
 <meta charset="utf-8">
 <meta name="viewport" content="width=${viewport.width}, height=${viewport.height}">
 <style>
-html, body { margin: 0; padding: 0; }
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #fff;
+}
+#canvas, #canvas canvas { display: block; }
+#canvas canvas { filter: var(--readany-pdf-filter, none); }
 ${TEXT_LAYER_CSS}
 ${ANNOTATION_LAYER_CSS}
 </style>

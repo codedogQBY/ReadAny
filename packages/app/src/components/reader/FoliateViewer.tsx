@@ -810,8 +810,13 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         const filter = PDF_THEME_FILTERS[theme];
         const iframe = doc.defaultView?.frameElement as HTMLIFrameElement | null;
         if (!iframe) return;
+        const background = THEME_COLORS[theme].bg;
+        iframe.style.filter = "";
+        iframe.style.backgroundColor = background;
+        doc.documentElement.style.backgroundColor = background;
+        if (doc.body) doc.body.style.backgroundColor = background;
         if (!filter) {
-          iframe.style.filter = "";
+          doc.documentElement.style.setProperty("--readany-pdf-filter", "none");
           return;
         }
         let cache = pdfPageLightCacheRef.current.get(bookKey);
@@ -825,7 +830,10 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           isLight = canvas ? analyzeCanvasIsLight(canvas) : true;
           cache.set(index, isLight);
         }
-        iframe.style.filter = isLight ? filter : "";
+        doc.documentElement.style.setProperty(
+          "--readany-pdf-filter",
+          isLight ? filter : "none",
+        );
       },
       [bookKey],
     );
@@ -843,12 +851,20 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           if (!doc || !iframe) continue;
           const index = pdfDocIndexRef.current.get(doc);
           if (index == null) continue;
+          const background = THEME_COLORS[theme].bg;
+          iframe.style.filter = "";
+          iframe.style.backgroundColor = background;
+          doc.documentElement.style.backgroundColor = background;
+          if (doc.body) doc.body.style.backgroundColor = background;
           if (!filter) {
-            iframe.style.filter = "";
+            doc.documentElement.style.setProperty("--readany-pdf-filter", "none");
             continue;
           }
           const isLight = cache?.get(index);
-          iframe.style.filter = isLight === false ? "" : filter;
+          doc.documentElement.style.setProperty(
+            "--readany-pdf-filter",
+            isLight === false ? "none" : filter,
+          );
         }
       },
       [format, bookKey],

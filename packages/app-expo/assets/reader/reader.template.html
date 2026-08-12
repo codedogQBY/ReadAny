@@ -1806,6 +1806,19 @@
     function applySettings(settings) {
       if (!view || !view.renderer) return;
       const renderer = view.renderer;
+      // PDF pages are fixed-layout canvases. Reader font, line-height, custom
+      // font and paragraph-spacing rules would move the transparent text layer
+      // away from the canvas and render a second, misaligned copy of the text.
+      if (currentBookIsPdf) {
+        if (settings.paginatedLayout !== undefined) {
+          currentPaginatedLayout =
+            settings.paginatedLayout === 'single' ? 'single' : 'double';
+        }
+        if (view.isFixedLayout) {
+          applyFixedLayoutRendererSettings(renderer, currentPaginatedLayout);
+        }
+        return;
+      }
 
       // Update custom font state
       if (settings.customFontFaceCSS !== undefined) {
@@ -2100,10 +2113,17 @@
       document.body.style.color = fg;
 
       if (view && view.renderer && view.renderer.setStyles) {
-        const currentStyles = lastRendererStyles || '';
-        const themedStyles = injectThemeIntoStyles(currentStyles, bg, fg, primary);
-        view.renderer.setStyles(themedStyles);
-        syncReaderOverrideStylesForAllDocs(themedStyles);
+        if (currentBookIsPdf) {
+          view.renderer.setStyles(`
+            html, body { background-color: ${bg} !important; }
+            .textLayer span, .textLayer br { color: transparent !important; }
+          `);
+        } else {
+          const currentStyles = lastRendererStyles || '';
+          const themedStyles = injectThemeIntoStyles(currentStyles, bg, fg, primary);
+          view.renderer.setStyles(themedStyles);
+          syncReaderOverrideStylesForAllDocs(themedStyles);
+        }
       }
 
       if (view && view.setSearchIndicator) {
@@ -2115,7 +2135,9 @@
 
     // ─── PDF theme inversion (dark/sepia) with per-page smart skip ───
     var PDF_THEME_FILTERS = {
-      dark: 'invert(0.93)',
+      // Mobile dark theme uses #1c1c1e. Mapping white with invert(0.89)
+      // produces approximately #1c1c1c, avoiding a visible page/shell seam.
+      dark: 'invert(0.89)',
       // Numerically tuned (invert->sepia->contrast->brightness) so a white PDF
       // page maps almost exactly to the sepia background #f0e6d2 (rgb 240,230,210).
       sepia: 'invert(0.245) sepia(0.286) contrast(1.328) brightness(1.005)',
@@ -2168,17 +2190,24 @@
       var filter = PDF_THEME_FILTERS[currentThemeMode];
       var iframe = doc.defaultView ? doc.defaultView.frameElement : null;
       if (!iframe) return;
-      if (!filter) { iframe.style.filter = ''; return; }
+      iframe.style.filter = '';
+      iframe.style.backgroundColor = currentThemeColors.bg;
+      doc.documentElement.style.backgroundColor = currentThemeColors.bg;
+      if (doc.body) doc.body.style.backgroundColor = currentThemeColors.bg;
+      if (!filter) {
+        doc.documentElement.style.setProperty('--readany-pdf-filter', 'none');
+        return;
+      }
       var isLight = pdfPageLightCache[index];
       if (isLight === undefined) {
         waitForPdfPageCanvas(doc).then(function (canvas) {
           var light = canvas ? analyzeCanvasIsLight(canvas) : true;
           pdfPageLightCache[index] = light;
-          iframe.style.filter = light ? filter : '';
+          doc.documentElement.style.setProperty('--readany-pdf-filter', light ? filter : 'none');
         });
         return;
       }
-      iframe.style.filter = isLight ? filter : '';
+      doc.documentElement.style.setProperty('--readany-pdf-filter', isLight ? filter : 'none');
     }
 
     function reapplyPdfThemeFilters() {
@@ -2191,9 +2220,19 @@
         if (!doc || !iframe) continue;
         var index = pdfDocIndexMap.get(doc);
         if (index === undefined) continue;
-        if (!filter) { iframe.style.filter = ''; continue; }
+        iframe.style.filter = '';
+        iframe.style.backgroundColor = currentThemeColors.bg;
+        doc.documentElement.style.backgroundColor = currentThemeColors.bg;
+        if (doc.body) doc.body.style.backgroundColor = currentThemeColors.bg;
+        if (!filter) {
+          doc.documentElement.style.setProperty('--readany-pdf-filter', 'none');
+          continue;
+        }
         var isLight = pdfPageLightCache[index];
-        iframe.style.filter = isLight === false ? '' : filter;
+        doc.documentElement.style.setProperty(
+          '--readany-pdf-filter',
+          isLight === false ? 'none' : filter,
+        );
       }
     }
 
@@ -2344,6 +2383,20 @@ a { color: ${primary} !important; }
     }
 
     function applyDocStyles(doc) {
+      if (currentBookIsPdf) {
+        const styleId = '__readany_pdf_styles__';
+        let style = doc.getElementById(styleId);
+        if (!style) {
+          style = doc.createElement('style');
+          style.id = styleId;
+          doc.head.appendChild(style);
+        }
+        style.textContent = `
+          html, body { background-color: ${currentThemeColors.bg} !important; }
+          .textLayer span, .textLayer br { color: transparent !important; }
+        `;
+        return;
+      }
       syncCustomFontStylesForDoc(doc, currentCustomFontFaceCSS);
       const verticalDoc = isVerticalDoc(doc);
       if (!verticalDoc) {
