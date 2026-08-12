@@ -56,9 +56,10 @@ function getThemeColors(theme: AppTheme) {
 /** Per-theme CSS filter applied to PDF pages (fixed layout) in dark/sepia mode. */
 const PDF_THEME_FILTERS: Partial<Record<AppTheme, string>> = {
   dark: "invert(0.93)",
-  // sepia() alone keeps white ~white, so first nudge the page down with a small
-  // invert, then the sepia tint becomes visible (white -> warm cream).
-  sepia: "invert(0.1) sepia(0.8) contrast(0.9) brightness(1.02)",
+  // Numerically tuned (invert->sepia->contrast->brightness) so a white PDF page
+  // maps almost exactly to the sepia background #f0e6d2 (rgb 240,230,210);
+  // text lands on a readable warm dark brown.
+  sepia: "invert(0.245) sepia(0.286) contrast(1.328) brightness(1.005)",
 };
 
 /**
