@@ -31,7 +31,7 @@ describe("TTSCoordinator", () => {
     fake.player.onStateChange?.("playing");
     expect(coordinator.getState().status).toBe("playing");
     fake.finish();
-    expect((fake.player.speak as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2);
+    expect((fake.player.speak as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
     expect(states).toContain("loading");
   });
 

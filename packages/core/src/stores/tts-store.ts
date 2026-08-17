@@ -23,6 +23,7 @@ import {
   OpenAICompatibleTTSPlayer,
   XiaomiTTSPlayer,
 } from "../tts/tts-players";
+import { LegacyPlayerProvider, TTSCoordinator } from "../tts/coordinator";
 import type { ITTSPlayer, TTSConfig, TTSProfile } from "../tts/types";
 import { DEFAULT_TTS_CONFIG, normalizeTTSConfig } from "../tts/types";
 import { withPersist } from "./persist";
@@ -78,11 +79,9 @@ let _edgeTTS: ITTSPlayer | null = null;
 let _dashscopeTTS: ITTSPlayer | null = null;
 let _xiaomiTTS: ITTSPlayer | null = null;
 let _openAICompatibleTTS: ITTSPlayer | null = null;
-let _activeTTS: ITTSPlayer | null = null;
+let _coordinator: TTSCoordinator | null = null;
 let _sessionSegments: string[] = [];
 let _sessionCurrentIndex = 0;
-/** Generation counter — incremented on every play/jumpToChunk to invalidate stale callbacks */
-let _sessionGeneration = 0;
 let _sleepTimerHandle: ReturnType<typeof setTimeout> | null = null;
 /** Voice the active DashScope run is synthesizing with; lets resume() decide whether
  *  it can true-resume (voice unchanged) or must re-speak (voice changed). */
@@ -194,27 +193,6 @@ function syncProfileUpdatesFromLegacyFields(
   return { ...updates, profiles };
 }
 
-function detachAndStopPlayer(player: ITTSPlayer | null): void {
-  if (!player) return;
-  player.onStateChange = undefined;
-  player.onChunkChange = undefined;
-  player.onEnd = undefined;
-  try {
-    player.stop();
-  } catch (err) {
-    console.warn("[TTS] Failed to stop player:", err);
-  }
-}
-
-function detachAndStopAllPlayers(): void {
-  _activeTTS = null;
-  detachAndStopPlayer(_systemTTS);
-  detachAndStopPlayer(_edgeTTS);
-  detachAndStopPlayer(_dashscopeTTS);
-  detachAndStopPlayer(_xiaomiTTS);
-  detachAndStopPlayer(_openAICompatibleTTS);
-}
-
 function getPlayerForConfig(config: TTSConfig): ITTSPlayer {
   if (config.engine === "dashscope" && config.dashscopeApiKey) {
     return getDashScopeTTS();
@@ -229,70 +207,6 @@ function getPlayerForConfig(config: TTSConfig): ITTSPlayer {
     return getOpenAICompatibleTTS();
   }
   return getSystemTTS();
-}
-
-function startPlayback(
-  segments: string[],
-  config: TTSConfig,
-  startIndex: number,
-  set: (partial: Partial<TTSState>) => void,
-  get: () => TTSState,
-): void {
-  const player = getPlayerForConfig(config);
-  const gen = _sessionGeneration;
-  let isStarting = true;
-  _activeTTS = player;
-
-  player.onStateChange = (playState) => {
-    if (gen !== _sessionGeneration) return;
-    if (isStarting && playState === "stopped") return;
-    if (playState === "stopped") {
-      _activeTTS = null;
-    }
-    set({ playState });
-  };
-
-  player.onChunkChange = (chunkIndex, total) => {
-    if (gen !== _sessionGeneration) return;
-    const absoluteIndex = startIndex + chunkIndex;
-    _sessionCurrentIndex = absoluteIndex;
-    set({
-      currentChunkIndex: absoluteIndex,
-      totalChunks: Math.max(_sessionSegments.length, total),
-    });
-  };
-
-  player.onEnd = () => {
-    if (gen !== _sessionGeneration) return;
-    _activeTTS = null;
-    const lastIndex = Math.max(0, _sessionSegments.length - 1);
-    _sessionCurrentIndex = lastIndex;
-    set({
-      playState: "stopped",
-      currentChunkIndex: lastIndex,
-      totalChunks: _sessionSegments.length,
-    });
-    get().onEnd?.();
-  };
-
-  let playback: void | Promise<void>;
-  try {
-    playback = player.speak(segments, config);
-  } catch (error) {
-    isStarting = false;
-    if (gen !== _sessionGeneration) return;
-    console.error("[TTS] play failed:", error);
-    _activeTTS = null;
-    set({ playState: "stopped" });
-    return;
-  }
-  isStarting = false;
-  void Promise.resolve(playback).catch((error) => {
-    if (gen !== _sessionGeneration) return;
-    console.error("[TTS] play failed:", error);
-    _activeTTS = null;
-    set({ playState: "stopped" });
-  });
 }
 
 export interface TTSState {
@@ -369,8 +283,6 @@ export const useTTSStore = create<TTSState>()(
             : [Array.isArray(text) ? text.join(" ").trim() : text.trim()].filter(Boolean);
         _sessionSegments = sessionSegments;
         _sessionCurrentIndex = 0;
-        _sessionGeneration += 1;
-        detachAndStopAllPlayers();
         set({
           playState: "loading",
           currentText: sessionSegments.join(" "),
@@ -378,66 +290,52 @@ export const useTTSStore = create<TTSState>()(
           totalChunks: sessionSegments.length,
         });
 
-        startPlayback(sessionSegments, config, 0, set, get);
+        const player = getPlayerForConfig(config);
+        _coordinator = new TTSCoordinator(config, undefined, {
+          onStateChange: (state) =>
+            set({
+              playState:
+                state.status === "playing"
+                  ? "playing"
+                  : state.status === "paused"
+                    ? "paused"
+                    : state.status === "loading"
+                      ? "loading"
+                      : "stopped",
+            }),
+          onSegment: (index, total) => {
+            _sessionCurrentIndex = index;
+            set({ currentChunkIndex: index, totalChunks: total });
+          },
+          onEnd: () => {
+            get().onEnd?.();
+          },
+          onError: (error) => {
+            console.error("[TTS] coordinator error", error);
+            set({ playState: "stopped" });
+          },
+        });
+        _coordinator.play(text, new LegacyPlayerProvider(player, config.engine));
       },
 
       pause: () => {
         clearRespeakTimer();
         const { playState } = get();
         if (playState !== "playing" && playState !== "loading") return;
-        _activeTTS?.pause();
-        set({ playState: "paused" });
+        _coordinator?.pause();
       },
 
       resume: () => {
-        const config = normalizeTTSConfig(get().config);
         const { playState } = get();
         if (playState !== "paused") return;
-
-        // DashScope supports true suspend/resume and derives progress from the audio
-        // clock (#358), so if it is actually suspended, continue exactly where paused —
-        // no re-synthesis, no API re-call, no jump. Do NOT bump generation or rebind
-        // callbacks; the original speak()'s callbacks keep driving progress.
-        // Edge is intentionally NOT true-resumed here: its highlight notifications are
-        // wall-clock timers cleared on pause and not rescheduled on resume, so a true
-        // resume would skip highlights — it stays on the re-speak path below (its main behavior).
-        if (config.engine === "dashscope" && config.dashscopeApiKey) {
-          const player = getDashScopeTTS();
-          if (player.paused && config.dashscopeVoice === _dashscopeActiveVoice) {
-            player.resume();
-            set({ playState: "playing" });
-            return;
-          }
-        }
-
-        if (_sessionSegments.length > 0) {
-          const nextIndex = Math.max(
-            0,
-            Math.min(_sessionCurrentIndex, _sessionSegments.length - 1),
-          );
-          const remainingSegments = _sessionSegments.slice(nextIndex);
-          if (remainingSegments.length > 0) {
-            _sessionGeneration += 1;
-            detachAndStopAllPlayers();
-            _sessionCurrentIndex = nextIndex;
-            _dashscopeActiveVoice = config.dashscopeVoice;
-            set({
-              playState: "loading",
-              currentChunkIndex: nextIndex,
-              totalChunks: _sessionSegments.length,
-            });
-            startPlayback(remainingSegments, config, nextIndex, set, get);
-            return;
-          }
-        }
-        set({ playState: "stopped" });
+        _coordinator?.resume();
       },
 
       stop: () => {
         clearSleepTimerHandle();
         clearRespeakTimer();
-        _sessionGeneration += 1;
-        detachAndStopAllPlayers();
+        _coordinator?.stop();
+        _coordinator = null;
         _sessionSegments = [];
         _sessionCurrentIndex = 0;
         _dashscopeActiveVoice = undefined;
@@ -477,11 +375,17 @@ export const useTTSStore = create<TTSState>()(
           updates.engine !== undefined && nextConfig.engine !== previousConfig.engine;
         const wasPlaying = isActivePlay(get().playState);
         set({ config: nextConfig });
+        _coordinator?.updateConfig(nextConfig);
 
         if (engineChanged && wasPlaying) {
           clearRespeakTimer();
-          _sessionGeneration += 1;
-          detachAndStopAllPlayers();
+          const activePlayer = getPlayerForConfig(previousConfig);
+          activePlayer.onStateChange = undefined;
+          activePlayer.onChunkChange = undefined;
+          activePlayer.onEnd = undefined;
+          activePlayer.onError = undefined;
+          activePlayer.stop();
+          _coordinator = null;
           _dashscopeActiveVoice = undefined;
           set({ playState: "stopped" });
           return;
@@ -513,6 +417,10 @@ export const useTTSStore = create<TTSState>()(
       jumpToChunk: (index: number) => {
         clearRespeakTimer();
         if (index < 0 || index >= _sessionSegments.length) return;
+        if (_coordinator) {
+          _coordinator.jumpTo({ offset: _sessionSegments.slice(0, index).join(" ").length });
+          return;
+        }
         const config = normalizeTTSConfig(get().config);
         const remainingSegments = _sessionSegments.slice(index);
         if (remainingSegments.length === 0) {
@@ -520,8 +428,6 @@ export const useTTSStore = create<TTSState>()(
           return;
         }
 
-        _sessionGeneration += 1;
-        detachAndStopAllPlayers();
         _dashscopeActiveVoice = config.dashscopeVoice;
         _sessionCurrentIndex = index;
         set({
@@ -530,7 +436,7 @@ export const useTTSStore = create<TTSState>()(
           totalChunks: _sessionSegments.length,
         });
 
-        startPlayback(remainingSegments, config, index, set, get);
+        _coordinator?.jumpTo({ offset: _sessionSegments.slice(0, index).join(" ").length });
       },
 
       setSleepTimer: (minutes: number) => {

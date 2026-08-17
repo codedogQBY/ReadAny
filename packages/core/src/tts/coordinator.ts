@@ -42,10 +42,50 @@ export class LegacyPlayerProvider {
   ): Promise<void> {
     this.player.onEnd = callbacks.onEnd;
     this.player.onError = callbacks.onError;
+    let started = false;
+    let invoking = true;
     this.player.onStateChange = (state) => {
-      if (state === "playing") callbacks.onStart();
+      if (state === "playing") {
+        started = true;
+        callbacks.onStart();
+      } else if (state === "stopped" && (started || !invoking)) callbacks.onEnd();
     };
-    await this.player.speak(segment.text, config);
+    const result = this.player.speak(segment.text, config);
+    invoking = false;
+    await result;
+  }
+  async playQueue(
+    segments: Segment[],
+    config: TTSConfig,
+    startIndex: number,
+    callbacks: {
+      onStart(): void;
+      onChunk(index: number, total: number): void;
+      onEnd(): void;
+      onError(error: unknown): void;
+    },
+  ): Promise<void> {
+    let started = false;
+    let invoking = true;
+    this.player.onStateChange = (state) => {
+      if (state === "playing") {
+        started = true;
+        callbacks.onStart();
+      } else if (state === "stopped" && (started || !invoking)) callbacks.onEnd();
+    };
+    this.player.onChunkChange = (index, total) =>
+      callbacks.onChunk(
+        startIndex + index,
+        Math.max(total + startIndex, segments.length + startIndex),
+      );
+    this.player.onEnd = callbacks.onEnd;
+    this.player.onError = callbacks.onError;
+    const result = this.player.speak(
+      segments.map((segment) => segment.text),
+      config,
+    );
+    invoking = false;
+    await result;
   }
   stop(): void {
     this.player.stop();
@@ -141,20 +181,16 @@ export class TTSCoordinator {
         this.state = { ...this.state, status: "playing" };
         this.emit();
       },
+      onChunk: (index: number, total: number) => {
+        if (!this.isCurrent(sessionId)) return;
+        this.state = { ...this.state, segmentIndex: index, totalSegments: total };
+        this.callbacks.onSegment?.(index, total);
+        this.emit();
+      },
       onEnd: () => {
         if (!this.isCurrent(sessionId)) return;
-        if (this.state.segmentIndex + 1 >= this.segments.length) {
-          this.stop();
-          this.callbacks.onEnd?.();
-          return;
-        }
-        this.state = {
-          ...this.state,
-          status: "loading",
-          segmentIndex: this.state.segmentIndex + 1,
-        };
-        this.emit();
-        this.playCurrent(sessionId);
+        this.stop();
+        this.callbacks.onEnd?.();
       },
       onError: (error: unknown) => {
         if (!this.isCurrent(sessionId)) return;
@@ -169,7 +205,14 @@ export class TTSCoordinator {
         this.callbacks.onError?.(normalized);
       },
     };
-    Promise.resolve(provider.play(segment, this.config, callbacks)).catch(callbacks.onError);
+    Promise.resolve(
+      provider.playQueue(
+        this.segments.slice(this.state.segmentIndex),
+        this.config,
+        this.state.segmentIndex,
+        callbacks,
+      ),
+    ).catch(callbacks.onError);
     // Providers report the actual start through their player callbacks. Keep
     // loading until then so legacy players preserve their startup semantics.
   }
