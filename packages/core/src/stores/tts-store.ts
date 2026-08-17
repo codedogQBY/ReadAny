@@ -421,22 +421,6 @@ export const useTTSStore = create<TTSState>()(
           _coordinator.jumpTo({ offset: _sessionSegments.slice(0, index).join(" ").length });
           return;
         }
-        const config = normalizeTTSConfig(get().config);
-        const remainingSegments = _sessionSegments.slice(index);
-        if (remainingSegments.length === 0) {
-          set({ playState: "stopped" });
-          return;
-        }
-
-        _dashscopeActiveVoice = config.dashscopeVoice;
-        _sessionCurrentIndex = index;
-        set({
-          playState: "loading",
-          currentChunkIndex: index,
-          totalChunks: _sessionSegments.length,
-        });
-
-        _coordinator?.jumpTo({ offset: _sessionSegments.slice(0, index).join(" ").length });
       },
 
       setSleepTimer: (minutes: number) => {
