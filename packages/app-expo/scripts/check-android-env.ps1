@@ -48,7 +48,10 @@ $jdkHint = "Install JDK 17 or 21 from https://adoptium.net, then set the JAVA_HO
 if ($javaHome) {
   $javaBin = Join-Path $javaHome "bin\java.exe"
   if (Test-Path $javaBin) {
-    $verLine = (& $javaBin -version 2>&1 | Select-Object -First 1)
+    # `cmd /c ... 2>&1` merges java's stderr at the OS level; under
+    # $ErrorActionPreference=SilentlyContinue PowerShell would otherwise swallow
+    # the NativeCommandError records produced by `2>&1`.
+    $verLine = (& cmd /c "`"$javaBin`" -version 2>&1" 2>$null | Select-Object -First 1)
     if ($verLine -match 'version "(\d+)') {
       $major = [int]$Matches[1]
       $jdkOk = $major -ge 17
