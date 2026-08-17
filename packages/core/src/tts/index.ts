@@ -39,6 +39,19 @@ export {
 } from "./text-utils";
 export { buildNarrationPreview, getTTSVoiceLabel, splitNarrationText } from "./display";
 export { compareVoiceLanguage, getLocaleDisplayLabel, groupEdgeTTSVoices } from "./voice-groups";
+export { SegmentPlanner } from "./segment-planner";
+export type { Segment, SegmentPosition, SegmentPlannerOptions } from "./segment-planner";
+export {
+  LegacyPlayerProvider,
+  TTSCoordinator,
+  normalizeTTSError,
+} from "./coordinator";
+export type {
+  TTSCoordinatorCallbacks,
+  TTSCoordinatorError,
+  TTSCoordinatorState,
+  TTSCoordinatorStatus,
+} from "./coordinator";
 
 // Edge TTS
 export { fetchEdgeTTSAudio, EDGE_TTS_VOICES } from "./edge-tts";
