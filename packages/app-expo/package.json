@@ -31,6 +31,7 @@
     "prebuild": "expo prebuild",
     "build:reader": "node scripts/build-reader.js",
     "sync:native-variant": "node scripts/configure-native-variant.js",
+    "doctor:android": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-android-env.ps1",
     "lint": "biome check .",
     "test": "vitest run",
     "eas-build-pre-install": "bash scripts/eas-install-ios-build-tools.sh",

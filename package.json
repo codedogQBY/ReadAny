@@ -17,6 +17,7 @@
     "expo:ios": "pnpm --filter @readany/app-expo ios",
     "expo:ios:simulator": "pnpm --filter @readany/app-expo ios:simulator",
     "expo:android": "pnpm --filter @readany/app-expo android",
+    "expo:doctor:android": "pnpm --filter @readany/app-expo doctor:android",
     "expo:prebuild": "pnpm --filter @readany/app-expo prebuild",
     "eas:device:create": "pnpm --filter @readany/app-expo eas:device:create",
     "eas:build:android": "pnpm --filter @readany/app-expo eas:build:android",
