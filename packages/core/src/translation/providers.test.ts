@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildAITranslationPrompt, microsoftTranslate, toMicrosoftLangCode } from "./providers";
+import { buildAITranslationPrompt, googleTranslate, toMicrosoftLangCode } from "./providers";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -36,28 +36,21 @@ describe("Microsoft translator", () => {
     expect(toMicrosoftLangCode("ja")).toBe("ja");
   });
 
-  it("requests Simplified Chinese without an empty source language parameter", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(new Response("token"))
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify([{ translations: [{ text: "你好" }] }]), {
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
+  it("uses the keyless Google endpoint and parses translation segments", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify([[["你好", "hello"]], null, "en"]), {
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(microsoftTranslate(["hello"], "AUTO", "zh_Hans")).resolves.toEqual(["你好"]);
+    await expect(googleTranslate(["hello"], "AUTO", "zh-CN")).resolves.toEqual(["你好"]);
 
-    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const requestUrl = new URL(url);
-    expect(requestUrl.searchParams.get("api-version")).toBe("3.0");
-    expect(requestUrl.searchParams.get("to")).toBe("zh-Hans");
-    expect(requestUrl.searchParams.has("from")).toBe(false);
-    expect(init.headers).toMatchObject({
-      "Content-Type": "application/json",
-      Authorization: "Bearer token",
-    });
-    expect(init.body).toBe(JSON.stringify([{ Text: "hello" }]));
+    expect(requestUrl.hostname).toBe("translate.googleapis.com");
+    expect(requestUrl.searchParams.get("sl")).toBe("auto");
+    expect(requestUrl.searchParams.get("tl")).toBe("zh-cn");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 });
