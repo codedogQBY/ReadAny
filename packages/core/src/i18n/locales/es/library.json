@@ -148,6 +148,20 @@
     "detailsManagedMetadataNote": "ReadAny mantiene estos metadatos para mostrar, buscar y nombrar en la sincronización. El archivo original del libro no se modifica.",
     "bookNotFound": "Libro no encontrado"
   },
+  "vectorize": {
+    "protectedBookTitle": "Libro protegido",
+    "protectedBookDesc": "ReadAny puede vectorizar libros MOBI, AZW y AZW3 sin DRM, pero este archivo parece estar protegido.",
+    "malformedBookTitle": "Libro dañado o incompleto",
+    "malformedBookDesc": "ReadAny no pudo leer este libro porque la estructura del archivo parece dañada o incompleta. Prueba a descargar o exportar una copia nueva sin DRM.",
+    "unsupportedFormatTitle": "Formato no compatible",
+    "unsupportedFormatDesc": "ReadAny puede vectorizar EPUB, PDF, TXT, UMD y libros MOBI, AZW y AZW3 sin DRM. Este formato de archivo no es compatible.",
+    "extractionFailedTitle": "No se pudo leer el libro",
+    "extractionFailedDesc": "ReadAny no pudo extraer texto legible de este libro. Prueba a descargar o exportar una copia nueva sin DRM.",
+    "vectorizationFailedTitle": "No se pudo vectorizar el libro",
+    "vectorizationFailedDesc": "ReadAny no pudo terminar de vectorizar este libro. Comprueba la configuración del modelo vectorial e inténtalo de nuevo.",
+    "cleanupFailedTitle": "No se pudo limpiar por completo la indexación",
+    "cleanupFailedDesc": "El libro sigue marcado como no indexado, pero no se pudieron eliminar algunos datos parciales de búsqueda. Vuelve a indexarlo y reinicia la aplicación si aún aparece en la búsqueda."
+  },
   "home": {
     "library": "Biblioteca",
     "addBook": "Agregar libro",
@@ -170,6 +184,10 @@
     "vec_indexing": "Indexando...",
     "vec_processing": "Procesando...",
     "vec_queued": "En cola",
+    "vec_cancel": "Cancelar",
+    "vec_cancelQueued": "Cancelar vectorización en cola",
+    "vec_cancelling": "Cancelando…",
+    "vec_cancelled": "Cancelado",
     "manageTags": "Administrar etiquetas",
     "remote": "Requiere descarga",
     "downloading": "Descargando"

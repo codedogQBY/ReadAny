@@ -148,6 +148,20 @@
     "detailsManagedMetadataNote": "ReadAny conserve ces métadonnées pour l'affichage, la recherche et le nommage de synchronisation. Le fichier original du livre n'est pas modifié.",
     "bookNotFound": "Livre introuvable"
   },
+  "vectorize": {
+    "protectedBookTitle": "Livre protégé",
+    "protectedBookDesc": "ReadAny peut vectoriser les livres MOBI, AZW et AZW3 sans DRM, mais ce fichier semble être protégé.",
+    "malformedBookTitle": "Livre endommagé ou incomplet",
+    "malformedBookDesc": "ReadAny n'a pas pu lire ce livre, car la structure du fichier semble endommagée ou incomplète. Essayez de télécharger ou d'exporter une nouvelle copie sans DRM.",
+    "unsupportedFormatTitle": "Format non pris en charge",
+    "unsupportedFormatDesc": "ReadAny peut vectoriser les fichiers EPUB, PDF, TXT et UMD, ainsi que les livres MOBI, AZW et AZW3 sans DRM. Ce format de fichier n'est pas pris en charge.",
+    "extractionFailedTitle": "Impossible de lire le livre",
+    "extractionFailedDesc": "ReadAny n'a pas pu extraire de texte lisible de ce livre. Essayez de télécharger ou d'exporter une nouvelle copie sans DRM.",
+    "vectorizationFailedTitle": "Impossible de vectoriser le livre",
+    "vectorizationFailedDesc": "ReadAny n'a pas pu terminer la vectorisation de ce livre. Vérifiez les paramètres du modèle vectoriel et réessayez.",
+    "cleanupFailedTitle": "Nettoyage incomplet de l'indexation",
+    "cleanupFailedDesc": "Le livre reste indiqué comme non indexé, mais certaines données de recherche partielles n'ont pas pu être supprimées. Relancez l'indexation, puis redémarrez l'application si ce livre apparaît encore dans la recherche."
+  },
   "home": {
     "library": "Bibliothèque",
     "addBook": "Ajouter un livre",
@@ -170,6 +184,10 @@
     "vec_indexing": "Indexation...",
     "vec_processing": "Traitement...",
     "vec_queued": "En file d'attente",
+    "vec_cancel": "Annuler",
+    "vec_cancelQueued": "Annuler la vectorisation en attente",
+    "vec_cancelling": "Annulation…",
+    "vec_cancelled": "Annulée",
     "manageTags": "Gérer les tags",
     "remote": "Téléchargement requis",
     "downloading": "Téléchargement"

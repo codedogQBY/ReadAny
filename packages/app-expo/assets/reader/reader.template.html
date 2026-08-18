@@ -215,6 +215,7 @@
     let bookTextMetricsTimer = null;
     let bookmarkPullGestureActive = false;
     let pullBookmarkResetTimer = null;
+    let extractionSessions = null;
     let refreshAnnotationsTimer = null;
     let activeFootnoteTipKey = null;
     let bookmarkPullStateMeta = {
@@ -1371,6 +1372,9 @@
         case 'extractBookChapters':
           await handleExtractBookChapters(msg);
           break;
+        case 'cancelExtraction':
+          if (msg.requestId) getExtractionSessions().cancel(msg.requestId);
+          break;
         case 'getChapterParagraphs':
           handleGetChapterParagraphs();
           break;
@@ -1388,9 +1392,61 @@
     }
 
     // ─── Book loading ───
+    const SUPPORTED_BOOK_FORMATS = new Set(['epub', 'pdf', 'txt', 'umd', 'mobi', 'azw', 'azw3']);
+    const BOOK_MIME_TYPES = {
+      epub: 'application/epub+zip',
+      pdf: 'application/pdf',
+      txt: 'text/plain',
+      umd: 'application/epub+zip',
+      mobi: 'application/x-mobipocket-ebook',
+      azw: 'application/vnd.amazon.ebook',
+      azw3: 'application/vnd.amazon.ebook',
+    };
+    const BOOK_FORMATS_BY_MIME = {
+      'application/epub+zip': 'epub',
+      'application/pdf': 'pdf',
+      'text/plain': 'txt',
+      'application/x-mobipocket-ebook': 'mobi',
+      'application/vnd.amazon.ebook': 'azw3',
+    };
+
+    function resolveBookFormat(msg) {
+      const storedFormat = String(msg.bookFormat || '').trim().toLowerCase();
+      if (SUPPORTED_BOOK_FORMATS.has(storedFormat)) return storedFormat;
+
+      const cleanFileName = String(msg.fileName || '').split(/[?#]/, 1)[0];
+      const extension = cleanFileName.split('.').pop().toLowerCase();
+      if (SUPPORTED_BOOK_FORMATS.has(extension)) return extension;
+
+      const mimeType = String(msg.mimeType || '').split(';', 1)[0].trim().toLowerCase();
+      return BOOK_FORMATS_BY_MIME[mimeType] || null;
+    }
+
+    function getExtractionSessions() {
+      if (!extractionSessions) {
+        extractionSessions = new window.ReaderExtractionSessions();
+      }
+      return extractionSessions;
+    }
+
+    function getBookFileName(msg) {
+      const format = resolveBookFormat(msg);
+      const cleanFileName = String(msg.fileName || '').split(/[?#]/, 1)[0].split(/[\\/]/).pop();
+      if (!format) return cleanFileName || 'book.epub';
+      const baseName = cleanFileName?.replace(/\.[^.]*$/, '') || 'book';
+      return `${baseName}.${format}`;
+    }
+
+    function getBookMimeType(msg, fallback) {
+      const format = resolveBookFormat(msg);
+      return BOOK_MIME_TYPES[format] || msg.mimeType || fallback || 'application/octet-stream';
+    }
+
     async function openBook(msg) {
       const container = document.getElementById('reader-container');
       const loading = document.getElementById('loading');
+      const fileName = getBookFileName(msg);
+      const mimeType = getBookMimeType(msg);
       currentBookIsPdf = isPDFBookMessage(msg);
       pdfPageLightCache = {};
       pdfDocIndexMap = new WeakMap();
@@ -1401,12 +1457,13 @@
       }
 
       try {
+        getExtractionSessions().throwIfCancelled(msg.requestId);
         let hasSignalledLoaded = false;
         const markLoaded = () => {
           if (loading) loading.classList.add('hidden');
           if (!hasSignalledLoaded) {
             hasSignalledLoaded = true;
-            postToRN('loaded', {});
+            postToRN('loaded', { requestId: msg.requestId });
           }
         };
 
@@ -1415,22 +1472,22 @@
           const binary = atob(msg.base64);
           const bytes = new Uint8Array(binary.length);
           for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-          file = new File([bytes], msg.fileName || 'book.epub', {
-            type: msg.mimeType || 'application/epub+zip'
+          file = new File([bytes], fileName, {
+            type: mimeType
           });
         } else if (msg.uri) {
           postToRN('debug', {
             message: `[ReaderFetch] open ${JSON.stringify({
               uri: msg.uri,
-              fileName: msg.fileName || '',
-              mimeType: msg.mimeType || ''
+              fileName,
+              mimeType
             })}`
           });
 
           // Try Range-based lazy loading for ZIP-based formats (EPUB, CBZ, FBZ)
           // This avoids loading the entire file into memory — only reads
           // the ZIP central directory (~few KB) then fetches entries on demand.
-          const isZipFormat = /\.(epub|cbz|fb2\.zip|fbz)$/i.test(msg.fileName || '');
+          const isZipFormat = /\.(epub|cbz|fb2\.zip|fbz)$/i.test(fileName);
           let lazyBook = null;
 
           if (isZipFormat) {
@@ -1483,14 +1540,14 @@
 
           // Try Range-based lazy loading for PDF
           // pdf.js natively supports Range requests via url + disableAutoFetch
-          if (!lazyBook && /\.pdf$/i.test(msg.fileName || '')) {
+          if (!lazyBook && /\.pdf$/i.test(fileName)) {
             try {
               const headRes = await fetch(msg.uri, { method: 'HEAD' });
               const acceptRanges = headRes.headers.get('Accept-Ranges');
               const contentLength = parseInt(headRes.headers.get('Content-Length'), 10);
 
               if (acceptRanges === 'bytes' && contentLength > 0 && window._makePDFFromURL) {
-                lazyBook = await window._makePDFFromURL(msg.uri, msg.fileName || 'book.pdf');
+                lazyBook = await window._makePDFFromURL(msg.uri, fileName);
               }
             } catch (pdfLazyErr) {
               console.warn('[Reader] PDF lazy loading failed, falling back to full fetch:', pdfLazyErr);
@@ -1503,8 +1560,8 @@
             const isLocalFileStatus = res.status === 0 && /^file:\/\//i.test(msg.uri);
             if (!res.ok && !isLocalFileStatus) throw new Error(`Failed to fetch: ${res.status}`);
             const blob = await res.blob();
-            file = new File([blob], msg.fileName || 'book.epub', {
-              type: msg.mimeType || blob.type || 'application/octet-stream'
+            file = new File([blob], fileName, {
+              type: getBookMimeType(msg, blob.type)
             });
           } else {
             // Skip makeBook below — we already have the book object
@@ -1514,7 +1571,11 @@
           throw new Error('No book data provided');
         }
 
-        const book = (file && file.sections) ? file : await makeBook(file);
+        const loadBook = async () => (file && file.sections) ? file : await makeBook(file);
+        const book = msg.requestId
+          ? await getExtractionSessions().open(msg.requestId, loadBook)
+          : await loadBook();
+        getExtractionSessions().throwIfCancelled(msg.requestId);
         currentBook = book;
         attachBookTransformHandler(book);
 
@@ -1755,7 +1816,8 @@
         console.error('[WebView] Error in openBook:', err);
         const message = `${String(err)}${msg?.uri ? ` (${msg.uri})` : ''}`;
         loading.innerHTML = '<div class="error-text">' + escapeHtml(message) + '</div>';
-        postToRN('error', { message });
+        postToRN('error', { message, requestId: msg.requestId });
+        getExtractionSessions().release(msg.requestId);
       }
     }
 
@@ -4249,8 +4311,7 @@ html, body {
 
     // ─── Chapter Extraction for Vectorization ───
     function isPDFBookMessage(msg) {
-      const mimeType = (msg.mimeType || '').split(';')[0].trim().toLowerCase();
-      return mimeType === 'application/pdf' || /\.pdf$/i.test(msg.fileName || '');
+      return resolveBookFormat(msg) === 'pdf';
     }
 
     async function createBookFileFromMessage(msg) {
@@ -4258,8 +4319,8 @@ html, body {
         const binary = atob(msg.base64);
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        return new File([bytes], msg.fileName || 'book.epub', {
-          type: msg.mimeType || 'application/epub+zip'
+        return new File([bytes], getBookFileName(msg), {
+          type: getBookMimeType(msg)
         });
       }
 
@@ -4268,8 +4329,8 @@ html, body {
         const isLocalFileStatus = res.status === 0 && /^file:\/\//i.test(msg.uri);
         if (!res.ok && !isLocalFileStatus) throw new Error(`Failed to fetch: ${res.status}`);
         const blob = await res.blob();
-        return new File([blob], msg.fileName || 'book.epub', {
-          type: msg.mimeType || blob.type || 'application/octet-stream'
+        return new File([blob], getBookFileName(msg), {
+          type: getBookMimeType(msg, blob.type)
         });
       }
 
@@ -4277,7 +4338,9 @@ html, body {
     }
 
     async function handleExtractBookChapters(msg) {
+      const requestId = msg.requestId;
       try {
+        getExtractionSessions().throwIfCancelled(requestId);
         if (isPDFBookMessage(msg)) {
           if (typeof window._extractPDFChapters !== 'function') {
             throw new Error('PDF extraction is not available in this reader build');
@@ -4297,6 +4360,7 @@ html, body {
               postToRN('debug', { message: `[PDFExtract] page ${JSON.stringify(detail)}` });
             }
           });
+          getExtractionSessions().throwIfCancelled(requestId);
 
           postToRN('debug', {
             message: `[PDFExtract] done ${JSON.stringify({
@@ -4306,27 +4370,42 @@ html, body {
             })}`
           });
 
-          postToRN('chaptersExtracted', { chapters });
+          postToRN('chaptersExtracted', { requestId, chapters });
           return;
         }
 
-        currentBook = await makeBook(await createBookFileFromMessage(msg));
-        await handleExtractChapters();
+        const requestBook = await getExtractionSessions().open(
+          requestId,
+          async () => makeBook(await createBookFileFromMessage(msg))
+        );
+        currentBook = requestBook;
+        getExtractionSessions().throwIfCancelled(requestId);
+        await handleExtractChapters(requestId);
       } catch (err) {
         console.error('[WebView] Error extracting book chapters:', err);
-        postToRN('chaptersExtracted', { error: String(err) });
+        postToRN('chaptersExtracted', { requestId, error: String(err) });
+      } finally {
+        getExtractionSessions().release(requestId);
       }
     }
 
-    async function handleExtractChapters() {
-      if (!currentBook) {
-        postToRN('chaptersExtracted', { error: 'No book loaded' });
+    async function handleExtractChapters(requestId) {
+      let extractionBook;
+      try {
+        extractionBook = requestId ? getExtractionSessions().getBook(requestId) : currentBook;
+      } catch (err) {
+        postToRN('chaptersExtracted', { requestId, error: String(err) });
+        return;
+      }
+      if (!extractionBook) {
+        postToRN('chaptersExtracted', { requestId, error: 'No book loaded' });
         return;
       }
 
       try {
-        const sections = currentBook.sections || [];
-        const toc = currentBook.toc || [];
+        getExtractionSessions().throwIfCancelled(requestId);
+        const sections = extractionBook.sections || [];
+        const toc = extractionBook.toc || [];
 
         // Build map of href to title mapping
         const tocMap = new Map();
@@ -4351,6 +4430,7 @@ html, body {
         let skippedNoCreateDocument = 0;
 
         for (let i = 0; i < sections.length; i++) {
+          getExtractionSessions().throwIfCancelled(requestId);
           const section = sections[i];
           if (!section.createDocument) {
             skippedNoCreateDocument += 1;
@@ -4359,6 +4439,7 @@ html, body {
 
           try {
             const doc = await section.createDocument();
+            getExtractionSessions().throwIfCancelled(requestId);
             if (!doc.body) continue;
 
             const title = tocMap.get(i) || tocMap.get(section.href || "") || `Section ${i + 1}`;
@@ -4385,6 +4466,8 @@ html, body {
           }
         }
 
+        getExtractionSessions().throwIfCancelled(requestId);
+
         console.log('[WebView] Chapter extraction summary:', {
           sections: sections.length,
           chapters: chapters.length,
@@ -4392,10 +4475,12 @@ html, body {
           skippedNoCreateDocument
         });
 
-        postToRN('chaptersExtracted', { chapters });
+        postToRN('chaptersExtracted', { requestId, chapters });
       } catch (err) {
         console.error('[WebView] Error extracting chapters:', err);
-        postToRN('chaptersExtracted', { error: String(err) });
+        postToRN('chaptersExtracted', { requestId, error: String(err) });
+      } finally {
+        getExtractionSessions().release(requestId);
       }
     }
 

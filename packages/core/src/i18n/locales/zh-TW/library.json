@@ -148,6 +148,20 @@
     "detailsManagedMetadataNote": "ReadAny 會維護這份元資訊，用於書架顯示、搜尋和同步命名，不會修改原始書籍檔案。",
     "bookNotFound": "書籍不存在"
   },
+  "vectorize": {
+    "protectedBookTitle": "受保護的書籍",
+    "protectedBookDesc": "ReadAny 可以向量化不含 DRM 的 MOBI、AZW 和 AZW3 書籍，但此檔案似乎受到保護。",
+    "malformedBookTitle": "書籍檔案損壞或不完整",
+    "malformedBookDesc": "ReadAny 無法讀取此書，因為檔案結構似乎已損壞或不完整。請重新下載或匯出一份不含 DRM 的副本。",
+    "unsupportedFormatTitle": "不支援的格式",
+    "unsupportedFormatDesc": "ReadAny 可以向量化 EPUB、PDF、TXT、UMD，以及不含 DRM 的 MOBI、AZW 和 AZW3 書籍。此檔案格式不受支援。",
+    "extractionFailedTitle": "無法讀取書籍",
+    "extractionFailedDesc": "ReadAny 無法從此書中擷取可讀文字。請重新下載或匯出一份不含 DRM 的副本。",
+    "vectorizationFailedTitle": "無法向量化書籍",
+    "vectorizationFailedDesc": "ReadAny 無法完成此書的向量化。請檢查向量模型設定後再試一次。",
+    "cleanupFailedTitle": "無法完全清理索引",
+    "cleanupFailedDesc": "本書仍會顯示為未索引，但部分搜尋資料無法刪除。請重新建立索引；如果搜尋中仍出現本書，請重新啟動應用程式。"
+  },
   "home": {
     "library": "書庫",
     "addBook": "新增書籍",
@@ -170,6 +184,10 @@
     "vec_indexing": "入庫中...",
     "vec_processing": "處理中...",
     "vec_queued": "排隊中",
+    "vec_cancel": "取消",
+    "vec_cancelQueued": "取消佇列中的向量化",
+    "vec_cancelling": "正在取消…",
+    "vec_cancelled": "已取消",
     "manageTags": "管理標籤",
     "remote": "需下載",
     "downloading": "下載中"

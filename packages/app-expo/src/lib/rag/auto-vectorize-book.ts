@@ -2,19 +2,7 @@ import { getPlatformService } from "@readany/core/services";
 import type { Book } from "@readany/core/types";
 import * as FileSystem from "expo-file-system/legacy";
 import { queueBook as queueAutoVectorize } from "./auto-vectorize-service";
-
-const MIME_TYPES: Record<string, string> = {
-  epub: "application/epub+zip",
-  pdf: "application/pdf",
-  txt: "text/plain",
-  // Mobile UMD imports are converted and stored as EPUB before vectorization.
-  umd: "application/epub+zip",
-};
-
-export function getMobileVectorizeMimeType(format: string | undefined): string | null {
-  const normalized = String(format || "").toLowerCase();
-  return MIME_TYPES[normalized] ?? null;
-}
+import { getMobileVectorizeCapability } from "./mobile-vectorize-capability";
 
 function bytesToBase64(bytes: Uint8Array): string {
   const chunkSize = 0x8000;
@@ -57,8 +45,9 @@ export async function inspectMobileBookForVectorize(book: Book): Promise<{
   reason?: "unsupported-format" | "missing-file";
 }> {
   const absPath = await resolveMobileBookPath(book.filePath);
-  const mimeType = getMobileVectorizeMimeType(book.format);
-  if (!mimeType) {
+  const capability = getMobileVectorizeCapability(book.format);
+  const { mimeType } = capability;
+  if (!capability.supported) {
     return { absPath, mimeType, size: null, canVectorize: false, reason: "unsupported-format" };
   }
 

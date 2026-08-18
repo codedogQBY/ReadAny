@@ -1,4 +1,5 @@
 import { CheckIcon, ClockIcon, Loader2Icon, MoreVerticalIcon } from "@/components/ui/Icon";
+import { isVectorizationCancellable } from "@/lib/rag/vectorization-cancel-state";
 import { useColors } from "@/styles/theme";
 import { getPlatformService } from "@readany/core/services";
 /**
@@ -54,6 +55,7 @@ interface BookCardProps {
   onShowDetails?: (book: Book) => void;
   onManageTags?: (book: Book) => void;
   onVectorize?: (book: Book) => void;
+  onCancelVectorize?: (bookId: string) => void;
   isVectorizing?: boolean;
   isQueued?: boolean;
   vectorProgress?: { status: string; processedChunks: number; totalChunks: number } | null;
@@ -72,6 +74,7 @@ export const BookCard = memo(function BookCard({
   onShowDetails,
   onManageTags,
   onVectorize,
+  onCancelVectorize,
   isVectorizing,
   isQueued,
   vectorProgress,
@@ -124,6 +127,10 @@ export const BookCard = memo(function BookCard({
       ? Math.round((vectorProgress.processedChunks / vectorProgress.totalChunks) * 100)
       : 0
     : 0;
+  const canCancelVectorization = isVectorizationCancellable(
+    Boolean(isVectorizing),
+    vectorProgress?.status,
+  );
 
   const measureAnchor = useCallback(async () => {
     const measureNode = (node: View | null, fallbackToBottomRight = false) =>
@@ -287,31 +294,74 @@ export const BookCard = memo(function BookCard({
           )}
 
           {/* Vectorization progress overlay */}
-          {isVectorizing && (
-            <View style={s.vecOverlay}>
-              <AnimatedLoader />
+          {isVectorizing && canCancelVectorization && (
+            <TouchableOpacity
+              style={s.vecOverlay}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={t("home.vec_cancel", "Cancel vectorization")}
+              onPress={(event) => {
+                event.stopPropagation();
+                onCancelVectorize?.(book.id);
+              }}
+            >
+              {vectorProgress?.status !== "cancelled" && <AnimatedLoader />}
               <Text style={s.vecOverlayText}>
-                {vectorProgress?.status === "chunking"
-                  ? `${vecPct}%`
-                  : vectorProgress?.status === "embedding"
-                    ? `${vecPct}%`
-                    : vectorProgress?.status === "indexing"
-                      ? t("home.vec_indexing")
-                      : vectorProgress?.status === "completed"
-                        ? "✓"
-                        : vectorProgress?.status === "error"
-                          ? "✗"
-                          : t("home.vec_processing")}
+                {vectorProgress?.status === "cancelling"
+                  ? t("home.vec_cancelling", "Cancelling…")
+                  : vectorProgress?.status === "cancelled"
+                    ? t("home.vec_cancelled", "Cancelled")
+                    : vectorProgress?.status === "chunking"
+                      ? `${vecPct}%`
+                      : vectorProgress?.status === "embedding"
+                        ? `${vecPct}%`
+                        : vectorProgress?.status === "indexing"
+                          ? t("home.vec_indexing")
+                          : vectorProgress?.status === "completed"
+                            ? "✓"
+                            : vectorProgress?.status === "error"
+                              ? "✗"
+                              : t("home.vec_processing")}
+              </Text>
+              {vectorProgress?.status !== "cancelling" &&
+                vectorProgress?.status !== "cancelled" && (
+                  <Text style={s.vecOverlayText}>{t("home.vec_cancel", "Cancel")}</Text>
+                )}
+            </TouchableOpacity>
+          )}
+          {isVectorizing && !canCancelVectorization && (
+            <View style={s.vecOverlay}>
+              {vectorProgress?.status !== "cancelled" && <AnimatedLoader />}
+              <Text style={s.vecOverlayText}>
+                {vectorProgress?.status === "cancelling"
+                  ? t("home.vec_cancelling", "Cancelling…")
+                  : vectorProgress?.status === "cancelled"
+                    ? t("home.vec_cancelled", "Cancelled")
+                    : vectorProgress?.status === "completed"
+                      ? "✓"
+                      : vectorProgress?.status === "error"
+                        ? "✕"
+                        : t("home.vec_processing")}
               </Text>
             </View>
           )}
 
           {/* Queued overlay */}
           {isQueued && !isVectorizing && (
-            <View style={s.queuedOverlay}>
+            <TouchableOpacity
+              style={s.queuedOverlay}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={t("home.vec_cancelQueued", "Cancel queued vectorization")}
+              onPress={(event) => {
+                event.stopPropagation();
+                onCancelVectorize?.(book.id);
+              }}
+            >
               <ClockIcon size={20} color="#fff" />
               <Text style={s.queuedOverlayText}>{t("home.vec_queued", "排队中")}</Text>
-            </View>
+              <Text style={s.queuedOverlayText}>{t("home.vec_cancel", "Cancel")}</Text>
+            </TouchableOpacity>
           )}
 
           {/* Remote status overlay (on-demand download) */}

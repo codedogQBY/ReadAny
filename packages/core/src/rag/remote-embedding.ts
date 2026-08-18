@@ -15,6 +15,7 @@ export type RemoteEmbeddingFetch = (url: string, init: RequestInit) => Promise<R
 export interface RemoteEmbeddingBatchOptions {
   fetchImpl?: RemoteEmbeddingFetch;
   maxCharsPerInput?: number;
+  signal?: AbortSignal;
 }
 
 interface OpenAIEmbeddingItem {
@@ -55,6 +56,7 @@ export async function requestRemoteEmbeddingBatch(
     method: "POST",
     headers,
     body: JSON.stringify(requestBody),
+    signal: options.signal,
   });
 
   if (!response.ok) {

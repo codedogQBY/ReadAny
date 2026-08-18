@@ -148,6 +148,20 @@
     "detailsManagedMetadataNote": "ReadAny는 이 메타데이터를 서재 표시, 검색, 동기화 이름에 사용합니다. 원본 책 파일은 수정하지 않습니다.",
     "bookNotFound": "책을 찾을 수 없어요"
   },
+  "vectorize": {
+    "protectedBookTitle": "보호된 책",
+    "protectedBookDesc": "ReadAny는 DRM이 없는 MOBI, AZW, AZW3 책을 벡터화할 수 있지만, 이 파일은 보호된 것으로 보입니다.",
+    "malformedBookTitle": "손상되었거나 불완전한 책",
+    "malformedBookDesc": "파일 구조가 손상되었거나 불완전하여 이 책을 읽지 못했습니다. DRM이 없는 새 사본을 다운로드하거나 내보낸 뒤 다시 시도하세요.",
+    "unsupportedFormatTitle": "지원하지 않는 형식",
+    "unsupportedFormatDesc": "ReadAny는 EPUB, PDF, TXT, UMD 및 DRM이 없는 MOBI, AZW, AZW3 책을 벡터화할 수 있습니다. 이 파일 형식은 지원하지 않습니다.",
+    "extractionFailedTitle": "책을 읽을 수 없음",
+    "extractionFailedDesc": "이 책에서 읽을 수 있는 텍스트를 추출하지 못했습니다. DRM이 없는 새 사본을 다운로드하거나 내보낸 뒤 다시 시도하세요.",
+    "vectorizationFailedTitle": "책을 벡터화할 수 없음",
+    "vectorizationFailedDesc": "이 책의 벡터화를 완료하지 못했습니다. 벡터 모델 설정을 확인하고 다시 시도하세요.",
+    "cleanupFailedTitle": "인덱싱을 완전히 정리하지 못함",
+    "cleanupFailedDesc": "책은 인덱싱되지 않은 상태로 표시되지만 일부 검색 데이터를 제거하지 못했습니다. 다시 인덱싱하고 검색에 계속 나타나면 앱을 다시 시작하세요."
+  },
   "home": {
     "library": "서재",
     "addBook": "책 추가",
@@ -170,6 +184,10 @@
     "vec_indexing": "인덱싱 중...",
     "vec_processing": "처리 중...",
     "vec_queued": "대기 중",
+    "vec_cancel": "취소",
+    "vec_cancelQueued": "대기 중인 벡터화 취소",
+    "vec_cancelling": "취소 중…",
+    "vec_cancelled": "취소됨",
     "manageTags": "태그 관리",
     "remote": "다운로드 필요",
     "downloading": "다운로드 중"

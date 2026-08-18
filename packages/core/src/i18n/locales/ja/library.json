@@ -148,6 +148,20 @@
     "detailsManagedMetadataNote": "ReadAny はこのメタデータをライブラリ表示、検索、同期時の命名に使用します。元の書籍ファイルは変更しません。",
     "bookNotFound": "書籍が見つかりません"
   },
+  "vectorize": {
+    "protectedBookTitle": "保護された書籍",
+    "protectedBookDesc": "ReadAny は DRM フリーの MOBI、AZW、AZW3 書籍をベクトル化できますが、このファイルは保護されているようです。",
+    "malformedBookTitle": "破損または不完全な書籍",
+    "malformedBookDesc": "ファイル構造が破損しているか不完全なため、この書籍を読み取れませんでした。DRM フリーの新しいコピーをダウンロードまたは書き出してください。",
+    "unsupportedFormatTitle": "未対応の形式",
+    "unsupportedFormatDesc": "ReadAny は EPUB、PDF、TXT、UMD、および DRM フリーの MOBI、AZW、AZW3 書籍をベクトル化できます。このファイル形式には対応していません。",
+    "extractionFailedTitle": "書籍を読み取れませんでした",
+    "extractionFailedDesc": "この書籍から読み取り可能なテキストを抽出できませんでした。DRM フリーの新しいコピーをダウンロードまたは書き出してください。",
+    "vectorizationFailedTitle": "書籍をベクトル化できませんでした",
+    "vectorizationFailedDesc": "この書籍のベクトル化を完了できませんでした。ベクトルモデルの設定を確認して、もう一度お試しください。",
+    "cleanupFailedTitle": "インデックスを完全に削除できませんでした",
+    "cleanupFailedDesc": "書籍は未インデックスとして表示されますが、一部の検索データを削除できませんでした。再度インデックスを作成し、検索に残る場合はアプリを再起動してください。"
+  },
   "home": {
     "library": "ライブラリ",
     "addBook": "本を追加",
@@ -170,6 +184,10 @@
     "vec_indexing": "インデックス作成中...",
     "vec_processing": "処理中...",
     "vec_queued": "キュー待ち",
+    "vec_cancel": "キャンセル",
+    "vec_cancelQueued": "キュー内のベクトル化をキャンセル",
+    "vec_cancelling": "キャンセル中…",
+    "vec_cancelled": "キャンセル済み",
     "manageTags": "タグを管理",
     "remote": "ダウンロードが必要",
     "downloading": "ダウンロード中"

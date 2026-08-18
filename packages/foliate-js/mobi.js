@@ -27,6 +27,8 @@ const PALMDOC_HEADER = {
   encryption: [12, 2, "uint"],
 };
 
+const ENCRYPTED_MOBI_ERROR = "Encrypted MOBI records are not supported";
+
 const MOBI_HEADER = {
   magic: [16, 4, "string"],
   length: [20, 4, "uint"],
@@ -641,6 +643,8 @@ export class MOBI extends PDB {
     await super.open(file);
     // TODO: if (this.pdb.type === 'TEXt')
     this.headers = this.#getHeaders(await super.loadRecord(0));
+    if (this.headers.palmdoc.encryption !== 0)
+      throw new Error(ENCRYPTED_MOBI_ERROR);
     this.#resourceStart = this.headers.mobi.resourceStart;
     let isKF8 = this.headers.mobi.version >= 8;
     if (!isKF8) {
@@ -649,9 +653,12 @@ export class MOBI extends PDB {
         try {
           // it's a "combo" MOBI/KF8 file; try to open the KF8 part
           this.headers = this.#getHeaders(await super.loadRecord(boundary));
+          if (this.headers.palmdoc.encryption !== 0)
+            throw new Error(ENCRYPTED_MOBI_ERROR);
           this.#start = boundary;
           isKF8 = true;
         } catch (e) {
+          if (e instanceof Error && e.message === ENCRYPTED_MOBI_ERROR) throw e;
           console.warn(e);
           console.warn("Failed to open KF8; falling back to MOBI");
         }

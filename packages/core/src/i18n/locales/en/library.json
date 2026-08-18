@@ -161,6 +161,20 @@
     "detailsManagedMetadataNote": "ReadAny maintains this metadata for library display, search, and sync naming. The original book file is not modified.",
     "bookNotFound": "Book not found"
   },
+  "vectorize": {
+    "protectedBookTitle": "Protected book",
+    "protectedBookDesc": "ReadAny can vectorize DRM-free MOBI, AZW, and AZW3 books, but this file appears to be protected.",
+    "malformedBookTitle": "Damaged or incomplete book",
+    "malformedBookDesc": "ReadAny couldn't read this book because its file structure appears damaged or incomplete. Try downloading or exporting a fresh DRM-free copy.",
+    "unsupportedFormatTitle": "Unsupported format",
+    "unsupportedFormatDesc": "ReadAny can vectorize EPUB, PDF, TXT, UMD, and DRM-free MOBI, AZW, and AZW3 books. This file format is not supported.",
+    "extractionFailedTitle": "Couldn't read book",
+    "extractionFailedDesc": "ReadAny couldn't extract readable text from this book. Try downloading or exporting a fresh DRM-free copy.",
+    "vectorizationFailedTitle": "Couldn't vectorize book",
+    "vectorizationFailedDesc": "ReadAny couldn't finish vectorizing this book. Check your vector model settings and try again.",
+    "cleanupFailedTitle": "Couldn't fully clean up indexing",
+    "cleanupFailedDesc": "The book remains marked not indexed, but some partial search data could not be removed. Retry indexing, then restart the app if this book still appears in search."
+  },
   "home": {
     "library": "Library",
     "addBook": "Add Book",
@@ -184,6 +198,10 @@
     "vec_indexing": "Indexing...",
     "vec_processing": "Processing...",
     "vec_queued": "Queued",
+    "vec_cancel": "Cancel",
+    "vec_cancelQueued": "Cancel queued vectorization",
+    "vec_cancelling": "Cancelling…",
+    "vec_cancelled": "Cancelled",
     "manageTags": "Manage Tags",
     "remote": "Download required",
     "downloading": "Downloading"

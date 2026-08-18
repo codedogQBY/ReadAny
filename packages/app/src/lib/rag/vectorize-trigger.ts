@@ -49,7 +49,8 @@ export async function triggerVectorizeBook(
 
   // Build callbacks that write back to Zustand store
   const callbacks = {
-    onBookUpdate: useLibraryStore.getState().updateBook,
+    onBookUpdate: useLibraryStore.getState().updateBookStrict,
+    onBookReset: useLibraryStore.getState().resetBookVectorizationState,
   };
 
   // Extract chapters from the book file (platform-specific: Tauri + foliate-js)

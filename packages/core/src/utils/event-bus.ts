@@ -23,6 +23,7 @@ type EventMap = {
   "vectorize:started": { bookId: string };
   "vectorize:progress": { bookId: string; progress: number; status: string };
   "vectorize:completed": { bookId: string; chunksCount: number };
+  "vectorize:cancelled": { bookId: string };
   "vectorize:error": { bookId: string; error: string };
   "tts:jump-to-current": { bookId: string; cfi: string; respond?: () => void };
   "tts:open-lyrics-page": { bookId: string; respond?: () => void };

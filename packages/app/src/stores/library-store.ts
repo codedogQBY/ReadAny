@@ -354,6 +354,8 @@ export interface LibraryState {
   addBook: (book: Book) => void;
   removeBook: (bookId: string, options?: RemoveBookOptions) => Promise<void>;
   updateBook: (bookId: string, updates: Partial<Book>) => Promise<void>;
+  updateBookStrict: (bookId: string, updates: Partial<Book>) => Promise<void>;
+  resetBookVectorizationState: (bookId: string) => Promise<void>;
   setFilter: (filter: Partial<LibraryFilter>) => void;
   setViewMode: (mode: LibraryViewMode) => void;
   setSortField: (field: SortField) => void;
@@ -852,6 +854,33 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     await db
       .updateBook(bookId, updates)
       .catch((err) => console.error("Failed to update book in database:", err));
+  },
+
+  updateBookStrict: async (bookId, updates) => {
+    await db.updateBook(bookId, updates);
+    set((state) => ({
+      books: state.books.map((book) => (book.id === bookId ? { ...book, ...updates } : book)),
+      allTags:
+        updates.tags !== undefined
+          ? Array.from(new Set([...state.allTags, ...updates.tags])).sort()
+          : state.allTags,
+    }));
+    debouncedSave("library-books", get().books);
+  },
+
+  resetBookVectorizationState: async (bookId) => {
+    const reset = { isVectorized: false, vectorizeProgress: 0 } as const;
+    let persistenceError: unknown;
+    try {
+      await db.updateBook(bookId, reset);
+    } catch (error) {
+      persistenceError = error;
+    }
+    set((state) => ({
+      books: state.books.map((book) => (book.id === bookId ? { ...book, ...reset } : book)),
+    }));
+    debouncedSave("library-books", get().books);
+    if (persistenceError) throw persistenceError;
   },
 
   setFilter: (filter) => set((state) => ({ filter: { ...state.filter, ...filter } })),
