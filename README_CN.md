@@ -41,7 +41,7 @@
 - **和书库对话** - 围绕当前书籍、选中文本和阅读位置提问，答案基于你的阅读上下文生成
 - **按语义找内容** - 向量检索 + BM25 混合搜索，不记得原文关键词也能找回相关概念
 - **知识留在本地** - 本地 embeddings 与本地向量库，让书籍、高亮和笔记具备离线可用能力
-- **接入常用模型** - 支持 OpenAI、Claude、Gemini、Ollama、DeepSeek 以及兼容接口
+- **接入常用模型** - 支持 OpenAI、Claude、Gemini、Ollama、DeepSeek、OrcaRouter 以及兼容接口
 
 ## 为什么选择 ReadAny？
 
@@ -237,6 +237,7 @@ Expo Go。Expo Go 无法加载 ReadAny 当前依赖的原生模块和应用配�
 | Anthropic Claude | [console.anthropic.com](https://console.anthropic.com/) |
 | Google Gemini | [aistudio.google.com](https://aistudio.google.com/) |
 | Ollama / DeepSeek | 本地或自定义端点 |
+| OrcaRouter | [orcarouter.ai](https://www.orcarouter.ai/) |
 
 ---
 

@@ -42,6 +42,7 @@ function useProviderOptions(): { value: AIProviderType; label: string }[] {
     { value: "lmstudio", label: "LM Studio" },
     { value: "openrouter", label: "OpenRouter" },
     { value: "siliconflow", label: "SiliconFlow" },
+    { value: "orcarouter", label: "OrcaRouter" },
     { value: "moonshot", label: "Moonshot (Kimi)" },
     { value: "zhipu", label: t("settings.ai_provider_zhipu") },
     { value: "aliyun", label: t("settings.ai_provider_aliyun") },

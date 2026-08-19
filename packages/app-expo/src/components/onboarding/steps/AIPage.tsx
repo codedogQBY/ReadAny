@@ -37,6 +37,7 @@ const PROVIDER_OPTIONS: { id: AIProviderType; name: string }[] = [
   { id: "lmstudio", name: "LM Studio" },
   { id: "openrouter", name: "OpenRouter" },
   { id: "siliconflow", name: "SiliconFlow" },
+  { id: "orcarouter", name: "OrcaRouter" },
   { id: "custom", name: "Custom" },
 ];
 
