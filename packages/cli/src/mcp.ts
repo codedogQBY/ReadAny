@@ -4,7 +4,6 @@ import type { CommandResult } from "./result.js";
 import { failure, success } from "./result.js";
 import type { AccessProfile, PermissionScope } from "./profiles.js";
 import { getMinimumProfileForScopes, parseAccessProfile, profileHasScope } from "./profiles.js";
-import { appendCliAuditEntry, isCliAuditSource, listCliAuditEntries } from "./audit-log.js";
 import { isRagSearchMode } from "./rag-config.js";
 import { listTools } from "./tool-registry.js";
 import type { ReadAnyTool } from "./tool-registry.js";
@@ -72,38 +71,6 @@ type ToolPropertySchema = {
 function getEpubChapterReadFormat(args: Record<string, unknown>): "text" | "xhtml" {
   const value = args.contentFormat;
   return value === "xhtml" ? "xhtml" : "text";
-}
-
-function getResultErrorCode(result: unknown): string | undefined {
-  if (!result || typeof result !== "object") return undefined;
-  if ("error" in result) return "jsonrpc_error";
-  if (!("isError" in result) || result.isError !== true) return undefined;
-  const content = (result as { content?: Array<{ text?: string }> }).content;
-  const text = content?.[0]?.text;
-  if (!text) return "tool_error";
-  try {
-    const parsed = JSON.parse(text) as CommandResult;
-    return parsed.ok ? undefined : parsed.error.code;
-  } catch {
-    return "tool_error";
-  }
-}
-
-async function recordMcpAudit(
-  env: NodeJS.ProcessEnv,
-  profile: AccessProfile,
-  action: string,
-  result: unknown,
-): Promise<void> {
-  const code = getResultErrorCode(result);
-  await appendCliAuditEntry(env, {
-    timestamp: new Date().toISOString(),
-    source: "mcp",
-    action,
-    profile,
-    ok: !code,
-    code,
-  });
 }
 
 function toMcpTool(tool: ReturnType<typeof listTools>[number]) {
@@ -500,23 +467,6 @@ async function callReadAnyTool(
     });
   }
 
-  if (toolName === "audit.list") {
-    const sourceOption = getString(args, "source");
-    if (sourceOption && !isCliAuditSource(sourceOption)) {
-      return failure("invalid_audit_source", "audit.list source must be cli or mcp");
-    }
-    const source = sourceOption && isCliAuditSource(sourceOption) ? sourceOption : undefined;
-    return success({
-      audit: await listCliAuditEntries(env, {
-        limit: getLimit(args, 50),
-        source,
-        ok: typeof args.ok === "boolean" ? args.ok : undefined,
-        actionPrefix: getString(args, "actionPrefix"),
-        date: getString(args, "date"),
-      }),
-    });
-  }
-
   if (toolName === "epub.inspect") {
     const bookId = getString(args, "bookId");
     if (!bookId) return failure("missing_book_id", "epub.inspect requires bookId");
@@ -684,7 +634,6 @@ export async function handleMcpRequest(
   profile: AccessProfile,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<unknown> {
-  let action = request.method ?? "unknown";
   let result: unknown;
 
   if (request.method === "initialize") {
@@ -698,13 +647,11 @@ export async function handleMcpRequest(
         version: "0.1.0",
       },
     };
-    await recordMcpAudit(env, profile, action, result);
     return result;
   }
 
   if (request.method === "notifications/initialized") {
     result = {};
-    await recordMcpAudit(env, profile, action, result);
     return result;
   }
 
@@ -712,17 +659,14 @@ export async function handleMcpRequest(
     result = {
       tools: listTools().map(toMcpTool),
     };
-    await recordMcpAudit(env, profile, action, result);
     return result;
   }
 
   if (request.method === "tools/call") {
     const params = parseArgs(request.params) as ToolCallParams;
     const name = params.name;
-    action = name ? `tools/call:${name}` : "tools/call";
     if (!name) {
       result = asMcpContent(failure("missing_tool_name", "tools/call requires name"));
-      await recordMcpAudit(env, profile, action, result);
       return result;
     }
     const args = params.arguments ?? {};
@@ -730,7 +674,6 @@ export async function handleMcpRequest(
       result = asMcpContent(
         failure("invalid_tool_arguments", "tools/call arguments must be an object"),
       );
-      await recordMcpAudit(env, profile, action, result);
       return result;
     }
     try {
@@ -739,7 +682,6 @@ export async function handleMcpRequest(
       const message = error instanceof Error ? error.message : "Unknown tool execution failure";
       result = asMcpContent(failure("command_failed", message));
     }
-    await recordMcpAudit(env, profile, action, result);
     return result;
   }
 
@@ -749,7 +691,6 @@ export async function handleMcpRequest(
       message: `Unknown MCP method: ${request.method ?? ""}`.trim(),
     },
   };
-  await recordMcpAudit(env, profile, action, result);
   return result;
 }
 

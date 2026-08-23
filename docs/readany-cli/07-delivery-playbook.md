@@ -79,7 +79,7 @@ readonly profile 无法调用任何写入工具。
 - M1 主链路已经落地。
 - 桌面设置页已经有 `外部 AI 访问` 入口。
 - CLI 仍是 Node bundle，完整无 Node 依赖安装体验还需要后续 native binary 化或完整 runtime 打包。
-- MCP 当前只暴露 `books.list`、`books.search`、`books.get`、`chapters.list`、`chapters.get`、`context.get`、`bookmarks.list`、`skills.list`、`notes.search`、`notes.export`、`knowledge.export`、`knowledge.search`、`highlights.search`、`rag.search`、`audit.list`、`epub.inspect`、`epub.draft.create`、`epub.draft.discard`、`epub.chapter.read`、`epub.chapter.patch`、`epub.chapters.patch`、`epub.metadata.patch`、`epub.toc.rebuild`、`epub.history`、`epub.diff`、`epub.undo`、`epub.validate`、`epub.export`。
+- MCP 当前只暴露 `books.list`、`books.search`、`books.get`、`chapters.list`、`chapters.get`、`context.get`、`bookmarks.list`、`skills.list`、`notes.search`、`notes.export`、`knowledge.export`、`knowledge.search`、`highlights.search`、`rag.search`、`epub.inspect`、`epub.draft.create`、`epub.draft.discard`、`epub.chapter.read`、`epub.chapter.patch`、`epub.chapters.patch`、`epub.metadata.patch`、`epub.toc.rebuild`、`epub.history`、`epub.diff`、`epub.undo`、`epub.validate`、`epub.export`。
 
 ### M2 - 内容读取和知识检索
 
@@ -315,7 +315,6 @@ shasum -a 256 sample.epub
 - path 解析。
 - tool registry schema。
 - skill 安装/卸载。
-- audit log 写入。
 - draft operation 记录。
 
 要求：
@@ -392,7 +391,6 @@ M1：
 - build smoke 覆盖构建后 CLI 的 MCP stdio `initialize`、`tools/list`、`tools/call`。
 - `tools/list` 不包含未实现工具。
 - readonly 权限拒绝写工具的测试。
-- 临时 `READANY_HOME` 下产生 audit log。
 
 M2：
 
@@ -413,7 +411,6 @@ M4：
 - 导出 EPUB 重新导入成功。
 - 设置页截图或测试记录。
 - MCP 配置复制后在外部 agent 成功列 tools。
-- `readany audit list --json` 或 MCP `audit.list` 能看到导出记录。
 
 ## 不通过条件
 
@@ -443,7 +440,6 @@ M4：
 - BM25 RAG search over existing chunks。
 - MCP initialize/tools/list/tools/call。
 - skill install/status/uninstall。
-- audit log 最小链路。
 
 验收：
 

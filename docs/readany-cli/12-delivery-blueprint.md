@@ -19,7 +19,6 @@ ReadAny CLI 是 ReadAny 的本地能力网关，不是单纯给人类敲命令�
   -> 查看 history / diff
   -> validate
   -> export 新 EPUB
-  -> audit 可追踪
 ```
 
 安全边界：
@@ -198,7 +197,6 @@ context.get
 notes.search
 highlights.search
 rag.search
-audit.list
 ```
 
 怎么做：
@@ -352,7 +350,6 @@ readany knowledge search "keyword" --json
 - `export` 默认不覆盖已有文件，不覆盖源 EPUB；覆盖能力如果未来需要，必须单独加显式参数和确认。
 - 输出路径只能来自用户授权、CLI 参数或受控保存面板，MCP 不接受任意隐式路径推断。
 - 导出响应只返回输出路径、hash、大小、数量和摘要，不返回完整导出正文。
-- notes / knowledge export 同样走 publisher profile 或等价确认，并写 audit。
 
 完成线：
 
@@ -361,7 +358,6 @@ readany knowledge search "keyword" --json
 - export 不覆盖源 EPUB。
 - 输出路径受控或由用户明确授权。
 - 导出 EPUB 能重新导入 ReadAny，或至少能被标准 EPUB 工具打开。
-- 导出写入 audit。
 
 测试和验收：
 
@@ -370,7 +366,6 @@ node packages/cli/dist/bin/readany.js epub validate <draft-id> --profile publish
 node packages/cli/dist/bin/readany.js epub export <draft-id> --profile publisher --output <tmp-output.epub> --json
 node packages/cli/dist/bin/readany.js notes export <book-id> --profile publisher --output <tmp-output.md> --format markdown --json
 node packages/cli/dist/bin/readany.js knowledge export --profile publisher --output <tmp-output-dir> --format obsidian --json
-node packages/cli/dist/bin/readany.js audit list --json
 ```
 
 必须保留的证据：
@@ -380,7 +375,6 @@ node packages/cli/dist/bin/readany.js audit list --json
 - 已存在输出路径默认拒绝覆盖。
 - 导出 EPUB 可重新导入 ReadAny，或至少能被标准 EPUB 检查工具打开。
 - publisher 权限拒绝和成功路径各有证据。
-- audit log 有导出摘要，但不含完整正文、密钥或同步凭证。
 
 ### 2.6 桌面客户端入口
 
@@ -397,7 +391,6 @@ node packages/cli/dist/bin/readany.js audit list --json
 - readonly MCP 配置复制。
 - doctor 结果展示。
 - profile 状态展示。
-- audit log 浏览。
 
 精排入口：
 
@@ -411,7 +404,6 @@ Draft 工作区 -> 用户编辑 / diff / history / validate / export
 
 怎么做：
 
-- 设置页只管理 CLI、Skill、MCP 配置、doctor、profile 风险说明和 audit log。
 - 书籍详情提供创建 draft 和进入 draft 工作区的入口。
 - Reader AI 提供“修本章 / 修全书 / 生成建议”等语境化入口，但写入仍调用相同 draft 工具。
 - Draft 工作区负责用户编辑、AI 修改结果查看、history、diff、validate、undo、discard、export。
@@ -452,7 +444,6 @@ cd packages/app/src-tauri && cargo check
   -> JSON/text 输出
   -> tool registry
   -> MCP tools/list 和 tools/call
-  -> profile / scope / audit
   -> Skill 使用说明
   -> 桌面端入口或状态展示
   -> 测试
@@ -504,7 +495,6 @@ cd packages/app/src-tauri && cargo check
 - MCP server。
 - Skill 安装器。
 - JSON / text 输出。
-- audit log 写入。
 
 规则：
 
@@ -544,7 +534,6 @@ Skill 只负责告诉外部 AI：
 - 默认 readonly。
 - 写入必须 draft-first。
 - 不要请求任意 shell、任意 SQL、任意本地路径。
-- 失败时先看 `doctor` 和 `audit.list`。
 
 ### 3.6 桌面客户端
 
@@ -617,7 +606,6 @@ pnpm --filter app tauri info
 - tool registry。
 - input schema 校验。
 - skill install / uninstall。
-- audit log 摘要。
 - reader context snapshot 写入、读取、清理。
 - draft history。
 - 原始 EPUB hash 不变。
@@ -656,7 +644,7 @@ pnpm --filter @readany/cli build
 pnpm --filter @readany/cli smoke:agent
 ```
 
-这条自动 smoke 使用 built CLI 的 stdio MCP 模拟外部 agent，覆盖 readonly 发现/搜索、PDF fallback 章节读取、readonly 写入拒绝、editor draft 批量章节修改和 toc rebuild、publisher validate/export、audit 摘要、原 EPUB hash 不变，以及导出 EPUB 重新入库后的 inspect / chapter read 检查。它只能作为可复现前置证据，不能替代 Codex / Claude Desktop / Cursor 的真实客户端手工验收。
+这条自动 smoke 使用 built CLI 的 stdio MCP 模拟外部 agent，覆盖 readonly 发现/搜索、PDF fallback 章节读取、readonly 写入拒绝、editor draft 批量章节修改和 toc rebuild、publisher validate/export、原 EPUB hash 不变，以及导出 EPUB 重新入库后的 inspect / chapter read 检查。它只能作为可复现前置证据，不能替代 Codex / Claude Desktop / Cursor 的真实客户端手工验收。
 
 真实样本验收辅助：
 
@@ -670,7 +658,7 @@ pnpm --filter @readany/cli acceptance:real -- \
   --evidence docs/readany-cli/acceptance/evidence/real-sample.json
 ```
 
-该脚本使用 built CLI 对真实书库样本执行 doctor、books/chapter/RAG/knowledge/context/audit 检查，默认只读，stdout 只输出脱敏摘要，完整 evidence 会记录 `doctor --json` 诊断、CLI distribution、样本书文件路径、字节数、SHA-256 和可回跳 citation targets；`manualAcceptanceRequired` 会列出还需要人工补齐的证据和建议命令。显式加 `--draft-export --export-dir <dir>` 时才创建 EPUB draft、validate、export、inspect 导出 EPUB，并默认 discard draft 清理验收工作区。它只负责生成可复现 JSON 证据，不替代样本来源说明、真实外部 agent 和打包矩阵验收。
+该脚本使用 built CLI 对真实书库样本执行 doctor、books/chapter/RAG/knowledge/context 检查，默认只读，stdout 只输出脱敏摘要，完整 evidence 会记录 `doctor --json` 诊断、CLI distribution、样本书文件路径、字节数、SHA-256 和可回跳 citation targets；`manualAcceptanceRequired` 会列出还需要人工补齐的证据和建议命令。显式加 `--draft-export --export-dir <dir>` 时才创建 EPUB draft、validate、export、inspect 导出 EPUB，并默认 discard draft 清理验收工作区。它只负责生成可复现 JSON 证据，不替代样本来源说明、真实外部 agent 和打包矩阵验收。
 
 Release preflight：
 
@@ -729,7 +717,6 @@ full preflight 在上述基础上额外执行 `pnpm --filter app build`，适合
   -> books.list 成功
   -> context.get 可返回 snapshot 或 empty
   -> readonly 写工具被拒绝
-  -> audit.list 可看到调用摘要
 ```
 
 ### 4.5 测试硬要求
@@ -741,7 +728,6 @@ full preflight 在上述基础上额外执行 `pnpm --filter app build`，适合
 - MCP `tools/list` 不出现规划中但未实现的工具。
 - readonly profile 调写入工具必须失败。
 - 写入工具必须证明原始 EPUB hash 不变。
-- audit log 不记录完整正文、密钥、同步凭证或完整工具参数。
 
 ## 5. 怎么验收
 
@@ -796,7 +782,6 @@ MCP tool 额外要求：
 [ ] 输出路径受控或用户授权
 [ ] publisher profile 或确认机制生效
 [ ] 导出产物可重新导入或被标准工具打开
-[ ] audit log 记录导出
 ```
 
 ### 5.2 Milestone 停止线
@@ -859,7 +844,6 @@ M4 停止线：
 - export 默认输出新文件。
 - 导出 EPUB 可重新导入 ReadAny，或至少能被标准 EPUB 工具打开。
 - publisher profile 或等价授权生效。
-- 导出有 audit 记录。
 
 M5 停止线：
 
@@ -915,7 +899,6 @@ M5 停止线：
 - export 默认覆盖原文件。
 - Skill 安装后让用户误以为已经授权写入。
 - 设置页承担正文编辑入口。
-- audit log 记录完整正文、密钥或同步凭证。
 
 ## 8. 验收记录
 

@@ -15,7 +15,6 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { buildStoreOnlyZip, type ZipEntry } from "@readany/core/utils/store-only-zip";
 import { describe, expect, it } from "vitest";
-import { getAuditLogFilePath } from "./audit-log.js";
 import { parseCommand, runCommand } from "./commands.js";
 import { ensureCoreInitialized, resetCoreForTests } from "./data.js";
 import { createSkillContent } from "./skill.js";
@@ -825,13 +824,13 @@ describe("commands", () => {
           builtBundle: false,
           desktopResourceBundle: false,
         },
-        tools: { count: 28 },
+        tools: { count: 27 },
         mcp: {
           defaultProfile: "readonly",
           serveArgs: ["mcp", "serve", "--profile", "readonly"],
           supportedProfiles: ["readonly", "assistant", "editor", "publisher"],
           supportedClients: ["generic", "claude", "cursor", "codex", "opencode"],
-          toolCount: 28,
+          toolCount: 27,
         },
         agentAccess: {
           cliShim: {
@@ -2118,7 +2117,6 @@ describe("commands", () => {
 
   it("exports an EPUB draft with publisher profile after validation", async () => {
     const workspace = await createWorkspace();
-    const auditEnv = { ...workspace.env, READANY_AUDIT_ENABLED: "1" };
     await seedLibrary(workspace.dataRoot);
     const sourcePath = join(workspace.dataRoot, "books", "agent.epub");
     const sourceBefore = await readFile(sourcePath);
@@ -2134,7 +2132,7 @@ describe("commands", () => {
 
     const editor = await runCommand(
       ["epub", "export", draftId, "--output", outputPath, "--profile", "editor"],
-      auditEnv,
+      workspace.env,
     );
     expect(editor).toMatchObject({
       ok: false,
@@ -2143,7 +2141,7 @@ describe("commands", () => {
 
     const result = await runCommand(
       ["epub", "export", draftId, "--output", outputPath, "--profile", "publisher"],
-      auditEnv,
+      workspace.env,
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -2165,40 +2163,13 @@ describe("commands", () => {
 
     const overwriteDenied = await runCommand(
       ["epub", "export", draftId, "--output", outputPath, "--profile", "publisher"],
-      auditEnv,
+      workspace.env,
     );
     expect(overwriteDenied).toMatchObject({
       ok: false,
       error: { code: "command_failed" },
     });
 
-    const audit = await runCommand(
-      ["audit", "list", "--limit", "10", "--action-prefix", "epub export"],
-      auditEnv,
-    );
-    expect(audit.ok).toBe(true);
-    if (!audit.ok) return;
-    expect(audit.data).toMatchObject({
-      audit: {
-        entries: expect.arrayContaining([
-          expect.objectContaining({
-            source: "cli",
-            action: "epub export",
-            profile: "publisher",
-            ok: true,
-          }),
-          expect.objectContaining({
-            source: "cli",
-            action: "epub export",
-            profile: "publisher",
-            ok: false,
-            code: "command_failed",
-          }),
-        ]),
-      },
-    });
-    expect(JSON.stringify(audit.data)).not.toContain(outputPath);
-    expect(JSON.stringify(audit.data)).not.toContain(draftId);
   });
 
   it("refuses to export an invalid EPUB draft without writing output", async () => {
@@ -2878,128 +2849,4 @@ describe("commands", () => {
     });
   });
 
-  it("lists audit entries without leaking command arguments", async () => {
-    const workspace = await createWorkspace();
-    const auditEnv = { ...workspace.env, READANY_AUDIT_ENABLED: "1" };
-    const sensitiveValues = [
-      "secret-query",
-      "sk-readany-cli-secret",
-      "webdav://reader:sync-token@example.test/books",
-    ];
-    await runCommand(["books", "search", sensitiveValues.join(" ")], auditEnv);
-    await runCommand(["epub", "export", "draft-secret", "--output", "secret.epub"], auditEnv);
-
-    const result = await runCommand(["audit", "list", "--json", "--limit", "5"], auditEnv);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.data).toMatchObject({
-      audit: {
-        limit: 5,
-        entries: [
-          {
-            source: "cli",
-            action: "epub export",
-            ok: false,
-            code: "permission_denied",
-          },
-          {
-            source: "cli",
-            action: "books search",
-            ok: true,
-          },
-        ],
-      },
-    });
-    const auditJson = JSON.stringify(result.data);
-    for (const value of [...sensitiveValues, "draft-secret", "secret.epub"]) {
-      expect(auditJson).not.toContain(value);
-    }
-
-    const auditPath = getAuditLogFilePath(
-      join(workspace.dataRoot, "logs", "cli"),
-      new Date().toISOString(),
-    );
-    const auditContent = await readFile(auditPath, "utf8");
-    for (const value of [...sensitiveValues, "draft-secret", "secret.epub"]) {
-      expect(auditContent).not.toContain(value);
-    }
-
-    const failedOnly = await runCommand(["audit", "list", "--failed"], auditEnv);
-    expect(failedOnly.ok).toBe(true);
-    if (failedOnly.ok) {
-      expect(failedOnly.data).toMatchObject({
-        audit: {
-          entries: [
-            {
-              action: "epub export",
-              ok: false,
-            },
-          ],
-        },
-      });
-    }
-  });
-
-  it("does not write audit logs by default", async () => {
-    const workspace = await createWorkspace();
-    await runCommand(["books", "search", "quiet-audit"], workspace.env);
-
-    const result = await runCommand(["audit", "list", "--json", "--limit", "5"], workspace.env);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.data).toMatchObject({
-      audit: {
-        limit: 5,
-        entries: [],
-      },
-    });
-  });
-
-  it("lists recent audit entries from oversized log files", async () => {
-    const workspace = await createWorkspace();
-    const auditLogDir = join(workspace.dataRoot, "logs", "cli");
-    await mkdir(auditLogDir, { recursive: true });
-    const auditPath = getAuditLogFilePath(auditLogDir, "2026-07-06T00:00:00.000Z");
-    await writeFile(auditPath, "", "utf8");
-    await truncate(auditPath, 3 * 1024 * 1024 * 1024);
-    await appendFile(
-      auditPath,
-      `\n${JSON.stringify({
-        timestamp: "2026-07-06T12:00:00.000Z",
-        source: "cli",
-        action: "books search",
-        ok: true,
-      })}\n`,
-      "utf8",
-    );
-
-    const result = await runCommand(
-      ["audit", "list", "--json", "--date", "2026-07-06", "--limit", "1"],
-      workspace.env,
-    );
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.data).toMatchObject({
-      audit: {
-        entries: [
-          {
-            timestamp: "2026-07-06T12:00:00.000Z",
-            source: "cli",
-            action: "books search",
-            ok: true,
-          },
-        ],
-      },
-    });
-  });
-
-  it("does not fail when audit logs are unavailable", async () => {
-    const workspace = await createWorkspace();
-    await mkdir(join(workspace.dataRoot, "logs"), { recursive: true });
-    const blockedLogDir = join(workspace.dataRoot, "logs", "cli");
-    await writeFile(blockedLogDir, "not-a-directory", "utf8");
-
-    const result = await runCommand(["tools", "list"], workspace.env);
-    expect(result.ok).toBe(true);
-  });
 });

@@ -88,20 +88,8 @@ function summarizeTools(tools) {
     : { count: 0, names: [], riskValues: [] };
 }
 
-function summarizeAudit(audit) {
-  const entries = Array.isArray(audit?.entries) ? audit.entries : [];
-  return {
-    checked: Boolean(audit),
-    entryCount: entries.length,
-    failedCount: entries.filter((entry) => entry.ok === false).length,
-    sources: Array.from(new Set(entries.map((entry) => entry.source).filter(Boolean))).sort(),
-    actions: entries.map((entry) => entry.action).filter(Boolean).slice(0, 20),
-  };
-}
-
 function createChecks(snapshot) {
   const tools = summarizeTools(snapshot.tools);
-  const audit = summarizeAudit(snapshot.audit);
   return [
     { name: "cli.available", ok: snapshot.cli?.available === true },
     { name: "doctor.present", ok: Boolean(snapshot.doctor) },
@@ -109,7 +97,6 @@ function createChecks(snapshot) {
     { name: "skill.status", ok: Boolean(snapshot.skill) },
     { name: "mcp.config", ok: Boolean(snapshot.mcp?.config) && /readany/i.test(JSON.stringify(snapshot.mcp.config)) },
     { name: "tools.list", ok: tools.count > 0 },
-    { name: "audit.list", ok: audit.checked },
     { name: "last.action", ok: Boolean(snapshot.lastAction?.action) },
   ];
 }
@@ -126,7 +113,6 @@ function validateSnapshot(snapshot) {
   assertOption(snapshot.mcp && typeof snapshot.mcp.profile === "string", "Desktop snapshot MCP profile is required.");
   assertOption(snapshot.mcp?.config, "Desktop snapshot MCP config is required.");
   assertOption(Array.isArray(snapshot.tools) && snapshot.tools.length > 0, "Desktop snapshot tools list is required.");
-  assertOption(snapshot.audit && Array.isArray(snapshot.audit.entries), "Desktop snapshot audit list is required.");
 }
 
 async function main() {
@@ -157,7 +143,6 @@ async function main() {
   validateSnapshot(snapshot);
 
   const tools = summarizeTools(snapshot.tools);
-  const audit = summarizeAudit(snapshot.audit);
   const checks = createChecks(snapshot);
   const evidence = {
     ok: checks.every((check) => check.ok),
@@ -183,7 +168,6 @@ async function main() {
         hasConfig: Boolean(snapshot.mcp.config),
       },
       tools,
-      audit,
       lastAction: snapshot.lastAction,
     },
     checks,
@@ -194,7 +178,6 @@ async function main() {
       mcpProfile: snapshot.mcp?.profile,
       mcpClient: snapshot.mcp?.client,
       toolCount: tools.count,
-      auditEntryCount: audit.entryCount,
       commandSource: snapshot.cli?.source ?? snapshot.lastAction?.command_source,
       builtBundle: snapshot.doctor?.distribution?.builtBundle === true,
       desktopResourceBundle: snapshot.doctor?.distribution?.desktopResourceBundle === true,

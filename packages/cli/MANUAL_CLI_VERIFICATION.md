@@ -63,15 +63,11 @@ Goal: manually exercise the full `readany` CLI surface against real and isolated
 - `readany skill uninstall --json`
   - actual: removes managed skill file
 
-### Tool registry and audit
+### Tool registry
 
 - `readany tools list --json`
   - actual: returns 28 tools
-- `readany audit list --json --limit 3 --source cli`
   - actual: returns recent CLI actions
-- `readany audit list --json --limit 3 --source mcp --action-prefix tools/call:books.search`
-  - actual: returns filtered MCP audit entries
-- `readany audit list --json --limit 3 --failed`
   - actual: returns failed entries only
 
 ### Book/library read commands against real data

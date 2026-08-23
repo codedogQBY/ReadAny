@@ -32,11 +32,6 @@ struct CliCommand {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadAnyCliRunOptions {
-    audit_source: Option<String>,
-    audit_failed_only: Option<bool>,
-    audit_action_prefix: Option<String>,
-    audit_date: Option<String>,
-    audit_limit: Option<u16>,
     mcp_profile: Option<String>,
     mcp_client: Option<String>,
     book_id: Option<String>,
@@ -82,7 +77,6 @@ fn args_for_action(action: &str, options: &ReadAnyCliRunOptions) -> Result<Vec<S
         "doctor" => doctor_args(options),
         "mcp_config" => mcp_config_args(options),
         "tools_list" => Ok(strings(&["tools", "list", "--json"])),
-        "audit_list" => audit_list_args(options),
         "skill_status" => Ok(strings(&["skill", "status", "--json"])),
         "skill_install" => Ok(strings(&["skill", "install", "--json"])),
         "skill_update" => Ok(strings(&["skill", "update", "--json"])),
@@ -175,40 +169,6 @@ fn write_temp_file(prefix: &str, extension: &str, content: &[u8]) -> Result<Path
 
 fn strings(args: &[&str]) -> Vec<String> {
     args.iter().map(|arg| (*arg).to_string()).collect()
-}
-
-fn audit_list_args(options: &ReadAnyCliRunOptions) -> Result<Vec<String>, String> {
-    let mut args = strings(&["audit", "list", "--json", "--limit"]);
-    args.push(options.audit_limit.unwrap_or(8).clamp(1, 50).to_string());
-
-    if let Some(source) = options.audit_source.as_deref() {
-        match source {
-            "cli" | "mcp" => {
-                args.push("--source".to_string());
-                args.push(source.to_string());
-            }
-            _ => return Err("Unsupported audit source filter.".to_string()),
-        }
-    }
-
-    if options.audit_failed_only.unwrap_or(false) {
-        args.push("--failed".to_string());
-    }
-
-    if let Some(prefix) = normalized_audit_action_prefix(options.audit_action_prefix.as_deref()) {
-        args.push("--action-prefix".to_string());
-        args.push(prefix);
-    }
-
-    if let Some(date) = options.audit_date.as_deref() {
-        if !is_valid_audit_date(date) {
-            return Err("Audit date must use YYYY-MM-DD.".to_string());
-        }
-        args.push("--date".to_string());
-        args.push(date.to_string());
-    }
-
-    Ok(args)
 }
 
 fn epub_draft_create_args(options: &ReadAnyCliRunOptions) -> Result<Vec<String>, String> {
@@ -473,25 +433,6 @@ fn temp_patch_path(prefix: &str, extension: &str) -> PathBuf {
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
     env::temp_dir().join(format!("readany-{}-{}.{}", prefix, id, extension))
-}
-
-fn normalized_audit_action_prefix(value: Option<&str>) -> Option<String> {
-    let value = value?.trim();
-    if value.is_empty() {
-        return None;
-    }
-    Some(value.chars().take(80).collect())
-}
-
-fn is_valid_audit_date(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    bytes.len() == 10
-        && bytes[4] == b'-'
-        && bytes[7] == b'-'
-        && bytes
-            .iter()
-            .enumerate()
-            .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit())
 }
 
 fn is_executable_file(path: &Path) -> bool {
@@ -946,16 +887,6 @@ mod tests {
         )
         .is_err());
         assert_eq!(
-            args_for_action("audit_list", &ReadAnyCliRunOptions::default()),
-            Ok(vec![
-                "audit".to_string(),
-                "list".to_string(),
-                "--json".to_string(),
-                "--limit".to_string(),
-                "8".to_string()
-            ])
-        );
-        assert_eq!(
             args_for_action("skill_install", &ReadAnyCliRunOptions::default()),
             Ok(vec![
                 "skill".to_string(),
@@ -1329,48 +1260,6 @@ mod tests {
     }
 
     #[test]
-    fn validates_audit_list_options() {
-        let options = ReadAnyCliRunOptions {
-            audit_source: Some("mcp".to_string()),
-            audit_failed_only: Some(true),
-            audit_action_prefix: Some("tools/call".to_string()),
-            audit_date: Some("2026-06-16".to_string()),
-            audit_limit: Some(500),
-            ..ReadAnyCliRunOptions::default()
-        };
-
-        assert_eq!(
-            args_for_action("audit_list", &options),
-            Ok(vec![
-                "audit".to_string(),
-                "list".to_string(),
-                "--json".to_string(),
-                "--limit".to_string(),
-                "50".to_string(),
-                "--source".to_string(),
-                "mcp".to_string(),
-                "--failed".to_string(),
-                "--action-prefix".to_string(),
-                "tools/call".to_string(),
-                "--date".to_string(),
-                "2026-06-16".to_string()
-            ])
-        );
-
-        let invalid_source = ReadAnyCliRunOptions {
-            audit_source: Some("shell".to_string()),
-            ..ReadAnyCliRunOptions::default()
-        };
-        assert!(args_for_action("audit_list", &invalid_source).is_err());
-
-        let invalid_date = ReadAnyCliRunOptions {
-            audit_date: Some("2026-6-16".to_string()),
-            ..ReadAnyCliRunOptions::default()
-        };
-        assert!(args_for_action("audit_list", &invalid_date).is_err());
-    }
-
-    #[test]
     fn resolves_install_to_packaged_or_workspace_cli_before_path() {
         let root = temp_test_dir("bundle");
         let cli = root.join("readany-cli/bin/readany.js");
@@ -1427,7 +1316,6 @@ mod tests {
         fs::write(&cli, "#!/usr/bin/env node\n").expect("write cli");
 
         for action in [
-            "audit_list",
             "version",
             "epub_draft_create",
             "epub_chapter_read",

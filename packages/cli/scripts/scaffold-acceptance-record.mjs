@@ -259,7 +259,6 @@ function agentAnchors(agentEvidences) {
     `usesMcp: ${flag(agentEvidence.client?.usesMcp)}`,
     `tools: ${value(agentEvidence.mcp?.toolCount, agentEvidence.client?.usesMcp ? "TBD" : "not used")}`,
     `readonly denial: ${value(agentEvidence.flows?.readonlyDenial?.summary)}`,
-    `audit: ${value(agentEvidence.flows?.audit?.summary)}`,
   ].join(" / "));
 }
 
@@ -271,7 +270,6 @@ function desktopSettingsText(desktopEvidence) {
     `Skill: ${summary.skillInstalled === true ? "installed" : "not installed"}`,
     `MCP: ${value(summary.mcpClient)}/${value(summary.mcpProfile)}`,
     `tools: ${value(summary.toolCount)}`,
-    `audit: ${value(summary.auditEntryCount)}`,
     `source: ${value(summary.commandSource)}`,
   ].join(" / ");
 }
@@ -413,7 +411,6 @@ ${renderCommandBlock(options, workspaceFile, workspace)}
 - export 不覆盖已有文件：TBD
 - Tauri allowlist：TBD
 - MCP tools/list 与真实实现一致：TBD
-- audit 不含完整正文 / 密钥 / 同步凭证：TBD
 - 桌面设置页：${desktopSettingsText(desktopEvidence)}
 
 ## 真实样本证据
@@ -448,7 +445,6 @@ ${agentRows(agentEvidences)}
 - readonly 写入拒绝截图或日志摘要。
 - editor draft 修改摘要。
 - publisher validate/export 摘要。
-- audit 摘要。
 
 ## 打包 / 安装矩阵
 

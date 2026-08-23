@@ -8,7 +8,6 @@ import { failure, success, type CommandResult } from "./result.js";
 import { runDoctor } from "./doctor.js";
 import { installCli, uninstallCli, type InstallMode, type InstallOptions } from "./install.js";
 import { getSkillStatus, installSkill, uninstallSkill, updateSkill } from "./skill.js";
-import { appendCliAuditEntry, isCliAuditSource, listCliAuditEntries } from "./audit-log.js";
 import { isRagSearchMode } from "./rag-config.js";
 import { listTools } from "./tool-registry.js";
 
@@ -329,7 +328,6 @@ Usage:
   readany skill uninstall
   readany skill status [--json]
   readany tools list [--json]
-  readany audit list [--json] [--limit 50] [--source cli|mcp] [--failed] [--action-prefix ...] [--date YYYY-MM-DD]
   readany books list [--json] [--limit 50]
   readany books search <query> [--json]
   readany book get <book-id> [--json]
@@ -360,32 +358,6 @@ Usage:
   readany mcp serve --profile readonly
   readany mcp config [--json] [--profile readonly|editor|publisher] [--client generic|claude|cursor|codex|opencode]
 `;
-}
-
-function shouldAuditCommand(command: ParsedCommand): boolean {
-  return !["--version", "version", "help", "--help", "-h"].includes(command.name);
-}
-
-function getAuditAction(command: ParsedCommand): string {
-  if (command.name === "epub") {
-    const subcommand = command.args[0];
-    const nested = command.args[1];
-    return ["epub", subcommand, isEpubNestedCommand(subcommand) ? nested : undefined]
-      .filter(Boolean)
-      .join(" ");
-  }
-
-  return [command.name, command.args[0]].filter(Boolean).join(" ");
-}
-
-function isEpubNestedCommand(command: string | undefined): boolean {
-  return (
-    command === "draft" ||
-    command === "chapter" ||
-    command === "chapters" ||
-    command === "metadata" ||
-    command === "toc"
-  );
 }
 
 function getInstallOptions(
@@ -753,28 +725,6 @@ async function executeCommand(argv: string[], env = process.env): Promise<Comman
       }
 
       return failure("unknown_tools_command", `Unknown tools command: ${subcommand}`);
-    }
-
-    if (command.name === "audit") {
-      const subcommand = command.args[0] ?? "list";
-      if (subcommand === "list") {
-        const sourceOption = getStringOption(command, "source");
-        if (sourceOption && !isCliAuditSource(sourceOption)) {
-          return failure("invalid_audit_source", "audit list --source must be cli or mcp");
-        }
-        const source = sourceOption && isCliAuditSource(sourceOption) ? sourceOption : undefined;
-        return success({
-          audit: await listCliAuditEntries(env, {
-            limit: getLimit(command, 50, 200),
-            source,
-            ok: command.options.failed === true ? false : undefined,
-            actionPrefix: getStringOption(command, "action-prefix"),
-            date: getStringOption(command, "date"),
-          }),
-        });
-      }
-
-      return failure("unknown_audit_command", `Unknown audit command: ${subcommand}`);
     }
 
     if (command.name === "mcp") {
@@ -1335,19 +1285,5 @@ async function executeCommand(argv: string[], env = process.env): Promise<Comman
 }
 
 export async function runCommand(argv: string[], env = process.env): Promise<CommandResult> {
-  const command = parseCommand(argv);
-  const result = await executeCommand(argv, env);
-
-  if (shouldAuditCommand(command)) {
-    await appendCliAuditEntry(env, {
-      timestamp: new Date().toISOString(),
-      source: "cli",
-      action: getAuditAction(command),
-      profile: command.profile && isAccessProfile(command.profile) ? command.profile : undefined,
-      ok: result.ok,
-      code: result.ok ? undefined : result.error.code,
-    });
-  }
-
-  return result;
+  return executeCommand(argv, env);
 }

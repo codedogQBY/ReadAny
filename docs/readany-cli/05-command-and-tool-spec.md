@@ -196,7 +196,6 @@ knowledge.export
 knowledge.search
 highlights.search
 rag.search
-audit.list
 epub.inspect
 epub.draft.create
 epub.draft.discard
@@ -229,7 +228,6 @@ knowledge.export
 knowledge.search
 highlights.search
 rag.search
-audit.list
 epub.inspect
 epub.draft.create
 epub.draft.discard
@@ -328,7 +326,6 @@ notes.search
 notes.export
 highlights.search
 rag.search
-audit.list
 epub.inspect
 epub.draft.create
 epub.draft.discard

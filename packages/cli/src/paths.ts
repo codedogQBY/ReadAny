@@ -11,7 +11,6 @@ export type CliPaths = {
   skillDir: string;
   skillFile: string;
   readanyHome: string;
-  auditLogDir: string;
 };
 
 type ExecutableResolutionRuntime = {
@@ -114,6 +113,5 @@ export function getCliPaths(env: NodeJS.ProcessEnv = process.env): CliPaths {
     skillDir,
     skillFile: join(skillDir, "SKILL.md"),
     readanyHome,
-    auditLogDir: join(readanyHome, "logs", "cli"),
   };
 }

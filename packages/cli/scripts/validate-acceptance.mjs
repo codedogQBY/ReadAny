@@ -230,7 +230,6 @@ function validateExternalAgentEvidence(evidence) {
   assertCondition(typeof evidence?.flows?.read?.summary === "string" && evidence.flows.read.summary.length > 0, errors, "External agent read flow summary is required.");
   assertCondition(typeof evidence?.flows?.readonlyDenial?.summary === "string" && evidence.flows.readonlyDenial.summary.length > 0, errors, "External agent readonly denial summary is required.");
   assertCondition(typeof evidence?.flows?.draftExport?.summary === "string" && evidence.flows.draftExport.summary.length > 0, errors, "External agent draft/export flow summary is required.");
-  assertCondition(typeof evidence?.flows?.audit?.summary === "string" && evidence.flows.audit.summary.length > 0, errors, "External agent audit summary is required.");
   if (evidence?.client?.usesMcp) {
     assertCondition(typeof evidence?.mcp?.configRedacted === "string" && evidence.mcp.configRedacted.length > 0, errors, "External agent MCP config evidence is required.");
     assertCondition(typeof evidence?.mcp?.toolsListSummary === "string" && evidence.mcp.toolsListSummary.length > 0, errors, "External agent tools/list evidence is required.");
@@ -260,7 +259,6 @@ function validateDesktopSettingsEvidence(evidence) {
   assertCondition(typeof evidence?.snapshot?.doctor?.distribution?.desktopResourceBundle === "boolean", errors, "Desktop settings doctor distribution.desktopResourceBundle is required.");
   assertCondition(typeof evidence?.snapshot?.skill?.installed === "boolean", errors, "Desktop settings skill status is required.");
   assertCondition(evidence?.snapshot?.mcp?.hasConfig === true, errors, "Desktop settings MCP config evidence is required.");
-  assertCondition(evidence?.snapshot?.audit?.checked === true, errors, "Desktop settings audit evidence is required.");
   assertCondition(Array.isArray(evidence?.checks), errors, "Desktop settings checks must be an array.");
   assertCondition((evidence?.checks ?? []).every((check) => check.ok === true), errors, "Desktop settings checks must all pass.");
   if (!evidence?.screenshot) {

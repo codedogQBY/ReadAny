@@ -20,7 +20,6 @@ function parseArgs(argv) {
     readFlow: undefined,
     readonlyDenial: undefined,
     draftExportFlow: undefined,
-    auditSummary: undefined,
     evidencePath: undefined,
     workspacePath: undefined,
   };
@@ -65,9 +64,6 @@ function parseArgs(argv) {
     } else if (arg === "--draft-export-flow") {
       options.draftExportFlow = next;
       index += 1;
-    } else if (arg === "--audit-summary") {
-      options.auditSummary = next;
-      index += 1;
     } else if (arg === "--evidence") {
       options.evidencePath = next;
       index += 1;
@@ -94,7 +90,6 @@ Required flow evidence:
   --read-flow <summary>          Real client read/search/RAG flow summary.
   --readonly-denial <summary>    Real readonly write-denial summary.
   --draft-export-flow <summary>  Real editor draft and publisher export summary.
-  --audit-summary <summary>      Real audit summary, preferably source=mcp.
 
 MCP evidence:
   --uses-mcp                     Mark this client evidence as MCP-backed.
@@ -145,7 +140,6 @@ function validateOptions(options, outputPath) {
   assertOption(options.readFlow, "Pass --read-flow <summary>.");
   assertOption(options.readonlyDenial, "Pass --readonly-denial <summary>.");
   assertOption(options.draftExportFlow, "Pass --draft-export-flow <summary>.");
-  assertOption(options.auditSummary, "Pass --audit-summary <summary>.");
   if (options.usesMcp) {
     assertOption(options.mcpConfig || options.mcpConfigText, "Pass --mcp-config <file> or --mcp-config-text <text> with --uses-mcp.");
     assertOption(options.toolsList || options.toolsListSummary, "Pass --tools-list <file> or --tools-list-summary <text> with --uses-mcp.");
@@ -207,7 +201,6 @@ async function main() {
       read: createFlow(options.readFlow),
       readonlyDenial: createFlow(options.readonlyDenial),
       draftExport: createFlow(options.draftExportFlow),
-      audit: createFlow(options.auditSummary),
     },
     summary: {
       completed: true,

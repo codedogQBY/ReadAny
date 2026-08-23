@@ -416,43 +416,6 @@ export const READANY_TOOLS: readonly ReadAnyTool[] = [
     },
   },
   {
-    name: "audit.list",
-    description: "List recent ReadAny CLI/MCP audit entries without tool arguments or content payloads.",
-    scopes: ["stats.read"],
-    risk: "low",
-    inputSchema: {
-      type: "object",
-      properties: {
-        limit: {
-          type: "number",
-          minimum: 1,
-          maximum: 200,
-          description: "Maximum number of audit entries to return.",
-        },
-        source: {
-          type: "string",
-          enum: ["cli", "mcp"],
-          description: "Optional audit source filter.",
-        },
-        ok: {
-          type: "boolean",
-          description: "Optional success/failure filter.",
-        },
-        actionPrefix: {
-          type: "string",
-          minLength: 1,
-          description: "Optional action prefix filter, such as tools/call or epub export.",
-        },
-        date: {
-          type: "string",
-          minLength: 10,
-          description: "Optional YYYY-MM-DD audit log date.",
-        },
-      },
-      additionalProperties: false,
-    },
-  },
-  {
     name: "epub.inspect",
     description: "Inspect EPUB package metadata, manifest, spine, and table of contents.",
     scopes: ["epub.inspect"],

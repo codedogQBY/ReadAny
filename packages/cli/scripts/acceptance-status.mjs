@@ -306,11 +306,9 @@ function recommendedCommands(summary, recordPath, evidenceEntries, { workspaceFi
         "<summary>",
         "--draft-export-flow",
         "<summary>",
-        "--audit-summary",
-        "<summary>",
       ]));
     } else {
-      commands.push("pnpm --filter @readany/cli acceptance:agent -- --client Codex --client-version <version> --profile readonly/editor/publisher --uses-mcp --mcp-config <redacted-config> --tools-list-summary \"<summary>\" --tool-count <n> --read-flow \"<summary>\" --readonly-denial \"<summary>\" --draft-export-flow \"<summary>\" --audit-summary \"<summary>\" --evidence docs/readany-cli/acceptance/evidence/agent-codex.json");
+      commands.push("pnpm --filter @readany/cli acceptance:agent -- --client Codex --client-version <version> --profile readonly/editor/publisher --uses-mcp --mcp-config <redacted-config> --tools-list-summary \"<summary>\" --tool-count <n> --read-flow \"<summary>\" --readonly-denial \"<summary>\" --draft-export-flow \"<summary>\" --evidence docs/readany-cli/acceptance/evidence/agent-codex.json");
     }
   }
   if (!summary.agentClients.some((client) => client === "claude" || client === "cursor")) {
@@ -335,11 +333,9 @@ function recommendedCommands(summary, recordPath, evidenceEntries, { workspaceFi
         "<summary>",
         "--draft-export-flow",
         "<summary>",
-        "--audit-summary",
-        "<summary>",
       ]));
     } else {
-      commands.push("pnpm --filter @readany/cli acceptance:agent -- --client <Claude Desktop|Cursor> --client-version <version> --profile readonly/editor/publisher --read-flow \"<summary>\" --readonly-denial \"<summary>\" --draft-export-flow \"<summary>\" --audit-summary \"<summary>\" --evidence docs/readany-cli/acceptance/evidence/agent-second-client.json");
+      commands.push("pnpm --filter @readany/cli acceptance:agent -- --client <Claude Desktop|Cursor> --client-version <version> --profile readonly/editor/publisher --read-flow \"<summary>\" --readonly-denial \"<summary>\" --draft-export-flow \"<summary>\" --evidence docs/readany-cli/acceptance/evidence/agent-second-client.json");
     }
   }
   if (summary.desktopSettingsCount < 1) {

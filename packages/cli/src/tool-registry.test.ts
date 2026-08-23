@@ -39,7 +39,6 @@ describe("tool registry", () => {
       "knowledge.search",
       "highlights.search",
       "rag.search",
-      "audit.list",
       "epub.inspect",
       "epub.draft.create",
       "epub.draft.discard",

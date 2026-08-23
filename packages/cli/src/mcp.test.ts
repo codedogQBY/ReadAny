@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildStoreOnlyZip, type ZipEntry } from "@readany/core/utils/store-only-zip";
 import { describe, expect, it } from "vitest";
-import { getAuditLogFilePath } from "./audit-log.js";
 import { ensureCoreInitialized, resetCoreForTests } from "./data.js";
 import { handleMcpRequest } from "./mcp.js";
 import { getMinimumProfileForScopes } from "./profiles.js";
@@ -184,26 +183,6 @@ describe("mcp", () => {
     });
   });
 
-  it("accepts initialized notifications without reporting an MCP error", async () => {
-    const env = await createEnv();
-    env.READANY_AUDIT_ENABLED = "1";
-    const response = await handleMcpRequest(
-      { method: "notifications/initialized" },
-      "readonly",
-      env,
-    );
-    expect(response).toEqual({});
-
-    const auditPath = getAuditLogFilePath(
-      join(env.READANY_HOME!, "logs", "cli"),
-      new Date().toISOString(),
-    );
-    const auditContent = await readFile(auditPath, "utf8");
-    expect(auditContent).toContain('"action":"notifications/initialized"');
-    expect(auditContent).toContain('"ok":true');
-    expect(auditContent).not.toContain('"code":"jsonrpc_error"');
-  });
-
   it("lists implemented readonly tools only", async () => {
     const response = await handleMcpRequest({ method: "tools/list" }, "readonly", await createEnv());
     expect(response).toMatchObject({
@@ -222,7 +201,6 @@ describe("mcp", () => {
         { name: "knowledge.search" },
         { name: "highlights.search" },
         { name: "rag.search" },
-        { name: "audit.list" },
         { name: "epub.inspect" },
         { name: "epub.draft.create" },
         { name: "epub.draft.discard" },
@@ -754,59 +732,6 @@ describe("mcp", () => {
       ok: false,
       error: { code: "invalid_tool_arguments" },
     });
-  });
-
-  it("lists recent audit entries without leaking tool arguments", async () => {
-    const env = await createEnv();
-    env.READANY_AUDIT_ENABLED = "1";
-    const sensitiveValues = [
-      "secret-mcp-query",
-      "sk-readany-mcp-secret",
-      "s3://reader:sync-token@example.test/library",
-    ];
-    await handleMcpRequest(
-      {
-        method: "tools/call",
-        params: {
-          name: "books.search",
-          arguments: { query: sensitiveValues.join(" ") },
-        },
-      },
-      "readonly",
-      env,
-    );
-
-    const response = await handleMcpRequest(
-      {
-        method: "tools/call",
-        params: {
-          name: "audit.list",
-          arguments: { source: "mcp", limit: 5 },
-        },
-      },
-      "readonly",
-      env,
-    );
-    expect(response).toMatchObject({ isError: false });
-    const text = (response as { content: Array<{ text: string }> }).content[0].text;
-    expect(JSON.parse(text)).toMatchObject({
-      ok: true,
-      data: {
-        audit: {
-          limit: 5,
-          entries: [
-            {
-              source: "mcp",
-              action: "tools/call:books.search",
-              ok: true,
-            },
-          ],
-        },
-      },
-    });
-    for (const value of sensitiveValues) {
-      expect(text).not.toContain(value);
-    }
   });
 
   it("gates epub.inspect by editor profile", async () => {
@@ -1582,7 +1507,6 @@ describe("mcp", () => {
 
   it("gates epub.export by publisher profile and writes a new EPUB", async () => {
     const env = await createEnv();
-    env.READANY_AUDIT_ENABLED = "1";
     await seedBook(env);
     const sourcePath = join(env.READANY_HOME!, "books", "mcp.epub");
     const sourceBytes = await readFile(sourcePath);
@@ -1657,54 +1581,6 @@ describe("mcp", () => {
       error: { code: "command_failed" },
     });
 
-    const auditResponse = await handleMcpRequest(
-      {
-        method: "tools/call",
-        params: {
-          name: "audit.list",
-          arguments: {
-            source: "mcp",
-            actionPrefix: "tools/call:epub.export",
-            limit: 10,
-          },
-        },
-      },
-      "readonly",
-      env,
-    );
-    expect(auditResponse).toMatchObject({ isError: false });
-    const auditText = (auditResponse as { content: Array<{ text: string }> }).content[0].text;
-    expect(JSON.parse(auditText)).toMatchObject({
-      ok: true,
-      data: {
-        audit: {
-          entries: expect.arrayContaining([
-            expect.objectContaining({
-              source: "mcp",
-              action: "tools/call:epub.export",
-              profile: "publisher",
-              ok: true,
-            }),
-            expect.objectContaining({
-              source: "mcp",
-              action: "tools/call:epub.export",
-              profile: "publisher",
-              ok: false,
-              code: "command_failed",
-            }),
-            expect.objectContaining({
-              source: "mcp",
-              action: "tools/call:epub.export",
-              profile: "editor",
-              ok: false,
-              code: "permission_denied",
-            }),
-          ]),
-        },
-      },
-    });
-    expect(auditText).not.toContain(outputPath);
-    expect(auditText).not.toContain(draftId);
   });
 
   it("refuses to export invalid drafts through MCP without writing output", async () => {
@@ -2301,38 +2177,6 @@ describe("mcp", () => {
         ok: false,
         error: { code: "invalid_tool_arguments" },
       });
-    }
-  });
-
-  it("records MCP audit entries without leaking tool arguments", async () => {
-    const env = await createEnv();
-    env.READANY_AUDIT_ENABLED = "1";
-    const sensitiveValues = [
-      "secret-search-text",
-      "sk-readany-audit-secret",
-      "webdav://reader:sync-token@example.test/books",
-    ];
-    await handleMcpRequest(
-      {
-        method: "tools/call",
-        params: {
-          name: "books.search",
-          arguments: { query: sensitiveValues.join(" ") },
-        },
-      },
-      "readonly",
-      env,
-    );
-
-    const auditPath = getAuditLogFilePath(
-      join(env.READANY_HOME!, "logs", "cli"),
-      new Date().toISOString(),
-    );
-    const auditContent = await readFile(auditPath, "utf8");
-    expect(auditContent).toContain('"source":"mcp"');
-    expect(auditContent).toContain('"action":"tools/call:books.search"');
-    for (const value of sensitiveValues) {
-      expect(auditContent).not.toContain(value);
     }
   });
 

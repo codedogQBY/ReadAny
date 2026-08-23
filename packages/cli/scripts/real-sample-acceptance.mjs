@@ -148,12 +148,10 @@ function createManualAcceptanceRequirements() {
         "tools/list output",
         "readonly write rejection",
         "editor draft and publisher export summaries",
-        "audit.list source=mcp summary",
       ],
       commands: [
         "readany mcp config --client codex --profile readonly --json",
         "readany mcp config --client claude --profile readonly --json",
-        "readany audit list --source mcp --json",
       ],
     },
     {
@@ -698,12 +696,6 @@ async function main() {
       contentHash: sha256(pdfReadData.chapter.content ?? ""),
     });
   }
-
-  const audit = runCli(["audit", "list", "--limit", "20"], env);
-  const auditData = requireOk(audit);
-  record("audit.list bounded metadata", audit, {
-    count: auditData.audit?.entries?.length ?? 0,
-  });
 
   const sampleFiles = Array.from(sampleFilesByBookId.values());
   const manualAcceptanceRequired = createManualAcceptanceRequirements();
