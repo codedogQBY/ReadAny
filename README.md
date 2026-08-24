@@ -228,6 +228,35 @@ app.
 For simulators, use `pnpm expo:ios:simulator` on iOS. For Android, start an
 Android emulator first, then run `pnpm expo:android`.
 
+#### Windows: Android development setup
+
+The npm scripts above use `cross-env`, so they work in Windows PowerShell/cmd
+out of the box. The first Android build needs a native toolchain:
+
+1. Install **JDK 17 or 21** ([Eclipse Temurin](https://adoptium.net)) and set
+   the `JAVA_HOME` user environment variable to its folder.
+2. Install **[Android Studio](https://developer.android.com/studio)** and, in
+   the **SDK Manager**, install: an Android platform (`Android 15/16`, API
+   35/36), **Android SDK Build-Tools**, **Android SDK Platform-Tools**, and an
+   `x86_64` system image for the emulator.
+3. Create an AVD in **Device Manager** (or connect a device with USB debugging).
+4. Set the `ANDROID_HOME` user environment variable to your SDK path
+   (default: `%LOCALAPPDATA%\Android\Sdk`).
+
+Check that everything is in place:
+
+```powershell
+pnpm expo:doctor:android
+```
+
+Then start Metro and build the dev client (first build downloads Gradle and
+native dependencies, so it takes a while):
+
+```powershell
+pnpm expo:start      # terminal 1: Metro dev server
+pnpm expo:android    # terminal 2: build + install the dev client
+```
+
 Mobile app source lives in [`packages/app-expo`](packages/app-expo).
 
 ### AI Configuration
