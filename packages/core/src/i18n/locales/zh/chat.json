@@ -26,7 +26,8 @@
       "generateNotes": "生成学习笔记",
       "summarizeChapter": "总结这一章",
       "explainConcepts": "解释关键概念",
-      "analyzeAuthor": "分析作者的论点"
+      "analyzeAuthor": "分析作者的论点",
+      "reviewChapterNotes": "点评我对本章的笔记"
     },
     "aiAssistant": "AI 阅读助手",
     "aiAssistantDesc": "分析内容、回答问题，帮助你更好地理解书籍。",
