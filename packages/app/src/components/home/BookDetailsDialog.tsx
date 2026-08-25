@@ -25,12 +25,13 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useResolvedSrc } from "@/hooks/use-resolved-src";
 import { extractLocalBookMetadata } from "@/lib/book/auto-metadata";
-import { invoke } from "@tauri-apps/api/core";
+import { commitCustomCover, saveExtractedCoverIfStillMissing } from "@/lib/book/cover-storage";
 import { useAppStore } from "@/stores/app-store";
 import { useLibraryStore } from "@/stores/library-store";
 import type { Book, BookReview } from "@readany/core/types";
 import {
   type BookMetadataFormValues,
+  applyBookMetadataFormUpdate,
   buildBookMetadataUpdate,
   cn,
   createBookMetadataFormValues,
@@ -40,6 +41,7 @@ import {
   mergeMissingBookMetadataValues,
   splitEditableList,
 } from "@readany/core/utils";
+import { invoke } from "@tauri-apps/api/core";
 import type { TFunction } from "i18next";
 import {
   BookOpen,
@@ -58,7 +60,7 @@ import {
   Wand2,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -282,12 +284,22 @@ export function BookDetailsDialog({ book, open, onOpenChange }: BookDetailsDialo
   const coverSrc = useResolvedSrc(values?.coverUrl);
   const hydratedBookIdRef = useRef<string | null>(null);
   const autoFilledBookIdRef = useRef<string | null>(null);
+  const latestValuesRef = useRef<BookMetadataFormValues | null>(null);
   const autoSaveTimerRef = useRef<number | null>(null);
+  const commitValues = useCallback(
+    (
+      update:
+        | BookMetadataFormValues
+        | ((current: BookMetadataFormValues) => BookMetadataFormValues),
+    ) => applyBookMetadataFormUpdate(latestValuesRef, setValues, update),
+    [],
+  );
 
   useEffect(() => {
     if (!open) {
       hydratedBookIdRef.current = null;
       autoFilledBookIdRef.current = null;
+      latestValuesRef.current = null;
       setEditingBasics(false);
       setEditingTitleField(null);
       setEditingReviewId(null);
@@ -299,14 +311,15 @@ export function BookDetailsDialog({ book, open, onOpenChange }: BookDetailsDialo
     if (!book) return;
     if (hydratedBookIdRef.current === book.id) return;
     hydratedBookIdRef.current = book.id;
-    setValues(createBookMetadataFormValues(book));
+    const nextValues = createBookMetadataFormValues(book);
+    commitValues(nextValues);
     setEditingBasics(false);
     setEditingTitleField(null);
     setEditingReviewId(null);
     setActiveTab("basic");
     setDraftActionBusy(false);
     setDraftActionResult(null);
-  }, [book, open]);
+  }, [book, commitValues, open]);
 
   useEffect(() => {
     if (!open || !book || !values) return;
@@ -315,18 +328,34 @@ export function BookDetailsDialog({ book, open, onOpenChange }: BookDetailsDialo
     autoFilledBookIdRef.current = book.id;
 
     let cancelled = false;
-    void extractLocalBookMetadata(book).then((metadata) => {
+    void extractLocalBookMetadata(book).then(async (metadata) => {
       if (cancelled || !metadata) return;
-      setValues((current) => {
-        if (!current) return current;
-        return mergeMissingBookMetadataValues(current, metadata) ?? current;
-      });
+      let extracted = metadata;
+      if (metadata.coverBlob) {
+        try {
+          const coverUrl = await saveExtractedCoverIfStillMissing(
+            book.id,
+            metadata.coverBlob,
+            () => (cancelled ? "__cancelled__" : latestValuesRef.current?.coverUrl),
+          );
+          if (coverUrl) extracted = { ...metadata, coverUrl };
+        } catch (error) {
+          console.warn("[BookMetadata] Failed to persist extracted desktop cover:", error);
+        }
+      }
+      if (cancelled) return;
+      const nextValues = latestValuesRef.current
+        ? mergeMissingBookMetadataValues(latestValuesRef.current, extracted)
+        : null;
+      if (!nextValues) return;
+      commitValues(nextValues);
+      updateBook(book.id, buildBookMetadataUpdate(book, nextValues));
     });
 
     return () => {
       cancelled = true;
     };
-  }, [book, open, values]);
+  }, [book, commitValues, open, updateBook, values]);
 
   const groupName = useMemo(() => {
     const groupId = values?.groupId ?? book?.groupId;
@@ -367,7 +396,7 @@ export function BookDetailsDialog({ book, open, onOpenChange }: BookDetailsDialo
     field: K,
     value: BookMetadataFormValues[K],
   ) => {
-    setValues((current) => (current ? { ...current, [field]: value } : current));
+    commitValues((current) => ({ ...current, [field]: value }));
   };
 
   const persistCoverUrl = async (coverUrl: string) => {
@@ -509,7 +538,7 @@ export function BookDetailsDialog({ book, open, onOpenChange }: BookDetailsDialo
       await mkdir(coversDir, { recursive: true });
       const relativePath = `covers/${book.id}-custom-${Date.now()}.${safeExt}`;
       await copyFile(selected, await join(libraryRoot, relativePath));
-      await persistCoverUrl(relativePath);
+      await commitCustomCover(book.id, relativePath, persistCoverUrl);
       toast.success(t("library.detailsCoverSaved", "Cover saved"));
     } catch (err) {
       console.warn("[BookDetailsDialog] Failed to change cover:", err);
@@ -936,7 +965,8 @@ export function BookDetailsDialog({ book, open, onOpenChange }: BookDetailsDialo
                                 ? t("library.detailsDraftCreated", "Draft created successfully")
                                 : t("library.detailsDraftCreateFailed", "Draft creation failed")}
                             </p>
-                            {draftActionResult.ok && parseDraftCreateResult(draftActionResult)?.ok ? (
+                            {draftActionResult.ok &&
+                            parseDraftCreateResult(draftActionResult)?.ok ? (
                               <Button
                                 type="button"
                                 size="sm"
