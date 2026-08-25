@@ -10,6 +10,11 @@ export interface FallbackChaptersResult {
   chapters: FallbackChapter[];
 }
 
+export interface FallbackSourceUnavailableResult {
+  error: string;
+  sourceUnavailable: true;
+}
+
 export interface ResolvedFallbackSource {
   chapterTitle: string;
   chapterIndex: number;
@@ -19,18 +24,21 @@ export interface ResolvedFallbackSource {
 
 export async function getFallbackChaptersForBook(
   bookId: string,
-): Promise<FallbackChaptersResult | { error: string }> {
+): Promise<FallbackChaptersResult | FallbackSourceUnavailableResult> {
   const book = await getBook(bookId);
-  if (!book) return { error: "Book not found" };
+  if (!book) return { error: "Book not found", sourceUnavailable: true };
 
   try {
     const chapters = await fallbackContentService.getChapters(book);
-    if (chapters.length === 0) return { error: "No readable content found for this book" };
+    if (chapters.length === 0) {
+      return { error: "No readable content found for this book", sourceUnavailable: true };
+    }
     return { bookTitle: book.meta.title, chapters };
   } catch (error) {
     return {
       error:
         error instanceof Error ? error.message : "Unable to read the book without vectorization",
+      sourceUnavailable: true,
     };
   }
 }

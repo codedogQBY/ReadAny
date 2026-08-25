@@ -259,6 +259,90 @@ describe("streamReadingAgent tool registration", () => {
     await pending;
   });
 
+  it("stops calling original-file tools after the fallback source fails in a turn", async () => {
+    createReactAgentMock.mockReturnValue({
+      streamEvents: vi.fn(() => ({
+        [Symbol.asyncIterator]: async function* () {
+          // no-op stream
+        },
+      })),
+    });
+    const fallbackSearch = vi.fn(async () => ({
+      error: "Timed out reading original book content",
+      sourceUnavailable: true,
+    }));
+    const fallbackToc = vi.fn(async () => ({ chapters: [] }));
+    const getCurrentChapter = vi.fn(async () => ({ title: "Chapter 1" }));
+    const tools: ToolDefinition[] = [
+      {
+        name: "fallbackSearch",
+        description: "Search the original book",
+        parameters: {},
+        execute: fallbackSearch,
+      },
+      {
+        name: "fallbackToc",
+        description: "Read the original table of contents",
+        parameters: {},
+        execute: fallbackToc,
+      },
+      {
+        name: "getCurrentChapter",
+        description: "Read the current chapter metadata",
+        parameters: {},
+        execute: getCurrentChapter,
+      },
+    ];
+
+    for await (const _event of streamReadingAgent(
+      {
+        aiConfig: makeAIConfig(),
+        book: null,
+        bookId: "book-1",
+        semanticContext: null,
+        enabledSkills: [],
+        isVectorized: false,
+        getAvailableTools: () => tools,
+      },
+      "Analyze this book",
+    )) {
+      // drain stream
+    }
+
+    const call = createReactAgentMock.mock.calls[createReactAgentMock.mock.calls.length - 1]?.[0];
+    const registeredTools = call.tools as Array<{
+      name: string;
+      func: (input: unknown) => Promise<string>;
+    }>;
+    const execute = (name: string) => {
+      const tool = registeredTools.find((candidate) => candidate.name === name);
+      if (!tool) throw new Error(`Expected ${name} to be registered`);
+      return tool.func({});
+    };
+
+    await expect(execute("fallbackSearch")).resolves.toBe(
+      JSON.stringify({
+        error: "Timed out reading original book content",
+        sourceUnavailable: true,
+        stopFallbackToolCalls: true,
+      }),
+    );
+    await expect(execute("fallbackToc")).resolves.toBe(
+      JSON.stringify({
+        error: "Timed out reading original book content",
+        sourceUnavailable: true,
+        stopFallbackToolCalls: true,
+      }),
+    );
+    await expect(execute("getCurrentChapter")).resolves.toBe(
+      JSON.stringify({ title: "Chapter 1" }),
+    );
+
+    expect(fallbackSearch).toHaveBeenCalledTimes(1);
+    expect(fallbackToc).not.toHaveBeenCalled();
+    expect(getCurrentChapter).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps tool-call turn text out of the final response before addCitation completes", async () => {
     createReactAgentMock.mockReturnValue({
       streamEvents: vi.fn(() => ({
