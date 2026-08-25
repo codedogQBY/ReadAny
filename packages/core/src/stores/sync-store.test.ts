@@ -457,6 +457,33 @@ describe("useSyncStore", () => {
     const result = await useSyncStore.getState().syncNow("upload");
 
     expect(syncMocks.runSimpleSync).toHaveBeenCalledWith(mockBackend, expect.any(Function), {
+      forceUploadSnapshot: true,
+      fileSyncOptions: {
+        forceUploadAll: true,
+      },
+    });
+    expect(result).toMatchObject({
+      success: true,
+      direction: "upload",
+    });
+  });
+
+  it("forceFullSync upload forces both database snapshot and file upload", async () => {
+    useSyncStore.setState({
+      config: baseConfig,
+      isConfigured: true,
+      backendType: "webdav",
+    });
+    mockPlatformService.kvGetItem.mockImplementation(async (key: string) =>
+      key === "sync_webdav_password" ? "secret" : null,
+    );
+
+    const result = await useSyncStore.getState().forceFullSync("upload");
+
+    expect(syncMocks.runSimpleSync).toHaveBeenCalledWith(mockBackend, expect.any(Function), {
+      receiveOnly: false,
+      forceApply: false,
+      forceUploadSnapshot: true,
       fileSyncOptions: {
         forceUploadAll: true,
       },
