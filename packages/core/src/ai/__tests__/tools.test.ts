@@ -357,6 +357,27 @@ describe("ragToc tool", () => {
     ]);
   });
 
+  it("reuses cached original-book chapters across repeated generic TOC reads", async () => {
+    vi.mocked(getChunks).mockResolvedValue([
+      makeChunk({ chapterIndex: 1, chapterTitle: "Section 2" }),
+      makeChunk({ chapterIndex: 2, chapterTitle: "Section 3" }),
+    ] as any);
+    vi.mocked(getBook).mockResolvedValue(makeBook({ isVectorized: true }) as any);
+    const getChapters = vi.fn(async () => [
+      { index: 0, title: "Chapter 1", content: "chapter one" },
+      { index: 1, title: "Chapter 2", content: "chapter two" },
+    ]);
+    setFallbackContentProvider({ getChapters });
+
+    const tools = getAvailableTools({ bookId: "book-1", isVectorized: true, enabledSkills: [] });
+    const tool = findTool(tools, "ragToc");
+
+    await tool.execute({});
+    await tool.execute({});
+
+    expect(getChapters).toHaveBeenCalledTimes(1);
+  });
+
   it("returns visible diagnostics when generic section fallback fails", async () => {
     vi.mocked(getChunks).mockResolvedValue([
       makeChunk({ chapterIndex: 1, chapterTitle: "Section 2" }),

@@ -27,6 +27,11 @@
       "explainConcepts": "핵심 개념 설명",
       "analyzeAuthor": "저자의 논점 분석"
     },
+    "errors": {
+      "inputTooLong": "메시지가 너무 깁니다. 여러 부분으로 나누어 보내 주세요.",
+      "chapterLookupFailed": "챕터를 정확히 찾지 못했습니다. 더 구체적인 챕터 제목을 입력해 주세요.",
+      "retrievalLimitReached": "검색을 안정적으로 완료하지 못했습니다. 더 구체적으로 질문하거나 다시 시도해 주세요."
+    },
     "aiAssistant": "AI 독서 어시스턴트",
     "aiAssistantDesc": "내용을 분석하고, 질문에 답하며, 책을 더 잘 이해하도록 도와줘요.",
     "deepThinking": "깊은 사고",
