@@ -48,6 +48,7 @@ import {
   FolderOpen,
   Globe,
   Loader2,
+  LibraryBig,
   Search,
   Upload,
 } from "lucide-react";
@@ -60,6 +61,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { OpdsCatalogsDialog } from "./OpdsCatalogsDialog";
 
 type ImportState =
   | { phase: "idle" }
@@ -745,6 +747,7 @@ export function DesktopImportActions({ children, align = "end" }: DesktopImportA
   const setShowSettings = useAppStore((state) => state.setShowSettings);
 
   const [temporaryOpen, setTemporaryOpen] = useState(false);
+  const [catalogsOpen, setCatalogsOpen] = useState(false);
   const [browserSource, setBrowserSource] = useState<WebDavImportSource | null>(null);
 
   useEffect(() => {
@@ -854,6 +857,23 @@ export function DesktopImportActions({ children, align = "end" }: DesktopImportA
             className="items-center gap-3 rounded-xl px-3 py-2.5"
             onSelect={(event) => {
               event.preventDefault();
+              setCatalogsOpen(true);
+            }}
+          >
+            <div className="flex size-7 shrink-0 items-center justify-center text-primary">
+              <LibraryBig className="size-4.5" />
+            </div>
+            <div className="min-w-0 flex-1 whitespace-nowrap text-sm font-medium text-foreground">
+              {t("library.opds.catalogsTitle")}
+            </div>
+            <ChevronRight className="size-4 text-muted-foreground" />
+          </DropdownMenuItem>
+          <DropdownMenuSeparator className="mx-2" />
+
+          <DropdownMenuItem
+            className="items-center gap-3 rounded-xl px-3 py-2.5"
+            onSelect={(event) => {
+              event.preventDefault();
               void handleOpenSavedWebDav();
             }}
           >
@@ -890,6 +910,7 @@ export function DesktopImportActions({ children, align = "end" }: DesktopImportA
         onClose={() => setTemporaryOpen(false)}
         onSubmit={handleConnectTemporaryWebDav}
       />
+      <OpdsCatalogsDialog open={catalogsOpen} onOpenChange={setCatalogsOpen} />
       <DesktopWebDavImportBrowserDialog
         source={browserSource}
         onClose={() => setBrowserSource(null)}

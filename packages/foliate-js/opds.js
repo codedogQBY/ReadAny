@@ -40,6 +40,9 @@ const groupByArray = (arr, f) => {
   return map;
 };
 
+const getElementChildren = (node) =>
+  Array.from(node.children ?? node.childNodes ?? []).filter((child) => child.nodeType === 1);
+
 // https://www.rfc-editor.org/rfc/rfc7231#section-3.1.1
 const parseMediaType = (str) => {
   if (!str) return null;
@@ -77,7 +80,7 @@ const getContent = (el) => {
   const type = el.getAttribute("type") ?? "text";
   const value =
     type === "xhtml"
-      ? el.innerHTML
+      ? (el.innerHTML ?? Array.from(el.childNodes ?? [], (child) => child.toString()).join(""))
       : type === "html"
         ? el.textContent.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&")
         : el.textContent;
@@ -136,7 +139,7 @@ const getPerson = (person) => {
 
 export const getPublication = (entry) => {
   const filter = filterNS(useNS(entry.ownerDocument, NS.ATOM));
-  const children = Array.from(entry.children);
+  const children = getElementChildren(entry);
   const filterDCEL = filterNS(NS.DC);
   const filterDCTERMS = filterNS(NS.DCTERMS);
   const filterDC = (x) => {
@@ -147,6 +150,7 @@ export const getPublication = (entry) => {
   const links = children.filter(filter("link")).map(getLink);
   const linksByRel = groupByArray(links, (link) => link.rel);
   return {
+    id: children.find(filter("id"))?.textContent,
     metadata: {
       title: children.find(filter("title"))?.textContent ?? "",
       author: children.filter(filter("author")).map(getPerson),
@@ -176,7 +180,7 @@ export const getPublication = (entry) => {
 export const getFeed = (doc) => {
   const ns = useNS(doc, NS.ATOM);
   const filter = filterNS(ns);
-  const children = Array.from(doc.documentElement.children);
+  const children = getElementChildren(doc.documentElement);
   const entries = children.filter(filter("entry"));
   const links = children.filter(filter("link")).map(getLink);
   const linksByRel = groupByArray(links, (link) => link.rel);
@@ -184,7 +188,7 @@ export const getFeed = (doc) => {
   const groupedItems = new Map([[null, []]]);
   const groupLinkMap = new Map();
   for (const entry of entries) {
-    const children = Array.from(entry.children);
+    const children = getElementChildren(entry);
     const links = children.filter(filter("link")).map(getLink);
     const linksByRel = groupByArray(links, (link) => link.rel);
     const isPub = [...linksByRel.keys()].some(
@@ -253,7 +257,7 @@ export const getSearch = async (link) => {
 export const getOpenSearch = (doc) => {
   const defaultNS = doc.documentElement.namespaceURI;
   const filter = filterNS(defaultNS);
-  const children = Array.from(doc.documentElement.children);
+  const children = getElementChildren(doc.documentElement);
 
   const $$urls = children.filter(filter("Url"));
   const $url = $$urls.find((url) => isOPDSCatalog(url.getAttribute("type"))) ?? $$urls[0];

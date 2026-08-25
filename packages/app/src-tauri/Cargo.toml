@@ -37,4 +37,5 @@ tower-http = { version = "0.6.8", features = ["cors"] }
 dashmap = "6.1.0"
 uuid = { version = "1.22.0", features = ["v4"] }
 base64 = "0.22.1"
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native-sync-persistent", "crypto-rust"] }
 tauri-plugin-window-state = "2.4.1"

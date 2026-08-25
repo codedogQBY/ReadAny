@@ -15,6 +15,7 @@ import type {
   UpdateInfo,
   WebSocketOptions,
 } from "@readany/core/services";
+import type { ClientOptions } from "@tauri-apps/plugin-http";
 
 const TAURI_LAN_RUNTIME_ERROR =
   "Tauri desktop runtime is required to use the LAN sender. Open the desktop app instead of the browser dev server.";
@@ -192,14 +193,17 @@ export class TauriPlatformService implements IPlatformService {
       timeoutMs: _timeoutMs,
       responseType: _responseType,
       onDownloadProgress: _onDownloadProgress,
+      redirect,
       ...fetchOptions
     } = options ?? {};
-    const tauriOptions = allowInsecure
-      ? {
-          ...fetchOptions,
-          danger: { acceptInvalidCerts: true, acceptInvalidHostnames: true },
-        } as any
-      : fetchOptions;
+    const browserOptions = redirect ? { ...fetchOptions, redirect } : fetchOptions;
+    const tauriOptions: RequestInit & ClientOptions = {
+      ...fetchOptions,
+      ...(redirect === "manual" ? { maxRedirections: 0 } : {}),
+      ...(allowInsecure
+        ? { danger: { acceptInvalidCerts: true, acceptInvalidHostnames: true } }
+        : {}),
+    };
     try {
       return await tauriFetch(url, tauriOptions);
     } catch (error: unknown) {
@@ -217,7 +221,7 @@ export class TauriPlatformService implements IPlatformService {
         console.warn(
           "[TauriPlatform] tauriFetch failed due to non-ASCII response headers; falling back to native fetch",
         );
-        return globalThis.fetch(url, fetchOptions);
+        return globalThis.fetch(url, browserOptions);
       }
       throw error;
     }
@@ -293,6 +297,23 @@ export class TauriPlatformService implements IPlatformService {
       const { relaunch } = await import("@tauri-apps/plugin-process");
       await relaunch();
     }
+  }
+
+  // ---- Secret Storage (OS credential store via Tauri commands) ----
+
+  async secretGetItem(key: string): Promise<string | null> {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<string | null>("secret_get", { key });
+  }
+
+  async secretSetItem(key: string, value: string): Promise<void> {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("secret_set", { key, value });
+  }
+
+  async secretRemoveItem(key: string): Promise<void> {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("secret_remove", { key });
   }
 
   // ---- KV Storage (backed by localStorage on desktop/web) ----

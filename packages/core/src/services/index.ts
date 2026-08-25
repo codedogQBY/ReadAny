@@ -3,6 +3,7 @@ export type {
   IDatabase,
   IWebSocket,
   FetchOptions,
+  PlatformFetchResponse,
   FileTransferOptions,
   FilePickerOptions,
   WebSocketOptions,

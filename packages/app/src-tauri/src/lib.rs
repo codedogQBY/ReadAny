@@ -1,5 +1,6 @@
 mod db;
 mod readany_cli;
+mod secrets;
 mod storage;
 mod sync;
 mod vector;
@@ -45,6 +46,9 @@ pub fn run() {
             vector::vector_reinit,
             vector::vector_shutdown,
             readany_cli::readany_cli_run,
+            secrets::secret_get,
+            secrets::secret_set,
+            secrets::secret_remove,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();

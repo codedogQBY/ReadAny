@@ -1,4 +1,7 @@
+import { getCoverFileExtension, saveCoverBytesToAppData } from "@/lib/book/cover-storage";
+import { buildImportedBookMeta, shouldPersistEmbeddedCover } from "@/lib/book/imported-book-meta";
 import {
+  type ExtractedMeta,
   createRangeReadableFile,
   extractBookMetadata,
   extractBookMetadataFromFile,
@@ -13,7 +16,14 @@ import {
 import * as db from "@readany/core/db/database";
 import { runWithDbRetry } from "@readany/core/db/write-retry";
 import { getPlatformService } from "@readany/core/services";
-import type { Book, BookGroup, LibraryFilter, SortField, SortOrder } from "@readany/core/types";
+import type {
+  Book,
+  BookGroup,
+  BookMeta,
+  LibraryFilter,
+  SortField,
+  SortOrder,
+} from "@readany/core/types";
 import { generateId } from "@readany/core/utils";
 import { create } from "zustand";
 import { debouncedSave, loadFromFS } from "./persist";
@@ -50,6 +60,16 @@ export interface RemoveBookOptions {
   preserveData?: boolean;
 }
 
+export interface MobileImportFile {
+  uri: string;
+  name?: string;
+  metadata?: Partial<BookMeta>;
+}
+
+export interface ImportBooksOptions {
+  transactional?: boolean;
+}
+
 function keepActiveGroupId(activeGroupId: string, groups: BookGroup[]): string {
   if (!activeGroupId) return "";
   return groups.some((group) => group.id === activeGroupId) ? activeGroupId : "";
@@ -79,7 +99,10 @@ export interface LibraryState {
   setViewMode: (mode: LibraryViewMode) => void;
   setSortField: (field: SortField) => void;
   setSortOrder: (order: SortOrder) => void;
-  importBooks: (files: Array<{ uri: string; name?: string }>) => Promise<ImportBooksResult>;
+  importBooks: (
+    files: MobileImportFile[],
+    options?: ImportBooksOptions,
+  ) => Promise<ImportBooksResult>;
   inspectDeletedBookCandidate: (
     bookId: string,
     file: { uri: string; name?: string },
@@ -132,15 +155,44 @@ async function ensureAppSubDir(subDir: string): Promise<void> {
   }
 }
 
-async function saveCoverToAppData(bookId: string, coverBlob: Blob): Promise<string> {
+async function getMobileManagedDestination(
+  directory: "books" | "covers",
+  bookId: string,
+  extension: string,
+  avoidExisting: boolean,
+): Promise<{ relativePath: string; absPath: string; storageId: string; created: boolean }> {
   const platform = getPlatformService();
-  await ensureAppSubDir("covers");
-  const ext = coverBlob.type.includes("png") ? "png" : "jpg";
-  const relativePath = `covers/${bookId}.${ext}`;
-  const absPath = await resolveAppPath(relativePath);
-  const arrayBuffer = await coverBlob.arrayBuffer();
-  await platform.writeFile(absPath, new Uint8Array(arrayBuffer));
-  return relativePath;
+  let storageId = bookId;
+  let relativePath = `${directory}/${storageId}.${extension}`;
+  let absPath = await resolveAppPath(relativePath);
+  let exists = await platform.exists(absPath);
+
+  while (avoidExisting && exists) {
+    storageId = `${bookId}-${generateId()}`;
+    relativePath = `${directory}/${storageId}.${extension}`;
+    absPath = await resolveAppPath(relativePath);
+    exists = await platform.exists(absPath);
+  }
+
+  return { relativePath, absPath, storageId, created: !exists };
+}
+
+async function saveImportedMobileCover(input: {
+  bookId: string;
+  bytes: Uint8Array;
+  mimeType?: string | null;
+  avoidExisting: boolean;
+  createdManagedPaths: Set<string>;
+}): Promise<string> {
+  const extension = getCoverFileExtension(input.bytes, input.mimeType);
+  const destination = await getMobileManagedDestination(
+    "covers",
+    input.bookId,
+    extension,
+    input.avoidExisting,
+  );
+  if (destination.created) input.createdManagedPaths.add(destination.absPath);
+  return saveCoverBytesToAppData(destination.storageId, input.bytes, input.mimeType);
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -159,10 +211,10 @@ const MOBILE_IMPORT_METADATA_MAX_BYTES = 32 * 1024 * 1024;
 
 async function getMobileFileStat(path: string): Promise<{ size: number; md5?: string }> {
   const LegacyFileSystem = await import("expo-file-system/legacy");
-  const info = await LegacyFileSystem.getInfoAsync(path);
+  const info = await LegacyFileSystem.getInfoAsync(path, { md5: true });
   return {
     size: info.exists && !info.isDirectory ? (info.size ?? 0) : 0,
-    md5: undefined,
+    md5: info.exists && !info.isDirectory ? info.md5 : undefined,
   };
 }
 
@@ -302,11 +354,13 @@ async function copyBookToAppData(
   ext: string,
   srcPath: string,
   sourceBytes?: Uint8Array,
-): Promise<{ relativePath: string; absPath: string }> {
+  avoidExisting = false,
+): Promise<{ relativePath: string; absPath: string; created: boolean }> {
   const platform = getPlatformService();
   await ensureAppSubDir("books");
-  const relativePath = `books/${bookId}.${ext}`;
-  const absPath = await resolveAppPath(relativePath);
+  const destination = await getMobileManagedDestination("books", bookId, ext, avoidExisting);
+  const { relativePath, absPath } = destination;
+  let { created } = destination;
 
   if (sourceBytes) {
     // If bytes are already in memory (e.g. from hash calculation), just write them
@@ -317,11 +371,12 @@ async function copyBookToAppData(
     const srcFile = new ExpoFS.File(srcPath);
     const destFile = new ExpoFS.File(absPath);
     if (destFile.exists) {
+      created = false;
       destFile.delete();
     }
     srcFile.copy(destFile);
   }
-  return { relativePath, absPath };
+  return { relativePath, absPath, created };
 }
 
 async function persistBookUpdate(bookId: string, updates: Partial<Book>): Promise<void> {
@@ -397,12 +452,11 @@ async function restoreDeletedMobileBook(
       ...originalBook,
       filePath: relativePath,
       format: "epub",
-      meta: {
-        ...originalBook.meta,
-        title: conversion.bookTitle || originalBook.meta.title || fileName.replace(/\.\w+$/i, ""),
-        author: originalBook.meta.author || "",
-        coverUrl: originalBook.meta.coverUrl,
-      },
+      meta: buildImportedBookMeta({
+        existing: originalBook.meta,
+        embedded: { title: conversion.bookTitle },
+        fallbackTitle: fileName.replace(/\.\w+$/i, "") || "Untitled",
+      }),
       deletedAt: undefined,
       fileHash,
       syncStatus: "local",
@@ -441,12 +495,9 @@ async function restoreDeletedMobileBook(
     await platform.writeFile(await resolveAppPath(relativePath), conversion.epubBytes);
 
     let coverUrl = originalBook.meta.coverUrl;
-    if (conversion.coverBytes && conversion.coverBytes.length > 0) {
+    if (!coverUrl?.trim() && conversion.coverBytes && conversion.coverBytes.length > 0) {
       try {
-        await ensureAppSubDir("covers");
-        const coverRelPath = `covers/${bookId}.jpg`;
-        await platform.writeFile(await resolveAppPath(coverRelPath), conversion.coverBytes);
-        coverUrl = coverRelPath;
+        coverUrl = await saveCoverBytesToAppData(bookId, conversion.coverBytes);
       } catch (coverErr) {
         console.warn(`[restoreDeletedMobileBook] UMD cover save failed: ${coverErr}`);
       }
@@ -456,12 +507,11 @@ async function restoreDeletedMobileBook(
       ...originalBook,
       filePath: relativePath,
       format: "umd",
-      meta: {
-        ...originalBook.meta,
-        title: conversion.bookTitle || originalBook.meta.title || fileName.replace(/\.\w+$/i, ""),
-        author: conversion.author || originalBook.meta.author || "",
-        coverUrl,
-      },
+      meta: buildImportedBookMeta({
+        existing: originalBook.meta,
+        embedded: { title: conversion.bookTitle, author: conversion.author, coverUrl },
+        fallbackTitle: fileName.replace(/\.\w+$/i, "") || "Untitled",
+      }),
       deletedAt: undefined,
       fileHash,
       syncStatus: "local",
@@ -474,9 +524,8 @@ async function restoreDeletedMobileBook(
 
   const { relativePath } = await copyBookToAppData(bookId, ext || "epub", filePath);
 
-  let title = originalBook.meta.title || fileName.replace(/\.\w+$/i, "") || "Untitled";
-  let author = originalBook.meta.author || "";
   let coverUrl = originalBook.meta.coverUrl;
+  let embeddedMeta: (ExtractedMeta & { coverUrl?: string }) | undefined;
 
   try {
     const meta = await extractMobileImportMetadata({
@@ -485,17 +534,14 @@ async function restoreDeletedMobileBook(
       fileName,
       fileSize,
     });
-    if (meta.title) title = meta.title;
-    if (meta.author) author = meta.author;
-
-    if (meta.coverBytes && meta.coverBytes.length > 0) {
-      const mimeType = meta.coverMimeType || "image/jpeg";
-      const coverExt = mimeType.includes("png") ? "png" : "jpg";
-      await ensureAppSubDir("covers");
-      const coverRelPath = `covers/${bookId}.${coverExt}`;
-      await platform.writeFile(await resolveAppPath(coverRelPath), meta.coverBytes);
-      coverUrl = coverRelPath;
+    if (!coverUrl?.trim() && meta.coverBytes && meta.coverBytes.length > 0) {
+      try {
+        coverUrl = await saveCoverBytesToAppData(bookId, meta.coverBytes, meta.coverMimeType);
+      } catch (coverErr) {
+        console.warn(`[restoreDeletedMobileBook] Cover save failed for ${fileName}:`, coverErr);
+      }
     }
+    embeddedMeta = { ...meta, coverUrl };
   } catch (metaErr) {
     console.warn(`[restoreDeletedMobileBook] Metadata extraction failed for ${fileName}:`, metaErr);
   }
@@ -504,12 +550,11 @@ async function restoreDeletedMobileBook(
     ...originalBook,
     filePath: relativePath,
     format,
-    meta: {
-      ...originalBook.meta,
-      title,
-      author,
-      coverUrl,
-    },
+    meta: buildImportedBookMeta({
+      existing: originalBook.meta,
+      embedded: embeddedMeta,
+      fallbackTitle: fileName.replace(/\.\w+$/i, "") || "Untitled",
+    }),
     deletedAt: undefined,
     fileHash,
     syncStatus: "local",
@@ -835,7 +880,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   setSortField: (field) => set((state) => ({ filter: { ...state.filter, sortField: field } })),
   setSortOrder: (order) => set((state) => ({ filter: { ...state.filter, sortOrder: order } })),
 
-  importBooks: async (files) => {
+  importBooks: async (files, options = {}) => {
     set({ isImporting: true });
     const result = createEmptyImportBooksResult();
     const duplicateIndex = createImportDuplicateIndex(get().books);
@@ -843,6 +888,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       await db.initDatabase();
       for (const fileInfo of files) {
         const filePath = fileInfo.uri;
+        const createdManagedPaths = new Set<string>();
         const originalName = fileInfo.name
           ? decodeURIComponent(fileInfo.name)
           : decodeURIComponent(filePath.split("/").pop() || "book");
@@ -882,6 +928,45 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
               })
             : null;
           const bookId = deletedMatch?.id ?? generateId();
+          const persistEmbeddedCover = shouldPersistEmbeddedCover(
+            deletedMatch?.meta,
+            fileInfo.metadata,
+          );
+          const persistImport = async (book: Book): Promise<void> => {
+            const restoreUpdates = {
+              filePath: book.filePath,
+              format: book.format,
+              meta: book.meta,
+              deletedAt: undefined,
+              progress: book.progress,
+              currentCfi: book.currentCfi,
+              isVectorized: false,
+              vectorizeProgress: 0,
+              tags: book.tags,
+              fileHash: book.fileHash,
+              syncStatus: "local" as const,
+              lastOpenedAt: Date.now(),
+            };
+
+            if (options.transactional) {
+              if (deletedMatch) {
+                await db.updateBook(book.id, restoreUpdates);
+              } else {
+                await db.insertBook(book);
+              }
+              set((state) => ({ books: [...state.books, book] }));
+              debouncedSave("library-books", get().books);
+              return;
+            }
+
+            if (deletedMatch) {
+              set((state) => ({ books: [...state.books, book] }));
+              await db.updateBook(book.id, restoreUpdates);
+              debouncedSave("library-books", get().books);
+            } else {
+              await get().addBook(book);
+            }
+          };
 
           console.log(
             `[importBooks] Importing: name=${fileName}, format=${format}, uri=${filePath}`,
@@ -935,23 +1020,29 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
               // Write EPUB bytes directly to final app data location
               await ensureAppSubDir("books");
-              const relativePath = `books/${bookId}.epub`;
-              const absPath = await resolveAppPath(relativePath);
+              const destination = await getMobileManagedDestination(
+                "books",
+                bookId,
+                "epub",
+                options.transactional === true,
+              );
+              const { relativePath, absPath } = destination;
+              if (destination.created) createdManagedPaths.add(absPath);
               await platform.writeFile(absPath, conversion.epubBytes);
 
               // TXT-converted EPUBs have no cover, and title is already known from converter.
               // Skip metadata extraction entirely — saves a full EPUB re-parse.
-              const title = conversion.bookTitle || fileName.replace(/\.\w+$/i, "") || "Untitled";
+              const completeMeta = buildImportedBookMeta({
+                existing: deletedMatch?.meta,
+                opds: fileInfo.metadata,
+                embedded: { title: conversion.bookTitle },
+                fallbackTitle: fileName.replace(/\.\w+$/i, "") || "Untitled",
+              });
               const book: Book = {
                 id: bookId,
                 filePath: relativePath,
                 format: "epub",
-                meta: {
-                  ...(deletedMatch?.meta ?? {}),
-                  title,
-                  author: "",
-                  coverUrl: deletedMatch?.meta.coverUrl,
-                },
+                meta: completeMeta,
                 groupId: deletedMatch?.groupId,
                 progress: deletedMatch?.progress ?? 0,
                 currentCfi: deletedMatch?.currentCfi,
@@ -965,31 +1056,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
                 lastOpenedAt: deletedMatch?.lastOpenedAt ?? Date.now(),
               };
 
-              if (deletedMatch) {
-                set((state) => ({ books: [...state.books, book] }));
-                await db.updateBook(book.id, {
-                  filePath: book.filePath,
-                  format: book.format,
-                  meta: book.meta,
-                  deletedAt: undefined,
-                  progress: book.progress,
-                  currentCfi: book.currentCfi,
-                  isVectorized: false,
-                  vectorizeProgress: 0,
-                  tags: book.tags,
-                  fileHash: book.fileHash,
-                  syncStatus: "local",
-                  lastOpenedAt: Date.now(),
-                });
-                debouncedSave("library-books", get().books);
-              } else {
-                await get().addBook(book);
-              }
+              await persistImport(book);
               result.imported.push(book);
               if (fileHash) {
                 duplicateIndex.byHash.set(fileHash, book);
               }
-              console.log(`[importBooks] TXT imported as EPUB: ${title}`);
+              console.log(`[importBooks] TXT imported as EPUB: ${completeMeta.title}`);
 
               // Auto-vectorize if enabled. Keep failures isolated so a
               // successful import doesn't get reported as a failed import.
@@ -1046,35 +1118,45 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
               const conversion = await converter.convertToBytes({ file: umdFile });
 
               await ensureAppSubDir("books");
-              const relativePath = `books/${bookId}.epub`;
-              const absPath = await resolveAppPath(relativePath);
+              const destination = await getMobileManagedDestination(
+                "books",
+                bookId,
+                "epub",
+                options.transactional === true,
+              );
+              const { relativePath, absPath } = destination;
+              if (destination.created) createdManagedPaths.add(absPath);
               await platform.writeFile(absPath, conversion.epubBytes);
 
-              let coverUrl: string | undefined;
-              if (conversion.coverBytes && conversion.coverBytes.length > 0) {
+              let coverUrl = deletedMatch?.meta.coverUrl;
+              if (
+                persistEmbeddedCover &&
+                conversion.coverBytes &&
+                conversion.coverBytes.length > 0
+              ) {
                 try {
-                  await ensureAppSubDir("covers");
-                  const coverRelPath = `covers/${bookId}.jpg`;
-                  const coverAbsPath = await resolveAppPath(coverRelPath);
-                  await platform.writeFile(coverAbsPath, conversion.coverBytes);
-                  coverUrl = coverRelPath;
+                  coverUrl = await saveImportedMobileCover({
+                    bookId,
+                    bytes: conversion.coverBytes,
+                    avoidExisting: options.transactional === true,
+                    createdManagedPaths,
+                  });
                 } catch (coverErr) {
                   console.warn(`[importBooks] Failed to save UMD cover for ${fileName}:`, coverErr);
                 }
               }
 
-              const title = conversion.bookTitle || fileName.replace(/\.\w+$/i, "") || "Untitled";
-              const author = conversion.author || "";
+              const completeMeta = buildImportedBookMeta({
+                existing: deletedMatch?.meta,
+                opds: fileInfo.metadata,
+                embedded: { title: conversion.bookTitle, author: conversion.author, coverUrl },
+                fallbackTitle: fileName.replace(/\.\w+$/i, "") || "Untitled",
+              });
               const book: Book = {
                 id: bookId,
                 filePath: relativePath,
                 format: "umd",
-                meta: {
-                  ...(deletedMatch?.meta ?? {}),
-                  title,
-                  author,
-                  coverUrl: coverUrl || deletedMatch?.meta.coverUrl,
-                },
+                meta: completeMeta,
                 groupId: deletedMatch?.groupId,
                 progress: deletedMatch?.progress ?? 0,
                 currentCfi: deletedMatch?.currentCfi,
@@ -1088,31 +1170,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
                 lastOpenedAt: deletedMatch?.lastOpenedAt ?? Date.now(),
               };
 
-              if (deletedMatch) {
-                set((state) => ({ books: [...state.books, book] }));
-                await db.updateBook(book.id, {
-                  filePath: book.filePath,
-                  format: book.format,
-                  meta: book.meta,
-                  deletedAt: undefined,
-                  progress: book.progress,
-                  currentCfi: book.currentCfi,
-                  isVectorized: false,
-                  vectorizeProgress: 0,
-                  tags: book.tags,
-                  fileHash: book.fileHash,
-                  syncStatus: "local",
-                  lastOpenedAt: Date.now(),
-                });
-                debouncedSave("library-books", get().books);
-              } else {
-                await get().addBook(book);
-              }
+              await persistImport(book);
               result.imported.push(book);
               if (fileHash) {
                 duplicateIndex.byHash.set(fileHash, book);
               }
-              console.log(`[importBooks] UMD imported as EPUB: ${title}`);
+              console.log(`[importBooks] UMD imported as EPUB: ${completeMeta.title}`);
 
               try {
                 const vmState = useVectorModelStore.getState();
@@ -1138,13 +1201,20 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             }
           }
 
-          const { relativePath } = await copyBookToAppData(bookId, ext || "epub", filePath);
+          const copiedBook = await copyBookToAppData(
+            bookId,
+            ext || "epub",
+            filePath,
+            undefined,
+            options.transactional === true,
+          );
+          const { relativePath } = copiedBook;
+          if (copiedBook.created) createdManagedPaths.add(copiedBook.absPath);
           console.log(`[importBooks] File copied. relativePath: ${relativePath}`);
 
-          // Extract metadata (title, author, cover) from book content
-          let title = fileName.replace(/\.\w+$/i, "") || "Untitled";
-          let author = "";
-          let coverUrl: string | undefined;
+          // Extract metadata and cover from book content.
+          let coverUrl = deletedMatch?.meta.coverUrl;
+          let embeddedMeta: (ExtractedMeta & { coverUrl?: string }) | undefined;
 
           try {
             console.log(`[importBooks] Extracting metadata for format=${format}...`);
@@ -1157,43 +1227,41 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             console.log(
               `[importBooks] Metadata result: title="${meta.title}", author="${meta.author}", hasCover=${!!meta.coverBytes}, coverSize=${meta.coverBytes?.length ?? 0}`,
             );
-            if (meta.title) title = meta.title;
-            if (meta.author) author = meta.author;
-
             // Save cover image to app data
-            if (meta.coverBytes && meta.coverBytes.length > 0) {
+            if (persistEmbeddedCover && meta.coverBytes && meta.coverBytes.length > 0) {
               try {
-                const mimeType = meta.coverMimeType || "image/jpeg";
-                const coverExt = mimeType.includes("png") ? "png" : "jpg";
-                await ensureAppSubDir("covers");
-                const coverRelPath = `covers/${bookId}.${coverExt}`;
-                const coverAbsPath = await resolveAppPath(coverRelPath);
-                console.log(`[importBooks] Saving cover to: ${coverAbsPath}`);
-                const platform = getPlatformService();
-                await platform.writeFile(coverAbsPath, meta.coverBytes);
-                coverUrl = coverRelPath;
+                coverUrl = await saveImportedMobileCover({
+                  bookId,
+                  bytes: meta.coverBytes,
+                  mimeType: meta.coverMimeType,
+                  avoidExisting: options.transactional === true,
+                  createdManagedPaths,
+                });
+                console.log(`[importBooks] Saving cover to: ${coverUrl}`);
                 console.log(`[importBooks] Cover saved. coverUrl=${coverUrl}`);
               } catch (coverErr) {
                 console.warn(`[importBooks] Failed to save cover for ${fileName}:`, coverErr);
               }
             }
+            embeddedMeta = { ...meta, coverUrl };
           } catch (metaErr) {
             console.warn(`[importBooks] Metadata extraction failed for ${fileName}:`, metaErr);
           }
 
+          const completeMeta = buildImportedBookMeta({
+            existing: deletedMatch?.meta,
+            opds: fileInfo.metadata,
+            embedded: embeddedMeta,
+            fallbackTitle: fileName.replace(/\.\w+$/i, "") || "Untitled",
+          });
           console.log(
-            `[importBooks] Final book: title="${title}", author="${author}", coverUrl="${coverUrl}"`,
+            `[importBooks] Final book: title="${completeMeta.title}", author="${completeMeta.author}", coverUrl="${completeMeta.coverUrl}"`,
           );
           const book: Book = {
             id: bookId,
             filePath: relativePath,
             format,
-            meta: {
-              ...(deletedMatch?.meta ?? {}),
-              title,
-              author,
-              coverUrl: coverUrl || deletedMatch?.meta.coverUrl,
-            },
+            meta: completeMeta,
             groupId: deletedMatch?.groupId,
             progress: deletedMatch?.progress ?? 0,
             currentCfi: deletedMatch?.currentCfi,
@@ -1206,26 +1274,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             updatedAt: Date.now(),
             lastOpenedAt: deletedMatch?.lastOpenedAt ?? Date.now(),
           };
-          if (deletedMatch) {
-            set((state) => ({ books: [...state.books, book] }));
-            await db.updateBook(book.id, {
-              filePath: book.filePath,
-              format: book.format,
-              meta: book.meta,
-              deletedAt: undefined,
-              progress: book.progress,
-              currentCfi: book.currentCfi,
-              isVectorized: false,
-              vectorizeProgress: 0,
-              tags: book.tags,
-              fileHash: book.fileHash,
-              syncStatus: "local",
-              lastOpenedAt: Date.now(),
-            });
-            debouncedSave("library-books", get().books);
-          } else {
-            await get().addBook(book);
-          }
+          await persistImport(book);
           result.imported.push(book);
           if (fileHash) {
             duplicateIndex.byHash.set(fileHash, book);
@@ -1269,6 +1318,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             );
           }
         } catch (err) {
+          if (options.transactional) {
+            const platform = getPlatformService();
+            for (const path of createdManagedPaths) {
+              await platform.deleteFile(path).catch(() => undefined);
+            }
+          }
           console.error(`Failed to import ${fileInfo.uri}:`, err);
           result.failures.push({
             name: originalName,

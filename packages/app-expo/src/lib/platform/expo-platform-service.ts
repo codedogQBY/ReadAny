@@ -17,6 +17,7 @@ import type {
   IDatabase,
   IPlatformService,
   IWebSocket,
+  PlatformFetchResponse,
   WebSocketOptions,
 } from "@readany/core/services";
 import * as Clipboard from "expo-clipboard";
@@ -27,6 +28,7 @@ import * as LegacyFS from "expo-file-system/legacy";
 import * as Network from "expo-network";
 import * as SecureStore from "expo-secure-store";
 import * as Sharing from "expo-sharing";
+import type { FetchRequestInit } from "expo/fetch";
 
 /** Simple KV storage keys tracking (SecureStore doesn't have getAllKeys) */
 const KV_KEYS_INDEX = "__readany_kv_keys__";
@@ -281,10 +283,55 @@ export class ExpoPlatformService implements IPlatformService {
 
   // ---- Network ----
 
-  async fetch(url: string, options?: FetchOptions): Promise<Response> {
+  async fetch(url: string, options?: FetchOptions): Promise<PlatformFetchResponse> {
     const { allowInsecure, timeoutMs, responseType, onDownloadProgress, ...fetchOptions } =
       options ?? {};
     const effectiveUrl = allowInsecure ? url.replace(/^https:\/\//i, "http://") : url;
+    if (fetchOptions.redirect === "manual") {
+      const { fetch: expoFetch } = await import("expo/fetch");
+      const transportController = new AbortController();
+      const sourceSignal = fetchOptions.signal;
+      const onSourceAbort = () => transportController.abort(sourceSignal?.reason);
+      if (sourceSignal?.aborted) {
+        onSourceAbort();
+      } else {
+        sourceSignal?.addEventListener("abort", onSourceAbort, { once: true });
+      }
+      let disposed = false;
+      const onDispose = () => {
+        if (disposed) return;
+        disposed = true;
+        sourceSignal?.removeEventListener("abort", onSourceAbort);
+      };
+      const cancelTransport = () => {
+        transportController.abort();
+        onDispose();
+      };
+      const expoOptions: FetchRequestInit = {
+        body: fetchOptions.body ?? undefined,
+        credentials: fetchOptions.credentials,
+        headers: fetchOptions.headers,
+        integrity: fetchOptions.integrity,
+        keepalive: fetchOptions.keepalive,
+        method: fetchOptions.method,
+        mode: fetchOptions.mode,
+        redirect: fetchOptions.redirect,
+        referrer: fetchOptions.referrer,
+        signal: transportController.signal,
+        window: fetchOptions.window,
+      };
+      try {
+        const response = (await expoFetch(effectiveUrl, expoOptions)) as PlatformFetchResponse;
+        Object.defineProperties(response, {
+          cancelTransport: { value: cancelTransport },
+          onDispose: { value: onDispose },
+        });
+        return response;
+      } catch (error) {
+        onDispose();
+        throw error;
+      }
+    }
     const method = fetchOptions?.method?.toUpperCase() || "GET";
 
     // Always use XHR for WebDAV to handle large binary files properly
@@ -641,6 +688,20 @@ export class ExpoPlatformService implements IPlatformService {
       if (na < nb) return -1;
     }
     return 0;
+  }
+
+  // ---- Secret Storage (direct Expo SecureStore boundary; not indexed as general KV) ----
+
+  async secretGetItem(key: string): Promise<string | null> {
+    return SecureStore.getItemAsync(key);
+  }
+
+  async secretSetItem(key: string, value: string): Promise<void> {
+    await SecureStore.setItemAsync(key, value);
+  }
+
+  async secretRemoveItem(key: string): Promise<void> {
+    await SecureStore.deleteItemAsync(key);
   }
 
   // ---- KV Storage (backed by expo-secure-store) ----

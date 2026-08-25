@@ -537,6 +537,11 @@ export function LibraryScreen() {
     setTemporaryWebDavOpen(true);
   }, []);
 
+  const handleOpenOpdsCatalogs = useCallback(() => {
+    setSourceSheetOpen(false);
+    nav.navigate("OpdsCatalogs");
+  }, [nav]);
+
   const handleConnectTemporaryWebDav = useCallback(
     async (source: WebDavImportSource) => {
       const { WebDavImportService } = await import("@readany/core");
@@ -1166,6 +1171,7 @@ export function LibraryScreen() {
         onPickLocal={handlePickLocalFromSourceMenu}
         onPickSavedWebDav={() => void handleOpenSavedWebDav()}
         onPickTemporaryWebDav={handleOpenTemporaryWebDav}
+        onPickOpds={handleOpenOpdsCatalogs}
       />
       <WebDavConnectSheet
         visible={temporaryWebDavOpen}

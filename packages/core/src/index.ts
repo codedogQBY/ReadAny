@@ -59,6 +59,65 @@ export type {
 } from "./import/webdav-import-types";
 export type { ImportBooksResult, ImportDuplicateIndex } from "./import/import-dedupe";
 
+// OPDS catalogs
+export {
+  OPDS_BUILT_IN_CATALOGS,
+  OPDS_CATALOG_STORAGE_KEY,
+  OpdsCatalogStore,
+  canPreserveOpdsCatalogPassword,
+  opdsCatalogSecretKey,
+  type OpdsCatalog,
+  type OpdsCatalogAuth,
+  type OpdsCatalogInput,
+  type OpdsCatalogStorage,
+  type OpdsCatalogUpdate,
+  type OpdsPasswordStorage,
+} from "./opds/opds-catalog-store";
+export { OpdsClient, OpdsError, type OpdsAssetResponse } from "./opds/opds-client";
+export {
+  OPDS_MAX_ACQUISITION_BYTES,
+  createExclusiveOpdsDownloadRunner,
+  downloadOpdsAcquisition,
+  listSupportedAcquisitions,
+  sanitizeOpdsFileName,
+  toBookMeta,
+  type DownloadOpdsAcquisitionInput,
+  type DownloadOpdsAcquisitionResult,
+  type OpdsDownloadProgress,
+  type SupportedOpdsAcquisition,
+} from "./opds/opds-acquisition";
+export { parseOpdsDocument } from "./opds/opds-parser";
+export {
+  classifyOpdsAcquisitionRelation,
+  type OpdsAcquisitionRelation,
+  type OpdsAcquisitionRelationKind,
+} from "./opds/opds-relations";
+export { classifyOpdsUrl } from "./opds/opds-security";
+export { createOpdsRuntime } from "./opds/opds-runtime";
+export * from "./opds/opds-view-state";
+export { createOpdsBackController } from "./opds/opds-back-controller";
+export {
+  createOpdsCoverCache,
+  readOpdsCover,
+  type OpdsCoverLease,
+  type OpdsCoverValue,
+} from "./opds/opds-cover-cache";
+export {
+  opdsDescriptionToPlainText,
+  sanitizeOpdsDescription,
+} from "./opds/opds-sanitize";
+export type {
+  OpdsAcquisition,
+  OpdsCredentials,
+  OpdsErrorCode,
+  OpdsFacet,
+  OpdsFeed,
+  OpdsLink,
+  OpdsNavigationItem,
+  OpdsPublication,
+  OpdsSearchDescriptor,
+} from "./opds/opds-types";
+
 // EPUB services
 export { inspectEpubBytes } from "./epub/inspect";
 export type {
@@ -76,4 +135,8 @@ export type {
 export { readEpubChapterFromBookFile, readEpubChapterFromDraft } from "./epub/chapter";
 export type { EpubChapterReadResult } from "./epub/chapter";
 export { searchKnowledge } from "./knowledge/search";
-export type { KnowledgeSearchHit, KnowledgeSearchResult, KnowledgeSearchSource } from "./knowledge/search";
+export type {
+  KnowledgeSearchHit,
+  KnowledgeSearchResult,
+  KnowledgeSearchSource,
+} from "./knowledge/search";

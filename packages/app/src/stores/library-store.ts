@@ -1,3 +1,14 @@
+import { getCoverFileExtension, saveCoverToAppData } from "@/lib/book/cover-storage";
+import {
+  type DesktopImportFile,
+  type FoliateDocumentMetadata,
+  buildDesktopImportedBookMeta,
+  buildImportedBookMeta,
+  fromDocumentMetadata,
+  fromPdfMetadata,
+  normalizeDesktopImportFile,
+  shouldPersistEmbeddedCover,
+} from "@/lib/book/imported-book-meta";
 import * as db from "@/lib/db/database";
 import { triggerVectorizeBook } from "@/lib/rag/vectorize-trigger";
 import {
@@ -14,13 +25,12 @@ import {
 import { debouncedSave, loadFromFS } from "@readany/core/stores/persist";
 import { useVectorModelStore } from "@readany/core/stores/vector-model-store";
 import type { Book, BookGroup, LibraryFilter, SortField, SortOrder } from "@readany/core/types";
+import { type ExtractedBookMetadata, normalizeIsbn } from "@readany/core/utils";
 import { create } from "zustand";
 
-interface EpubMeta {
-  title: string;
-  author: string;
+type DesktopExtractedMetadata = ExtractedBookMetadata & {
   coverBlob: Blob | null;
-}
+};
 
 /**
  * Lightweight EPUB metadata + cover extraction.
@@ -28,7 +38,7 @@ interface EpubMeta {
  * container.xml, OPF, and cover image entry. Does NOT decompress the entire ZIP.
  * Memory usage for a 70MB EPUB: ~1-2MB (metadata + cover image only).
  */
-export async function extractEpubMetadata(blob: Blob): Promise<EpubMeta> {
+export async function extractEpubMetadata(blob: Blob): Promise<DesktopExtractedMetadata> {
   const { configure, ZipReader, BlobReader, TextWriter, BlobWriter } = await import(
     "@zip.js/zip.js"
   );
@@ -64,7 +74,7 @@ export async function extractEpubMetadata(blob: Blob): Promise<EpubMeta> {
   const containerXml = await getTextEntry("META-INF/container.xml");
   if (!containerXml) {
     await reader.close();
-    return { title: "", author: "", coverBlob: null };
+    return { coverBlob: null };
   }
 
   const parser = new DOMParser();
@@ -77,14 +87,21 @@ export async function extractEpubMetadata(blob: Blob): Promise<EpubMeta> {
   const opfXml = await getTextEntry(opfPath);
   if (!opfXml) {
     await reader.close();
-    return { title: "", author: "", coverBlob: null };
+    return { coverBlob: null };
   }
 
-  const opfDoc = parser.parseFromString(opfXml, "text/html");
-  const title =
-    opfDoc.querySelector("metadata dc\\:title, metadata title")?.textContent?.trim() || "";
-  const author =
-    opfDoc.querySelector("metadata dc\\:creator, metadata creator")?.textContent?.trim() || "";
+  const opfDoc = parser.parseFromString(opfXml, "application/xml");
+  const metadata =
+    Array.from(opfDoc.getElementsByTagName("*")).find(
+      (element) => element.localName === "metadata",
+    ) ?? opfDoc.documentElement;
+  const elements = Array.from(metadata.getElementsByTagName("*"));
+  const textByLocalName = (localName: string) =>
+    elements.find((element) => element.localName === localName)?.textContent?.trim() || "";
+  const subjects = elements
+    .filter((element) => element.localName === "subject")
+    .map((element) => element.textContent?.trim() || "")
+    .filter(Boolean);
 
   // 3. Find cover image path from OPF
   let coverBlob: Blob | null = null;
@@ -159,7 +176,57 @@ export async function extractEpubMetadata(blob: Blob): Promise<EpubMeta> {
   }
 
   await reader.close();
-  return { title, author, coverBlob };
+  return {
+    title: textByLocalName("title"),
+    author: textByLocalName("creator"),
+    publisher: textByLocalName("publisher"),
+    language: textByLocalName("language"),
+    isbn: extractIsbn(elements),
+    publishDate: extractPublishDate(elements),
+    description: textByLocalName("description"),
+    subjects,
+    coverBlob,
+  };
+}
+
+function extractIsbn(elements: Element[]): string {
+  for (const element of elements) {
+    if (element.localName !== "identifier") continue;
+    const text = element.textContent?.trim() || "";
+    const isbn = normalizeIsbn(text);
+    if (isbn) return isbn;
+  }
+  return "";
+}
+
+async function extractPdfMetadata(source: string): Promise<ExtractedBookMetadata> {
+  const pdfjsLib = await import("pdfjs-dist");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+  const pdfDoc = await pdfjsLib.getDocument({
+    url: source,
+    useWorkerFetch: false,
+    isEvalSupported: false,
+  }).promise;
+
+  try {
+    const { info, metadata } = await pdfDoc.getMetadata();
+    return fromPdfMetadata(info as Record<string, unknown>, metadata);
+  } finally {
+    await pdfDoc.destroy();
+  }
+}
+
+function extractPublishDate(elements: Element[]): string {
+  const issued = elements.find(
+    (element) =>
+      element.localName === "meta" &&
+      (element.getAttribute("property") === "dcterms:issued" ||
+        element.getAttribute("name") === "dcterms:issued"),
+  );
+  const issuedText = issued?.textContent?.trim();
+  if (issuedText) return issuedText;
+
+  return elements.find((element) => element.localName === "date")?.textContent?.trim() || "";
 }
 
 /** Generate PDF cover by rendering the first page to canvas.
@@ -211,6 +278,45 @@ async function resolveAppPath(relativePath: string): Promise<string> {
   return resolveDesktopDataPath(relativePath);
 }
 
+async function getDesktopManagedDestination(
+  directory: "books" | "covers",
+  bookId: string,
+  extension: string,
+  avoidExisting: boolean,
+): Promise<{ relativePath: string; destPath: string; storageId: string; created: boolean }> {
+  const { exists } = await import("@tauri-apps/plugin-fs");
+  let storageId = bookId;
+  let relativePath = `${directory}/${storageId}.${extension}`;
+  let destPath = await resolveAppPath(relativePath);
+  let pathExists = await exists(destPath);
+
+  while (avoidExisting && pathExists) {
+    storageId = `${bookId}-${crypto.randomUUID()}`;
+    relativePath = `${directory}/${storageId}.${extension}`;
+    destPath = await resolveAppPath(relativePath);
+    pathExists = await exists(destPath);
+  }
+
+  return { relativePath, destPath, storageId, created: !pathExists };
+}
+
+async function saveImportedDesktopCover(input: {
+  bookId: string;
+  cover: Blob;
+  avoidExisting: boolean;
+  createdManagedPaths: Set<string>;
+}): Promise<string> {
+  const extension = await getCoverFileExtension(input.cover);
+  const destination = await getDesktopManagedDestination(
+    "covers",
+    input.bookId,
+    extension,
+    input.avoidExisting,
+  );
+  if (destination.created) input.createdManagedPaths.add(destination.destPath);
+  return saveCoverToAppData(destination.storageId, input.cover);
+}
+
 /**
  * Resolve a book or cover path to a displayable asset:// URL.
  * Handles both legacy absolute/asset:// paths and new relative paths.
@@ -231,7 +337,8 @@ async function copyBookToAppData(
   bookId: string,
   ext: string,
   srcPath: string,
-): Promise<{ relativePath: string; destPath: string }> {
+  avoidExisting = false,
+): Promise<{ relativePath: string; destPath: string; created: boolean }> {
   const { copyFile, mkdir } = await import("@tauri-apps/plugin-fs");
   const { join } = await import("@tauri-apps/api/path");
 
@@ -243,34 +350,10 @@ async function copyBookToAppData(
     /* exists */
   }
 
-  const relativePath = `books/${bookId}.${ext}`;
-  const destPath = await join(libraryRoot, relativePath);
+  const destination = await getDesktopManagedDestination("books", bookId, ext, avoidExisting);
+  const { relativePath, destPath, created } = destination;
   await copyFile(srcPath, destPath);
-  return { relativePath, destPath };
-}
-
-/** Save cover image to desktop library root and return a relative path (covers/{id}.{ext}) */
-async function saveCoverToAppData(bookId: string, coverBlob: Blob): Promise<string> {
-  const { writeFile, mkdir } = await import("@tauri-apps/plugin-fs");
-  const { join } = await import("@tauri-apps/api/path");
-
-  const libraryRoot = await getDesktopLibraryRoot();
-  const coversDir = await join(libraryRoot, "covers");
-
-  // Ensure covers directory exists
-  try {
-    await mkdir(coversDir, { recursive: true });
-  } catch {
-    // Directory may already exist
-  }
-
-  const ext = coverBlob.type.includes("png") ? "png" : "jpg";
-  const relativePath = `covers/${bookId}.${ext}`;
-  const coverPath = await join(libraryRoot, relativePath);
-  const arrayBuffer = await coverBlob.arrayBuffer();
-  await writeFile(coverPath, new Uint8Array(arrayBuffer));
-
-  return relativePath;
+  return { relativePath, destPath, created };
 }
 
 export async function repairMissingCovers(): Promise<number> {
@@ -330,6 +413,10 @@ function keepActiveGroupId(activeGroupId: string, groups: BookGroup[]): string {
   return groups.some((group) => group.id === activeGroupId) ? activeGroupId : "";
 }
 
+export interface ImportBooksOptions {
+  transactional?: boolean;
+}
+
 export interface LibraryState {
   books: Book[];
   groups: BookGroup[];
@@ -358,7 +445,10 @@ export interface LibraryState {
   setViewMode: (mode: LibraryViewMode) => void;
   setSortField: (field: SortField) => void;
   setSortOrder: (order: SortOrder) => void;
-  importBooks: (filePaths: string[]) => Promise<ImportBooksResult>;
+  importBooks: (
+    files: DesktopImportFile[],
+    options?: ImportBooksOptions,
+  ) => Promise<ImportBooksResult>;
   inspectDeletedBookCandidate: (
     bookId: string,
     filePath: string,
@@ -405,9 +495,8 @@ async function restoreDeletedDesktopBook(bookId: string, filePath: string): Prom
     umd: "umd",
   };
   const format: Book["format"] = formatMap[ext] || "epub";
-  let title = originalBook.meta.title || fileName.replace(/\.\w+$/i, "") || "Untitled";
-  let author = originalBook.meta.author || "";
-  let coverUrl = originalBook.meta.coverUrl;
+  const fallbackTitle = fileName.replace(/\.\w+$/i, "") || "Untitled";
+  let embeddedMeta: ExtractedBookMetadata & { coverUrl?: string } = {};
   let fileHash: string | undefined;
 
   try {
@@ -433,7 +522,7 @@ async function restoreDeletedDesktopBook(bookId: string, filePath: string): Prom
           );
           const converter = new TxtToEpubConverter();
           const conversion = await converter.convert({ file: txtFile });
-          title = conversion.bookTitle || title;
+          embeddedMeta = { title: conversion.bookTitle };
           const epubBytes = new Uint8Array(await conversion.file.arrayBuffer());
           await mkdir(await join(await getDesktopLibraryRoot(), "books"), { recursive: true });
           const relPath = `books/${bookId}.epub`;
@@ -459,8 +548,7 @@ async function restoreDeletedDesktopBook(bookId: string, filePath: string): Prom
             const conversion = await new UmdToEpubConverter((b) =>
               fflate.unzlibSync(b),
             ).convertToBytes({ file: umdFile });
-            if (conversion.bookTitle) title = conversion.bookTitle;
-            if (conversion.author) author = conversion.author;
+            embeddedMeta = { title: conversion.bookTitle, author: conversion.author };
             await mkdir(await join(await getDesktopLibraryRoot(), "books"), { recursive: true });
             const relPath = `books/${bookId}.epub`;
             const dest = await resolveAppPath(relPath);
@@ -476,17 +564,25 @@ async function restoreDeletedDesktopBook(bookId: string, filePath: string): Prom
       const epubBytes = await readFile(destPath);
       const blob = new Blob([epubBytes]);
       const epubMeta = await extractEpubMetadata(blob);
-      if (epubMeta.title) title = epubMeta.title;
-      if (epubMeta.author) author = epubMeta.author;
-      if (epubMeta.coverBlob) {
-        coverUrl = await saveCoverToAppData(bookId, epubMeta.coverBlob);
+      embeddedMeta = epubMeta;
+      if (!originalBook.meta.coverUrl?.trim() && epubMeta.coverBlob) {
+        embeddedMeta.coverUrl = await saveCoverToAppData(bookId, epubMeta.coverBlob);
       }
     } else if (format === "pdf") {
       const { convertFileSrc } = await import("@tauri-apps/api/core");
       const pdfUrl = convertFileSrc(destPath);
-      const coverBlob = await generatePdfCover(pdfUrl);
-      if (coverBlob) {
-        coverUrl = await saveCoverToAppData(bookId, coverBlob);
+      try {
+        embeddedMeta = await extractPdfMetadata(pdfUrl);
+      } catch (err) {
+        console.warn("[restoreDeletedDesktopBook] PDF metadata extraction failed:", err);
+      }
+      try {
+        const coverBlob = await generatePdfCover(pdfUrl);
+        if (!originalBook.meta.coverUrl?.trim() && coverBlob) {
+          embeddedMeta.coverUrl = await saveCoverToAppData(bookId, coverBlob);
+        }
+      } catch (err) {
+        console.warn("[restoreDeletedDesktopBook] PDF cover generation failed:", err);
       }
     } else {
       const { readFile } = await import("@tauri-apps/plugin-fs");
@@ -500,22 +596,11 @@ async function restoreDeletedDesktopBook(bookId: string, filePath: string): Prom
       const { DocumentLoader } = await import("@/lib/reader/document-loader");
       const loader = new DocumentLoader(file);
       const { book: bookDoc } = await loader.open();
-      const meta = bookDoc.metadata;
-      if (meta) {
-        const rawTitle =
-          typeof meta.title === "string"
-            ? meta.title
-            : meta.title
-              ? Object.values(meta.title)[0]
-              : "";
-        if (rawTitle) title = rawTitle;
-        const rawAuthor = typeof meta.author === "string" ? meta.author : meta.author?.name || "";
-        if (rawAuthor) author = rawAuthor;
-      }
+      embeddedMeta = fromDocumentMetadata(bookDoc.metadata as unknown as FoliateDocumentMetadata);
       try {
         const coverBlob = await bookDoc.getCover();
-        if (coverBlob) {
-          coverUrl = await saveCoverToAppData(bookId, coverBlob);
+        if (!originalBook.meta.coverUrl?.trim() && coverBlob) {
+          embeddedMeta.coverUrl = await saveCoverToAppData(bookId, coverBlob);
         }
       } catch (err) {
         console.warn("[restoreDeletedDesktopBook] getCover failed:", err);
@@ -523,29 +608,17 @@ async function restoreDeletedDesktopBook(bookId: string, filePath: string): Prom
     }
   } catch (err) {
     console.warn("[restoreDeletedDesktopBook] Metadata extraction failed, falling back:", err);
-    if (format === "pdf") {
-      try {
-        const { convertFileSrc } = await import("@tauri-apps/api/core");
-        const coverBlob = await generatePdfCover(convertFileSrc(destPath));
-        if (coverBlob) {
-          coverUrl = await saveCoverToAppData(bookId, coverBlob);
-        }
-      } catch (err) {
-        console.warn("[Library] PDF cover generation failed:", err);
-      }
-    }
   }
 
   return {
     ...originalBook,
     filePath: relativePath,
     format,
-    meta: {
-      ...originalBook.meta,
-      title,
-      author,
-      coverUrl,
-    },
+    meta: buildImportedBookMeta({
+      existing: originalBook.meta,
+      embedded: embeddedMeta,
+      fallbackTitle,
+    }),
     deletedAt: undefined,
     fileHash,
     syncStatus: "local",
@@ -862,7 +935,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   setSortOrder: (order) => set((state) => ({ filter: { ...state.filter, sortOrder: order } })),
 
-  importBooks: async (filePaths) => {
+  importBooks: async (files, options = {}) => {
     set({ isImporting: true });
     const result = createEmptyImportBooksResult();
     const duplicateIndex = createImportDuplicateIndex(get().books);
@@ -870,10 +943,13 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       await db.initDatabase();
       const { DocumentLoader } = await import("@/lib/reader/document-loader");
 
-      for (const filePath of filePaths) {
+      for (const fileInput of files) {
+        const fileInfo = normalizeDesktopImportFile(fileInput);
+        const filePath = fileInfo.path;
         const fileName = decodeURIComponent(
-          filePath.replace(/\\/g, "/").split("/").pop() || "book",
+          fileInfo.name || filePath.replace(/\\/g, "/").split("/").pop() || "book",
         );
+        const createdManagedPaths = new Set<string>();
         try {
           const ext = filePath.split(".").pop()?.toLowerCase() || "epub";
           const formatMap: Record<string, Book["format"]> = {
@@ -890,9 +966,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             umd: "umd",
           };
           const format: Book["format"] = formatMap[ext] || "epub";
-          let title = fileName.replace(/\.\w+$/i, "") || "Untitled";
-          let author = "";
-          let coverUrl: string | undefined;
+          const fallbackTitle = fileName.replace(/\.\w+$/i, "") || "Untitled";
+          let embeddedMeta: ExtractedBookMetadata & { coverUrl?: string } = {};
           let fileHash: string | undefined;
 
           try {
@@ -911,14 +986,68 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             continue;
           }
 
-          let deletedMatch = fileHash
-            ? await db.getDeletedBookByFileHash(fileHash).catch((err) => { console.warn("[Library] Failed to check deleted book by hash:", err); return null; })
-            : null;
+          let deletedMatch: Book | null = null;
+          let hashLookupConclusive = false;
+          if (fileHash) {
+            try {
+              deletedMatch = await db.getDeletedBookByFileHash(fileHash);
+              hashLookupConclusive = true;
+            } catch (err) {
+              console.warn("[Library] Failed to check deleted book by hash:", err);
+            }
+          }
           // Fallback: match by title if hash lookup failed (e.g. hash was null on first import)
-          if (!deletedMatch && title) {
-            deletedMatch = await db.getDeletedBookByTitle(title).catch((err) => { console.warn("[Library] Failed to check deleted book by title:", err); return null; });
+          if (!hashLookupConclusive && fallbackTitle) {
+            deletedMatch = await db.getDeletedBookByTitle(fallbackTitle).catch((err) => {
+              console.warn("[Library] Failed to check deleted book by title:", err);
+              return null;
+            });
           }
           const bookId = deletedMatch?.id ?? crypto.randomUUID();
+          const persistEmbeddedCover = shouldPersistEmbeddedCover(
+            deletedMatch?.meta,
+            fileInfo.metadata,
+          );
+          let convertedDestination:
+            | { relativePath: string; destPath: string; created: boolean }
+            | undefined;
+          const persistImport = async (book: Book): Promise<void> => {
+            const restoreUpdates = {
+              filePath: book.filePath,
+              format: book.format,
+              meta: book.meta,
+              deletedAt: undefined,
+              progress: book.progress,
+              currentCfi: book.currentCfi,
+              isVectorized: false,
+              vectorizeProgress: 0,
+              tags: book.tags,
+              fileHash: book.fileHash,
+              syncStatus: "local" as const,
+              lastOpenedAt: Date.now(),
+            };
+
+            if (options.transactional) {
+              if (deletedMatch) {
+                await db.updateBook(book.id, restoreUpdates);
+              } else {
+                await db.insertBook(book);
+              }
+              set((state) => ({ books: [...state.books, book] }));
+              debouncedSave("library-books", get().books);
+              return;
+            }
+
+            if (deletedMatch) {
+              set((state) => ({ books: [...state.books, book] }));
+              db.updateBook(book.id, restoreUpdates).catch((err) =>
+                console.error("Failed to restore deleted book from database:", err),
+              );
+              debouncedSave("library-books", get().books);
+            } else {
+              get().addBook(book);
+            }
+          };
 
           // For TXT files, convert to EPUB first before storing
           if (ext === "txt") {
@@ -934,15 +1063,21 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             );
             const converter = new TxtToEpubConverter();
             const result = await converter.convert({ file: txtFile });
-            title = result.bookTitle;
-            if (result.language) author = "";
+            embeddedMeta = { title: result.bookTitle, language: result.language };
             // Write the converted EPUB directly into the managed library location
             const { writeFile, mkdir } = await import("@tauri-apps/plugin-fs");
             const { join } = await import("@tauri-apps/api/path");
             const epubBytes = new Uint8Array(await result.file.arrayBuffer());
             await mkdir(await join(await getDesktopLibraryRoot(), "books"), { recursive: true });
-            const tmpPath = await resolveAppPath(`books/${bookId}.epub`);
-            await writeFile(tmpPath, epubBytes);
+            const destination = await getDesktopManagedDestination(
+              "books",
+              bookId,
+              "epub",
+              options.transactional === true,
+            );
+            convertedDestination = destination;
+            if (destination.created) createdManagedPaths.add(destination.destPath);
+            await writeFile(destination.destPath, epubBytes);
           }
 
           // For UMD files, parse and convert to EPUB before storing
@@ -960,13 +1095,19 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             );
             const converter = new UmdToEpubConverter((b) => fflate.unzlibSync(b));
             const result = await converter.convertToBytes({ file: umdFile });
-            if (result.bookTitle) title = result.bookTitle;
-            if (result.author) author = result.author;
+            embeddedMeta = { title: result.bookTitle, author: result.author };
             const { writeFile, mkdir } = await import("@tauri-apps/plugin-fs");
             const { join } = await import("@tauri-apps/api/path");
             await mkdir(await join(await getDesktopLibraryRoot(), "books"), { recursive: true });
-            const destEpub = await resolveAppPath(`books/${bookId}.epub`);
-            await writeFile(destEpub, result.epubBytes);
+            const destination = await getDesktopManagedDestination(
+              "books",
+              bookId,
+              "epub",
+              options.transactional === true,
+            );
+            convertedDestination = destination;
+            if (destination.created) createdManagedPaths.add(destination.destPath);
+            await writeFile(destination.destPath, result.epubBytes);
           }
 
           // Copy book file into the managed library root (books/{id}.{ext})
@@ -974,12 +1115,20 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           let relativePath: string;
           let destPath: string;
           if (ext === "txt" || ext === "umd") {
-            relativePath = `books/${bookId}.epub`;
-            destPath = await resolveAppPath(relativePath);
+            const destination = convertedDestination;
+            if (!destination) throw new Error("Converted book destination missing");
+            relativePath = destination.relativePath;
+            destPath = destination.destPath;
           } else {
-            const copyResult = await copyBookToAppData(bookId, ext, filePath);
+            const copyResult = await copyBookToAppData(
+              bookId,
+              ext,
+              filePath,
+              options.transactional === true,
+            );
             relativePath = copyResult.relativePath;
             destPath = copyResult.destPath;
+            if (copyResult.created) createdManagedPaths.add(copyResult.destPath);
           }
 
           // Extract metadata WITHOUT loading the full file into JS memory.
@@ -993,34 +1142,36 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
               const epubBytes = await readFile(destPath);
               const blob = new Blob([epubBytes]);
               const epubMeta = await extractEpubMetadata(blob);
-              if (epubMeta.title) title = epubMeta.title;
-              if (epubMeta.author) author = epubMeta.author;
-              if (epubMeta.coverBlob) {
-                coverUrl = await saveCoverToAppData(bookId, epubMeta.coverBlob);
+              embeddedMeta = epubMeta;
+              if (persistEmbeddedCover && epubMeta.coverBlob) {
+                embeddedMeta.coverUrl = await saveImportedDesktopCover({
+                  bookId,
+                  cover: epubMeta.coverBlob,
+                  avoidExisting: options.transactional === true,
+                  createdManagedPaths,
+                });
               }
             } else if (format === "pdf") {
               // PDF: use convertFileSrc URL so pdfjs streams from disk
               const { convertFileSrc } = await import("@tauri-apps/api/core");
               const pdfUrl = convertFileSrc(destPath);
-              const coverBlob = await generatePdfCover(pdfUrl);
-              if (coverBlob) {
-                coverUrl = await saveCoverToAppData(bookId, coverBlob);
-              }
-              // PDF title: try extracting from PDF metadata
               try {
-                const pdfjsLib = await import("pdfjs-dist");
-                pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-                const pdfDoc = await pdfjsLib.getDocument({
-                  url: pdfUrl,
-                  useWorkerFetch: false,
-                  isEvalSupported: false,
-                }).promise;
-                const metadata = await pdfDoc.getMetadata();
-                const pdfTitle = (metadata?.info as Record<string, unknown>)?.Title as string;
-                if (pdfTitle?.trim()) title = pdfTitle.trim();
-                pdfDoc.destroy();
+                embeddedMeta = await extractPdfMetadata(pdfUrl);
               } catch (err) {
                 console.warn("[Library] PDF metadata extraction failed:", err);
+              }
+              try {
+                const coverBlob = await generatePdfCover(pdfUrl);
+                if (persistEmbeddedCover && coverBlob) {
+                  embeddedMeta.coverUrl = await saveImportedDesktopCover({
+                    bookId,
+                    cover: coverBlob,
+                    avoidExisting: options.transactional === true,
+                    createdManagedPaths,
+                  });
+                }
+              } catch (err) {
+                console.warn("[Library] PDF cover generation failed:", err);
               }
             } else {
               // Other formats (MOBI/AZW/FB2/CBZ): need DocumentLoader, load file into memory
@@ -1033,26 +1184,19 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
               });
               const loader = new DocumentLoader(file);
               const { book: bookDoc } = await loader.open();
-
-              const meta = bookDoc.metadata;
-              if (meta) {
-                const rawTitle =
-                  typeof meta.title === "string"
-                    ? meta.title
-                    : meta.title
-                      ? Object.values(meta.title)[0]
-                      : "";
-                if (rawTitle) title = rawTitle;
-
-                const rawAuthor =
-                  typeof meta.author === "string" ? meta.author : meta.author?.name || "";
-                if (rawAuthor) author = rawAuthor;
-              }
+              embeddedMeta = fromDocumentMetadata(
+                bookDoc.metadata as unknown as FoliateDocumentMetadata,
+              );
 
               try {
                 const coverBlob = await bookDoc.getCover();
-                if (coverBlob) {
-                  coverUrl = await saveCoverToAppData(bookId, coverBlob);
+                if (persistEmbeddedCover && coverBlob) {
+                  embeddedMeta.coverUrl = await saveImportedDesktopCover({
+                    bookId,
+                    cover: coverBlob,
+                    avoidExisting: options.transactional === true,
+                    createdManagedPaths,
+                  });
                 }
               } catch (err) {
                 console.warn("[importBooks] getCover failed:", err);
@@ -1066,12 +1210,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             id: bookId,
             filePath: relativePath,
             format,
-            meta: {
-              ...(deletedMatch?.meta ?? {}),
-              title,
-              author,
-              coverUrl: coverUrl || deletedMatch?.meta.coverUrl,
-            },
+            meta: buildDesktopImportedBookMeta({
+              file: fileInfo,
+              existing: deletedMatch?.meta,
+              embedded: embeddedMeta,
+              fallbackTitle,
+            }),
             groupId: deletedMatch?.groupId,
             progress: deletedMatch?.progress ?? 0,
             currentCfi: deletedMatch?.currentCfi,
@@ -1085,26 +1229,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             lastOpenedAt: deletedMatch?.lastOpenedAt ?? Date.now(),
           };
 
-          if (deletedMatch) {
-            set((state) => ({ books: [...state.books, book] }));
-            db.updateBook(book.id, {
-              filePath: book.filePath,
-              format: book.format,
-              meta: book.meta,
-              deletedAt: undefined,
-              progress: book.progress,
-              currentCfi: book.currentCfi,
-              isVectorized: false,
-              vectorizeProgress: 0,
-              tags: book.tags,
-              fileHash: book.fileHash,
-              syncStatus: "local",
-              lastOpenedAt: Date.now(),
-            }).catch((err) => console.error("Failed to restore deleted book from database:", err));
-            debouncedSave("library-books", get().books);
-          } else {
-            get().addBook(book);
-          }
+          await persistImport(book);
           result.imported.push(book);
           if (fileHash) {
             duplicateIndex.byHash.set(fileHash, book);
@@ -1119,15 +1244,20 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           ) {
             triggerVectorizeBook(book.id, relativePath, (progress) => {
               // Update book's vectorizeProgress so BookCard can show it
-              const pct = progress.totalChunks > 0
-                ? progress.processedChunks / progress.totalChunks
-                : 0;
+              const pct =
+                progress.totalChunks > 0 ? progress.processedChunks / progress.totalChunks : 0;
               get().updateBook(book.id, { vectorizeProgress: pct });
             }).catch((err) => {
-              console.warn(`[importBooks] Auto-vectorize failed for ${title}:`, err);
+              console.warn(`[importBooks] Auto-vectorize failed for ${book.meta.title}:`, err);
             });
           }
         } catch (err) {
+          if (options.transactional) {
+            const { remove } = await import("@tauri-apps/plugin-fs");
+            for (const path of createdManagedPaths) {
+              await remove(path).catch(() => undefined);
+            }
+          }
           console.error(`Failed to import ${filePath}:`, err);
           result.failures.push({
             name: fileName,
@@ -1301,7 +1431,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     // Persist book tag changes to DB
     const books = get().books;
     for (const b of books) {
-      db.updateBook(b.id, { tags: b.tags }).catch((err) => console.warn("[Library] Failed to update book tags:", err));
+      db.updateBook(b.id, { tags: b.tags }).catch((err) =>
+        console.warn("[Library] Failed to update book tags:", err),
+      );
     }
   },
 
@@ -1321,7 +1453,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     });
     for (const b of get().books) {
       if (b.tags.includes(trimmed)) {
-        db.updateBook(b.id, { tags: b.tags }).catch((err) => console.warn("[Library] Failed to update book tags:", err));
+        db.updateBook(b.id, { tags: b.tags }).catch((err) =>
+          console.warn("[Library] Failed to update book tags:", err),
+        );
       }
     }
   },
@@ -1338,7 +1472,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       return { books, allTags };
     });
     const book = get().books.find((b) => b.id === bookId);
-    if (book) db.updateBook(bookId, { tags: book.tags }).catch((err) => console.warn("[Library] Failed to update book tags:", err));
+    if (book)
+      db.updateBook(bookId, { tags: book.tags }).catch((err) =>
+        console.warn("[Library] Failed to update book tags:", err),
+      );
   },
 
   removeTagFromBook: (bookId, tag) => {
@@ -1350,6 +1487,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       return { books };
     });
     const book = get().books.find((b) => b.id === bookId);
-    if (book) db.updateBook(bookId, { tags: book.tags }).catch((err) => console.warn("[Library] Failed to update book tags:", err));
+    if (book)
+      db.updateBook(bookId, { tags: book.tags }).catch((err) =>
+        console.warn("[Library] Failed to update book tags:", err),
+      );
   },
 }));

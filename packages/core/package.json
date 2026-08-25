@@ -63,6 +63,7 @@
     "@xmldom/xmldom": "^0.8.11",
     "@zip.js/zip.js": "^2.7.52",
     "clsx": "^2.1.1",
+    "foliate-js": "workspace:*",
     "i18next": "^25.8.13",
     "pdfjs-dist": "^5.5.207",
     "react-i18next": "^16.5.4",

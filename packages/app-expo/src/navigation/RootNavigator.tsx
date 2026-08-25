@@ -7,6 +7,8 @@ import { FullScreenNotesScreen } from "@/screens/FullScreenNotesScreen";
 import { ReaderScreen } from "@/screens/ReaderScreen";
 import SkillsScreen from "@/screens/SkillsScreen";
 import StatsScreen from "@/screens/StatsScreen";
+import { OpdsBrowserScreen } from "@/screens/library/OpdsBrowserScreen";
+import { OpdsCatalogsScreen } from "@/screens/library/OpdsCatalogsScreen";
 import { WebDavImportBrowserScreen } from "@/screens/library/WebDavImportBrowserScreen";
 import AISettingsScreen from "@/screens/settings/AISettingsScreen";
 import AboutScreen from "@/screens/settings/AboutScreen";
@@ -47,6 +49,8 @@ export type RootStackParamList = {
   FullScreenNotes: { bookId: string };
   FontSettings: undefined;
   WebDavImportBrowser: { source: WebDavImportSource };
+  OpdsCatalogs: { editCatalogId?: string } | undefined;
+  OpdsBrowser: { catalogId: string };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -121,6 +125,16 @@ export function RootNavigator() {
             <Stack.Screen
               name="WebDavImportBrowser"
               component={WebDavImportBrowserScreen}
+              options={{ animation: "slide_from_right" }}
+            />
+            <Stack.Screen
+              name="OpdsCatalogs"
+              component={OpdsCatalogsScreen}
+              options={{ animation: "slide_from_right" }}
+            />
+            <Stack.Screen
+              name="OpdsBrowser"
+              component={OpdsBrowserScreen}
               options={{ animation: "slide_from_right" }}
             />
             <Stack.Screen
