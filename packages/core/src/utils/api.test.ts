@@ -90,6 +90,15 @@ describe("AI API URL helpers", () => {
     expect(detectProviderFromUrl("https://api.atlascloud.ai/v1")).toBe("atlascloud");
   });
 
+  it("supports OrcaRouter as a named OpenAI-compatible provider", () => {
+    expect(getDefaultBaseUrl("orcarouter")).toBe("https://api.orcarouter.ai/v1");
+    expect(resolveProviderBaseUrl("orcarouter")).toBe("https://api.orcarouter.ai/v1");
+    expect(detectProviderFromUrl("https://api.orcarouter.ai/v1")).toBe("orcarouter");
+    expect(buildProviderModelsUrl("orcarouter")).toBe(
+      "https://api.orcarouter.ai/v1/models",
+    );
+  });
+
   describe("ensureUrlProtocol / scheme-less inputs", () => {
     it("prepends https:// when a remote URL has no scheme", () => {
       expect(ensureUrlProtocol("api.openai.com/v1")).toBe("https://api.openai.com/v1");
