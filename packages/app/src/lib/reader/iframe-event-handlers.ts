@@ -142,6 +142,10 @@ export const handleMouseup = (bookKey: string, event: MouseEvent) => {
   );
 };
 
+export const handleContextMenu = (event: MouseEvent) => {
+  event.preventDefault();
+};
+
 /** Single-click detection with double-click exclusion */
 let clickTimer: ReturnType<typeof setTimeout> | null = null;
 let clickCount = 0;
@@ -231,6 +235,7 @@ export function registerIframeEventHandlers(bookKey: string, doc: Document): voi
   doc.addEventListener("keyup", handleKeyup.bind(null, bookKey));
   doc.addEventListener("mousedown", handleMousedown.bind(null, bookKey));
   doc.addEventListener("mouseup", handleMouseup.bind(null, bookKey));
+  doc.addEventListener("contextmenu", handleContextMenu, { capture: true });
   doc.addEventListener("click", handleClick.bind(null, bookKey));
   doc.addEventListener("wheel", handleWheel.bind(null, bookKey), {
     passive: true,

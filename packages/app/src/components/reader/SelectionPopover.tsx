@@ -20,6 +20,7 @@ import { useTranslation } from "react-i18next";
 interface SelectionPopoverProps {
   position: { x: number; y: number };
   selectedText: string;
+  selectionRects: DOMRect[];
   annotated?: boolean; // true if this is an existing annotation
   currentColor?: HighlightColor; // current highlight color (for existing annotations)
   defaultColor?: HighlightColor;
@@ -39,6 +40,7 @@ const POPOVER_MARGIN = 8;
 export function SelectionPopover({
   position,
   selectedText: _selectedText,
+  selectionRects,
   annotated = false,
   currentColor,
   defaultColor = "yellow",
@@ -57,7 +59,32 @@ export function SelectionPopover({
   const [selectedColor, setSelectedColor] = useState<HighlightColor>(currentColor || defaultColor);
   const overlayRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [clampedPosition, setClampedPosition] = useState(position);
+
+  const clearPendingClose = () => {
+    if (!closeTimerRef.current) return;
+    clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  };
+
+  const selectionBounds = selectionRects.reduce<DOMRect | null>((bounds, rect) => {
+    if (!bounds) {
+      return new DOMRect(rect.left, rect.top, rect.width, rect.height);
+    }
+    const left = Math.min(bounds.left, rect.left);
+    const top = Math.min(bounds.top, rect.top);
+    const right = Math.max(bounds.right, rect.right);
+    const bottom = Math.max(bounds.bottom, rect.bottom);
+    return new DOMRect(left, top, right - left, bottom - top);
+  }, null);
+
+  const isPointInsideSelection = (x: number, y: number) =>
+    !!selectionBounds &&
+    x >= selectionBounds.left &&
+    x <= selectionBounds.right &&
+    y >= selectionBounds.top &&
+    y <= selectionBounds.bottom;
 
   const handleHighlightClick = () => {
     // PDF doesn't support highlighting
@@ -131,13 +158,31 @@ export function SelectionPopover({
     );
   });
 
+  const handleBackdropClick = () => {
+    clearPendingClose();
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      onClose();
+    }, 320);
+  };
+
+  const handleBackdropDoubleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    clearPendingClose();
+    if (!isPointInsideSelection(event.clientX, event.clientY)) {
+      onClose();
+      return;
+    }
+    onAskAI();
+  };
+
   return (
     <div ref={overlayRef} className="absolute inset-0 z-50">
       <button
         type="button"
         aria-label={t("common.close")}
         className="absolute inset-0 cursor-default"
-        onClick={onClose}
+        onClick={handleBackdropClick}
+        onDoubleClick={handleBackdropDoubleClick}
       />
       <div
         ref={popoverRef}
