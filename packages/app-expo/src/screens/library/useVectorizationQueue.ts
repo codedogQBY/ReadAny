@@ -1,5 +1,8 @@
 import type { ExtractorRef } from "@/components/rag/ExtractorWebView";
-import { inspectMobileBookForVectorize } from "@/lib/rag/auto-vectorize-book";
+import {
+  MOBILE_AUTO_VECTORIZE_MAX_BYTES,
+  inspectMobileBookForVectorize,
+} from "@/lib/rag/auto-vectorize-book";
 import { triggerVectorizeBook } from "@/lib/rag/vectorize-trigger";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { useVectorModelStore } from "@/stores/vector-model-store";
@@ -106,7 +109,9 @@ export function useVectorizationQueue({ extractorRef, nav }: UseVectorizationQue
   const handleVectorize = useCallback(
     (book: Book) => {
       const prepareAndQueue = async () => {
-        const info = await inspectMobileBookForVectorize(book);
+        const info = await inspectMobileBookForVectorize(book, {
+          maxBytes: MOBILE_AUTO_VECTORIZE_MAX_BYTES,
+        });
         if (info.reason === "unsupported-format") {
           Alert.alert(
             t("vectorize.unsupportedFormatTitle", "Unsupported format"),
@@ -124,6 +129,39 @@ export function useVectorizationQueue({ extractorRef, nav }: UseVectorizationQue
               "vectorize.missingFileDesc",
               "The local book file is missing. Please download or re-import it.",
             ),
+          );
+          return;
+        }
+        if (info.reason === "file-too-large") {
+          const maxMb = Math.round(MOBILE_AUTO_VECTORIZE_MAX_BYTES / 1024 / 1024);
+          const shouldContinue = await new Promise<boolean>((resolve) => {
+            Alert.alert(
+              t("vectorize.largeBookTitle", "文件较大"),
+              t("vectorize.largeBookDesc", {
+                maxMb,
+                defaultValue: `这本书超过 ${maxMb}MB，移动端向量化可能较慢并占用较多内存。仍要继续吗？`,
+              }),
+              [
+                {
+                  text: t("common.cancel", "取消"),
+                  style: "cancel",
+                  onPress: () => resolve(false),
+                },
+                {
+                  text: t("common.continue", "继续"),
+                  onPress: () => resolve(true),
+                },
+              ],
+              { cancelable: true, onDismiss: () => resolve(false) },
+            );
+          });
+          if (!shouldContinue) {
+            return;
+          }
+        } else if (!info.canVectorize) {
+          Alert.alert(
+            t("common.error", "Error"),
+            t("vectorize.prepareFailed", "Failed to prepare vectorization."),
           );
           return;
         }
