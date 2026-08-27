@@ -1986,6 +1986,7 @@
             height: auto;
           }
           ${getVerticalWritingCompatibilityStyles()}
+          ${currentJustifyBodyText !== false ? (globalThis.ReadAnyJustifiedText?.JUSTIFY_CSS ?? '') : ''}
         `;
         lastRendererStyles = baseStyles;
         const themedStyles = injectThemeIntoStyles(
@@ -1994,12 +1995,14 @@
           currentThemeColors.fg,
           currentThemeColors.primary,
         );
+        // Pin author-aligned <br>-containing blocks BEFORE injecting the
+        // justify stylesheet, so getComputedStyle reflects the book's own CSS.
+        syncJustifiedTextForAllDocs();
         if (typeof renderer.setStyles === 'function') {
           renderer.setStyles(themedStyles);
         }
         syncReaderOverrideStylesForAllDocs(themedStyles);
         syncCustomFontStylesForAllDocs(currentCustomFontFaceCSS);
-        syncJustifiedTextForAllDocs();
       }
 
       if (settings.pageMargin != null) {
