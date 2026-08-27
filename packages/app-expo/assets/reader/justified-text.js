@@ -138,8 +138,17 @@
         doc.documentElement.removeAttribute("data-readany-vertical");
       }
     }
-    unpinAlignedBrContainers(doc);
-    if (!enabled || isUnsupported) return;
+    // When disabled or unsupported, undo any alignment we pinned so the book's
+    // own cascade is restored exactly. When enabled we do NOT unpin first —
+    // re-running apply (e.g. on section load) must be idempotent: unpinning
+    // would clear a center pin from a previous run, and re-reading the
+    // alignment now (after the justify stylesheet is already injected) could
+    // see `start` (from :has(> br)) instead of the book's center, dropping the
+    // alignment.
+    if (!enabled || isUnsupported) {
+      unpinAlignedBrContainers(doc);
+      return;
+    }
     preserveAlignedBrContainers(doc);
   }
 
