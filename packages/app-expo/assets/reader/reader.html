@@ -215,8 +215,6 @@
 
   function isVerticalDoc(doc) {
     if (!doc?.documentElement || !doc?.defaultView) return false;
-    const root = doc.documentElement;
-    if (root.classList.contains("vrtl") || root.classList.contains("vltr")) return true;
     const body = doc.body;
     if (!body) return false;
     try {
@@ -2606,7 +2604,6 @@ html, body {
     function isVerticalDoc(doc) {
       const root = doc && doc.documentElement;
       if (!root) return false;
-      if (root.classList.contains('vrtl') || root.classList.contains('vltr')) return true;
       const body = doc.body;
       if (!body || !doc.defaultView) return false;
       const style = doc.defaultView.getComputedStyle(body);
