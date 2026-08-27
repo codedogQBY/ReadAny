@@ -51,8 +51,6 @@
 
   function isVerticalDoc(doc) {
     if (!doc?.documentElement || !doc?.defaultView) return false;
-    const root = doc.documentElement;
-    if (root.classList.contains("vrtl") || root.classList.contains("vltr")) return true;
     const body = doc.body;
     if (!body) return false;
     try {
