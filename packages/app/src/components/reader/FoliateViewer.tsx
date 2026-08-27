@@ -127,10 +127,16 @@ function syncJustifyForDoc(doc: Document, enabled: boolean) {
       root.removeAttribute("data-readany-vertical");
     }
   }
-  unpinAlignedBrContainers(doc);
-  if (enabled && !isUnsupported) {
-    preserveAlignedBrContainers(doc);
+  // Idempotent: only unpin when justify is disabled or the layout is
+  // unsupported. When enabled we must NOT unpin first — re-running this on a
+  // later render (after the justify stylesheet is already injected) would
+  // clear a pinned center, and re-reading the alignment would see `start`
+  // (from :has(> br)) instead of the book's center, dropping the alignment.
+  if (!enabled || isUnsupported) {
+    unpinAlignedBrContainers(doc);
+    return;
   }
+  preserveAlignedBrContainers(doc);
 }
 
 function getAppTheme(): AppTheme {
