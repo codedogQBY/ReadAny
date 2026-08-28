@@ -43,6 +43,134 @@ const THEME_COLORS: Record<AppTheme, { bg: string; fg: string; link: string }> =
 
 const READER_OVERRIDE_STYLE_ID = "__readany_reader_overrides__";
 
+/**
+ * Justified body text fallback. Lives in @layer readany-justify so any
+ * unlayered book style wins (never override the book). :where() keeps
+ * specificity at 0. Elements that DIRECTLY contain a <br> (poetry/lyrics line
+ * breaks) get `start` so short lines are not stretched — `:has(> br)` matches
+ * only the element whose br is a direct child, never an outer container that
+ * merely contains a br descendant (which would wrongly cascade `start` onto
+ * unrelated siblings). Code, tables, captions and forms are excluded. All
+ * rules are scoped to horizontal text — apply/syncJustifyForDoc tag vertical
+ * and fixed documents with data-readany-vertical, which cannot be expressed
+ * with a pure-CSS guard.
+ * Mirrors packages/app-expo/assets/reader/justified-text.js JUSTIFY_CSS.
+ */
+const READANY_JUSTIFY_CSS = `
+@layer readany-justify {
+  :root:not([data-readany-vertical]) body { text-align: justify; }
+  :root:not([data-readany-vertical]) :where(*:has(> br)) { text-align: start; }
+  :root:not([data-readany-vertical]) pre,
+  :root:not([data-readany-vertical]) code,
+  :root:not([data-readany-vertical]) kbd,
+  :root:not([data-readany-vertical]) samp,
+  :root:not([data-readany-vertical]) table,
+  :root:not([data-readany-vertical]) caption,
+  :root:not([data-readany-vertical]) figcaption,
+  :root:not([data-readany-vertical]) form { text-align: start; }
+}
+`;
+
+/**
+ * Pin author-aligned, <br>-containing blocks to their computed alignment.
+ * When justify is on, body { text-align: justify } would stretch short lines
+ * inside blocks that contain <br> — but only for blocks the author left
+ * unaligned. Blocks the author aligned (center/right/end, via class, id,
+ * inline style, align attribute or an aligned ancestor) must keep their
+ * alignment. CSS cannot see the computed alignment, so we read it here and
+ * pin it inline; inline style beats the @layer rule.
+ *
+ * Call BEFORE injecting the justify stylesheet so getComputedStyle reflects
+ * the book's own CSS, not our injected rules.
+ */
+function preserveAlignedBrContainers(doc: Document) {
+  if (!doc?.defaultView) return;
+  const selector =
+    "p, div, blockquote, dd, li, h1, h2, h3, h4, h5, h6, td, th, section, article, caption, figcaption";
+  // Alignments that differ from the start edge and must be preserved. `left` /
+  // `start` render identically to the fallback; `justify` is our own request.
+  const preserved = new Set(["center", "right", "end", "-webkit-center", "-webkit-right"]);
+  const inheritAlign = (el: Element): string => {
+    // First honour explicit align="" attributes on the element or its
+    // ancestors — these may not produce a computed text-align in the reader's
+    // sandboxed document, so they must be read directly.
+    let cur: Element | null = el;
+    while (cur) {
+      const al = cur.getAttribute("align")?.toLowerCase();
+      if (al) {
+        if (al === "center") return "center";
+        if (al === "right") return "right";
+        if (al === "left") return "start";
+        if (al === "justify") return "justify";
+      }
+      cur = cur.parentElement;
+    }
+    // The element itself may report `start` because our `:has(> br) { text-align:
+    // start }` rule directly applies and overrides an inherited center/right —
+    // read the nearest ancestor's alignment instead. (In the reader the justify
+    // stylesheet is already injected when this runs, so the element's own
+    // computed alignment is polluted.)
+    cur = el;
+    while (cur) {
+      const a = String(doc.defaultView?.getComputedStyle(cur).textAlign || "").toLowerCase();
+      if (a !== "start" && a !== "inherit") return a;
+      cur = cur.parentElement;
+    }
+    return "start";
+  };
+  for (const container of doc.querySelectorAll(`:is(${selector}):has(> br)`)) {
+    const align = inheritAlign(container);
+    if (preserved.has(align)) {
+      (container as HTMLElement).style.textAlign = align;
+      container.setAttribute("data-readany-justify-pinned", "");
+    } else {
+      // Unaligned br-bearing block (poetry/lyrics): force start so short lines
+      // are not stretched by the body justify.
+      (container as HTMLElement).style.textAlign = "start";
+    }
+  }
+}
+
+/** Remove every text-align we pinned, restoring the book's own cascade. */
+function unpinAlignedBrContainers(doc: Document) {
+  if (!doc) return;
+  for (const el of doc.querySelectorAll("[data-readany-justify-pinned]")) {
+    (el as HTMLElement).style.removeProperty("text-align");
+    el.removeAttribute("data-readany-justify-pinned");
+  }
+}
+
+/**
+ * Unified per-document justify sync: tag the root so the @layer CSS scopes to
+ * horizontal text, always unpin (clean undo), then pin author-aligned <br>
+ * blocks when justify is on and the layout is supported. Mirrors the mobile
+ * justified-text.js apply().
+ */
+function syncJustifyForDoc(doc: Document, enabled: boolean) {
+  if (!doc) return;
+  // Reuse the reader's existing getDirection (already called on section load)
+  // to detect vertical writing — document-level, per section, matching foliate.
+  const isUnsupported = getDirection(doc).vertical;
+  const root = doc.documentElement;
+  if (root) {
+    if (isUnsupported) {
+      root.setAttribute("data-readany-vertical", "");
+    } else {
+      root.removeAttribute("data-readany-vertical");
+    }
+  }
+  // Idempotent: only unpin when justify is disabled or the layout is
+  // unsupported. When enabled we must NOT unpin first — re-running this on a
+  // later render (after the justify stylesheet is already injected) would
+  // clear a pinned center, and re-reading the alignment would see `start`
+  // (from :has(> br)) instead of the book's center, dropping the alignment.
+  if (!enabled || isUnsupported) {
+    unpinAlignedBrContainers(doc);
+    return;
+  }
+  preserveAlignedBrContainers(doc);
+}
+
 function getAppTheme(): AppTheme {
   if (typeof document === "undefined") return "dark";
   const theme = document.documentElement.getAttribute("data-theme") as AppTheme | null;
@@ -3115,6 +3243,10 @@ function applyDocumentStyles(
 
   normalizeBrOnlyParagraphs(doc);
   syncRemoteFontStylesInDocument(doc, settings.customFontCssUrls);
+  // Unify justify state: tag vertical/fixed roots, unpin (clean undo), then
+  // pin author-aligned <br> blocks BEFORE the override stylesheet (which
+  // carries the justify fallback) so getComputedStyle sees the book's own CSS.
+  syncJustifyForDoc(doc, settings.justifyBodyText !== false);
   syncReaderOverrideStylesInDocument(doc, getRendererStyles(settings, theme));
 }
 
@@ -3488,6 +3620,8 @@ pre {
   white-space: pre-wrap !important;
   tab-size: 2;
 }
+
+${settings.justifyBodyText !== false ? READANY_JUSTIFY_CSS : ""}
 `;
 }
 
@@ -3526,6 +3660,12 @@ function applyRendererStyles(
     lineHeight: settings.lineHeight,
   });
   const styles = getRendererStyles(settings, theme);
+  // Always unpin first (restores the book's own cascade when justify is
+  // disabled), then re-pin author-aligned <br>-containing blocks.
+  for (const content of getRendererContents(view)) {
+    const doc = content?.doc as Document | undefined;
+    if (doc) syncJustifyForDoc(doc, settings.justifyBodyText !== false);
+  }
   renderer.setStyles(styles);
   syncReaderOverrideStyles(view, styles);
 }

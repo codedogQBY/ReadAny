@@ -71,6 +71,12 @@ describe("justified EPUB text setting", () => {
     expect(template).toContain("globalThis.ReadAnyJustifiedText?.apply(");
     expect(buildScript).toContain('"justified-text.js"');
     expect(buildScript).toContain("JUSTIFIED_TEXT_MARKER");
-    expect(builtReader).toContain("data-readany-justify-body");
+    // The built reader carries the @layer justify fallback and pins
+    // author-aligned <br> blocks; the old marker-based *marking* logic is gone
+    // (the marker string survives only as a cleanup constant).
+    expect(builtReader).toContain("@layer readany-justify");
+    expect(builtReader).toContain("justifyBodyText");
+    expect(builtReader).toContain("preserveAlignedBrContainers");
+    expect(builtReader).not.toContain("setAttribute(marker");
   });
 });

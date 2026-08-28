@@ -9,78 +9,67 @@ const helperPath = resolve(
   "../../../assets/reader/justified-text.js",
 );
 
-const marker = "data-readany-justify-body";
+const OLD_MARKER = "data-readany-justify-body";
+const PIN_ATTR = "data-readany-justify-pinned";
+const BR_SELECTOR =
+  "p, div, blockquote, dd, li, h1, h2, h3, h4, h5, h6, td, th, section, article, caption, figcaption";
 
-class FakeParagraph {
-  readonly attributes = new Map<string, string>();
+class FakeContainer {
+  readonly style: Record<string, string> & { removeProperty?: (p: string) => void } = {};
+  readonly attrs = new Set<string>();
 
   constructor(
-    public alignment: string,
-    private readonly hasLineBreak = false,
-    private readonly hasExcludedAncestor = false,
-  ) {}
-
-  querySelector(selector: string): object | null {
-    return selector === "br" && this.hasLineBreak ? {} : null;
+    public readonly textAlign: string,
+    public readonly hasLineBreak = false,
+  ) {
+    this.style.removeProperty = (prop: string) => {
+      delete this.style[prop];
+    };
   }
 
-  closest(): object | null {
-    return this.hasExcludedAncestor ? {} : null;
+  setAttribute(name: string, _value: string): void {
+    this.attrs.add(name);
   }
 
-  setAttribute(name: string, value: string): void {
-    this.attributes.set(name, value);
+  getAttribute(_name: string): string | null {
+    return null;
   }
 
   removeAttribute(name: string): void {
-    this.attributes.delete(name);
+    this.attrs.delete(name);
+    delete this.style.textAlign;
   }
 }
 
-class FakeDocument {
-  style: { id: string; textContent: string; remove: () => void } | null = null;
-  readonly defaultView = {
-    getComputedStyle: (paragraph: FakeParagraph) => ({ textAlign: paragraph.alignment }),
-  };
-  readonly head = {
-    appendChild: (style: { id: string; textContent: string; remove: () => void }) => {
-      this.style = style;
-    },
-  };
+class FakeDoc {
+  constructor(readonly containers: FakeContainer[]) {}
 
-  constructor(readonly paragraphs: FakeParagraph[]) {}
+  get defaultView() {
+    return {
+      getComputedStyle: (container: FakeContainer) => ({ textAlign: container.textAlign }),
+    };
+  }
 
-  querySelectorAll(selector: string): FakeParagraph[] {
-    if (selector === "p") return this.paragraphs;
-    if (selector === `[${marker}]`) {
-      return this.paragraphs.filter((paragraph) => paragraph.attributes.has(marker));
+  querySelectorAll(selector: string): FakeContainer[] {
+    if (selector === `:is(${BR_SELECTOR}):has(> br)`) {
+      return this.containers.filter((container) => container.hasLineBreak);
+    }
+    if (selector === `[${OLD_MARKER}]`) return [];
+    if (selector === `[${PIN_ATTR}]`) {
+      return this.containers.filter((container) => container.attrs.has(PIN_ATTR));
     }
     return [];
   }
 
-  getElementById(id: string): FakeDocument["style"] {
-    return this.style?.id === id ? this.style : null;
-  }
-
-  createElement(): NonNullable<FakeDocument["style"]> {
-    const style = {
-      id: "",
-      textContent: "",
-      remove: () => {
-        if (this.style === style) this.style = null;
-      },
-    };
-    return style;
+  getElementById(_id: string): unknown {
+    return null;
   }
 }
 
 interface JustifiedTextApi {
-  apply: (doc: FakeDocument, enabled: boolean, unsupportedLayout: boolean) => void;
-  shouldJustify: (
-    paragraph: FakeParagraph,
-    unsupportedLayout: boolean,
-    view: FakeDocument["defaultView"],
-  ) => boolean;
+  apply: (doc: FakeDoc, enabled: boolean, unsupportedLayout: boolean) => void;
+  preserveAlignedBrContainers: (doc: FakeDoc) => void;
+  JUSTIFY_CSS: string;
 }
 
 function loadHelper(): JustifiedTextApi | null {
@@ -92,45 +81,91 @@ function loadHelper(): JustifiedTextApi | null {
 }
 
 describe("reader-side justified text helper", () => {
-  it("justifies only eligible ordinary paragraphs", () => {
+  it("pins only author-aligned <br>-containing blocks to their alignment", () => {
     const api = loadHelper();
     expect(api).not.toBeNull();
     if (!api) return;
 
-    const doc = new FakeDocument([]);
-    expect(api.shouldJustify(new FakeParagraph("left"), false, doc.defaultView)).toBe(true);
-    expect(api.shouldJustify(new FakeParagraph("center"), false, doc.defaultView)).toBe(false);
-    expect(api.shouldJustify(new FakeParagraph("right"), false, doc.defaultView)).toBe(false);
-    expect(api.shouldJustify(new FakeParagraph("left", true), false, doc.defaultView)).toBe(false);
-    expect(api.shouldJustify(new FakeParagraph("left", false, true), false, doc.defaultView)).toBe(
-      false,
-    );
-    expect(api.shouldJustify(new FakeParagraph("left"), true, doc.defaultView)).toBe(false);
+    const left = new FakeContainer("left", true);
+    const centered = new FakeContainer("center", true);
+    const right = new FakeContainer("right", true);
+    const noBr = new FakeContainer("center", false);
+    const doc = new FakeDoc([left, centered, right, noBr]);
+
+    api.apply(doc, true, false);
+
+    // author-aligned, <br>-containing blocks get pinned inline + marked
+    expect(centered.style.textAlign).toBe("center");
+    expect(centered.attrs.has(PIN_ATTR)).toBe(true);
+    expect(right.style.textAlign).toBe("right");
+    // default/left alignment is pinned to start so short lines are not
+    // stretched by the body justify
+    expect(left.style.textAlign).toBe("start");
+    // block without <br> is not scanned
+    expect(noBr.style.textAlign).toBeUndefined();
   });
 
-  it("reclassifies paragraphs and fully restores book alignment when disabled", () => {
+  it("unpins previously pinned alignment when disabled (clean undo)", () => {
     const api = loadHelper();
     expect(api).not.toBeNull();
     if (!api) return;
 
-    const left = new FakeParagraph("left");
-    const centered = new FakeParagraph("center");
-    const doc = new FakeDocument([left, centered]);
+    const centered = new FakeContainer("center", true);
+    const doc = new FakeDoc([centered]);
 
+    // enable → pins
     api.apply(doc, true, false);
-    expect(left.attributes.get(marker)).toBe("true");
-    expect(centered.attributes.has(marker)).toBe(false);
-    expect(doc.style?.textContent).toContain("text-align: justify !important");
-    expect(doc.style?.textContent).toContain("text-justify: inter-word");
+    expect(centered.style.textAlign).toBe("center");
+    expect(centered.attrs.has(PIN_ATTR)).toBe(true);
 
-    left.alignment = "center";
-    api.apply(doc, true, false);
-    expect(left.attributes.has(marker)).toBe(false);
-    expect(doc.style).not.toBeNull();
+    // disable → unpins, restoring the book's own cascade
+    api.apply(doc, false, false);
+    expect(centered.style.textAlign).toBeUndefined();
+    expect(centered.attrs.has(PIN_ATTR)).toBe(false);
+  });
+
+  it("does nothing when the justify setting is disabled", () => {
+    const api = loadHelper();
+    expect(api).not.toBeNull();
+    if (!api) return;
+
+    const centered = new FakeContainer("center", true);
+    const doc = new FakeDoc([centered]);
 
     api.apply(doc, false, false);
-    expect(left.attributes.has(marker)).toBe(false);
-    expect(centered.attributes.has(marker)).toBe(false);
-    expect(doc.style).toBeNull();
+    expect(centered.style.textAlign).toBeUndefined();
+  });
+
+  it("skips unsupported (vertical / fixed) layouts and unpins leftovers", () => {
+    const api = loadHelper();
+    expect(api).not.toBeNull();
+    if (!api) return;
+
+    const centered = new FakeContainer("center", true);
+    const doc = new FakeDoc([centered]);
+
+    // enable in a normal layout → pins
+    api.apply(doc, true, false);
+    expect(centered.style.textAlign).toBe("center");
+
+    // same doc becomes unsupported (vertical) → unpin
+    api.apply(doc, true, true);
+    expect(centered.style.textAlign).toBeUndefined();
+  });
+
+  it("exports the @layer justify stylesheet scoped to horizontal text", () => {
+    const api = loadHelper();
+    expect(api).not.toBeNull();
+    if (!api) return;
+
+    expect(api.JUSTIFY_CSS).toContain("@layer readany-justify");
+    expect(api.JUSTIFY_CSS).toContain(
+      ":root:not([data-readany-vertical]) body { text-align: justify; }",
+    );
+    expect(api.JUSTIFY_CSS).toContain(
+      ":root:not([data-readany-vertical]) :where(*:has(> br)) { text-align: start; }",
+    );
+    expect(api.JUSTIFY_CSS).toContain("figcaption");
+    expect(api.JUSTIFY_CSS).toContain("text-align: start;");
   });
 });

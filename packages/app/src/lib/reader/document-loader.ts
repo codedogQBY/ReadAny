@@ -206,7 +206,16 @@ export const getDirection = (doc: Document) => {
   const { defaultView } = doc;
   if (!defaultView) return { vertical: false, rtl: false };
   const { writingMode, direction } = defaultView.getComputedStyle(doc.body);
-  const vertical = writingMode === "vertical-rl" || writingMode === "vertical-lr";
+  let vertical = writingMode === "vertical-rl" || writingMode === "vertical-lr";
+  // Some EPUBs set writing-mode on the first child of body instead of body
+  // itself (mirrors foliate-js getDirection and the mobile isVerticalDoc).
+  if (!vertical) {
+    const firstChild = doc.body.querySelector(":scope > :not([cfi-inert])");
+    if (firstChild) {
+      const childWm = defaultView.getComputedStyle(firstChild).writingMode;
+      vertical = childWm === "vertical-rl" || childWm === "vertical-lr";
+    }
+  }
   const rtl = doc.body.dir === "rtl" || direction === "rtl" || doc.documentElement.dir === "rtl";
   return { vertical, rtl };
 };
