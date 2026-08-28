@@ -31,6 +31,10 @@ class FakeContainer {
     this.attrs.add(name);
   }
 
+  getAttribute(_name: string): string | null {
+    return null;
+  }
+
   removeAttribute(name: string): void {
     this.attrs.delete(name);
     delete this.style.textAlign;
@@ -47,7 +51,7 @@ class FakeDoc {
   }
 
   querySelectorAll(selector: string): FakeContainer[] {
-    if (selector === `${BR_SELECTOR}:has(> br)`) {
+    if (selector === `:is(${BR_SELECTOR}):has(> br)`) {
       return this.containers.filter((container) => container.hasLineBreak);
     }
     if (selector === `[${OLD_MARKER}]`) return [];
@@ -94,8 +98,9 @@ describe("reader-side justified text helper", () => {
     expect(centered.style.textAlign).toBe("center");
     expect(centered.attrs.has(PIN_ATTR)).toBe(true);
     expect(right.style.textAlign).toBe("right");
-    // default/left alignment is left alone (no pin needed)
-    expect(left.style.textAlign).toBeUndefined();
+    // default/left alignment is pinned to start so short lines are not
+    // stretched by the body justify
+    expect(left.style.textAlign).toBe("start");
     // block without <br> is not scanned
     expect(noBr.style.textAlign).toBeUndefined();
   });

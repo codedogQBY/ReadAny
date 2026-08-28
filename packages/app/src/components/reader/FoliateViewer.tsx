@@ -90,11 +90,43 @@ function preserveAlignedBrContainers(doc: Document) {
   // Alignments that differ from the start edge and must be preserved. `left` /
   // `start` render identically to the fallback; `justify` is our own request.
   const preserved = new Set(["center", "right", "end", "-webkit-center", "-webkit-right"]);
-  for (const container of doc.querySelectorAll(`${selector}:has(> br)`)) {
-    const align = String(doc.defaultView.getComputedStyle(container).textAlign || "").toLowerCase();
+  const inheritAlign = (el: Element): string => {
+    // First honour explicit align="" attributes on the element or its
+    // ancestors — these may not produce a computed text-align in the reader's
+    // sandboxed document, so they must be read directly.
+    let cur: Element | null = el;
+    while (cur) {
+      const al = cur.getAttribute("align")?.toLowerCase();
+      if (al) {
+        if (al === "center") return "center";
+        if (al === "right") return "right";
+        if (al === "left") return "start";
+        if (al === "justify") return "justify";
+      }
+      cur = cur.parentElement;
+    }
+    // The element itself may report `start` because our `:has(> br) { text-align:
+    // start }` rule directly applies and overrides an inherited center/right —
+    // read the nearest ancestor's alignment instead. (In the reader the justify
+    // stylesheet is already injected when this runs, so the element's own
+    // computed alignment is polluted.)
+    cur = el;
+    while (cur) {
+      const a = String(doc.defaultView?.getComputedStyle(cur).textAlign || "").toLowerCase();
+      if (a !== "start" && a !== "inherit") return a;
+      cur = cur.parentElement;
+    }
+    return "start";
+  };
+  for (const container of doc.querySelectorAll(`:is(${selector}):has(> br)`)) {
+    const align = inheritAlign(container);
     if (preserved.has(align)) {
       (container as HTMLElement).style.textAlign = align;
       container.setAttribute("data-readany-justify-pinned", "");
+    } else {
+      // Unaligned br-bearing block (poetry/lyrics): force start so short lines
+      // are not stretched by the body justify.
+      (container as HTMLElement).style.textAlign = "start";
     }
   }
 }
