@@ -94,15 +94,48 @@
     }
     doc.getElementById(OLD_STYLE_ID)?.remove();
 
+    function inheritAlign(el) {
+      // First honour explicit align="" attributes on the element or its
+      // ancestors — these may not produce a computed text-align in the
+      // reader's sandboxed document, so they must be read directly.
+      let cur = el;
+      while (cur) {
+        const al = (cur.getAttribute("align") || "").toLowerCase();
+        if (al) {
+          if (al === "center") return "center";
+          if (al === "right") return "right";
+          if (al === "left") return "start";
+          if (al === "justify") return "justify";
+        }
+        cur = cur.parentElement;
+      }
+      // The element itself may report `start` because our `:has(> br) { text-align:
+      // start }` rule directly applies and overrides an inherited center/right —
+      // read the nearest ancestor's alignment instead. (In the reader the justify
+      // stylesheet is already injected when this runs, so the element's own
+      // computed alignment is polluted.)
+      cur = el;
+      while (cur) {
+        const a = String(
+          doc.defaultView.getComputedStyle(cur).textAlign || "",
+        ).toLowerCase();
+        if (a !== "start" && a !== "inherit") return a;
+        cur = cur.parentElement;
+      }
+      return "start";
+    }
+
     for (const container of doc.querySelectorAll(
-      `${BR_CONTAINER_SELECTOR}:has(> br)`,
+      `:is(${BR_CONTAINER_SELECTOR}):has(> br)`,
     )) {
-      const align = String(
-        doc.defaultView.getComputedStyle(container).textAlign || "",
-      ).toLowerCase();
+      const align = inheritAlign(container);
       if (PRESERVED_ALIGNMENTS.has(align)) {
         container.style.textAlign = align;
         container.setAttribute(PIN_ATTR, "");
+      } else {
+        // Unaligned br-bearing block (poetry/lyrics): force start so short
+        // lines are not stretched by the body justify.
+        container.style.textAlign = "start";
       }
     }
   }
