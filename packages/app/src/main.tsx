@@ -32,6 +32,17 @@ import { useVectorModelStore } from "./stores/vector-model-store";
 
 installFeedbackLogCapture();
 
+// Suppress the WebView's native context menu everywhere. Editable areas get a
+// slim custom menu (Cut/Copy/Paste/Select All) from the ContextMenu component;
+// the reader's sandboxed iframe is handled separately in
+// registerIframeEventHandlers. Without this, the OS/WebView2 default menu
+// (Inspect etc.) pops up over the app.
+document.addEventListener(
+  "contextmenu",
+  (event) => event.preventDefault(),
+  true,
+);
+
 // Keep the WebView color scheme in sync with the app theme so book CSS that
 // relies on light-dark() / @media(prefers-color-scheme) follows the app theme
 // instead of the OS scheme (e.g. sepia maps to a light scheme, so borders/text
