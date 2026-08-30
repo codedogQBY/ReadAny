@@ -512,7 +512,12 @@ export class View extends HTMLElement {
     }
   }
   async goTo(target) {
-    target = decodeURIComponent(target);
+    // Only hrefs and CFIs are percent-encoded. Decoding unconditionally would
+    // stringify a section index (5 -> "5") or a resolved target
+    // ({ index: 5 } -> "[object Object]"), so resolveNavigation could never
+    // take its `typeof target === "number"` branch and the jump failed
+    // silently.
+    if (typeof target === "string") target = decodeURIComponent(target);
     const resolved = this.resolveNavigation(target);
     try {
       await this.renderer.goTo(resolved);

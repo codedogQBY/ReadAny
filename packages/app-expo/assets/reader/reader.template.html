@@ -4108,18 +4108,14 @@ html, body {
     window.goLeft = function () { if (view) view.goLeft(); };
     window.goRight = function () { if (view) view.goRight(); };
     window.goToHref = function (href) { if (view) view.goTo(href); };
-    window.goToSection = async function (sectionIndex) {
+    window.goToSection = function (sectionIndex) {
       if (!view) return;
       const index = Number(sectionIndex);
       if (!Number.isInteger(index)) return;
-      try {
-        const resolved = typeof view.resolveNavigation === 'function'
-          ? await Promise.resolve(view.resolveNavigation(index))
-          : { index };
-        return view.goTo(resolved);
-      } catch (e) {
-        try { return view.goTo({ index }); } catch (_) {}
-      }
+      // Hand the index straight to view.goTo: pre-resolving it here produced an
+      // object that goTo could not handle, and its try/catch never fired
+      // because goTo swallows navigation errors itself.
+      return view.goTo(index);
     };
     window.goToCFI = function (cfi) { if (view) view.goTo(cfi); };
     window.goToProgress = function (p) { if (view) view.goToFraction(p); };
