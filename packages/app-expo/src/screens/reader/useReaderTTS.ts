@@ -324,10 +324,11 @@ export function useReaderTTS({
   useEffect(
     () => () => {
       clearPending();
+      if (useTTSStore.getState().currentBookId !== bookId) return;
       setOnEnd(null);
-      if (currentBookId === bookId) stop();
+      stop();
     },
-    [bookId, clearPending, currentBookId, setOnEnd, stop],
+    [bookId, clearPending, setOnEnd, stop],
   );
   useEffect(() => {
     if (currentBookId !== bookId || playState === "stopped") return;
