@@ -3085,11 +3085,15 @@ a { color: ${primary} !important; }
 
     function anchorToRange(doc, anchor) {
       if (!doc || !anchor) return null;
-      if (anchor instanceof Range) return anchor;
-      if (!(anchor instanceof Node)) return null;
+      if (
+        typeof anchor.cloneRange === 'function' &&
+        anchor.startContainer &&
+        anchor.endContainer
+      ) return anchor;
+      if (typeof anchor.nodeType !== 'number') return null;
       try {
         const range = doc.createRange();
-        if (anchor.nodeType === Node.TEXT_NODE) {
+        if (anchor.nodeType === 3) {
           range.selectNodeContents(anchor);
         } else {
           range.selectNode(anchor);
@@ -3296,7 +3300,7 @@ a { color: ${primary} !important; }
       if (alignCfi) {
         range = resolveRangeForCfi(alignCfi)?.range || null;
       }
-      if (!range && lastRelocateRange) {
+      if (!alignCfi && !range && lastRelocateRange) {
         range = lastRelocateRange.cloneRange ? lastRelocateRange.cloneRange() : lastRelocateRange;
       }
 
@@ -3305,7 +3309,9 @@ a { color: ${primary} !important; }
         alignCfi: alignCfi || null,
         returnedCount: segments.length,
         scannedCount: segments.length,
-        returnSource: range ? 'foliate-range' : 'foliate-current',
+        returnSource: alignCfi
+          ? (range ? 'foliate-cfi-range' : 'foliate-cfi')
+          : (range ? 'foliate-relocate-range' : 'foliate-current'),
       };
       return segments;
     }
