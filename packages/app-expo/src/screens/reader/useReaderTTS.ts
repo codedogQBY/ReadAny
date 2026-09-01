@@ -2,17 +2,19 @@ import type { VisibleTTSSegment } from "@/hooks/use-reader-bridge";
 import { useTTSStore } from "@/stores";
 import { getPlatformService } from "@readany/core/services";
 import {
+  TTSReadingSession,
   mergeTTSConfigUpdates,
   mergeTTSLyricContext,
   mergeTTSLyrics,
   normalizeTTSConfig,
   splitNarrationText,
-  TTSReadingSession,
 } from "@readany/core/tts";
 import type { TTSConfig } from "@readany/core/tts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type TTSSegment = VisibleTTSSegment;
+const TTS_READER_HIGHLIGHT_COLOR = "rgba(96, 165, 250, 0.35)";
+
 export type TTSBridgeRef = {
   getVisibleText: () => Promise<string>;
   getVisibleTTSSegments: (alignCfi?: string | null) => Promise<TTSSegment[]>;
@@ -24,7 +26,7 @@ export type TTSBridgeRef = {
   ) => Promise<{ before: TTSSegment[]; after: TTSSegment[] }>;
   goToSection?: (sectionIndex: number) => void;
   goToCFI: (cfi: string) => void;
-  setTTSHighlight: (cfi: string | null, color?: string, force?: boolean) => void;
+  setTTSHighlight: (cfi: string | null, color?: string) => void;
   flashHighlight: (cfi: string, color?: string, duration?: number) => void;
 };
 
@@ -87,11 +89,13 @@ const normalize = (s: TTSSegment): TTSSegment => ({
   text: s.text.replace(/\s+/g, " ").trim(),
   cfi: s.cfi || "",
 });
+const getSegmentKey = (segment: TTSSegment) =>
+  segment.cfi ? `${segment.cfi}::${segment.text}` : segment.text;
 const dedupe = (items: TTSSegment[]) => {
   const seen = new Set<string>();
   return items.map(normalize).filter((s) => {
     if (!s.text) return false;
-    const key = s.cfi ? s.cfi + "::" + s.text : s.text;
+    const key = getSegmentKey(s);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -114,6 +118,7 @@ export function useReaderTTS({
   goToHref,
 }: UseReaderTTSOptions): UseReaderTTSResult {
   const play = useTTSStore((s) => s.play),
+    preload = useTTSStore((s) => s.preload),
     pause = useTTSStore((s) => s.pause),
     resume = useTTSStore((s) => s.resume),
     stop = useTTSStore((s) => s.stop);
@@ -202,8 +207,20 @@ export function useReaderTTS({
     [bridgeRef],
   );
 
+  const preloadFollowingSegments = useCallback(
+    (current: TTSSegment[], future: TTSSegment[]) => {
+      if (!continuousRef.current) return;
+      const currentKeys = new Set(current.map(getSegmentKey));
+      const following = dedupe(future).filter(
+        (segment) => !currentKeys.has(getSegmentKey(segment)),
+      );
+      if (following.length) preload(following.map((segment) => segment.text));
+    },
+    [preload],
+  );
+
   const startPageFromCfi = useCallback(
-    async (cfi?: string | null) => {
+    async (cfi?: string | null, options: { revealPlayer?: boolean } = {}) => {
       if (!webViewReady || !bridgeRef.current) return;
       clearPending();
       const generation = ++generationRef.current;
@@ -223,17 +240,20 @@ export function useReaderTTS({
       setCurrentLocation(segments[0]?.cfi || cfi || currentCfi);
       setOnEnd(continuousRef.current ? handlePageEndRef.current : null);
       play(segments.map((s) => s.text));
-      setShowTTS(true);
+      preloadFollowingSegments(segments, context.after);
+      if (options.revealPlayer) setShowTTS(true);
     },
     [
       bookId,
       bookTitle,
       bridgeRef,
+      clearPending,
       commit,
       currentChapter,
       currentCfi,
       loadContext,
       play,
+      preloadFollowingSegments,
       setCurrentBook,
       setCurrentLocation,
       setOnEnd,
@@ -246,7 +266,7 @@ export function useReaderTTS({
       if (!selectionCfi) return;
       resetLyrics();
       continuousRef.current = ttsContinuousEnabled;
-      await startPageFromCfi(selectionCfi);
+      await startPageFromCfi(selectionCfi, { revealPlayer: true });
     },
     [resetLyrics, startPageFromCfi, ttsContinuousEnabled],
   );
@@ -331,21 +351,28 @@ export function useReaderTTS({
     [bookId, clearPending, setOnEnd, stop],
   );
   useEffect(() => {
-    if (currentBookId !== bookId || playState === "stopped") return;
+    const ownsActivePageSession =
+      currentBookId === bookId &&
+      ttsSourceKind === "page" &&
+      (playState === "playing" || playState === "paused" || playState === "loading");
+    if (!ownsActivePageSession) {
+      bridgeRef.current?.setTTSHighlight(null);
+      return;
+    }
     const cfi = ttsSegments[currentChunkIndex]?.cfi || currentLocationCfi;
     if (cfi) {
-      bridgeRef.current?.setTTSHighlight(cfi, colors.primary);
+      bridgeRef.current?.setTTSHighlight(cfi, TTS_READER_HIGHLIGHT_COLOR);
       setCurrentLocation(cfi);
     }
   }, [
     bookId,
     bridgeRef,
-    colors.primary,
     currentBookId,
     currentChunkIndex,
     currentLocationCfi,
     playState,
     setCurrentLocation,
+    ttsSourceKind,
     ttsSegments,
   ]);
 
@@ -398,6 +425,7 @@ export function useReaderTTS({
     setCurrentLocation(segments[0]?.cfi || currentCfi);
     setOnEnd(ttsContinuousEnabled ? handlePageEndRef.current : null);
     play(segments.map((s) => s.text));
+    preloadFollowingSegments(segments, context.after);
     setShowTTS(true);
   }, [
     bookId,
@@ -409,6 +437,7 @@ export function useReaderTTS({
     currentCfi,
     loadContext,
     play,
+    preloadFollowingSegments,
     setCurrentBook,
     setCurrentLocation,
     setOnEnd,
@@ -649,7 +678,7 @@ export function useReaderTTS({
     ttsDisplaySegments,
     currentTTSSegment,
     resolvedTTSSegmentCfi: currentTTSSegment?.cfi || currentLocationCfi || null,
-    ttsHighlightColor: colors.primary || "#60a5fa",
+    ttsHighlightColor: TTS_READER_HIGHLIGHT_COLOR,
     localTTSChunkIndex: currentChunkIndex,
     handleToggleTTS,
     handleTTSReplay,
