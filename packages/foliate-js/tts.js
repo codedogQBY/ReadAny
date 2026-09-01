@@ -3,6 +3,9 @@ const NS = {
   SSML: "http://www.w3.org/2001/10/synthesis",
 };
 
+const getAttributeNS = (node, namespace, name) =>
+  typeof node?.getAttributeNS === "function" ? node.getAttributeNS(namespace, name) : null;
+
 const blockTags = new Set([
   "article",
   "aside",
@@ -40,12 +43,12 @@ const blockTags = new Set([
 ]);
 
 const getLang = (el) => {
-  const x = el.lang || el?.getAttributeNS?.(NS.XML, "lang");
+  const x = el?.lang || getAttributeNS(el, NS.XML, "lang");
   return x ? x : el.parentElement ? getLang(el.parentElement) : null;
 };
 
 const getAlphabet = (el) => {
-  const x = el?.getAttributeNS?.(NS.XML, "lang");
+  const x = getAttributeNS(el, NS.XML, "lang");
   return x ? x : el.parentElement ? getAlphabet(el.parentElement) : null;
 };
 
@@ -53,11 +56,29 @@ const getSegmenter = (lang = "en", granularity = "word") => {
   const segmenter = new Intl.Segmenter(lang, { granularity });
   const granularityIsWord = granularity === "word";
   return function* (strs, makeRange) {
-    const str = strs.join("");
+    const str = strs.join("").replace(/\r\n/g, "  ").replace(/\r/g, " ").replace(/\n/g, " ");
     let name = 0;
     let strIndex = -1;
     let sum = 0;
-    for (const { index, segment, isWordLike } of segmenter.segment(str)) {
+    const rawSegments = Array.from(segmenter.segment(str));
+    const segments = [];
+    for (let i = 0; i < rawSegments.length; i++) {
+      const current = rawSegments[i];
+      const next = rawSegments[i + 1];
+      const endsWithAbbreviation = /(?:^|\s)([A-Z][a-z]{1,5})\.$/.test(current.segment.trim());
+      const nextStartsWithCapital = /^[A-Z]/.test(next?.segment?.trim() || "");
+      if (endsWithAbbreviation && nextStartsWithCapital) {
+        segments.push({
+          index: current.index,
+          segment: current.segment + (next?.segment || ""),
+          isWordLike: true,
+        });
+        i++;
+      } else {
+        segments.push(current);
+      }
+    }
+    for (const { index, segment, isWordLike } of segments) {
       if (granularityIsWord && !isWordLike) continue;
       while (sum <= index) sum += strs[++strIndex].length;
       const startIndex = strIndex;
@@ -71,7 +92,7 @@ const getSegmenter = (lang = "en", granularity = "word") => {
   };
 };
 
-const fragmentToSSML = (fragment, inherited) => {
+const fragmentToSSML = (fragment, nodeFilter, inherited) => {
   const ssml = document.implementation.createDocument(NS.SSML, "speak");
   const { lang } = inherited;
   if (lang) ssml.documentElement.setAttributeNS(NS.XML, "lang", lang);
@@ -80,7 +101,8 @@ const fragmentToSSML = (fragment, inherited) => {
     if (!node) return;
     if (node.nodeType === 3) return ssml.createTextNode(node.textContent);
     if (node.nodeType === 4) return ssml.createCDATASection(node.textContent);
-    if (node.nodeType !== 1) return;
+    if (node.nodeType !== 1 && node.nodeType !== 11) return;
+    if (nodeFilter && nodeFilter(node) === NodeFilter.FILTER_REJECT) return;
 
     let el;
     const nodeName = node.nodeName.toLowerCase();
@@ -92,15 +114,15 @@ const fragmentToSSML = (fragment, inherited) => {
     else if (nodeName === "em" || nodeName === "strong")
       el = ssml.createElementNS(NS.SSML, "emphasis");
 
-    const lang = node.lang || node.getAttributeNS(NS.XML, "lang");
+    const lang = node.lang || getAttributeNS(node, NS.XML, "lang");
     if (lang) {
       if (!el) el = ssml.createElementNS(NS.SSML, "lang");
       el.setAttributeNS(NS.XML, "lang", lang);
     }
 
-    const alphabet = node.getAttributeNS(NS.SSML, "alphabet") || inheritedAlphabet;
+    const alphabet = getAttributeNS(node, NS.SSML, "alphabet") || inheritedAlphabet;
     if (!el) {
-      const ph = node.getAttributeNS(NS.SSML, "ph");
+      const ph = getAttributeNS(node, NS.SSML, "ph");
       if (ph) {
         el = ssml.createElementNS(NS.SSML, "phoneme");
         if (alphabet) el.setAttribute("alphabet", alphabet);
@@ -118,11 +140,11 @@ const fragmentToSSML = (fragment, inherited) => {
     }
     return el;
   };
-  convert(fragment.firstChild, ssml.documentElement, inherited.alphabet);
+  convert(fragment, ssml.documentElement, inherited.alphabet);
   return ssml;
 };
 
-const getFragmentWithMarks = (range, textWalker, granularity, filterFunc) => {
+const getFragmentWithMarks = (range, textWalker, nodeFilter, granularity) => {
   const lang = getLang(range.commonAncestorContainer);
   const alphabet = getAlphabet(range.commonAncestorContainer);
 
@@ -132,15 +154,15 @@ const getFragmentWithMarks = (range, textWalker, granularity, filterFunc) => {
   // we need ranges on both the original document (for highlighting)
   // and the document fragment (for inserting marks)
   // so unfortunately need to do it twice, as you can't copy the ranges
-  const entries = [...textWalker(range, segmenter, filterFunc)];
-  const fragmentEntries = [...textWalker(fragment, segmenter, filterFunc)];
+  const entries = [...textWalker(range, segmenter, nodeFilter)];
+  const fragmentEntries = [...textWalker(fragment, segmenter, nodeFilter)];
 
   for (const [name, range] of fragmentEntries) {
     const mark = document.createElement("foliate-mark");
     mark.dataset.name = name;
     range.insertNode(mark);
   }
-  const ssml = fragmentToSSML(fragment, { lang, alphabet });
+  const ssml = fragmentToSSML(fragment, nodeFilter, { lang, alphabet });
   return { entries, ssml };
 };
 
@@ -170,9 +192,9 @@ const getRangeTextWithoutRuby = (range) => {
 const rangeIsEmpty = (range) => !getRangeTextWithoutRuby(range).trim();
 const normalizeRangeText = (range) => getRangeTextWithoutRuby(range).replace(/\s+/g, " ").trim();
 
-function* getDetailRanges(doc, textWalker, filterFunc) {
+function* getDetailRanges(doc, textWalker, nodeFilter) {
   for (const blockRange of getBlocks(doc)) {
-    const { entries } = getFragmentWithMarks(blockRange, textWalker, "sentence", filterFunc);
+    const { entries } = getFragmentWithMarks(blockRange, textWalker, nodeFilter, "sentence");
     for (const [, range] of entries) {
       if (!rangeIsEmpty(range)) yield range;
     }
@@ -304,49 +326,26 @@ class ListIterator {
 export class TTS {
   #list;
   #detailList;
-  #ranges;
+  #detailContext = null;
+  #ranges = new Map();
   #lastMark;
   #lastRange;
   #getCfi;
+  #textWalker;
+  #nodeFilter;
   #serializer = new XMLSerializer();
-  constructor(
-    doc,
-    textWalker,
-    maybeFilterOrHighlight,
-    maybeHighlightOrGetCfi,
-    maybeGetCfiOrGranularity,
-    maybeGranularity,
-  ) {
+  constructor(doc, textWalker, nodeFilter, highlight, granularity = "word", getCfi = null) {
     this.doc = doc;
-    let filterFunc = null;
-    let highlight = null;
-    let granularity = "word";
-
-    if (typeof maybeFilterOrHighlight === "function") {
-      highlight = maybeFilterOrHighlight;
-      if (typeof maybeHighlightOrGetCfi === "function") {
-        this.#getCfi = maybeHighlightOrGetCfi;
-        granularity = typeof maybeGetCfiOrGranularity === "string" ? maybeGetCfiOrGranularity : "word";
-      } else {
-        granularity = typeof maybeHighlightOrGetCfi === "string" ? maybeHighlightOrGetCfi : "word";
-      }
-    } else {
-      filterFunc = maybeFilterOrHighlight ?? null;
-      highlight =
-        typeof maybeHighlightOrGetCfi === "function" ? maybeHighlightOrGetCfi : null;
-      if (typeof maybeGetCfiOrGranularity === "function") {
-        this.#getCfi = maybeGetCfiOrGranularity;
-      }
-      granularity = typeof maybeGranularity === "string" ? maybeGranularity : "word";
-    }
-
+    this.#getCfi = getCfi;
+    this.#textWalker = textWalker;
+    this.#nodeFilter = nodeFilter;
     this.highlight = highlight || (() => null);
     this.#list = new ListIterator(getBlocks(doc), (range) => {
-      const { entries, ssml } = getFragmentWithMarks(range, textWalker, granularity, filterFunc);
+      const { entries, ssml } = getFragmentWithMarks(range, textWalker, nodeFilter, granularity);
       this.#ranges = new Map(entries);
       return [ssml, range];
     });
-    this.#detailList = new ListIterator(getDetailRanges(doc, textWalker, filterFunc), (range) => [
+    this.#detailList = new ListIterator(getDetailRanges(doc, textWalker, nodeFilter), (range) => [
       normalizeRangeText(range),
       range,
     ]);
@@ -446,17 +445,95 @@ export class TTS {
   }
   from(range) {
     this.#lastMark = null;
-    const [doc] = this.#list.find(
-      (range_) => range.compareBoundaryPoints(Range.END_TO_START, range_) <= 0,
+    const [doc] =
+      this.#list.find(
+        (range_) =>
+          range_.compareBoundaryPoints(Range.START_TO_START, range) <= 0 &&
+          range_.compareBoundaryPoints(Range.END_TO_END, range) > 0,
+      ) ??
+      [];
+    this.#detailList.find(
+      (detailRange) => range.compareBoundaryPoints(Range.START_TO_END, detailRange) < 0,
     );
-    this.#detailList.find((detailRange) => range.compareBoundaryPoints(Range.END_TO_START, detailRange) <= 0);
     let mark;
     for (const [name, range_] of this.#ranges.entries())
-      if (range.compareBoundaryPoints(Range.START_TO_START, range_) <= 0) {
+      if (range.compareBoundaryPoints(Range.START_TO_END, range_) < 0) {
         mark = name;
         break;
       }
+    this.#lastMark = mark ?? null;
+    console.log("[FoliateTTS][from]", {
+      requestedText: range?.toString?.().replace(/\s+/g, " ").trim().slice(0, 80) ?? "",
+      matchedBlock: !!doc,
+      mark,
+      blockSentenceCount: this.#ranges.size,
+    });
     return this.#speak(doc, (ssml) => this.#getMarkElement(ssml, mark));
+  }
+
+  currentBlockDetails(count = Number.POSITIVE_INFINITY) {
+    const entries = [...this.#ranges.entries()];
+    const start = this.#lastMark
+      ? Math.max(
+          0,
+          entries.findIndex(([name]) => name === this.#lastMark),
+        )
+      : 0;
+    const details = [];
+    for (const [, range] of entries.slice(start < 0 ? 0 : start, start + count)) {
+      const text = normalizeRangeText(range);
+      if (!text || !this.#getCfi || !range.cloneRange) continue;
+      try {
+        const cfi = this.#getCfi(range.cloneRange());
+        if (cfi) details.push({ text, cfi });
+      } catch {
+        // A sentence without a stable CFI cannot be navigated from the UI.
+      }
+    }
+    return details;
+  }
+  nextBlockDetails(count = Number.POSITIVE_INFINITY) {
+    const before = this.currentBlockDetails(Number.POSITIVE_INFINITY);
+    const beforeBlock = {
+      count: before.length,
+      first: before[0] ?? null,
+      last: before[before.length - 1] ?? null,
+      lastMark: this.#lastMark,
+    };
+    console.log("[FoliateTTS][next-block] before", beforeBlock);
+    const ssml = this.next();
+    if (!ssml) {
+      console.log("[FoliateTTS][next-block] after", {
+        hasSsml: false,
+        before: beforeBlock,
+        count: 0,
+        first: null,
+        last: null,
+        lastMark: this.#lastMark,
+      });
+      return [];
+    }
+    const details = this.currentBlockDetails(count);
+    console.log("[FoliateTTS][next-block] after", {
+      hasSsml: true,
+      before: beforeBlock,
+      count: details.length,
+      first: details[0] ?? null,
+      last: details[details.length - 1] ?? null,
+      lastMark: this.#lastMark,
+    });
+    return details;
+  }
+  peekNextBlockDetails(count = Number.POSITIVE_INFINITY) {
+    let advanced = false;
+    try {
+      const ssml = this.next();
+      if (!ssml) return [];
+      advanced = true;
+      return this.currentBlockDetails(count);
+    } finally {
+      if (advanced) this.prev();
+    }
   }
   setMark(mark) {
     const range = this.#ranges.get(mark);
@@ -486,16 +563,39 @@ export class TTS {
     }
     return details;
   }
-  #detailFromCfi(cfi, { highlight = false } = {}) {
+  contextDetailsByCfi(cfi, beforeCount = 0, afterCount = 0) {
+    if (!cfi || !this.#getCfi) return { before: [], after: [] };
+    if (!this.#detailContext) {
+      this.#detailContext = [];
+      for (const range of getDetailRanges(this.doc, this.#textWalker, this.#nodeFilter)) {
+        const text = normalizeRangeText(range);
+        const detailCfi = range.cloneRange ? this.#getCfi(range.cloneRange()) : null;
+        if (text && detailCfi) this.#detailContext.push({ text, cfi: detailCfi });
+      }
+    }
+    const index = this.#detailContext.findIndex((detail) => detail.cfi === cfi);
+    if (index < 0) return { before: [], after: [] };
+    return {
+      before: this.#detailContext.slice(Math.max(0, index - beforeCount), index),
+      after: this.#detailContext.slice(index + 1, index + 1 + afterCount),
+    };
+  }
+  #detailFromCfi(cfi, { highlight = false, moveCursor = true } = {}) {
     if (!cfi || !this.#getCfi) return null;
     const entry = this.#detailList.find((range) => {
       const candidate = this.#getCfi(range.cloneRange());
       return candidate === cfi;
     });
+    if (moveCursor && entry?.[1]?.cloneRange) this.from(entry[1].cloneRange());
     return this.#detailResultFrom(entry, { highlight });
   }
   alignCfi(cfi) {
     return this.#detailFromCfi(cfi, { highlight: false });
+  }
+  // Read-only CFI lookup for lyric/context consumers. Unlike alignCfi(), this
+  // must not move the ordered block cursor used by start()/next().
+  peekCfi(cfi) {
+    return this.#detailFromCfi(cfi, { highlight: false, moveCursor: false });
   }
   highlightCfi(cfi) {
     return this.#detailFromCfi(cfi, { highlight: true });

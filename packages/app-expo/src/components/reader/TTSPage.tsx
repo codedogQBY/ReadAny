@@ -14,6 +14,7 @@ import {
 import { useColors, radius } from "@/styles/theme";
 import {
   buildNarrationPreview,
+  findTTSLyricIndex,
   type TTSConfig,
   type TTSPlayState,
   getTTSVoiceLabel,
@@ -59,6 +60,8 @@ interface TTSPageProps {
   narrationSegments?: Array<{ text: string; cfi?: string | null }>;
   /** Sentences from the previously-read page, shown above current page sentences */
   prevNarrationSegments?: Array<{ text: string; cfi?: string | null }>;
+  /** Persisted lyric list, independent from the audio synthesis cache. */
+  lyricSegments?: Array<{ text: string; cfi?: string | null }>;
   currentSegmentCfi?: string | null;
   currentSegmentText?: string | null;
   currentChunkIndex?: number;
@@ -88,6 +91,12 @@ interface TTSPageProps {
   onNextChapter?: () => void | Promise<void>;
 }
 
+interface TTSLyricItem {
+  id: string;
+  text: string;
+  cfi?: string | null;
+}
+
 function clampPct(p: number) {
   return Math.max(0, Math.min(100, Math.round(p * 100)));
 }
@@ -108,6 +117,7 @@ export function TTSPage({
   continuousEnabled,
   narrationSegments = [],
   prevNarrationSegments = [],
+  lyricSegments: persistedLyricSegments,
   currentSegmentCfi,
   currentSegmentText,
   currentChunkIndex = 0,
@@ -162,7 +172,7 @@ export function TTSPage({
   // Number of prev-page sentences prepended to the list
   const prevCount =
     prevNarrationSegments?.filter((segment) => segment.text.trim().length > 0).length ?? 0;
-  const lyricSegments = useMemo(() => {
+  const fallbackLyricSegments = useMemo(() => {
     const keyCounts = new Map<string, number>();
     const toLyricItem = (
       prefix: "prev" | "curr",
@@ -193,6 +203,12 @@ export function TTSPage({
     }
     return currentText ? [{ id: "fallback:current-text", text: currentText, cfi: null }] : [];
   }, [currentText, narrationSegments, prevNarrationSegments]);
+  const lyricSegments: TTSLyricItem[] = persistedLyricSegments?.length
+    ? persistedLyricSegments.map((segment, index) => ({
+        ...segment,
+        id: `persistent:${segment.cfi || `${segment.text}:${index}`}`,
+      }))
+    : fallbackLyricSegments;
   const lyricSegmentIdsKey = useMemo(
     () => lyricSegments.map((segment) => segment.id).join("|"),
     [lyricSegments],
@@ -213,6 +229,11 @@ export function TTSPage({
         return currentIndex;
       }
     }
+    const persistedIndex = findTTSLyricIndex(lyricSegments, {
+      cfi: currentSegmentCfi,
+      text: normalizedCurrentText,
+    });
+    if (persistedLyricSegments?.length && persistedIndex >= 0) return persistedIndex;
     const actualPrevCount = lyricSegments.filter((s) => s.id.startsWith("prev:")).length;
     const prevCountStale = prevCount !== actualPrevCount;
     if (prevCountStale) {
@@ -249,6 +270,7 @@ export function TTSPage({
     currentSegmentText,
     lyricSegments,
     narrationSegments,
+    persistedLyricSegments,
     prevCount,
   ]);
   const lyricCenterPadding = useMemo(
@@ -487,14 +509,14 @@ export function TTSPage({
 
   const handleLyricPress = useCallback(
     (segment: { text: string; cfi?: string | null }, index: number) => {
-      const offsetFromCurrent = index - prevCount;
+      const offsetFromCurrent = persistedLyricSegments?.length ? index : index - prevCount;
       if (onJumpToLyricSegment) {
         onJumpToLyricSegment(segment, offsetFromCurrent);
         return;
       }
       onJumpToSegment?.(offsetFromCurrent);
     },
-    [onJumpToLyricSegment, onJumpToSegment, prevCount],
+    [onJumpToLyricSegment, onJumpToSegment, persistedLyricSegments, prevCount],
   );
 
   const triggerLoadMoreAbove = useCallback(() => {

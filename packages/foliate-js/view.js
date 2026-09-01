@@ -512,7 +512,7 @@ export class View extends HTMLElement {
     }
   }
   async goTo(target) {
-    target = decodeURIComponent(target);
+    if (typeof target === "string") target = decodeURIComponent(target);
     const resolved = this.resolveNavigation(target);
     try {
       await this.renderer.goTo(resolved);
@@ -646,7 +646,7 @@ export class View extends HTMLElement {
   setSearchIndicator(type = "outline", options = {}) {
     this.#searchIndicatorConfig = { type, options };
   }
-  async initTTS(granularity = "word", highlight, filterFunc) {
+  async initTTS(granularity = "word", nodeFilter = null, highlight = null, getCfi = null) {
     const contents = this.renderer.getContents();
     const primaryIndex = this.renderer.primaryIndex;
     const current = contents.find((content) => content.index === primaryIndex) ?? contents[0];
@@ -661,10 +661,10 @@ export class View extends HTMLElement {
     this.tts = new TTS(
       doc,
       textWalker,
-      filterFunc || null,
+      nodeFilter || null,
       highlight || ((range) => this.renderer.scrollToAnchor(range, true)),
-      (range) => this.getCFI(index, range),
       granularity,
+      getCfi || ((range) => this.getCFI(index, range)),
     );
   }
   startMediaOverlay() {

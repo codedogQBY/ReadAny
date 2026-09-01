@@ -263,6 +263,7 @@ export function ReaderScreen({ route, navigation }: Props) {
   // Mediator ref so onRelocate can fire TTS continuation without direct hook dependency
   const ttsPendingContinueRef = useRef<{
     pendingTTSContinueCallbackRef: React.RefObject<(() => void) | null>;
+    pendingTTSContinueSectionRef: React.RefObject<number | null>;
     pendingTTSContinueSafetyTimerRef: React.RefObject<ReturnType<typeof setTimeout> | null>;
   } | null>(null);
 
@@ -280,8 +281,6 @@ export function ReaderScreen({ route, navigation }: Props) {
       before?: number,
       after?: number,
     ) => Promise<{ before: TTSSegment[]; after: TTSSegment[] }>;
-    getHrefTTSSegments?: (href: string, count?: number) => Promise<TTSSegment[]>;
-    getSectionTTSSegments?: (sectionIndex: number, count?: number) => Promise<TTSSegment[]>;
     goToFraction: (fraction: number) => void;
     goToSection: (sectionIndex: number) => void;
     goToCFI: (cfi: string) => void;
@@ -754,17 +753,28 @@ export function ReaderScreen({ route, navigation }: Props) {
 
       // If TTS is waiting for a page turn to complete, fire the continuation callback now
       // that the renderer has fully updated its position (renderer.start reflects new page).
-      if (ttsPendingContinueRef.current?.pendingTTSContinueCallbackRef.current) {
+      const pendingTTS = ttsPendingContinueRef.current;
+      const pendingSection = pendingTTS?.pendingTTSContinueSectionRef.current ?? null;
+      if (
+        pendingTTS?.pendingTTSContinueCallbackRef.current &&
+        (pendingSection === null || pendingSection === newSection)
+      ) {
         console.log("[ReaderScreen][TTS] onRelocate triggered pending TTS continuation");
-        const cb = ttsPendingContinueRef.current.pendingTTSContinueCallbackRef.current;
-        ttsPendingContinueRef.current.pendingTTSContinueCallbackRef.current = null;
+        const cb = pendingTTS.pendingTTSContinueCallbackRef.current;
+        pendingTTS.pendingTTSContinueCallbackRef.current = null;
+        pendingTTS.pendingTTSContinueSectionRef.current = null;
         // Cancel the safety timer since onRelocate fired successfully
-        const safetyTimerRef = ttsPendingContinueRef.current.pendingTTSContinueSafetyTimerRef;
+        const safetyTimerRef = pendingTTS.pendingTTSContinueSafetyTimerRef;
         if (safetyTimerRef.current) {
           clearTimeout(safetyTimerRef.current);
           safetyTimerRef.current = null;
         }
         void cb();
+      } else if (pendingTTS?.pendingTTSContinueCallbackRef.current && pendingSection !== null) {
+        console.log("[ReaderScreen][TTS] ignoring relocate for wrong section", {
+          pendingSection,
+          actualSection: newSection,
+        });
       }
 
       // Sync reading context for AI tools
@@ -944,6 +954,7 @@ export function ReaderScreen({ route, navigation }: Props) {
   // Bind mediator ref so onRelocate can fire the TTS continuation callback
   ttsPendingContinueRef.current = {
     pendingTTSContinueCallbackRef: tts.pendingTTSContinueCallbackRef,
+    pendingTTSContinueSectionRef: tts.pendingTTSContinueSectionRef,
     pendingTTSContinueSafetyTimerRef: tts.pendingTTSContinueSafetyTimerRef,
   };
 
@@ -2160,6 +2171,7 @@ export function ReaderScreen({ route, navigation }: Props) {
         continuousEnabled={tts.ttsContinuousEnabled}
         narrationSegments={tts.ttsDisplaySegments}
         prevNarrationSegments={tts.ttsPrevPageSegments}
+        lyricSegments={tts.lyricSegments}
         currentSegmentCfi={tts.resolvedTTSSegmentCfi}
         currentSegmentText={tts.currentTTSSegment?.text || null}
         currentChunkIndex={tts.localTTSChunkIndex}

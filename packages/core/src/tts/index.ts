@@ -41,18 +41,31 @@ export { buildNarrationPreview, getTTSVoiceLabel, splitNarrationText } from "./d
 export { compareVoiceLanguage, getLocaleDisplayLabel, groupEdgeTTSVoices } from "./voice-groups";
 export { SegmentPlanner } from "./segment-planner";
 export type { Segment, SegmentPosition, SegmentPlannerOptions } from "./segment-planner";
-export {
-  LegacyPlayerProvider,
-  TTSCoordinator,
-  normalizeTTSError,
-} from "./coordinator";
+export { TTSReadingSession } from "./reading-session";
 export type {
-  TTSCoordinatorCallbacks,
-  TTSCoordinatorError,
-  TTSCoordinatorState,
-  TTSCoordinatorStatus,
-} from "./coordinator";
-
+  TTSReadingJump,
+  TTSReadingMode,
+  TTSReadingSegment,
+  TTSReadingSnapshot,
+} from "./reading-session";
+export { TTSPlaybackController } from "./playback-controller";
+export type {
+  TTSControllerState,
+  TTSPlaybackCallbacks,
+  TTSPlaybackSnapshot,
+  TTSPlayerResolver,
+  TTSPreloader,
+} from "./playback-controller";
+export { mergeTTSConfigUpdates } from "./configuration";
+export {
+  findTTSLyricIndex,
+  getTTSLyricKey,
+  mergeTTSLyricContext,
+  mergeTTSLyrics,
+  normalizeTTSLyricSegment,
+  normalizeTTSLyrics,
+} from "./lyrics";
+export type { TTSLyricDirection, TTSLyricSegment } from "./lyrics";
 // Edge TTS
 export { fetchEdgeTTSAudio, EDGE_TTS_VOICES } from "./edge-tts";
 export type { EdgeTTSVoice, EdgeTTSPayload } from "./edge-tts";
@@ -71,8 +84,11 @@ export {
   buildXiaomiTTSUrl,
   buildXiaomiTTSMessages,
   fetchOpenAITTSAudio,
+  fetchDashScopeTTSAudio,
   fetchXiaomiTTSWav,
+  getPreloadedTTSAudio,
   isTTSAbortError,
+  preloadTTSChunks,
 } from "./cloud-tts";
 
 // Re-speak on synthesis-param change (#370)

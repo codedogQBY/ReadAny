@@ -6,9 +6,8 @@
  * attempts to start its ForegroundService.
  *
  * Remote events (play/pause/stop/next/prev) are handled here and forwarded
- * to the TTS store, duplicating the handlers in App.tsx bootstrap for safety.
- * The App.tsx handlers remain as a fallback for cases where the service
- * handler hasn't loaded yet.
+ * to the shared TTS store. Keeping this bridge in the playback service means
+ * it also works while the React UI is backgrounded or unmounted.
  */
 import TrackPlayer, { Event } from "react-native-track-player";
 import { useTTSStore } from "../stores/tts-store";

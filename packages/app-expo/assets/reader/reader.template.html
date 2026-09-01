@@ -197,6 +197,7 @@
     let lastRendererStyles = '';
     let currentViewMode = 'paginated';
     let currentSectionUsesVerticalWriting = false;
+    let lastRelocateRange = null;
     let currentPaginatedLayout = 'double';
     let currentFontSize = 16;
     let currentLineHeight = 1.6;
@@ -644,7 +645,7 @@
       if (!view || !current || !current.doc) return null;
 
       try {
-        await view.initTTS('sentence', (range) => {
+        await view.initTTS('sentence', ttsNodeFilter, (range) => {
           const sourceDoc = range && range.startContainer
             ? (range.startContainer.nodeType === Node.DOCUMENT_NODE
                 ? range.startContainer
@@ -686,6 +687,16 @@
           }
 
           return cfi;
+        }, (range) => {
+          const sourceDoc = range && range.startContainer
+            ? (range.startContainer.nodeType === Node.DOCUMENT_NODE
+                ? range.startContainer
+                : range.startContainer.ownerDocument)
+            : null;
+          const source = getRendererContentForDoc(sourceDoc) || getCurrentTTSOverlayerContext();
+          return source && source.index != null && view.getCFI
+            ? view.getCFI(source.index, range.cloneRange())
+            : '';
         });
         return view.tts || null;
       } catch (e) {
@@ -835,15 +846,11 @@
       }
 
       const renderer = view.renderer;
-      const win = doc.defaultView;
-      if (!win) return;
-      if (!isRangeVisibleInReader(range, renderer, win)) {
+      if (renderer.scrolled) {
         try {
           await renderer.scrollToAnchor(range, true);
         } catch (e) {
-          try {
-            await view.goTo(cfi);
-          } catch (_) {}
+          try { await view.goTo(cfi); } catch (_) {}
         }
       }
     }
@@ -1550,6 +1557,9 @@
           markLoaded();
           hideFootnoteTip();
           const detail = e.detail;
+          lastRelocateRange = detail && detail.range && detail.range.cloneRange
+            ? detail.range.cloneRange()
+            : null;
           const previousSectionIndex = currentSectionIndex;
           if (tapNavigationInFlight) {
             setTimeout(() => {
@@ -3073,11 +3083,6 @@ a { color: ${primary} !important; }
       }
     }
 
-    function getCurrentRendererContent() {
-      const contents = getRendererContents();
-      return contents[0] || null;
-    }
-
     function anchorToRange(doc, anchor) {
       if (!doc || !anchor) return null;
       if (anchor instanceof Range) return anchor;
@@ -3131,274 +3136,6 @@ a { color: ${primary} !important; }
       return null;
     }
 
-    function getPaginatedVisibleRangeCandidates(renderer) {
-      const start = Number(renderer && renderer.start || 0);
-      const end = Number(renderer && renderer.end || 0);
-      const size = Number(renderer && renderer.size || 0);
-      const candidates = [];
-
-      if (Number.isFinite(start) && Number.isFinite(size) && size > 0) {
-        candidates.push({ left: start - size, right: start, source: 'legacy-offset' });
-        candidates.push({ left: start, right: start + size, source: 'size-fallback' });
-      }
-
-      if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
-        candidates.push({ left: start, right: end, source: 'renderer' });
-      }
-
-      return candidates.filter((candidate, index, list) => {
-        return candidate.right > candidate.left &&
-          list.findIndex((item) => item.left === candidate.left && item.right === candidate.right) === index;
-      });
-    }
-
-    function rectIntersectsPaginatedRange(rect, range) {
-      return rect.right > range.left && rect.left < range.right;
-    }
-
-    function scorePaginatedVisibleRange(doc, range) {
-      if (!doc || !doc.body) return 0;
-      const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
-        acceptNode: function (node) {
-          if (isInsideRubyAnnotation(node)) return NodeFilter.FILTER_REJECT;
-          if (isTTSFootnoteMarker(node.nodeValue || '')) return NodeFilter.FILTER_REJECT;
-          if (shouldSkipTTSNode(node.parentElement)) return NodeFilter.FILTER_REJECT;
-          return node.nodeValue && normalizeTTSText(node.nodeValue)
-            ? NodeFilter.FILTER_ACCEPT
-            : NodeFilter.FILTER_SKIP;
-        },
-      });
-      let score = 0;
-      let visited = 0;
-      let textNode = walker.nextNode();
-      while (textNode && visited < 500) {
-        visited += 1;
-        const text = normalizeTTSText(textNode.nodeValue || '');
-        if (text) {
-          try {
-            const textRange = doc.createRange();
-            textRange.selectNodeContents(textNode);
-            const rects = Array.from(textRange.getClientRects ? textRange.getClientRects() : []);
-            if (rects.some((rect) => rect.width > 0 && rect.height > 0 && rectIntersectsPaginatedRange(rect, range))) {
-              score += Math.min(text.length, 120);
-            }
-          } catch {}
-        }
-        textNode = walker.nextNode();
-      }
-      return score;
-    }
-
-    function pickPaginatedVisibleRange(doc, renderer) {
-      const candidates = getPaginatedVisibleRangeCandidates(renderer);
-      if (candidates.length <= 1) return candidates[0] || null;
-
-      const legacyRange = candidates.find((range) => range.source === 'legacy-offset') || null;
-      if (legacyRange && scorePaginatedVisibleRange(doc, legacyRange) > 0) return legacyRange;
-
-      const rendererRange = candidates.find((range) => range.source === 'renderer') || null;
-      if (rendererRange && scorePaginatedVisibleRange(doc, rendererRange) > 0) return rendererRange;
-
-      const fallbackRange = candidates.find((range) => range.source === 'size-fallback') || null;
-      if (fallbackRange && scorePaginatedVisibleRange(doc, fallbackRange) > 0) return fallbackRange;
-
-      return legacyRange || rendererRange || fallbackRange || candidates[0] || null;
-    }
-
-    let ttsVisibleRangeByDoc = new WeakMap();
-
-    function getVisibleRangeForTTSDoc(doc, renderer) {
-      if (!doc) return null;
-      if (ttsVisibleRangeByDoc.has(doc)) return ttsVisibleRangeByDoc.get(doc) || null;
-      const range = pickPaginatedVisibleRange(doc, renderer);
-      ttsVisibleRangeByDoc.set(doc, range);
-      return range;
-    }
-
-    function getRangeDocument(range) {
-      const container = range && range.commonAncestorContainer;
-      if (!container) return null;
-      return container.nodeType === Node.DOCUMENT_NODE ? container : container.ownerDocument;
-    }
-
-    function getReaderViewportRect() {
-      const viewport = {
-        left: 0,
-        top: 0,
-        right: window.innerWidth || document.documentElement.clientWidth || 0,
-        bottom: window.innerHeight || document.documentElement.clientHeight || 0,
-      };
-      try {
-        const viewRect = view && view.getBoundingClientRect ? view.getBoundingClientRect() : null;
-        if (!viewRect || viewRect.width <= 0 || viewRect.height <= 0) return viewport;
-        return {
-          left: Math.max(viewRect.left, viewport.left),
-          top: Math.max(viewRect.top, viewport.top),
-          right: Math.min(viewRect.right, viewport.right),
-          bottom: Math.min(viewRect.bottom, viewport.bottom),
-        };
-      } catch (e) {
-        return viewport;
-      }
-    }
-
-    function mapIframeRectToHost(rect, doc) {
-      try {
-        const iframe = doc && doc.defaultView && doc.defaultView.frameElement;
-        if (!iframe || !iframe.getBoundingClientRect) return rect;
-        const iframeRect = iframe.getBoundingClientRect();
-        const scaleX = iframe.clientWidth > 0 ? iframeRect.width / iframe.clientWidth : 1;
-        const scaleY = iframe.clientHeight > 0 ? iframeRect.height / iframe.clientHeight : 1;
-        return {
-          left: iframeRect.left + rect.left * scaleX,
-          top: iframeRect.top + rect.top * scaleY,
-          right: iframeRect.left + rect.right * scaleX,
-          bottom: iframeRect.top + rect.bottom * scaleY,
-          width: rect.width * scaleX,
-          height: rect.height * scaleY,
-        };
-      } catch (e) {
-        return rect;
-      }
-    }
-
-    function isHostRectVisible(rect) {
-      if (!rect || rect.width <= 0 || rect.height <= 0) return false;
-      const viewport = getReaderViewportRect();
-      return rect.right > viewport.left &&
-        rect.left < viewport.right &&
-        rect.bottom > viewport.top &&
-        rect.top < viewport.bottom;
-    }
-
-    function getContentHostRect(content) {
-      const doc = content && content.doc;
-      const iframe = doc && doc.defaultView && doc.defaultView.frameElement;
-      if (iframe && iframe.getBoundingClientRect) {
-        const rect = iframe.getBoundingClientRect();
-        return {
-          left: rect.left,
-          top: rect.top,
-          right: rect.right,
-          bottom: rect.bottom,
-          width: rect.width,
-          height: rect.height,
-        };
-      }
-      if (doc && doc.body) {
-        return mapIframeRectToHost(doc.body.getBoundingClientRect(), doc);
-      }
-      return null;
-    }
-
-    function getVisibleContentsForTTS(contents, renderer) {
-      if (!renderer || !renderer.scrolled) return contents;
-      return (contents || [])
-        .filter(function(content) { return !!(content && content.doc); })
-        .map(function(content) {
-          return { content: content, rect: getContentHostRect(content) };
-        })
-        .filter(function(item) {
-          return item.rect && isHostRectVisible(item.rect);
-        })
-        .sort(function(a, b) {
-          const topDelta = (a.rect ? a.rect.top : 0) - (b.rect ? b.rect.top : 0);
-          return Math.abs(topDelta) > 1
-            ? topDelta
-            : (a.rect ? a.rect.left : 0) - (b.rect ? b.rect.left : 0);
-        })
-        .map(function(item) { return item.content; });
-    }
-
-    function isRectVisibleInReader(rect, renderer, win, doc) {
-      if (!rect || rect.width <= 0 || rect.height <= 0) return false;
-      const isPaginated = !renderer.scrolled;
-      if (isPaginated && renderer.size > 0) {
-        const visibleRange = getVisibleRangeForTTSDoc(doc, renderer);
-        return visibleRange ? rectIntersectsPaginatedRange(rect, visibleRange) : false;
-      }
-      return isHostRectVisible(mapIframeRectToHost(rect, doc));
-    }
-
-    function isRangeVisibleInReader(range, renderer, win) {
-      if (!range || !renderer || !win) return false;
-      try {
-        const rects = Array.from(range.getClientRects ? range.getClientRects() : []);
-        const doc = getRangeDocument(range);
-        if (!rects.length) {
-          return isRectVisibleInReader(range.getBoundingClientRect(), renderer, win, doc);
-        }
-        return rects.some((rect) => isRectVisibleInReader(rect, renderer, win, doc));
-      } catch (e) {
-        console.log('[visibleTTSSegments] failed to inspect range rects:', e);
-        return false;
-      }
-    }
-
-    function isRangeStartVisibleInReader(range, renderer, win) {
-      if (!range || !renderer || !win) return false;
-      try {
-        const rects = Array.from(range.getClientRects ? range.getClientRects() : []);
-        const doc = getRangeDocument(range);
-        if (!rects.length) {
-          return isRectVisibleInReader(range.getBoundingClientRect(), renderer, win, doc);
-        }
-        return isRectVisibleInReader(rects[0], renderer, win, doc);
-      } catch (e) {
-        console.log('[visibleTTSSegments] failed to inspect range start rect:', e);
-        return false;
-      }
-    }
-
-    function getVisibleBlocksForTTS(doc, renderer) {
-      const blockSelector = "p, h1, h2, h3, h4, h5, h6, li, blockquote, dd, dt, figcaption, pre, td, th";
-      const blocks = doc.querySelectorAll(blockSelector);
-      const win = doc.defaultView;
-      if (!win) return [];
-      return Array.from(blocks).filter((block) => {
-        if (!block || !block.textContent || !block.textContent.trim()) return false;
-        if (shouldSkipTTSNode(block)) return false;
-        try {
-          const range = doc.createRange();
-          range.selectNodeContents(block);
-          return isRangeVisibleInReader(range, renderer, win);
-        } catch (e) {
-          return isRectVisibleInReader(block.getBoundingClientRect(), renderer, win, doc);
-        }
-      });
-    }
-
-    function getReadableBlocksForTTS(doc) {
-      const blockSelector = "p, h1, h2, h3, h4, h5, h6, li, blockquote, dd, dt, figcaption, pre, td, th";
-      return Array.from(doc.querySelectorAll(blockSelector)).filter((block) => {
-        if (!block || !block.textContent || !block.textContent.trim()) return false;
-        if (shouldSkipTTSNode(block)) return false;
-        return true;
-      });
-    }
-
-    function resolveTextPosition(textNodes, absoluteOffset, isEnd) {
-      if (!textNodes.length) return null;
-      for (var i = 0; i < textNodes.length; i++) {
-        var item = textNodes[i];
-        if (absoluteOffset < item.end || (isEnd && absoluteOffset <= item.end)) {
-          return {
-            node: item.node,
-            offset: Math.max(0, Math.min(item.node.nodeValue.length, absoluteOffset - item.start)),
-          };
-        }
-      }
-      const last = textNodes[textNodes.length - 1];
-      return { node: last.node, offset: last.node.nodeValue.length };
-    }
-
-    function fallbackSentenceSegments(text) {
-      const normalized = normalizeTTSText(text);
-      if (!normalized) return [];
-      const matches = normalized.match(/[^。！？!?；;\n]+[。！？!?；;…]?/gu) || [];
-      return (matches.length ? matches : [normalized]).map((segment) => segment.trim()).filter(Boolean);
-    }
-
     const TTS_FOOTNOTE_MARKER_PATTERN = /(?:\s*(?:\[(?:\d{1,4}|[一二三四五六七八九十百千万零〇两]{1,8}|[ivxlcdmIVXLCDM]{1,10})\]|［(?:\d{1,4}|[一二三四五六七八九十百千万零〇两]{1,8}|[ivxlcdmIVXLCDM]{1,10})］|【(?:\d{1,4}|[一二三四五六七八九十百千万零〇两]{1,8}|[ivxlcdmIVXLCDM]{1,10})】|〔(?:\d{1,4}|[一二三四五六七八九十百千万零〇两]{1,8}|[ivxlcdmIVXLCDM]{1,10})〕|［?（(?:\d{1,4}|[一二三四五六七八九十百千万零〇两]{1,8}|[ivxlcdmIVXLCDM]{1,10})）］?|\((?:\d{1,4}|[一二三四五六七八九十百千万零〇两]{1,8}|[ivxlcdmIVXLCDM]{1,10})\)))+/gu;
     const TTS_FOOTNOTE_MARKER_ONLY_PATTERN = /^(?:\s*(?:\[(?:\d{1,4}|[一二三四五六七八九十百千万零〇两]{1,8}|[ivxlcdmIVXLCDM]{1,10})\]|［(?:\d{1,4}|[一二三四五六七八九十百千万零〇两]{1,8}|[ivxlcdmIVXLCDM]{1,10})］|【(?:\d{1,4}|[一二三四五六七八九十百千万零〇两]{1,8}|[ivxlcdmIVXLCDM]{1,10})】|〔(?:\d{1,4}|[一二三四五六七八九十百千万零〇两]{1,8}|[ivxlcdmIVXLCDM]{1,10})〕|［?（(?:\d{1,4}|[一二三四五六七八九十百千万零〇两]{1,8}|[ivxlcdmIVXLCDM]{1,10})）］?|\((?:\d{1,4}|[一二三四五六七八九十百千万零〇两]{1,8}|[ivxlcdmIVXLCDM]{1,10})\)))+\s*$/u;
     const TTS_SKIPPED_ELEMENT_SELECTOR = [
@@ -3440,6 +3177,10 @@ a { color: ${primary} !important; }
       return !!(element && element.closest && element.closest(TTS_SKIPPED_ELEMENT_SELECTOR));
     }
 
+    function ttsNodeFilter(node) {
+      return shouldSkipTTSNode(node) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
+    }
+
     function stripCfiAssertions(value) {
       return String(value || '').replace(/\[[^\]]*\]/g, '');
     }
@@ -3467,18 +3208,6 @@ a { color: ${primary} !important; }
 
     function getTTSSegmentIdentity(cfi, text) {
       return `${getTTSCfiStartIdentity(cfi)}::${normalizeTTSText(text)}`;
-    }
-
-    function summarizeTTSSegmentsForLog(segments, limit) {
-      return (segments || []).slice(0, limit || 8).map(function(segment, index) {
-        var text = normalizeTTSText(segment && segment.text);
-        return {
-          index: index,
-          cfi: segment && segment.cfi || null,
-          length: text.length,
-          text: text,
-        };
-      });
     }
 
     function collectTTSSegmentsFromEngine(count, alignCfi, alignRange) {
@@ -3516,17 +3245,18 @@ a { color: ${primary} !important; }
       }
 
       const total = Math.max(1, Number.isFinite(count) ? count : 1);
-      const current =
-        typeof tts.currentDetail === 'function'
-          ? tts.currentDetail()
-          : null;
-      const following =
-        typeof tts.collectDetails === 'function'
+      const currentBlock = typeof tts.currentBlockDetails === 'function'
+        ? tts.currentBlockDetails(total)
+        : null;
+      const current = currentBlock ? null :
+        (typeof tts.currentDetail === 'function' ? tts.currentDetail() : null);
+      const following = currentBlock ||
+        (typeof tts.collectDetails === 'function'
           ? tts.collectDetails(Math.max(0, total - (current ? 1 : 0)), {
               includeCurrent: false,
               offset: 1,
             })
-          : [];
+          : []);
 
       const result = [];
       const seen = new Set();
@@ -3545,484 +3275,38 @@ a { color: ${primary} !important; }
       try {
         const tts = view && view.tts;
         if (!tts || !cfi) return { before: [], after: [] };
-
-        const resolved = resolveRangeForCfi(cfi);
-        try {
-          if (resolved?.range && typeof tts.from === 'function') {
-            const caretRange = resolved.range.cloneRange ? resolved.range.cloneRange() : resolved.range;
-            if (caretRange.collapse) caretRange.collapse(true);
-            tts.from(caretRange);
-          } else if (typeof tts.alignCfi === 'function') {
-            tts.alignCfi(cfi);
-          } else if (typeof tts.highlightCfi === 'function') {
-            tts.highlightCfi(cfi);
-          }
-        } catch (e) {
-          console.log('[ttsSegmentContext] failed to align cfi:', e);
-          return { before: [], after: [] };
-        }
-
-        const current =
-          typeof tts.currentDetail === 'function'
-            ? tts.currentDetail()
-            : null;
-        const currentText =
-          current && current.text
-            ? normalizeTTSText(current.text)
-            : '';
-        const currentIdentity = currentText ? getTTSSegmentIdentity(current && current.cfi, currentText) : null;
-
-        const normalize = function(details) {
-          const result = [];
-          const seen = new Set();
-          for (const detail of details || []) {
-            if (!detail || !detail.text || !detail.cfi) continue;
-            const text = normalizeTTSText(detail.text);
-            const identity = getTTSSegmentIdentity(detail.cfi, text);
-            if (!text || (currentIdentity && identity === currentIdentity) || seen.has(identity)) continue;
-            seen.add(identity);
-            result.push({ text, cfi: detail.cfi });
-          }
-          return result;
-        };
-
-        const before =
-          typeof tts.collectDetails === 'function'
-            ? tts.collectDetails(Math.max(0, beforeCount || 0), {
-                includeCurrent: false,
-                offset: -Math.max(0, beforeCount || 0),
-              })
-            : [];
-        const after =
-          typeof tts.collectDetails === 'function'
-            ? tts.collectDetails(Math.max(0, afterCount || 0), {
-                includeCurrent: false,
-                offset: 1,
-              })
-            : [];
-
-        return {
-          before: normalize(before),
-          after: normalize(after),
-        };
+        if (typeof tts.contextDetailsByCfi !== 'function') return { before: [], after: [] };
+        return tts.contextDetailsByCfi(
+          cfi,
+          Math.max(0, beforeCount || 0),
+          Math.max(0, afterCount || 0),
+        );
       } catch (e) {
         console.log('[ttsSegmentContext] error:', e);
         return { before: [], after: [] };
       }
     }
 
-    function extractTTSSegmentsFromDocument(doc, sectionIndex, maxCount, anchorRange) {
-      try {
-        if (!doc || !view || typeof view.getCFI !== 'function') return [];
-        const blocks = getReadableBlocksForTTS(doc);
-        const lang =
-          doc.documentElement.lang ||
-          doc.documentElement.getAttribute('xml:lang') ||
-          (doc.body && doc.body.lang) ||
-          navigator.language ||
-          'en';
-        const segmenter =
-          typeof Intl !== 'undefined' && Intl.Segmenter
-            ? new Intl.Segmenter(lang, { granularity: 'sentence' })
-            : null;
-        const limit = Math.max(1, maxCount || 24);
-        const segments = [];
-        const seen = new Set();
-        const docNode = doc.defaultView && doc.defaultView.Node ? doc.defaultView.Node : Node;
-        const anchorNode =
-          anchorRange && anchorRange.startContainer
-            ? (anchorRange.startContainer.nodeType === docNode.TEXT_NODE
-                ? anchorRange.startContainer.parentElement
-                : anchorRange.startContainer)
-            : null;
-        let started = !anchorNode;
-
-        for (const block of blocks) {
-          if (!started && anchorNode) {
-            if (block === anchorNode || block.contains(anchorNode)) {
-              started = true;
-            } else if (
-              anchorNode.compareDocumentPosition &&
-              (anchorNode.compareDocumentPosition(block) & docNode.DOCUMENT_POSITION_FOLLOWING)
-            ) {
-              started = true;
-            }
-          }
-          if (!started) continue;
-
-          const textNodes = getTTSTextNodes(block).map((node) => {
-            const text = node.nodeValue || '';
-            return { node, text };
-          }).filter((item) => item.text.trim().length > 0);
-          if (!textNodes.length) continue;
-
-          let absoluteText = '';
-          const positionedNodes = textNodes.map((item) => {
-            const start = absoluteText.length;
-            absoluteText += item.text;
-            return {
-              node: item.node,
-              start,
-              end: absoluteText.length,
-            };
-          });
-
-          const rawSegments = segmenter
-            ? Array.from(segmenter.segment(absoluteText)).map((item) => ({
-                start: item.index,
-                end: item.index + item.segment.length,
-              }))
-            : fallbackSentenceSegments(absoluteText).reduce((acc, sentence) => {
-                const start = absoluteText.indexOf(sentence, acc.lastIndex || 0);
-                if (start >= 0) {
-                  acc.items.push({ start, end: start + sentence.length });
-                  acc.lastIndex = start + sentence.length;
-                }
-                return acc;
-              }, { items: [], lastIndex: 0 }).items;
-          const normalizedSegments = rawSegments.length
-            ? rawSegments
-            : [{ start: 0, end: absoluteText.length }];
-
-          for (const rawSegment of normalizedSegments) {
-            let start = rawSegment.start;
-            let end = rawSegment.end;
-            while (start < end && /\s/u.test(absoluteText[start])) start++;
-            while (end > start && /\s/u.test(absoluteText[end - 1])) end--;
-            if (end - start < 2) continue;
-
-            const startPos = resolveTextPosition(positionedNodes, start, false);
-            const endPos = resolveTextPosition(positionedNodes, end, true);
-            if (!startPos || !endPos) continue;
-
-            const range = doc.createRange();
-            range.setStart(startPos.node, startPos.offset);
-            range.setEnd(endPos.node, endPos.offset);
-
-            const text = normalizeTTSText(absoluteText.slice(start, end));
-            if (!text) continue;
-
-            try {
-              const cfi = view.getCFI(sectionIndex, range);
-              const identity = getTTSSegmentIdentity(cfi, text);
-              if (!cfi || seen.has(identity)) continue;
-              seen.add(identity);
-              segments.push({ text, cfi });
-              if (segments.length >= limit) return segments;
-            } catch (e) {
-              console.log('[hrefTTSSegments] failed to convert range to CFI:', e);
-            }
-          }
-        }
-
-        return segments;
-      } catch (e) {
-        console.log('[hrefTTSSegments] extract error:', e);
-        return [];
-      }
-    }
-
-    async function getHrefTTSSegmentsFromBook(href, maxCount) {
-      try {
-        if (!href || !currentBook || !currentBook.sections || !view) return [];
-        let resolved = null;
-        try {
-          if (typeof view.resolveNavigation === 'function') {
-            resolved = await Promise.resolve(view.resolveNavigation(href));
-          } else if (typeof currentBook.resolveHref === 'function') {
-            resolved = await Promise.resolve(currentBook.resolveHref(href));
-          }
-        } catch (e) {
-          console.log('[hrefTTSSegments] failed to resolve href:', href, e);
-        }
-
-        let sectionIndex = Number.isInteger(resolved && resolved.index) ? resolved.index : -1;
-        if (sectionIndex < 0) {
-          const hrefWithoutHash = String(href).split('#')[0];
-          sectionIndex = Array.from(currentBook.sections).findIndex(function(section) {
-            const sectionHref = String(section && section.href || '').split('#')[0];
-            return sectionHref === href || sectionHref === hrefWithoutHash || sectionHref.endsWith('/' + hrefWithoutHash);
-          });
-        }
-        if (sectionIndex < 0 || sectionIndex >= currentBook.sections.length) return [];
-        const section = currentBook.sections[sectionIndex];
-        if (!section || typeof section.createDocument !== 'function') return [];
-
-        const doc = await section.createDocument();
-        let anchorRange = null;
-        if (resolved && typeof resolved.anchor === 'function') {
-          try {
-            anchorRange = anchorToRange(doc, resolved.anchor(doc));
-          } catch (e) {
-            anchorRange = null;
-          }
-        }
-
-        return extractTTSSegmentsFromDocument(doc, sectionIndex, maxCount, anchorRange);
-      } catch (e) {
-        console.log('[hrefTTSSegments] error:', e);
-        return [];
-      }
-    }
-
-    async function getSectionTTSSegmentsFromBook(sectionIndex, maxCount) {
-      try {
-        if (!currentBook || !currentBook.sections || !view) return [];
-        const index = Number(sectionIndex);
-        if (!Number.isInteger(index) || index < 0 || index >= currentBook.sections.length) {
-          return [];
-        }
-
-        const section = currentBook.sections[index];
-        if (!section || typeof section.createDocument !== 'function') return [];
-
-        const doc = await section.createDocument();
-        return extractTTSSegmentsFromDocument(doc, index, maxCount, null);
-      } catch (e) {
-        console.log('[sectionTTSSegments] error:', e);
-        return [];
-      }
-    }
-
     function extractVisibleTTSSegments(alignCfi) {
-      try {
-        const renderer = view && view.renderer;
-        const contents = getRendererContents();
-        if (!renderer || !contents.length) return [];
-        ttsVisibleRangeByDoc = new WeakMap();
-        const scanContents = getVisibleContentsForTTS(contents, renderer);
-        const segments = [];
-        const stats = {
-          contentsCount: contents.length,
-          scannedContentsCount: scanContents.length,
-          visibleBlockCount: 0,
-          rawSentenceCount: 0,
-          skippedTooShort: 0,
-          skippedNoBoundary: 0,
-          skippedNotStartVisible: 0,
-          skippedNotVisible: 0,
-          skippedEmptyText: 0,
-          skippedCFI: 0,
-          skippedDuplicate: 0,
-          startVisibilityMode: 'range-intersection',
-        };
-        const seenVisibleIdentities = new Set();
-        // Track the first visible range for range-based TTS cursor alignment
-        // Must be declared here (outer scope) so it's accessible after both loops close.
-        let firstVisibleRange = null;
+      const tts = view && view.tts;
+      if (!tts) return [];
 
-        for (var contentIndex = 0; contentIndex < scanContents.length; contentIndex++) {
-          const current = scanContents[contentIndex];
-          if (!current || !current.doc) continue;
-          const doc = current.doc;
-          const win = doc.defaultView;
-          if (!win) continue;
-          const sectionIndex = typeof current.index === 'number' ? current.index : currentSectionIndex;
-          const visibleBlocks = getVisibleBlocksForTTS(doc, renderer);
-          stats.visibleBlockCount += visibleBlocks.length;
-          const lang =
-            doc.documentElement.lang ||
-            doc.documentElement.getAttribute('xml:lang') ||
-            doc.body.lang ||
-            navigator.language ||
-            'en';
-          const segmenter =
-            typeof Intl !== 'undefined' && Intl.Segmenter
-              ? new Intl.Segmenter(lang, { granularity: 'sentence' })
-              : null;
-
-          for (var blockIndex = 0; blockIndex < visibleBlocks.length; blockIndex++) {
-            const block = visibleBlocks[blockIndex];
-            const textNodes = getTTSTextNodes(block).map((node) => {
-              const text = node.nodeValue || '';
-              return { node, text };
-            }).filter((item) => item.text.trim().length > 0);
-            if (!textNodes.length) continue;
-
-            var absoluteText = '';
-            const positionedNodes = textNodes.map((item) => {
-              const start = absoluteText.length;
-              absoluteText += item.text;
-              return {
-                node: item.node,
-                start,
-                end: absoluteText.length,
-              };
-            });
-
-            const rawSegments = segmenter
-              ? Array.from(segmenter.segment(absoluteText)).map((item) => ({
-                  start: item.index,
-                  end: item.index + item.segment.length,
-                }))
-              : fallbackSentenceSegments(absoluteText).reduce((acc, sentence) => {
-                  const start = absoluteText.indexOf(sentence, acc.lastIndex || 0);
-                  if (start >= 0) {
-                    acc.items.push({ start, end: start + sentence.length });
-                    acc.lastIndex = start + sentence.length;
-                  }
-                  return acc;
-                }, { items: [], lastIndex: 0 }).items;
-
-            const normalizedSegments = rawSegments.length
-              ? rawSegments
-              : [{ start: 0, end: absoluteText.length }];
-            stats.rawSentenceCount += normalizedSegments.length;
-
-            for (var si = 0; si < normalizedSegments.length; si++) {
-              let start = normalizedSegments[si].start;
-              let end = normalizedSegments[si].end;
-
-              while (start < end && /\s/u.test(absoluteText[start])) start++;
-              while (end > start && /\s/u.test(absoluteText[end - 1])) end--;
-              if (end - start < 2) {
-                stats.skippedTooShort++;
-                continue;
-              }
-
-              const startPos = resolveTextPosition(positionedNodes, start, false);
-              const endPos = resolveTextPosition(positionedNodes, end, true);
-              if (!startPos || !endPos) {
-                stats.skippedNoBoundary++;
-                continue;
-              }
-
-              const range = doc.createRange();
-              range.setStart(startPos.node, startPos.offset);
-              range.setEnd(endPos.node, endPos.offset);
-              if (!isRangeStartVisibleInReader(range, renderer, win)) {
-                stats.skippedNotVisible++;
-                stats.skippedNotStartVisible++;
-                continue;
-              }
-
-              const text = normalizeTTSText(absoluteText.slice(start, end));
-              if (!text) {
-                stats.skippedEmptyText++;
-                continue;
-              }
-
-              // Capture the first visible range for reliable TTS cursor alignment
-              if (!firstVisibleRange) {
-                firstVisibleRange = range;
-              }
-
-              try {
-                const cfi = view && view.getCFI ? view.getCFI(sectionIndex, range) : '';
-                if (cfi) {
-                  const identity = getTTSSegmentIdentity(cfi, text);
-                  if (seenVisibleIdentities.has(identity)) {
-                    stats.skippedDuplicate++;
-                    continue;
-                  }
-                  seenVisibleIdentities.add(identity);
-                  segments.push({ text, cfi });
-                } else {
-                  stats.skippedCFI++;
-                }
-              } catch (e) {
-                stats.skippedCFI++;
-                console.log('[visibleTTSSegments] failed to convert range to CFI:', e);
-              }
-            }
-          }
-        }
-
-        // Use range-based alignment (preferred: uses boundary comparison, not CFI string equality)
-        // Fall back to CFI string alignment for older tts.js builds without tts.from()
-        const firstVisibleCfi = segments[0]?.cfi || null;
-        const resolvedAlignRange = resolveRangeForCfi(alignCfi);
-        const alignedSegments = segments.length
-          ? collectTTSSegmentsFromEngine(
-              alignCfi ? 500 : segments.length,
-              alignCfi || firstVisibleCfi,
-              resolvedAlignRange?.range || firstVisibleRange
-            )
-          : [];
-        let returnSource = segments.length ? 'direct-visible' : 'no-visible-segments';
-        let filteredAlignedCount = 0;
-        let filteredAlignedPreview = [];
-        let returnedSegments = segments;
-        if (alignedSegments.length && segments.length) {
-          const visibleIdentities = new Set(
-            segments.map((segment) => getTTSSegmentIdentity(segment.cfi, segment.text))
-          );
-          const filtered = alignedSegments.filter((segment) =>
-            visibleIdentities.has(getTTSSegmentIdentity(segment.cfi, segment.text))
-          );
-          filteredAlignedCount = filtered.length;
-          filteredAlignedPreview = summarizeTTSSegmentsForLog(filtered, 8);
-          if (filtered.length === segments.length) {
-            returnSource = 'aligned-filtered';
-            returnedSegments = filtered;
-          } else if (filtered.length > 0) {
-            returnSource = 'direct-partial-filtered-fallback';
-            returnedSegments = segments;
-          } else if (alignCfi) {
-            const alignedStart = alignedSegments[0] || null;
-            const alignedStartIdentity = alignedStart
-              ? getTTSSegmentIdentity(alignedStart.cfi, alignedStart.text)
-              : null;
-            const visibleStartIndex = alignedStartIdentity
-              ? segments.findIndex(
-                  (segment) =>
-                    getTTSSegmentIdentity(segment.cfi, segment.text) === alignedStartIdentity
-                )
-              : -1;
-            if (visibleStartIndex >= 0) {
-              returnSource = 'direct-aligned-slice';
-              returnedSegments = segments.slice(visibleStartIndex);
-            } else {
-              returnSource = 'direct-fallback';
-              returnedSegments = segments;
-            }
-          } else {
-            returnSource = 'direct-visible';
-            returnedSegments = segments;
-          }
-        }
-
-        window.__lastVisibleTTSDiagnostics = {
-          alignCfi: alignCfi || null,
-          firstVisibleCfi: firstVisibleCfi,
-          firstVisibleText: segments[0] && segments[0].text || null,
-          directCount: segments.length,
-          alignedCount: alignedSegments.length,
-          filteredAlignedCount: filteredAlignedCount,
-          returnedCount: returnedSegments.length,
-          returnSource: returnSource,
-          stats: stats,
-          directPreview: summarizeTTSSegmentsForLog(segments, 8),
-          alignedPreview: summarizeTTSSegmentsForLog(alignedSegments, 8),
-          filteredAlignedPreview: filteredAlignedPreview,
-          returnedPreview: summarizeTTSSegmentsForLog(returnedSegments, 8),
-        };
-        console.log('[visibleTTSSegments] diagnostics', JSON.stringify(window.__lastVisibleTTSDiagnostics));
-        return returnedSegments;
-      } catch (e) {
-        console.log('[visibleTTSSegments] extraction error:', e);
-        const fallbackSegments = alignCfi
-          ? collectTTSSegmentsFromEngine(500, alignCfi, resolveRangeForCfi(alignCfi)?.range || null)
-          : [];
-        window.__lastVisibleTTSDiagnostics = {
-          alignCfi: alignCfi || null,
-          extractionError: String(e),
-          returnSource: alignCfi ? 'engine-align-fallback' : 'no-visible-segments',
-          directCount: 0,
-          alignedCount: fallbackSegments.length,
-          filteredAlignedCount: 0,
-          returnedCount: fallbackSegments.length,
-          stats: {
-            startVisibilityMode: 'range-intersection',
-          },
-          directPreview: [],
-          alignedPreview: summarizeTTSSegmentsForLog(fallbackSegments, 8),
-          filteredAlignedPreview: [],
-          returnedPreview: summarizeTTSSegmentsForLog(fallbackSegments, 8),
-        };
-        console.log('[visibleTTSSegments] diagnostics', JSON.stringify(window.__lastVisibleTTSDiagnostics));
-        return fallbackSegments;
+      let range = null;
+      if (alignCfi) {
+        range = resolveRangeForCfi(alignCfi)?.range || null;
       }
+      if (!range && lastRelocateRange) {
+        range = lastRelocateRange.cloneRange ? lastRelocateRange.cloneRange() : lastRelocateRange;
+      }
+
+      const segments = collectTTSSegmentsFromEngine(128, alignCfi || null, range);
+      window.__lastVisibleTTSDiagnostics = {
+        alignCfi: alignCfi || null,
+        returnedCount: segments.length,
+        scannedCount: segments.length,
+        returnSource: range ? 'foliate-range' : 'foliate-current',
+      };
+      return segments;
     }
 
     // ─── Expose global functions for injectJavaScript ───
@@ -4164,14 +3448,6 @@ a { color: ${primary} !important; }
       await ensureTTSEngine();
       const context = getTTSSegmentContextFromEngine(cfi, before, after);
       postToRN('ttsSegmentContext', { requestId: requestId || null, ...context });
-    };
-    window.doGetHrefTTSSegments = async function (href, count, requestId) {
-      const segments = await getHrefTTSSegmentsFromBook(href, count);
-      postToRN('hrefTTSSegments', { requestId: requestId || null, segments });
-    };
-    window.doGetSectionTTSSegments = async function (sectionIndex, count, requestId) {
-      const segments = await getSectionTTSSegmentsFromBook(sectionIndex, count);
-      postToRN('sectionTTSSegments', { requestId: requestId || null, segments });
     };
     window.doGetChapterParagraphs = function () {
       handleGetChapterParagraphs();

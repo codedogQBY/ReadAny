@@ -289,22 +289,22 @@ function normalizeTTSSegmentText(text?: string | null) {
   return cleanText(String(text || ""));
 }
 
+function normalizeTTSSegmentDetails(details: Array<{ text?: string; cfi?: string }>) {
+  const segments: TTSSegmentDetail[] = [];
+  for (const detail of details) {
+    const text = normalizeTTSSegmentText(detail.text);
+    const cfi = detail.cfi;
+    if (text && cfi) segments.push({ text, cfi });
+  }
+  return segments;
+}
+
 function acceptTTSNode(node: Node) {
   if (!node.nodeValue?.trim()) return NodeFilter.FILTER_SKIP;
   if (isTTSFootnoteMarker(node.nodeValue)) return NodeFilter.FILTER_REJECT;
   const parent = (node as Text).parentElement;
   return shouldSkipTTSNode(parent) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
 }
-
-function getTTSSegmentIdentity(cfi?: string | null, text?: string | null) {
-  return `${cfi || ""}::${normalizeTTSSegmentText(text)}`;
-}
-
-type PaginatedVisibleRange = {
-  left: number;
-  right: number;
-  source: "renderer" | "legacy-offset" | "size-fallback";
-};
 
 type RendererContent = {
   doc?: Document | null;
@@ -319,91 +319,23 @@ function getRendererContents(view: FoliateView | null): RendererContent[] {
   return (view?.renderer?.getContents?.() ?? []) as RendererContent[];
 }
 
-function getPaginatedVisibleRangeCandidates(renderer: {
-  start?: unknown;
-  end?: unknown;
-  size?: unknown;
-}): PaginatedVisibleRange[] {
-  const start = Number(renderer.start ?? 0);
-  const end = Number(renderer.end ?? 0);
-  const size = Number(renderer.size ?? 0);
-  const candidates: PaginatedVisibleRange[] = [];
-
-  if (Number.isFinite(start) && Number.isFinite(size) && size > 0) {
-    candidates.push({ left: start - size, right: start, source: "legacy-offset" });
-    candidates.push({ left: start, right: start + size, source: "size-fallback" });
+function describeTTSRange(range: Range | null | undefined) {
+  if (!range) return null;
+  try {
+    const doc = range.startContainer.ownerDocument ??
+      (range.startContainer.nodeType === Node.DOCUMENT_NODE
+        ? (range.startContainer as Document)
+        : null);
+    return {
+      collapsed: range.collapsed,
+      startOffset: range.startOffset,
+      endOffset: range.endOffset,
+      text: normalizeTTSSegmentText(range.toString()).slice(0, 100),
+      sectionUrl: doc?.location?.href || null,
+    };
+  } catch {
+    return { collapsed: range.collapsed };
   }
-
-  if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
-    candidates.push({ left: start, right: end, source: "renderer" });
-  }
-
-  return candidates.filter(
-    (candidate, index, list) =>
-      candidate.right > candidate.left &&
-      list.findIndex((item) => item.left === candidate.left && item.right === candidate.right) ===
-        index,
-  );
-}
-
-function rectIntersectsPaginatedRange(rect: DOMRect, range: PaginatedVisibleRange) {
-  return rect.right > range.left && rect.left < range.right;
-}
-
-function scorePaginatedVisibleRange(doc: Document, range: PaginatedVisibleRange) {
-  if (!doc.body) return 0;
-  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
-    acceptNode: acceptTTSNode,
-  });
-  let score = 0;
-  let visited = 0;
-  for (
-    let textNode = walker.nextNode() as Text | null;
-    textNode && visited < 500;
-    textNode = walker.nextNode() as Text | null
-  ) {
-    visited += 1;
-    const text = normalizeTTSSegmentText(textNode.nodeValue);
-    if (!text) continue;
-    try {
-      const textRange = doc.createRange();
-      textRange.selectNodeContents(textNode);
-      const rects = Array.from(textRange.getClientRects()).filter(
-        (rect) => rect.width > 0 && rect.height > 0,
-      );
-      if (rects.some((rect) => rectIntersectsPaginatedRange(rect, range))) {
-        score += Math.min(text.length, 120);
-      }
-    } catch {
-      // Ignore nodes that cannot be measured.
-    }
-  }
-  return score;
-}
-
-function pickPaginatedVisibleRange(
-  doc: Document,
-  renderer: { start?: unknown; end?: unknown; size?: unknown },
-) {
-  const candidates = getPaginatedVisibleRangeCandidates(renderer);
-  if (candidates.length <= 1) return candidates[0] ?? null;
-
-  const legacyRange = candidates.find((range) => range.source === "legacy-offset") ?? null;
-  if (legacyRange && scorePaginatedVisibleRange(doc, legacyRange) > 0) {
-    return legacyRange;
-  }
-
-  const rendererRange = candidates.find((range) => range.source === "renderer") ?? null;
-  if (rendererRange && scorePaginatedVisibleRange(doc, rendererRange) > 0) {
-    return rendererRange;
-  }
-
-  const fallbackRange = candidates.find((range) => range.source === "size-fallback") ?? null;
-  if (fallbackRange && scorePaginatedVisibleRange(doc, fallbackRange) > 0) {
-    return fallbackRange;
-  }
-
-  return legacyRange ?? rendererRange ?? fallbackRange ?? candidates[0];
 }
 
 function getIframeClickMetrics(doc: Document, container: HTMLElement | null, clientX: number) {
@@ -698,7 +630,7 @@ export interface FoliateViewerHandle {
   goToHref: (href: string) => void;
   goToFraction: (fraction: number) => void;
   goToCFI: (cfi: string) => Promise<void>;
-  goToIndex: (index: number) => void;
+  goToIndex: (index: number) => Promise<void>;
   highlightCFITemporarily: (cfi: string, duration?: number) => void;
   // biome-ignore lint: foliate-js annotation format
   addAnnotation: (annotation: any, remove?: boolean) => void;
@@ -711,9 +643,13 @@ export interface FoliateViewerHandle {
   }) => AsyncGenerator | null;
   clearSearch: () => void;
   getView: () => FoliateView | null;
-  /** Get visible text on the current page for TTS */
+  /** Get readable text from the current Foliate reading position for TTS */
   getVisibleText: () => string;
   getVisibleTTSSegments: (alignCfi?: string | null) => Promise<TTSSegmentDetail[]>;
+  /** Advance Foliate's TTS cursor to the next block, matching Readest's progression model. */
+  getNextTTSSegments: () => Promise<TTSSegmentDetail[]>;
+  /** Read the next Foliate block without advancing the playback cursor. */
+  peekNextTTSSegments: () => Promise<TTSSegmentDetail[]>;
   getTTSSegmentContext: (
     cfi: string,
     before?: number,
@@ -797,6 +733,9 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<FoliateView | null>(null);
+    // Foliate's relocate range is the authoritative start of the current
+    // viewport and the only anchor passed into the TTS cursor.
+    const lastRelocateRangeRef = useRef<Range | null>(null);
     const isViewCreated = useRef(false);
     // PDF theme-filter state: per-book per-page light decision + doc -> index mapping
     const pdfPageLightCacheRef = useRef<Map<string, Map<number, boolean>>>(new Map());
@@ -804,6 +743,11 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
     const [loading, setLoading] = useState(true);
     const [footnotePreview, setFootnotePreview] = useState<FootnotePreview | null>(null);
     const activeFootnoteKeyRef = useRef<string | null>(null);
+
+    useEffect(() => {
+      if (!bookKey) return;
+      lastRelocateRangeRef.current = null;
+    }, [bookKey]);
 
     const applyPdfPageThemeFilter = useCallback(
       async (doc: Document, index: number, theme: AppTheme) => {
@@ -916,9 +860,13 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       ttsHighlightKeyRef.current = null;
       if (prev && viewRef.current) {
         try {
+          console.log("[ReaderTTS][highlight] clear-delete", { prev });
           viewRef.current.deleteAnnotation({ value: prev });
-        } catch {
-          // no-op
+        } catch (error) {
+          console.warn("[ReaderTTS][highlight] clear-delete failed", {
+            prev,
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
       }
     }, []);
@@ -981,9 +929,23 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         );
       };
       const current = getPrimaryContent();
-      if (!view || !current?.doc) return null;
+      if (!view || !current?.doc) {
+        console.warn("[ReaderTTS][ensure] unavailable", {
+          hasView: !!view,
+          hasRenderer: !!view?.renderer,
+          contentCount: getRendererContents(view).length,
+          primaryIndex: view?.renderer?.primaryIndex ?? null,
+        });
+        return null;
+      }
 
-      await view.initTTS("sentence", (range) => {
+      console.log("[ReaderTTS][ensure] init", {
+        primaryIndex: view.renderer?.primaryIndex ?? null,
+        contentIndex: current.index ?? null,
+        existing: !!view.tts,
+      });
+
+      await view.initTTS("sentence", acceptTTSNode, (range) => {
         const contents = getRendererContents(view);
         const sourceDoc =
           range.commonAncestorContainer.nodeType === Node.DOCUMENT_NODE
@@ -1044,8 +1006,22 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         }
 
         return cfi;
+      }, (range) => {
+        const sourceDoc =
+          range.commonAncestorContainer.nodeType === Node.DOCUMENT_NODE
+            ? (range.commonAncestorContainer as Document)
+            : range.commonAncestorContainer.ownerDocument;
+        const content = getRendererContents(view).find((item) => item?.doc === sourceDoc) ??
+          getRendererContents(view).find((item) => item?.index === view.renderer?.primaryIndex);
+        return content?.index == null ? "" : view.getCFI(content.index, range.cloneRange());
       });
 
+      console.log("[ReaderTTS][ensure] ready", {
+        docMatchesPrimary: view.tts?.doc === current.doc,
+        hasFrom: typeof view.tts?.from === "function",
+        hasCurrentBlockDetails: typeof view.tts?.currentBlockDetails === "function",
+        hasCfi: typeof view.tts?.alignCfi === "function",
+      });
       return view.tts ?? null;
     }, []);
 
@@ -1054,408 +1030,74 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         const view = viewRef.current;
         const renderer = view?.renderer;
         const contents = getRendererContents(view);
-        if (!view || !renderer || !contents.length) return [];
-        const primaryContent =
-          contents.find((content) => content?.doc && content.index === renderer.primaryIndex) ??
-          contents.find((content) => content?.doc) ??
-          null;
-
-        await ensureDesktopTTS();
-
-        const rangeByDoc = new WeakMap<Document, PaginatedVisibleRange | null>();
-        const getVisibleRangeForDoc = (doc: Document) => {
-          if (rangeByDoc.has(doc)) return rangeByDoc.get(doc) ?? null;
-          const range = pickPaginatedVisibleRange(doc, renderer);
-          rangeByDoc.set(doc, range);
-          return range;
-        };
-
-        const getReaderViewportRect = () => {
-          const containerRect = containerRef.current?.getBoundingClientRect();
-          const viewportRect = {
-            left: 0,
-            top: 0,
-            right: window.innerWidth,
-            bottom: window.innerHeight,
-          };
-          if (!containerRect || containerRect.width <= 0 || containerRect.height <= 0) {
-            return viewportRect;
-          }
-          return {
-            left: Math.max(containerRect.left, viewportRect.left),
-            top: Math.max(containerRect.top, viewportRect.top),
-            right: Math.min(containerRect.right, viewportRect.right),
-            bottom: Math.min(containerRect.bottom, viewportRect.bottom),
-          };
-        };
-
-        const mapIframeRectToHost = (rect: DOMRect, doc?: Document | null) => {
-          const iframe = doc?.defaultView?.frameElement as HTMLIFrameElement | null;
-          if (!iframe) return rect;
-          const iframeRect = iframe.getBoundingClientRect();
-          const scaleX = iframe.clientWidth > 0 ? iframeRect.width / iframe.clientWidth : 1;
-          const scaleY = iframe.clientHeight > 0 ? iframeRect.height / iframe.clientHeight : 1;
-          return {
-            left: iframeRect.left + rect.left * scaleX,
-            top: iframeRect.top + rect.top * scaleY,
-            right: iframeRect.left + rect.right * scaleX,
-            bottom: iframeRect.top + rect.bottom * scaleY,
-            width: rect.width * scaleX,
-            height: rect.height * scaleY,
-          };
-        };
-
-        const isHostRectVisible = (rect: {
-          left: number;
-          top: number;
-          right: number;
-          bottom: number;
-          width: number;
-          height: number;
-        }) => {
-          if (!rect || rect.width <= 0 || rect.height <= 0) return false;
-          const viewport = getReaderViewportRect();
-          return (
-            rect.right > viewport.left &&
-            rect.left < viewport.right &&
-            rect.bottom > viewport.top &&
-            rect.top < viewport.bottom
-          );
-        };
-
-        const getContentHostRect = (content: RendererContent) => {
-          const doc = content?.doc ?? null;
-          const iframe = doc?.defaultView?.frameElement as HTMLIFrameElement | null;
-          if (iframe) {
-            const rect = iframe.getBoundingClientRect();
-            return {
-              left: rect.left,
-              top: rect.top,
-              right: rect.right,
-              bottom: rect.bottom,
-              width: rect.width,
-              height: rect.height,
-            };
-          }
-          if (doc?.body) {
-            return mapIframeRectToHost(doc.body.getBoundingClientRect(), doc);
-          }
-          return null;
-        };
-
-        const scanContents = renderer.scrolled
-          ? contents
-              .filter((content) => !!content?.doc)
-              .map((content) => ({ content, rect: getContentHostRect(content) }))
-              .filter((item) => item.rect && isHostRectVisible(item.rect))
-              .sort((a, b) => {
-                const topDelta = (a.rect?.top ?? 0) - (b.rect?.top ?? 0);
-                return Math.abs(topDelta) > 1
-                  ? topDelta
-                  : (a.rect?.left ?? 0) - (b.rect?.left ?? 0);
-              })
-              .map((item) => item.content)
-          : contents;
-
-        const isRectVisibleInReader = (rect: DOMRect, doc?: Document | null) => {
-          if (!rect || rect.width <= 0 || rect.height <= 0) return false;
-          const isPaginated = !renderer.scrolled;
-          if (isPaginated) {
-            const visibleRange = doc ? getVisibleRangeForDoc(doc) : null;
-            return visibleRange ? rectIntersectsPaginatedRange(rect, visibleRange) : false;
-          }
-          return isHostRectVisible(mapIframeRectToHost(rect, doc));
-        };
-
-        // Require the START of the sentence range to be visible on the current page,
-        // preventing sentences that began on the previous page from appearing as the
-        // first TTS segment.
-        const isRangeStartVisibleInReader = (range: Range) => {
-          try {
-            const doc =
-              range.commonAncestorContainer.nodeType === Node.DOCUMENT_NODE
-                ? (range.commonAncestorContainer as Document)
-                : range.commonAncestorContainer.ownerDocument;
-            const rects = Array.from(range.getClientRects());
-            if (!rects.length) {
-              return isRectVisibleInReader(range.getBoundingClientRect(), doc);
-            }
-            return isRectVisibleInReader(rects[0], doc);
-          } catch {
-            return false;
-          }
-        };
-
-        const blockSelector =
-          "p, h1, h2, h3, h4, h5, h6, li, blockquote, dd, dt, figcaption, pre, td, th";
-        const lang =
-          (primaryContent?.doc as Document | undefined)?.documentElement.lang ||
-          (primaryContent?.doc as Document | undefined)?.documentElement.getAttribute("xml:lang") ||
-          (primaryContent?.doc as Document | undefined)?.body.lang ||
-          navigator.language ||
-          "en";
-        const SegmenterCtor = (
-          Intl as typeof Intl & {
-            Segmenter?: new (
-              locales?: string | string[],
-              options?: { granularity?: "grapheme" | "word" | "sentence" },
-            ) => {
-              segment(input: string): Iterable<{ index: number; segment: string }>;
-            };
-          }
-        ).Segmenter;
-        const segmenter = SegmenterCtor
-          ? new SegmenterCtor(lang, { granularity: "sentence" })
-          : null;
-
-        const segments: TTSSegmentDetail[] = [];
-        const seenVisibleIdentities = new Set<string>();
-        for (const current of scanContents) {
-          const doc = current?.doc as Document | undefined;
-          const sectionIndex = current?.index ?? 0;
-          if (!doc) continue;
-
-          let visibleBlocks = Array.from(doc.querySelectorAll(blockSelector)).filter((block) => {
-            if (!block.textContent?.trim()) return false;
-            if (shouldSkipTTSNode(block)) return false;
-            return isRectVisibleInReader(block.getBoundingClientRect(), doc);
+        if (!view || !renderer || !contents.length) {
+          console.warn("[ReaderTTS][visible] missing renderer", {
+            hasView: !!view,
+            hasRenderer: !!renderer,
+            contentCount: contents.length,
           });
-
-          // Fallback: if no standard block elements found (e.g., epub uses only
-          // <div>/<span> for text), try broader selectors
-          if (visibleBlocks.length === 0) {
-            visibleBlocks = Array.from(doc.querySelectorAll("div, section, article, span")).filter(
-              (el) => {
-                if (!el.textContent?.trim()) return false;
-                if (shouldSkipTTSNode(el)) return false;
-                // Only leaf-level elements with direct text content
-                if (el.querySelector("div, section, article, p")) return false;
-                return isRectVisibleInReader(el.getBoundingClientRect(), doc);
-              },
-            );
-          }
-
-          // Last resort for unusual books. In scrolled mode this is only safe
-          // when the document belongs to a real iframe, because visibility must
-          // be measured against the outer reader viewport rather than the
-          // iframe's full document height.
-          if (
-            visibleBlocks.length === 0 &&
-            doc.body?.textContent?.trim() &&
-            (!renderer.scrolled || doc.defaultView?.frameElement) &&
-            isRectVisibleInReader(doc.body.getBoundingClientRect(), doc)
-          ) {
-            visibleBlocks = [doc.body];
-          }
-
-          for (const block of visibleBlocks) {
-            const walker = doc.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
-              acceptNode: acceptTTSNode,
-            });
-
-            const positionedNodes: Array<{ node: Text; start: number; end: number }> = [];
-            let absoluteText = "";
-            for (
-              let textNode = walker.nextNode() as Text | null;
-              textNode;
-              textNode = walker.nextNode() as Text | null
-            ) {
-              const text = textNode.nodeValue || "";
-              const start = absoluteText.length;
-              absoluteText += text;
-              positionedNodes.push({ node: textNode, start, end: absoluteText.length });
-            }
-            if (!absoluteText.trim() || positionedNodes.length === 0) continue;
-
-            const rawSegments = segmenter
-              ? Array.from(segmenter.segment(absoluteText)).map(
-                  (item: { index: number; segment: string }) => ({
-                    start: item.index,
-                    end: item.index + item.segment.length,
-                  }),
-                )
-              : (absoluteText.match(/[^。！？!?；;\n]+[。！？!?；;…]?/gu) || [absoluteText]).reduce<
-                  Array<{ start: number; end: number }>
-                >((acc, sentence) => {
-                  const last = acc.length > 0 ? acc[acc.length - 1] : null;
-                  const start = absoluteText.indexOf(sentence, last?.end ?? 0);
-                  if (start >= 0) acc.push({ start, end: start + sentence.length });
-                  return acc;
-                }, []);
-
-            const resolvePosition = (absoluteOffset: number, isEnd: boolean) => {
-              for (const item of positionedNodes) {
-                if (absoluteOffset < item.end || (isEnd && absoluteOffset <= item.end)) {
-                  return {
-                    node: item.node,
-                    offset: Math.max(
-                      0,
-                      Math.min(item.node.nodeValue?.length ?? 0, absoluteOffset - item.start),
-                    ),
-                  };
-                }
-              }
-              const last = positionedNodes[positionedNodes.length - 1];
-              return { node: last.node, offset: last.node.nodeValue?.length ?? 0 };
-            };
-
-            for (const rawSegment of rawSegments.length
-              ? rawSegments
-              : [{ start: 0, end: absoluteText.length }]) {
-              let start = rawSegment.start;
-              let end = rawSegment.end;
-              while (start < end && /\s/u.test(absoluteText[start] ?? "")) start++;
-              while (end > start && /\s/u.test(absoluteText[end - 1] ?? "")) end--;
-              if (end - start < 2) continue;
-
-              const startPos = resolvePosition(start, false);
-              const endPos = resolvePosition(end, true);
-              if (!startPos || !endPos) continue;
-
-              const range = doc.createRange();
-              range.setStart(startPos.node, startPos.offset);
-              range.setEnd(endPos.node, endPos.offset);
-              if (!isRangeStartVisibleInReader(range)) continue;
-
-              const text = normalizeTTSSegmentText(absoluteText.slice(start, end));
-              if (!text) continue;
-
-              try {
-                const cfi = view.getCFI(sectionIndex, range);
-                const identity = getTTSSegmentIdentity(cfi, text);
-                if (cfi && !seenVisibleIdentities.has(identity)) {
-                  seenVisibleIdentities.add(identity);
-                  segments.push({ text, cfi });
-                }
-              } catch {
-                // skip segment if CFI resolution fails
-              }
-            }
-          }
+          return [];
         }
-
-        const tts = view.tts as null | {
-          alignCfi?: (cfi: string) => { text?: string; cfi?: string } | null;
-          currentDetail?: () => { text?: string; cfi?: string } | null;
-          collectDetails?: (
-            count?: number,
-            options?: { includeCurrent?: boolean; offset?: number },
-          ) => Array<{ text?: string; cfi?: string }>;
-        };
-
-        if (segments.length > 0 && tts) {
-          try {
-            const alignTargetCfi = alignCfi || segments[0]?.cfi;
-            if (!alignTargetCfi) return segments;
-            if (typeof tts.alignCfi === "function") {
-              tts.alignCfi(alignTargetCfi);
-            } else if (
-              typeof (tts as { highlightCfi?: (cfi: string) => unknown }).highlightCfi ===
-              "function"
-            ) {
-              (tts as { highlightCfi: (cfi: string) => unknown }).highlightCfi(alignTargetCfi);
-            }
-            const currentDetail =
-              typeof tts.currentDetail === "function" ? tts.currentDetail() : null;
-            const followingDetails =
-              typeof tts.collectDetails === "function"
-                ? tts.collectDetails(
-                    Math.max(
-                      0,
-                      Math.max(segments.length, alignCfi ? 12 : segments.length) -
-                        (currentDetail ? 1 : 0),
-                    ),
-                    {
-                      includeCurrent: false,
-                      offset: 1,
-                    },
-                  )
-                : [];
-            const seenAlignedIdentities = new Set<string>();
-            const alignedSegments = [currentDetail, ...(followingDetails || [])]
-              .filter(
-                (detail): detail is { text: string; cfi: string } =>
-                  !!detail?.text && !!detail?.cfi,
-              )
-              .map((detail) => ({
-                text: normalizeTTSSegmentText(detail.text),
-                cfi: detail.cfi,
-              }))
-              .filter((detail) => {
-                const identity = getTTSSegmentIdentity(detail.cfi, detail.text);
-                if (!detail.text || seenAlignedIdentities.has(identity)) {
-                  return false;
-                }
-                seenAlignedIdentities.add(identity);
-                return true;
-              });
-            if (alignedSegments.length > 0) {
-              let returnedSegments = segments;
-              let returnSource = "direct-visible";
-              if (segments.length > 0) {
-                const visibleIdentities = new Set(
-                  segments.map((segment) => getTTSSegmentIdentity(segment.cfi, segment.text)),
-                );
-                const filtered = alignedSegments.filter((segment) =>
-                  visibleIdentities.has(getTTSSegmentIdentity(segment.cfi, segment.text)),
-                );
-                if (filtered.length === segments.length) {
-                  returnedSegments = filtered;
-                  returnSource = "aligned-filtered";
-                } else if (filtered.length > 0) {
-                  returnedSegments = segments;
-                  returnSource = "direct-partial-filtered-fallback";
-                } else if (alignCfi) {
-                  const alignedStart = alignedSegments[0] || null;
-                  const alignedStartIdentity = alignedStart
-                    ? getTTSSegmentIdentity(alignedStart.cfi, alignedStart.text)
-                    : null;
-                  const visibleStartIndex = alignedStartIdentity
-                    ? segments.findIndex(
-                        (segment) =>
-                          getTTSSegmentIdentity(segment.cfi, segment.text) === alignedStartIdentity,
-                      )
-                    : -1;
-                  if (visibleStartIndex >= 0) {
-                    returnedSegments = segments.slice(visibleStartIndex);
-                    returnSource = "direct-aligned-slice";
-                  } else {
-                    returnedSegments = segments;
-                    returnSource = "direct-fallback";
-                  }
-                } else {
-                  returnedSegments = segments;
-                  returnSource = "direct-visible";
-                }
-              }
-              console.log("[FoliateViewer][TTS] visibleTTSSegments", {
-                alignCfi: alignCfi || null,
-                contentsCount: contents.length,
-                scannedContentsCount: scanContents.length,
-                directCount: segments.length,
-                alignedCount: alignedSegments.length,
-                returnedCount: returnedSegments.length,
-                returnSource,
-                firstVisibleText: segments[0]?.text || null,
-              });
-              return returnedSegments;
-            }
-          } catch {
-            // fall through to manual segments
-          }
-        }
-
-        console.log("[FoliateViewer][TTS] visibleTTSSegments", {
+        console.log("[ReaderTTS][visible] request", {
           alignCfi: alignCfi || null,
-          contentsCount: contents.length,
-          scannedContentsCount: scanContents.length,
-          directCount: segments.length,
-          alignedCount: 0,
-          returnedCount: segments.length,
-          returnSource: "direct",
-          firstVisibleText: segments[0]?.text || null,
+          primaryIndex: renderer.primaryIndex ?? null,
+          contentIndexes: contents.map((content) => content.index ?? null),
+          relocateRange: describeTTSRange(lastRelocateRangeRef.current),
         });
-        return segments;
+        const foliateTTS = await ensureDesktopTTS();
+        if (!foliateTTS) {
+          console.warn("[ReaderTTS][visible] no Foliate TTS instance");
+          return [];
+        }
+
+        // Readest's model: Foliate owns sentence boundaries and its cursor.
+        // Align to the latest relocate range/CFI, then consume Foliate details;
+        // do not walk text nodes or calculate viewport rectangles here.
+        try {
+          if (alignCfi) {
+            foliateTTS.alignCfi?.(alignCfi);
+          } else if (lastRelocateRangeRef.current) {
+            // Foliate owns the sentence boundary. Use only the viewport start
+            // as its cursor anchor; do not re-filter its result by DOM ranges.
+            const caret = lastRelocateRangeRef.current.cloneRange();
+            caret.collapse(true);
+            foliateTTS.from?.(caret);
+          }
+        } catch (error) {
+          console.error("[ReaderTTS][visible] alignment failed", {
+            alignCfi: alignCfi || null,
+            relocateRange: describeTTSRange(lastRelocateRangeRef.current),
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return [];
+        }
+
+        const rawDetails = foliateTTS.currentBlockDetails?.(24) ?? [
+          foliateTTS.currentDetail?.(),
+          ...(foliateTTS.collectDetails?.(24, { includeCurrent: false, offset: 1 }) ?? []),
+        ];
+        const details = rawDetails.filter(
+          (detail: { text?: string; cfi?: string } | null | undefined): detail is { text: string; cfi: string } =>
+            !!detail?.text?.trim() && !!detail.cfi,
+        );
+        const visible = details.map((detail: { text: string; cfi: string }) => ({
+          text: normalizeTTSSegmentText(detail.text),
+          cfi: detail.cfi,
+        }));
+        console.log("[ReaderTTS][visible] result", {
+          rawCount: rawDetails.length,
+          rawPreview: rawDetails.slice(0, 3).map((detail: { text?: string; cfi?: string } | null | undefined) => ({
+            text: detail?.text?.slice(0, 100) ?? "",
+            textLength: detail?.text?.length ?? 0,
+            cfi: detail?.cfi ?? null,
+          })),
+          detailCount: details.length,
+          count: visible.length,
+          first: visible[0] ?? null,
+          last: visible.at(-1) ?? null,
+          foliateCurrent: foliateTTS.currentDetail?.() ?? null,
+        });
+        return visible;
       },
       [ensureDesktopTTS],
     );
@@ -1468,64 +1110,58 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       ): Promise<{ before: TTSSegmentDetail[]; after: TTSSegmentDetail[] }> => {
         const tts = await ensureDesktopTTS();
         if (!tts || !cfi) return { before: [], after: [] };
-
+        const readContext = (tts as {
+          contextDetailsByCfi?: (
+            value: string,
+            beforeCount: number,
+            afterCount: number,
+          ) => { before: TTSSegmentDetail[]; after: TTSSegmentDetail[] };
+        }).contextDetailsByCfi;
+        if (!readContext) return { before: [], after: [] };
         try {
-          if (typeof tts.alignCfi === "function") {
-            tts.alignCfi(cfi);
-          } else if (
-            typeof (tts as { highlightCfi?: (value: string) => unknown }).highlightCfi ===
-            "function"
-          ) {
-            (tts as { highlightCfi: (value: string) => unknown }).highlightCfi(cfi);
-          }
-        } catch {
+          const result = readContext.call(tts, cfi, Math.max(0, before), Math.max(0, after));
+          console.log("[ReaderTTS][context]", {
+            requestedCfi: cfi,
+            beforeCount: result.before.length,
+            afterCount: result.after.length,
+            afterPreview: result.after.slice(0, 3),
+          });
+          return result;
+        } catch (error) {
+          console.warn("[ReaderTTS][context] lookup failed", {
+            requestedCfi: cfi,
+            error: error instanceof Error ? error.message : String(error),
+          });
           return { before: [], after: [] };
         }
-
-        const currentDetail = typeof tts.currentDetail === "function" ? tts.currentDetail() : null;
-        const currentIdentity =
-          currentDetail?.text && currentDetail?.cfi
-            ? getTTSSegmentIdentity(currentDetail.cfi, currentDetail.text)
-            : null;
-
-        const normalize = (details: Array<{ text?: string; cfi?: string }>) => {
-          const seen = new Set<string>();
-          const result: TTSSegmentDetail[] = [];
-          for (const detail of details) {
-            if (!detail?.text || !detail?.cfi) continue;
-            const text = normalizeTTSSegmentText(detail.text);
-            const identity = getTTSSegmentIdentity(detail.cfi, text);
-            if (!text || (currentIdentity && identity === currentIdentity) || seen.has(identity)) {
-              continue;
-            }
-            seen.add(identity);
-            result.push({ text, cfi: detail.cfi });
-          }
-          return result;
-        };
-
-        const beforeDetails =
-          typeof tts.collectDetails === "function"
-            ? tts.collectDetails(Math.max(0, before), {
-                includeCurrent: false,
-                offset: -Math.max(0, before),
-              })
-            : [];
-        const afterDetails =
-          typeof tts.collectDetails === "function"
-            ? tts.collectDetails(Math.max(0, after), {
-                includeCurrent: false,
-                offset: 1,
-              })
-            : [];
-
-        return {
-          before: normalize(beforeDetails),
-          after: normalize(afterDetails),
-        };
       },
       [ensureDesktopTTS],
     );
+
+    const getNextTTSSegments = useCallback(async (): Promise<TTSSegmentDetail[]> => {
+      const tts = await ensureDesktopTTS();
+      if (!tts || typeof tts.nextBlockDetails !== "function") return [];
+      const details = tts.nextBlockDetails(24) as Array<{ text?: string; cfi?: string }>;
+      const segments = normalizeTTSSegmentDetails(details);
+      console.log("[ReaderTTS][next-block]", {
+        count: segments.length,
+        segments,
+        first: segments[0] ?? null,
+        last: segments[segments.length - 1] ?? null,
+      });
+      return segments;
+    }, [ensureDesktopTTS]);
+
+    const peekNextTTSSegments = useCallback(async (): Promise<TTSSegmentDetail[]> => {
+      const tts = await ensureDesktopTTS();
+      const peekNextBlockDetails = (
+        tts as { peekNextBlockDetails?: (count?: number) => Array<{ text?: string; cfi?: string }> }
+      )?.peekNextBlockDetails;
+      if (!peekNextBlockDetails) return [];
+      const segments = normalizeTTSSegmentDetails(peekNextBlockDetails.call(tts, 24));
+      console.log("[ReaderTTS][peek-next-block]", { count: segments.length, segments });
+      return segments;
+    }, [ensureDesktopTTS]);
 
     // --- Imperative handle for parent ---
     useImperativeHandle(
@@ -1546,8 +1182,8 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         goToCFI: async (cfi: string) => {
           await viewRef.current?.goTo(cfi);
         },
-        goToIndex: (index: number) => {
-          viewRef.current?.goTo(index);
+        goToIndex: async (index: number) => {
+          await viewRef.current?.goTo(index);
         },
         highlightCFITemporarily: (cfi: string, duration = 1000) => {
           const view = viewRef.current;
@@ -1711,13 +1347,23 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           }
         },
         getVisibleTTSSegments,
+        getNextTTSSegments,
+        peekNextTTSSegments,
         getTTSSegmentContext,
         setTTSHighlight: async (cfi: string | null, color?: string) => {
+          console.log("[ReaderTTS][highlight] request", {
+            cfi,
+            color: color || "rgba(96, 165, 250, 0.35)",
+            previousKey: ttsHighlightKeyRef.current,
+          });
           ttsHighlightStateRef.current = {
             cfi,
             color: color || "rgba(96, 165, 250, 0.35)",
           };
           if (!cfi) {
+            console.log("[ReaderTTS][highlight] clear", {
+              previousKey: ttsHighlightKeyRef.current,
+            });
             clearTTSHighlight();
             return;
           }
@@ -1732,20 +1378,27 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
 
           if (prev && prev !== key) {
             try {
+              console.log("[ReaderTTS][highlight] delete-previous", { prev, next: key });
               await view.deleteAnnotation({ value: prev });
             } catch {
-              // no-op
+              console.warn("[ReaderTTS][highlight] delete-previous failed", { prev, next: key });
             }
           }
 
           try {
+            console.log("[ReaderTTS][highlight] add", { key, cfi });
             await view.addAnnotation({
               value: key,
               type: "tts-highlight",
               color: color || "rgba(96, 165, 250, 0.35)",
             });
-          } catch {
-            // no-op
+            console.log("[ReaderTTS][highlight] add-complete", { key, cfi });
+          } catch (error) {
+            console.warn("[ReaderTTS][highlight] add failed", {
+              key,
+              cfi,
+              error: error instanceof Error ? error.message : String(error),
+            });
           }
         },
         getChapterParagraphs: () => {
@@ -1937,7 +1590,6 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           }
         },
       }),
-      [viewReady],
     );
 
     // --- Hooks ---
@@ -2052,6 +1704,14 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
     const relocateHandlerImpl = useCallback(
       (event: Event) => {
         const rawDetail = (event as CustomEvent).detail as RelocateDetail;
+        lastRelocateRangeRef.current = rawDetail.range?.cloneRange?.() ?? rawDetail.range ?? null;
+        console.log("[ReaderTTS][relocate]", {
+          reason: (rawDetail as RelocateDetail & { reason?: string }).reason ?? null,
+          cfi: rawDetail.cfi ?? null,
+          section: rawDetail.section?.current ?? null,
+          page: rawDetail.page ?? null,
+          range: describeTTSRange(lastRelocateRangeRef.current),
+        });
         const rendererPage =
           viewRef.current?.renderer && typeof viewRef.current.renderer.page === "number"
             ? viewRef.current.renderer.page

@@ -45,7 +45,6 @@ import { Audio } from "expo-av";
 import { I18nextProvider } from "react-i18next";
 import TrackPlayer, {
   AppKilledPlaybackBehavior,
-  Event as TrackEvent,
   Capability,
 } from "react-native-track-player";
 
@@ -163,32 +162,6 @@ export default function App() {
             Capability.SkipToNext,
             Capability.SkipToPrevious,
           ],
-        });
-
-        // Remote event → TTS store bridge
-        const { useTTSStore: ttsStore } = await import("@/stores/tts-store");
-        TrackPlayer.addEventListener(TrackEvent.RemotePlay, () => {
-          ttsStore.getState().resume();
-        });
-        TrackPlayer.addEventListener(TrackEvent.RemotePause, () => {
-          ttsStore.getState().pause();
-        });
-        TrackPlayer.addEventListener(TrackEvent.RemoteStop, () => {
-          ttsStore.getState().stop();
-        });
-        TrackPlayer.addEventListener(TrackEvent.RemoteNext, () => {
-          const { jumpToChunk, currentChunkIndex, totalChunks } = ttsStore.getState();
-          const nextIndex = currentChunkIndex + 1;
-          if (nextIndex < totalChunks) {
-            jumpToChunk(nextIndex);
-          }
-        });
-        TrackPlayer.addEventListener(TrackEvent.RemotePrevious, () => {
-          const { jumpToChunk, currentChunkIndex } = ttsStore.getState();
-          const prevIndex = currentChunkIndex - 1;
-          if (prevIndex >= 0) {
-            jumpToChunk(prevIndex);
-          }
         });
 
         console.log("[App] bootstrap: done");
