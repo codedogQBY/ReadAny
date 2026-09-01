@@ -3178,6 +3178,7 @@ a { color: ${primary} !important; }
     }
 
     function ttsNodeFilter(node) {
+      if (node.nodeType !== Node.ELEMENT_NODE) return NodeFilter.FILTER_ACCEPT;
       return shouldSkipTTSNode(node) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
     }
 
