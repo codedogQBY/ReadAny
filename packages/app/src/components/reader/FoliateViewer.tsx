@@ -319,6 +319,19 @@ function getRendererContents(view: FoliateView | null): RendererContent[] {
   return (view?.renderer?.getContents?.() ?? []) as RendererContent[];
 }
 
+function resolveLoadedCfiRange(view: FoliateView, cfi: string): Range | null {
+  try {
+    const resolved = view.resolveCFI(cfi);
+    const content = getRendererContents(view).find(
+      ({ doc, index }) => doc && index === resolved?.index,
+    );
+    const range = content?.doc ? resolved?.anchor?.(content.doc) : null;
+    return range && typeof range.cloneRange === "function" ? (range as Range) : null;
+  } catch {
+    return null;
+  }
+}
+
 function describeTTSRange(range: Range | null | undefined) {
   if (!range) return null;
   try {
@@ -1055,7 +1068,14 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         // do not walk text nodes or calculate viewport rectangles here.
         try {
           if (alignCfi) {
-            foliateTTS.alignCfi?.(alignCfi);
+            const alignRange = resolveLoadedCfiRange(view, alignCfi);
+            if (alignRange && typeof foliateTTS.from === "function") {
+              const caret = alignRange.cloneRange();
+              caret.collapse(true);
+              foliateTTS.from(caret);
+            } else {
+              foliateTTS.alignCfi?.(alignCfi);
+            }
           } else if (lastRelocateRangeRef.current) {
             // Foliate owns the sentence boundary. Use only the viewport start
             // as its cursor anchor; do not re-filter its result by DOM ranges.

@@ -64,7 +64,7 @@
     "apiKeyPlaceholder": "DashScope API 키 입력",
     "apiKeyHint": "알리바바 클라우드에서 API 키를 받으세요, qwen3-tts-flash 모델 사용",
     "getApiKey": "API 키 받기",
-    "speakSelection": "선택 영역 읽기",
+    "speakSelection": "선택한 위치부터 읽기",
     "loading": "로딩 중",
     "playing": "낭독 중",
     "paused": "일시정지",

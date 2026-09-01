@@ -41,6 +41,28 @@ describe("TTSPlaybackController", () => {
     expect(controller.snapshot().currentIndex).toBe(2);
   });
 
+  it("restarts the current segment instead of resuming mid-segment", () => {
+    const firstPlayer = makePlayer();
+    const secondPlayer = makePlayer();
+    const resolvePlayer = vi
+      .fn()
+      .mockReturnValueOnce(firstPlayer)
+      .mockReturnValueOnce(secondPlayer);
+    const controller = new TTSPlaybackController(resolvePlayer);
+
+    controller.play(["one", "two", "three"], config);
+    firstPlayer.onChunkChange?.(1, 3);
+    controller.pause();
+    controller.resume(config);
+
+    expect(firstPlayer.pause).toHaveBeenCalledOnce();
+    expect(firstPlayer.stop).toHaveBeenCalledOnce();
+    expect(firstPlayer.resume).not.toHaveBeenCalled();
+    expect(resolvePlayer).toHaveBeenCalledTimes(2);
+    expect(secondPlayer.speak).toHaveBeenCalledWith(["two", "three"], config);
+    expect(controller.snapshot().currentIndex).toBe(1);
+  });
+
   it("appends only through a player that supports queue extension", () => {
     const player = makePlayer();
     player.append = vi.fn();

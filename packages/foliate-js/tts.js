@@ -191,6 +191,12 @@ const getRangeTextWithoutRuby = (range) => {
 
 const rangeIsEmpty = (range) => !getRangeTextWithoutRuby(range).trim();
 const normalizeRangeText = (range) => getRangeTextWithoutRuby(range).replace(/\s+/g, " ").trim();
+const endsAfterStart = (candidate, target) => {
+  const end = candidate.cloneRange();
+  end.collapse(false);
+  // A point exactly at the previous sentence's end belongs to the next sentence.
+  return end.comparePoint(target.startContainer, target.startOffset) < 0;
+};
 
 function* getDetailRanges(doc, textWalker, nodeFilter) {
   for (const blockRange of getBlocks(doc)) {
@@ -445,19 +451,11 @@ export class TTS {
   }
   from(range) {
     this.#lastMark = null;
-    const [doc] =
-      this.#list.find(
-        (range_) =>
-          range_.compareBoundaryPoints(Range.START_TO_START, range) <= 0 &&
-          range_.compareBoundaryPoints(Range.END_TO_END, range) > 0,
-      ) ??
-      [];
-    this.#detailList.find(
-      (detailRange) => range.compareBoundaryPoints(Range.START_TO_END, detailRange) < 0,
-    );
+    const [doc] = this.#list.find((blockRange) => endsAfterStart(blockRange, range)) ?? [];
+    this.#detailList.find((detailRange) => endsAfterStart(detailRange, range));
     let mark;
     for (const [name, range_] of this.#ranges.entries())
-      if (range.compareBoundaryPoints(Range.START_TO_END, range_) < 0) {
+      if (endsAfterStart(range_, range)) {
         mark = name;
         break;
       }

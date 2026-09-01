@@ -114,13 +114,16 @@ export class TTSPlaybackController {
   }
 
   resume(config: TTSConfig): void {
+    if (!this.segments.length) return;
+    const index = Math.min(this.currentIndex, this.segments.length - 1);
+
     if (this.state === "paused" && this.player) {
-      this.player.resume();
-      this.setState("playing");
+      this.detachPlayer();
+      this.startFrom(index, config);
       return;
     }
-    if (this.segments.length && this.state === "stopped") {
-      this.startFrom(Math.min(this.currentIndex, this.segments.length - 1), config);
+    if (this.state === "stopped") {
+      this.startFrom(index, config);
     }
   }
 

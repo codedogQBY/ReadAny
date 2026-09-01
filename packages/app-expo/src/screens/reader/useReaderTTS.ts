@@ -75,7 +75,7 @@ export interface UseReaderTTSResult {
   handleLoadMoreBelowTTSLyrics: () => Promise<void>;
   handleTTSPrevChapter: () => void;
   handleTTSNextChapter: () => void;
-  startSelectionTTS: (text: string, selectionCfi?: string | null) => void;
+  startTTSFromSelection: (selectionCfi: string) => Promise<void>;
   handleTTSStop: () => void;
   handleTTSReturnToReading: () => void;
   pendingTTSContinueCallbackRef: React.RefObject<(() => void) | null>;
@@ -240,6 +240,15 @@ export function useReaderTTS({
       setShowTTS,
       webViewReady,
     ],
+  );
+  const startTTSFromSelection = useCallback(
+    async (selectionCfi: string) => {
+      if (!selectionCfi) return;
+      resetLyrics();
+      continuousRef.current = ttsContinuousEnabled;
+      await startPageFromCfi(selectionCfi);
+    },
+    [resetLyrics, startPageFromCfi, ttsContinuousEnabled],
   );
   const handlePageEnd = useCallback(async () => {
     if (!continuousRef.current || sourceRef.current !== "page") return;
@@ -654,7 +663,7 @@ export function useReaderTTS({
     handleLoadMoreBelowTTSLyrics,
     handleTTSPrevChapter,
     handleTTSNextChapter,
-    startSelectionTTS,
+    startTTSFromSelection,
     handleTTSStop,
     handleTTSReturnToReading,
     pendingTTSContinueCallbackRef,
