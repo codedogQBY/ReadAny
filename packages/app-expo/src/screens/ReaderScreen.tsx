@@ -293,7 +293,7 @@ export function ReaderScreen({ route, navigation }: Props) {
       note?: string;
     }) => void;
     removeAnnotation: (annotation: { value: string; type?: string }) => void;
-    setTTSHighlight: (cfi: string | null, color?: string) => void;
+    setTTSHighlight: (cfi: string | null, color?: string, force?: boolean) => void;
   } | null>(null);
 
   // Chapter translation state

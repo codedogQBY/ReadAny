@@ -413,22 +413,70 @@ export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
     [createRequestId],
   );
 
-  const setTTSHighlight = useCallback(
-    (cfi: string | null, color?: string) => {
-      const nextColor = color || null;
-      if (
-        lastTTSHighlightRef.current.cfi === cfi &&
-        lastTTSHighlightRef.current.color === nextColor
-      ) {
-        return;
-      }
-      lastTTSHighlightRef.current = { cfi, color: nextColor };
-      inject(
-        `typeof window.setTTSHighlight === 'function' && Promise.resolve(window.setTTSHighlight(${JSON.stringify(cfi)}, ${JSON.stringify(nextColor)})).catch(function() {})`,
-      );
-    },
-    [inject],
-  );
+  const setTTSHighlight = useCallback((cfi: string | null, color?: string, force = false) => {
+    const previousCfi = lastTTSHighlightRef.current.cfi;
+    const previousColor = lastTTSHighlightRef.current.color;
+    const nextColor = color || null;
+    if (
+      !force &&
+      lastTTSHighlightRef.current.cfi === cfi &&
+      lastTTSHighlightRef.current.color === nextColor
+    ) {
+      return;
+    }
+    lastTTSHighlightRef.current = { cfi, color: nextColor };
+
+    const previousCfiStr = JSON.stringify(previousCfi);
+    const previousColorStr = JSON.stringify(previousColor);
+    const cfiStr = JSON.stringify(cfi);
+    const colorStr = JSON.stringify(nextColor);
+    if (!cfi) {
+      webViewRef.current?.injectJavaScript(`
+          (function() {
+            try {
+              if (typeof handleCommand === 'function' && ${previousCfiStr}) {
+                handleCommand({
+                  type: 'removeAnnotation',
+                  annotation: { value: ${previousCfiStr}, type: 'tts-highlight' },
+                });
+              }
+            } catch (e) {}
+          })();
+          true;
+        `);
+      return;
+    }
+
+    webViewRef.current?.injectJavaScript(`
+        (function() {
+          try {
+            var removePrevious = function() {
+              if (typeof handleCommand !== 'function' || !${previousCfiStr}) return Promise.resolve();
+              return Promise.resolve(handleCommand({
+                type: 'removeAnnotation',
+                annotation: { value: ${previousCfiStr}, type: 'tts-highlight' },
+              }));
+            };
+            var apply = function() {
+              if (typeof handleCommand !== 'function') return Promise.resolve();
+              return Promise.resolve(handleCommand({
+                type: 'addAnnotation',
+                annotation: {
+                  value: ${cfiStr},
+                  type: 'tts-highlight',
+                  color: ${colorStr},
+                },
+              }));
+            };
+            var shouldReplace =
+              ${force ? "true" : "false"} ||
+              (!!${previousCfiStr} && (${previousCfiStr} !== ${cfiStr} || ${previousColorStr} !== ${colorStr}));
+            (shouldReplace ? removePrevious() : Promise.resolve()).finally(apply);
+          } catch (e) {}
+        })();
+        true;
+      `);
+  }, []);
 
   const flashHighlight = useCallback(
     (cfi: string, color?: string, duration?: number) => {

@@ -26,7 +26,7 @@ export type TTSBridgeRef = {
   ) => Promise<{ before: TTSSegment[]; after: TTSSegment[] }>;
   goToSection?: (sectionIndex: number) => void;
   goToCFI: (cfi: string) => void;
-  setTTSHighlight: (cfi: string | null, color?: string) => void;
+  setTTSHighlight: (cfi: string | null, color?: string, force?: boolean) => void;
   flashHighlight: (cfi: string, color?: string, duration?: number) => void;
 };
 

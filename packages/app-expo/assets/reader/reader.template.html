@@ -781,6 +781,48 @@
       }, 900);
     }
 
+    function drawTTSHighlight(rects, options) {
+      const { color = 'rgba(96, 165, 250, 0.35)', padding = 1, radius = 4, radiusPadding = 2 } = options || {};
+      const svgNS = 'http://www.w3.org/2000/svg';
+      const g = document.createElementNS(svgNS, 'g');
+      g.setAttribute('fill', color);
+      g.style.opacity = 'var(--overlayer-highlight-opacity, 1)';
+      g.style.mixBlendMode = 'var(--overlayer-highlight-blend-mode, normal)';
+
+      for (let index = 0; index < rects.length; index++) {
+        const { left, top, width, height } = rects[index];
+        const isFirst = index === 0;
+        const isLast = index === rects.length - 1;
+        const x = left - padding - (isFirst ? radiusPadding : 0);
+        const y = top - padding;
+        const w = width + padding * 2 + (isFirst ? radiusPadding : 0) + (isLast ? radiusPadding : 0);
+        const h = height + padding * 2;
+        const rtl = isLast ? radius : 0;
+        const rtr = isFirst ? radius : 0;
+        const rbr = isFirst ? radius : 0;
+        const rbl = isLast ? radius : 0;
+        const path = document.createElementNS(svgNS, 'path');
+        path.setAttribute(
+          'd',
+          [
+            `M ${x + rtl} ${y}`,
+            `H ${x + w - rtr}`,
+            rtr ? `Q ${x + w} ${y} ${x + w} ${y + rtr}` : '',
+            `V ${y + h - rbr}`,
+            rbr ? `Q ${x + w} ${y + h} ${x + w - rbr} ${y + h}` : '',
+            `H ${x + rbl}`,
+            rbl ? `Q ${x} ${y + h} ${x} ${y + h - rbl}` : '',
+            `V ${y + rtl}`,
+            rtl ? `Q ${x} ${y} ${x + rtl} ${y}` : '',
+            'Z',
+          ].filter(Boolean).join(' ')
+        );
+        g.append(path);
+      }
+
+      return g;
+    }
+
     async function followTTSLocation(cfi) {
       if (!view || !view.renderer || !cfi) return;
       const resolved = resolveRangeForCfi(cfi);
@@ -1591,18 +1633,8 @@
                 text: range && typeof range.toString === 'function' ? range.toString().slice(0, 48) : '',
               })}`,
             });
-            let vertical = false;
-            if (doc && range && doc.defaultView) {
-              try {
-                const node = range.startContainer;
-                const element = node.nodeType === 1 ? node : node.parentElement;
-                vertical = !!element && doc.defaultView.getComputedStyle(element).writingMode.includes('vertical');
-              } catch {}
-            }
-            draw(Overlayer.highlight, {
-              color: resolveTTSHighlightColor(annotation.color),
-              vertical,
-            });
+            draw(Overlayer.highlight, { color: resolveTTSHighlightColor(annotation.color) });
+            draw(drawTTSHighlight, { color: resolveTTSHighlightColor(annotation.color) });
           } else if (annotation.note) {
             console.log('[draw-annotation] has note:', annotation.note);
             // Draw both highlight and squiggly underline for notes
