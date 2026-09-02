@@ -273,7 +273,7 @@
         }
 
         if (ttsHighlightState.cfi) {
-          setTTSHighlight(ttsHighlightState.cfi, ttsHighlightState.color);
+          applyTTSHighlight(ttsHighlightState.cfi, ttsHighlightState.color);
         }
       }, delay == null ? 100 : delay);
     }
@@ -855,7 +855,7 @@
       }
     }
 
-    async function setTTSHighlight(cfi, color) {
+    async function applyTTSHighlight(cfi, color) {
       postToRN('debug', { message: '[ttsHighlight] setTTSHighlight called: cfi=' + (cfi || 'null') + ' color=' + (color || 'null') });
       const previousValue = ttsHighlightState.annotationValue;
       const annotationValue = cfi ? `${TTS_ANNOTATION_PREFIX}${cfi}` : null;
@@ -1361,7 +1361,7 @@
           if (view && msg.settings) applySettings(msg.settings);
           break;
         case 'setTTSHighlight':
-          await setTTSHighlight(msg.cfi, msg.color);
+          await applyTTSHighlight(msg.cfi, msg.color);
           break;
         case 'clearTTSHighlight':
           await clearTTSHighlight();
@@ -3349,7 +3349,7 @@ a { color: ${primary} !important; }
     window.setPaginatedLayout = function (m) { applySettings({ paginatedLayout: m }); };
     window.addAnnotation = function (a) { if (view) view.addAnnotation(a); };
     window.removeAnnotation = function (a) { if (view) view.deleteAnnotation(a); };
-    window.setTTSHighlight = function (cfi, color) { return setTTSHighlight(cfi, color); };
+    window.setTTSHighlight = function (cfi, color) { return applyTTSHighlight(cfi, color); };
     window.clearTTSHighlight = function () { return clearTTSHighlight(); };
     
     // Flash highlight for AI citation - temporarily hide existing annotation, show flash, then restore
