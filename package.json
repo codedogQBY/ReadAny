@@ -37,7 +37,8 @@
     },
     "patchedDependencies": {
       "@langchain/core": "patches/@langchain__core.patch",
-      "react-native-track-player@4.1.2": "patches/react-native-track-player@4.1.2.patch"
+      "react-native-track-player@4.1.2": "patches/react-native-track-player@4.1.2.patch",
+      "@expo/cli@54.0.23": "patches/@expo__cli@54.0.23.patch"
     }
   },
   "packageManager": "pnpm@9.15.0"
