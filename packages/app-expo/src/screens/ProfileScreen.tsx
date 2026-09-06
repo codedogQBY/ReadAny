@@ -73,6 +73,7 @@ type ProfileMenuIcon = (props: {
 type ProfileMenuRoute = Extract<
   keyof RootStackParamList,
   | "AppearanceSettings"
+  | "ReadingSettings"
   | "FontSettings"
   | "SyncSettings"
   | "AISettings"
@@ -428,6 +429,11 @@ export function ProfileScreen() {
             icon: PaletteIcon,
             label: t("settings.general", "通用"),
             route: "AppearanceSettings" as const,
+          },
+          {
+            icon: BookOpenIcon,
+            label: t("settings.reading_title", "Reading"),
+            route: "ReadingSettings" as const,
           },
           {
             icon: TypeIcon,
