@@ -74,6 +74,8 @@
     "volumeButtonsPageTurnDesc": "Durante la lectura, los botones de volumen pasan página",
     "smoothReading": "Lectura fluida",
     "smoothReadingDesc": "Activa la animación de transición de página y la inercia de desplazamiento. Desactívelo para mejor rendimiento en dispositivos básicos",
+    "keepScreenOnWhileReading": "Mantener la pantalla encendida al leer",
+    "keepScreenOnWhileReadingDesc": "Evita que la pantalla se apague mientras hay un libro abierto",
     "followSystemFontScale": "Seguir escala de fuente del sistema",
     "followSystemFontScaleDesc": "Escalar automáticamente según el tamaño de fuente de accesibilidad del SO",
     "fixedLayoutNotice": "PDF es un formato de diseño fijo. Los ajustes de fuente y diseño no están disponibles.",

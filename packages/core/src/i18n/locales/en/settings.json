@@ -74,6 +74,8 @@
     "volumeButtonsPageTurnDesc": "While reading, volume keys turn pages",
     "smoothReading": "Smooth Reading",
     "smoothReadingDesc": "Enable page-turn transition animation and scroll inertia. Disable for better performance on low-end devices",
+    "keepScreenOnWhileReading": "Keep screen on while reading",
+    "keepScreenOnWhileReadingDesc": "Prevent the screen from turning off while a book is open",
     "followSystemFontScale": "Follow System Font Scale",
     "followSystemFontScaleDesc": "Auto-scale by the OS accessibility font size",
     "fixedLayoutNotice": "PDF is a fixed layout format. Font and layout settings are not available.",

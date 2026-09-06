@@ -74,6 +74,8 @@
     "volumeButtonsPageTurnDesc": "開啟後閱讀時音量鍵用於上下翻頁",
     "smoothReading": "平滑閱讀",
     "smoothReadingDesc": "開啟翻頁過渡動畫與滾動慣性，關閉可提升低效能裝置流暢度",
+    "keepScreenOnWhileReading": "閱讀時保持螢幕開啟",
+    "keepScreenOnWhileReadingDesc": "開啟書籍時防止螢幕自動關閉",
     "followSystemFontScale": "跟隨系統字型大小",
     "followSystemFontScaleDesc": "按系統輔助功能字型大小自動放大",
     "fixedLayoutNotice": "PDF 為固定排版格式，字型和排版設定不可用。",
