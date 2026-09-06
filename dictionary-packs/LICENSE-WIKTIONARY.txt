@@ -1,0 +1,22 @@
+Chinese Wiktionary pack attribution
+
+The ReadAny Chinese offline dictionary pack contains transformed material from
+the Chinese-language Wiktionary dump dated 2026-09-01:
+https://dumps.wikimedia.org/zhwiktionary/20260901/zhwiktionary-20260901-pages-articles.xml.bz2
+
+Human-readable attribution page:
+https://zh.wiktionary.org/wiki/Wiktionary:%E7%89%88%E6%9D%83%E4%BF%A1%E6%81%AF
+
+Wiktionary contributors license this material under Creative Commons
+Attribution-ShareAlike 4.0 International (CC BY-SA 4.0):
+https://creativecommons.org/licenses/by-sa/4.0/
+
+Attribution: Wiktionary contributors.
+
+ReadAny used Wiktextract and its deterministic pack builder to retain headwords,
+parts of speech, Chinese pronunciation when present, Simplified/Traditional
+forms, and non-empty definitions. It removed examples, translations, audio,
+images, and other fields not represented by the ReadAny dictionary schema.
+
+ReadAny's transformed SQLite pack is distributed under CC BY-SA 4.0. Neither
+the Wikimedia Foundation nor Wiktionary contributors endorse ReadAny.

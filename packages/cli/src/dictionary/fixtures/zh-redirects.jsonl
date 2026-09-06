@@ -1,0 +1,12 @@
+{"title":"首页","redirect":"首頁","pos":"hard-redirect"}
+{"word":"首頁","lang_code":"zh","pos":"noun","senses":[{"glosses":["網站的主要頁面。"]}]}
+{"word":"锂","lang_code":"zh","pos":"soft-redirect","senses":[{"tags":["no-gloss"]}],"redirects":["鋰"]}
+{"word":"鋰","lang_code":"zh","pos":"noun","senses":[{"glosses":["原子序數為三的化學元素。"]}]}
+{"title":"日语","redirect":"日文","pos":"hard-redirect"}
+{"word":"日文","lang_code":"zh","pos":"soft-redirect","senses":[{"tags":["no-gloss"]}],"redirects":["日語"]}
+{"word":"日語","lang_code":"zh","pos":"noun","senses":[{"glosses":["日本使用的語言。"]}]}
+{"title":"循环甲","redirect":"循环乙","pos":"hard-redirect"}
+{"title":"循环乙","redirect":"循环甲","pos":"hard-redirect"}
+{"title":"失踪词","redirect":"不存在","pos":"hard-redirect"}
+{"title":"unsupported-alias","redirect":"首頁","pos":"hard-redirect"}
+{"word":"錯誤語言","lang_code":"en","pos":"soft-redirect","senses":[{"tags":["no-gloss"]}],"redirects":["首頁"]}

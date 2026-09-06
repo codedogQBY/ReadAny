@@ -1,4 +1,5 @@
 import {
+  BookOpenIcon,
   CopyIcon,
   HighlighterIcon,
   LanguagesIcon,
@@ -55,6 +56,7 @@ interface Props {
   onAIChat: () => void;
   onSpeak?: (text: string, cfi: string) => void;
   onNote?: (text: string, cfi: string) => void;
+  onDefine?: (text: string) => void;
   onTranslate?: (text: string) => void;
   onRemoveHighlight?: () => void;
   existingHighlight?: { id: string; color: HighlightColor; note?: string } | null;
@@ -69,6 +71,7 @@ export function SelectionPopover({
   onAIChat,
   onSpeak,
   onNote,
+  onDefine,
   onTranslate,
   onRemoveHighlight,
   existingHighlight,
@@ -99,10 +102,7 @@ export function SelectionPopover({
   }, [selection.cfi, hasExistingHighlight]);
 
   const buttonCount =
-    4 +
-    (onNote ? 1 : 0) +
-    (onTranslate ? 1 : 0) +
-    (onSpeak ? 1 : 0);
+    4 + (onNote ? 1 : 0) + (onDefine ? 1 : 0) + (onTranslate ? 1 : 0) + (onSpeak ? 1 : 0);
   const colorRowItemCount = HIGHLIGHT_COLORS.length + (canRemoveHighlight ? 2 : 0);
   const colorRowWidth = showColors
     ? HIGHLIGHT_COLORS.length * COLOR_DOT_SIZE +
@@ -183,6 +183,13 @@ export function SelectionPopover({
     onDismiss();
   }, [selection.text, onTranslate, onDismiss]);
 
+  const handleDefine = useCallback(() => {
+    if (onDefine) {
+      onDefine(selection.text);
+    }
+    onDismiss();
+  }, [selection.text, onDefine, onDismiss]);
+
   const handleRemove = useCallback(() => {
     if (onRemoveHighlight) {
       onRemoveHighlight();
@@ -255,6 +262,17 @@ export function SelectionPopover({
             <CopyIcon size={18} color={colors.foreground} />
           </TouchableOpacity>
 
+          {onDefine && (
+            <TouchableOpacity
+              style={s.iconBtn}
+              onPress={handleDefine}
+              accessibilityRole="button"
+              accessibilityLabel={t("dictionary.define")}
+            >
+              <BookOpenIcon size={18} color={colors.foreground} />
+            </TouchableOpacity>
+          )}
+
           {onTranslate && (
             <TouchableOpacity style={s.iconBtn} onPress={handleTranslate}>
               <LanguagesIcon size={18} color={colors.foreground} />
@@ -270,7 +288,6 @@ export function SelectionPopover({
               <Volume2Icon size={18} color={colors.foreground} />
             </TouchableOpacity>
           )}
-
         </View>
       </View>
 

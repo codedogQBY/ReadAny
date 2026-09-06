@@ -5,6 +5,9 @@
 // Types
 export * from "./types";
 
+// Dictionary
+export * from "./dictionary";
+
 // Utils
 export {
   cn,

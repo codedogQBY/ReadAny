@@ -23,6 +23,8 @@
     "acceptance:validate": "node scripts/validate-acceptance.mjs",
     "preflight:release": "node scripts/release-preflight.mjs",
     "dev": "tsx src/bin/readany.ts",
+    "dictionary:build": "tsx scripts/build-dictionary-pack.ts",
+    "dictionary:convert-wordnet": "tsx scripts/convert-wordnet.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "tsc -p tsconfig.json --noEmit"
