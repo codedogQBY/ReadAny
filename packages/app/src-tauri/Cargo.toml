@@ -38,3 +38,4 @@ dashmap = "6.1.0"
 uuid = { version = "1.22.0", features = ["v4"] }
 base64 = "0.22.1"
 tauri-plugin-window-state = "2.4.1"
+tauri-plugin-clipboard-manager = "2"

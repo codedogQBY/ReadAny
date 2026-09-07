@@ -10,6 +10,8 @@
  * and forwards them via window.postMessage so React hooks can consume them.
  */
 
+import { shouldSuppressNativeContextMenu } from "../environment";
+
 const LONG_HOLD_THRESHOLD = 500;
 
 let longHoldTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -215,9 +217,11 @@ export const handleTouchEnd = (bookKey: string, event: TouchEvent) =>
   handleTouchEv(bookKey, event, "iframe-touchend");
 
 export const handleContextMenu = (_bookKey: string, event: MouseEvent) => {
-  // Suppress the WebView's native context menu inside the reader. Book content
-  // is a sandboxed iframe; without this the OS/WebView2 default right-click
-  // menu (Copy/Paste/Inspect etc.) pops up over the reading area.
+  // Suppress the WebView's native context menu inside the reader (production
+  // only — dev keeps it so the rendered book DOM can be inspected). Book
+  // content is a sandboxed iframe; without this the OS/WebView2 default
+  // right-click menu (Copy/Paste/Inspect etc.) pops up over the reading area.
+  if (!shouldSuppressNativeContextMenu) return;
   event.preventDefault();
 };
 

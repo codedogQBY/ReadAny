@@ -5,6 +5,8 @@
     "confirm": "確定",
     "save": "儲存",
     "close": "關閉",
+    "cut": "剪下",
+    "undo": "復原",
     "copy": "複製",
     "copied": "已複製",
     "remove": "刪除",
@@ -42,6 +44,7 @@
     "insertLink": "插入連結",
     "linkText": "連結文字",
     "paste": "貼上",
+    "selectAll": "全選",
     "rename": "重新命名",
     "reset": "復原",
     "writeYourThoughts": "寫下你的想法..."

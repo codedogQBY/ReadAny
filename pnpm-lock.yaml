@@ -90,6 +90,9 @@ importers:
       '@tauri-apps/api':
         specifier: ^2
         version: 2.10.1
+      '@tauri-apps/plugin-clipboard-manager':
+        specifier: ^2.3.3
+        version: 2.3.3
       '@tauri-apps/plugin-dialog':
         specifier: ^2.6.0
         version: 2.6.0
@@ -3804,6 +3807,9 @@ packages:
   '@tauri-apps/api@2.10.1':
     resolution: {integrity: sha512-hKL/jWf293UDSUN09rR69hrToyIXBb8CjGaWC7gfinvnQrBVvnLr08FeFi38gxtugAVyVcTa5/FD/Xnkb1siBw==}
 
+  '@tauri-apps/api@2.11.1':
+    resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
+
   '@tauri-apps/cli-darwin-arm64@2.10.1':
     resolution: {integrity: sha512-Z2OjCXiZ+fbYZy7PmP3WRnOpM9+Fy+oonKDEmUE6MwN4IGaYqgceTjwHucc/kEEYZos5GICve35f7ZiizgqEnQ==}
     engines: {node: '>= 10'}
@@ -3874,6 +3880,9 @@ packages:
     resolution: {integrity: sha512-jQNGF/5quwORdZSSLtTluyKQ+o6SMa/AUICfhf4egCGFdMHqWssApVgYSbg+jmrZoc8e1DscNvjTnXtlHLS11g==}
     engines: {node: '>= 10'}
     hasBin: true
+
+  '@tauri-apps/plugin-clipboard-manager@2.3.3':
+    resolution: {integrity: sha512-KnyoTs9gj1yEgDkSPUNjOIOHjJTr5wk8IWcYMOWxYTIJCip6QwlyPW8u2X+6bd6kHM4fAdZNpxoal0gy/TwJbg==}
 
   '@tauri-apps/plugin-dialog@2.6.0':
     resolution: {integrity: sha512-q4Uq3eY87TdcYzXACiYSPhmpBA76shgmQswGkSVio4C82Sz2W4iehe9TnKYwbq7weHiL88Yw19XZm7v28+Micg==}
@@ -7476,11 +7485,11 @@ packages:
   onnxruntime-common@1.21.0:
     resolution: {integrity: sha512-Q632iLLrtCAVOTO65dh2+mNbQir/QNTVBG3h/QdZBpns7mZ0RYbLRBgGABPbpU9351AgYy7SJf1WaeVwMrBFPQ==}
 
-  onnxruntime-common@1.24.3:
-    resolution: {integrity: sha512-GeuPZO6U/LBJXvwdaqHbuUmoXiEdeCjWi/EG7Y1HNnDwJYuk6WUbNXpF6luSUY8yASul3cmUlLGrCCL1ZgVXqA==}
-
   onnxruntime-common@1.22.0-dev.20250409-89f8206ba4:
     resolution: {integrity: sha512-vDJMkfCfb0b1A836rgHj+ORuZf4B4+cc2bASQtpeoJLueuFc5DuYwjIZUBrSvx/fO5IrLjLz+oTrB3pcGlhovQ==}
+
+  onnxruntime-common@1.24.3:
+    resolution: {integrity: sha512-GeuPZO6U/LBJXvwdaqHbuUmoXiEdeCjWi/EG7Y1HNnDwJYuk6WUbNXpF6luSUY8yASul3cmUlLGrCCL1ZgVXqA==}
 
   onnxruntime-node@1.21.0:
     resolution: {integrity: sha512-NeaCX6WW2L8cRCSqy3bInlo5ojjQqu2fD3D+9W5qb5irwxhEyWKXeH2vZ8W9r6VxaMPUan+4/7NDwZMtouZxEw==}
@@ -7488,6 +7497,10 @@ packages:
 
   onnxruntime-react-native@1.24.3:
     resolution: {integrity: sha512-vMxFcnO1YDtT6auv719Zk0Zj/EXujqeEzSjTe5W7A915qaRrM4pRfXlI4ye/ExOwcTan7NYVZ/wpLX+YBU2aWQ==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      react: 19.1.0
+      react-native: '*'
 
   onnxruntime-web@1.22.0-dev.20250409-89f8206ba4:
     resolution: {integrity: sha512-0uS76OPgH0hWCPrFKlL8kYVV7ckM7t/36HfbgoFw6Nd0CZVVbQC4PkrR8mBX8LtNUFZO25IQBqV2Hx2ho3FlbQ==}
@@ -8796,6 +8809,7 @@ packages:
   tsconfck@3.1.6:
     resolution: {integrity: sha512-ks6Vjr/jEw0P1gmOVwutM3B7fWxoWBL2KRDb1JfqGVawBmO5UsvmWOQFGHBPl5yxYz4eERr19E6L7NMv+Fej4w==}
     engines: {node: ^18 || >=20}
+    deprecated: unmaintained
     hasBin: true
     peerDependencies:
       typescript: ^5.0.0
@@ -13449,6 +13463,8 @@ snapshots:
 
   '@tauri-apps/api@2.10.1': {}
 
+  '@tauri-apps/api@2.11.1': {}
+
   '@tauri-apps/cli-darwin-arm64@2.10.1':
     optional: true
 
@@ -13495,6 +13511,10 @@ snapshots:
       '@tauri-apps/cli-win32-arm64-msvc': 2.10.1
       '@tauri-apps/cli-win32-ia32-msvc': 2.10.1
       '@tauri-apps/cli-win32-x64-msvc': 2.10.1
+
+  '@tauri-apps/plugin-clipboard-manager@2.3.3':
+    dependencies:
+      '@tauri-apps/api': 2.11.1
 
   '@tauri-apps/plugin-dialog@2.6.0':
     dependencies:
@@ -18082,9 +18102,9 @@ snapshots:
 
   onnxruntime-common@1.21.0: {}
 
-  onnxruntime-common@1.24.3: {}
-
   onnxruntime-common@1.22.0-dev.20250409-89f8206ba4: {}
+
+  onnxruntime-common@1.24.3: {}
 
   onnxruntime-node@1.21.0:
     dependencies:

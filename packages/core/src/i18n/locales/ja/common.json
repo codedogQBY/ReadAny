@@ -5,6 +5,8 @@
     "confirm": "確認",
     "save": "保存",
     "close": "閉じる",
+    "cut": "切り取り",
+    "undo": "元に戻す",
     "copy": "コピー",
     "copied": "コピーしました",
     "remove": "削除",
@@ -42,6 +44,7 @@
     "insertLink": "リンクを挿入",
     "linkText": "リンクテキスト",
     "paste": "貼り付け",
+    "selectAll": "すべて選択",
     "rename": "名前を変更",
     "reset": "リセット",
     "writeYourThoughts": "感想を書く..."
