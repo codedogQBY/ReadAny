@@ -15,9 +15,10 @@ type MenuState = { x: number; y: number; items: MenuItem[] } | null;
 const EDITABLE_SELECTOR =
   "input, textarea, [contenteditable='true'], [contenteditable=''], [role='textbox']";
 
-// Programmatic insert for when execCommand("paste") is refused (WebKit refuses
-// it for web content). React-controlled inputs need a bubbled input event so
-// their onChange picks up the new DOM value.
+// Last-ditch insert for when even execCommand("insertText") is unavailable.
+// It writes the value directly, so the edit does NOT land on the native undo
+// stack (Undo cannot revert it). React-controlled inputs need a bubbled input
+// event so their onChange picks up the new DOM value.
 const insertTextAtSelection = (editable: HTMLElement, text: string): void => {
   if (editable instanceof HTMLInputElement || editable instanceof HTMLTextAreaElement) {
     const start = editable.selectionStart ?? editable.value.length;
@@ -71,16 +72,16 @@ export function ContextMenu() {
 
       const hasSelection = Boolean(getSelectedText());
 
-      // execCommand is deprecated but is the only clipboard path that never
-      // prompts: WebView2 gates navigator.clipboard.readText() behind a
-      // permission dialog, and WKWebView refuses execCommand("paste") for web
-      // content. Order: execCommand → Tauri clipboard plugin (native IPC, no
-      // prompt; covers macOS/Linux WebKit) → async Clipboard API (last resort).
-      const execCommand = (command: string): boolean => {
+      // execCommand is deprecated but still fully supported: "insertText" is
+      // the undoable, permission-free way to edit a field (it behaves like
+      // typed input), and "copy"/"cut" work with a user gesture on every
+      // engine. "paste" is NOT usable — engines refuse it for web content
+      // (Chromium/WebView2 included; it silently returns false).
+      const execCommand = (command: string, value?: string): boolean => {
         if (typeof document.execCommand !== "function") return false;
         editable.focus();
         try {
-          return document.execCommand(command);
+          return document.execCommand(command, false, value);
         } catch {
           return false;
         }
@@ -102,13 +103,18 @@ export function ContextMenu() {
         void navigator.clipboard?.writeText(text).catch(() => {});
       };
 
+      // Read the clipboard natively (Tauri IPC needs no permission prompt;
+      // async Clipboard API is the web fallback) and insert it as if typed —
+      // "insertText" lands the paste on the field's native undo stack so menu
+      // Undo / Ctrl+Z can revert it. A direct value write would not.
       const pasteClipboard = async (): Promise<void> => {
         editable.focus();
-        if (execCommand("paste")) return;
         const text =
           (await readClipboardNative()) ??
           (await navigator.clipboard?.readText().catch(() => null));
-        if (text) insertTextAtSelection(editable, text);
+        if (!text) return;
+        if (execCommand("insertText", text)) return;
+        insertTextAtSelection(editable, text);
       };
 
       const selectAll = (): void => {
