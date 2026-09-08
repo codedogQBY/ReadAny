@@ -43,6 +43,7 @@ const writeClipboard = async (text: string): Promise<void> => {
 // stack (Undo cannot revert it). React-controlled inputs need a bubbled input
 // event so their onChange picks up the new DOM value.
 const insertTextAtSelection = (editable: HTMLElement, text: string): void => {
+  if (!editable.isConnected) return;
   if (editable instanceof HTMLInputElement || editable instanceof HTMLTextAreaElement) {
     const start = editable.selectionStart ?? editable.value.length;
     const end = editable.selectionEnd ?? editable.value.length;
@@ -173,9 +174,18 @@ export function ContextMenu() {
     };
 
     const onPointerDown = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setMenu(null);
+      if (!menuRef.current) return;
+      if (menuRef.current.contains(event.target as Node)) {
+        // Keep focus (caret/selection included) on the editable while the
+        // menu is open: letting the browser move focus to the menu fires the
+        // field's onBlur, and inline editors treat blur as commit/dismiss —
+        // the empty sidebar search even unmounts itself, leaving the paste
+        // action writing into a detached node. Native menus behave the same
+        // way: opening them never steals focus from the field.
+        event.preventDefault();
+        return;
       }
+      setMenu(null);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setMenu(null);
