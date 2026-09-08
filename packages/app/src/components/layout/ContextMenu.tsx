@@ -95,6 +95,11 @@ export function ContextMenu() {
 
       const hasSelection = Boolean(getSelectedText());
 
+      // Browsers block cut/copy on password fields for security — mirror the
+      // native menu and disable those items instead of offering silent no-ops.
+      // Paste/undo/select-all remain useful (password managers paste).
+      const isPassword = editable instanceof HTMLInputElement && editable.type === "password";
+
       // execCommand is deprecated but still fully supported. "insertText"
       // behaves like typed input (stays on the undo stack), "cut" and "undo"
       // drive the field's native editing commands. "paste" is NOT usable —
@@ -142,8 +147,8 @@ export function ContextMenu() {
 
       const items: MenuItem[] = [
         { command: "undo", action: () => execCommand("undo") },
-        { command: "cut", action: () => execCommand("cut"), disabled: !hasSelection },
-        { command: "copy", action: copySelection, disabled: !hasSelection },
+        { command: "cut", action: () => execCommand("cut"), disabled: !hasSelection || isPassword },
+        { command: "copy", action: copySelection, disabled: !hasSelection || isPassword },
         {
           command: "paste",
           action: () => {
