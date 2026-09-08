@@ -1986,7 +1986,7 @@
             height: auto;
           }
           ${getVerticalWritingCompatibilityStyles()}
-          ${currentJustifyBodyText !== false ? (globalThis.ReadAnyJustifiedText?.JUSTIFY_CSS ?? '') : ''}
+          ${currentJustifyBodyText !== false ? (globalThis.ReadAnyJustifiedText?.getJustifyCss?.() ?? globalThis.ReadAnyJustifiedText?.JUSTIFY_CSS ?? '') : ''}
         `;
         lastRendererStyles = baseStyles;
         const themedStyles = injectThemeIntoStyles(

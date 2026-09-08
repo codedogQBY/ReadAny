@@ -44,32 +44,77 @@ const THEME_COLORS: Record<AppTheme, { bg: string; fg: string; link: string }> =
 const READER_OVERRIDE_STYLE_ID = "__readany_reader_overrides__";
 
 /**
- * Justified body text fallback. Lives in @layer readany-justify so any
- * unlayered book style wins (never override the book). :where() keeps
- * specificity at 0. Elements that DIRECTLY contain a <br> (poetry/lyrics line
- * breaks) get `start` so short lines are not stretched — `:has(> br)` matches
- * only the element whose br is a direct child, never an outer container that
- * merely contains a br descendant (which would wrongly cascade `start` onto
- * unrelated siblings). Code, tables, captions and forms are excluded. All
- * rules are scoped to horizontal text — apply/syncJustifyForDoc tag vertical
- * and fixed documents with data-readany-vertical, which cannot be expressed
- * with a pure-CSS guard.
- * Mirrors packages/app-expo/assets/reader/justified-text.js JUSTIFY_CSS.
+ * Engine capability detection for the CSS features the justify fallback
+ * relies on. Support floors (caniuse): `:has()` needs Chromium 105 /
+ * Safari 15.4 / WebKitGTK 2.36; `@layer` needs Chromium 99 / Safari 15.4 /
+ * WebKitGTK 2.36; `:where()` needs Chromium 88 / Safari 14 / WebKitGTK 2.32.
+ * Below those lines the degradations are dangerous by default: engines that
+ * don't know `@layer` discard the ENTIRE layer block (justify silently
+ * disappears), and `:has()` makes the whole containing rule drop plus
+ * querySelectorAll throws. `CSSLayerBlockRule` exists exactly when @layer is
+ * supported; CSS.supports("selector(...)") answers :has()/:where() honestly
+ * on engines that have CSS.supports at all (Chromium 28+). On engines without
+ * it (below our practical floor) we optimistically assume support — the
+ * guarded br scan still protects the runtime if the guess is wrong.
+ * Mirrors packages/app-expo/assets/reader/justified-text.js.
  */
-const READANY_JUSTIFY_CSS = `
-@layer readany-justify {
-  :root:not([data-readany-vertical]) body { text-align: justify; }
-  :root:not([data-readany-vertical]) :where(*:has(> br)) { text-align: start; }
-  :root:not([data-readany-vertical]) pre,
-  :root:not([data-readany-vertical]) code,
-  :root:not([data-readany-vertical]) kbd,
-  :root:not([data-readany-vertical]) samp,
-  :root:not([data-readany-vertical]) table,
-  :root:not([data-readany-vertical]) caption,
-  :root:not([data-readany-vertical]) figcaption,
-  :root:not([data-readany-vertical]) form { text-align: start; }
+interface JustifyCapabilities {
+  hasLayer: boolean;
+  hasHas: boolean;
+  hasWhere: boolean;
 }
-`;
+
+let justifyCapabilitiesCache: JustifyCapabilities | null = null;
+
+function getJustifyCapabilities(): JustifyCapabilities {
+  if (justifyCapabilitiesCache) return justifyCapabilitiesCache;
+  const view = window as unknown as Record<string, unknown>;
+  let hasLayer = false;
+  try {
+    hasLayer = typeof view.CSSLayerBlockRule !== "undefined";
+  } catch {
+    hasLayer = false;
+  }
+  const supportsSelector = (condition: string): boolean => {
+    try {
+      const css = view.CSS as { supports?: (c: string) => boolean } | undefined;
+      if (!css || typeof css.supports !== "function") return true;
+      return Boolean(css.supports.call(css, condition));
+    } catch {
+      return true;
+    }
+  };
+  justifyCapabilitiesCache = {
+    hasLayer,
+    hasHas: supportsSelector("selector(:has(> br))"),
+    hasWhere: supportsSelector("selector(:where(p))"),
+  };
+  return justifyCapabilitiesCache;
+}
+
+/**
+ * Build the justify stylesheet for the detected capability set. Layered when
+ * @layer exists (strongest "never override the book" guarantee); otherwise
+ * unlayered with every selector wrapped in :where() (specificity 0) when the
+ * engine has :where, so book rules with real specificity still win. The
+ * br-container rule requires :has() — without it the JS scan pins those
+ * blocks inline instead. Mirrors justified-text.js buildJustifyCss().
+ */
+function getJustifyCss(): string {
+  const caps = getJustifyCapabilities();
+  const guard = ":root:not([data-readany-vertical])";
+  const scoped = (baseSelector: string) =>
+    caps.hasWhere ? `:where(${guard} ${baseSelector})` : `${guard} ${baseSelector}`;
+  const rules = [`${scoped("body")} { text-align: justify; }`];
+  if (caps.hasHas) {
+    rules.push(`${scoped("*:has(> br)")} { text-align: start; }`);
+  }
+  const excludeTargets = ["pre", "code", "kbd", "samp", "table", "caption", "figcaption", "form"];
+  rules.push(`${excludeTargets.map((t) => scoped(t)).join(", ")} { text-align: start; }`);
+  return caps.hasLayer
+    ? `@layer readany-justify {\n${rules.map((rule) => `  ${rule}`).join("\n")}\n}`
+    : rules.join("\n");
+}
 
 /**
  * Pin author-aligned, <br>-containing blocks to their computed alignment.
@@ -118,7 +163,31 @@ function preserveAlignedBrContainers(doc: Document) {
     }
     return "start";
   };
-  for (const container of doc.querySelectorAll(`:is(${selector}):has(> br)`)) {
+  // :has()-capable engines answer with one query; engines without :has (or
+  // where querySelectorAll rejects it) fall back to the plain block list
+  // filtered by iterating children — an API set that works everywhere. The
+  // fallback filter reads no computed styles, so it stays cheap even though
+  // it walks every block.
+  const caps = getJustifyCapabilities();
+  let containers: Element[] = [];
+  let needFallbackScan = !caps.hasHas;
+  if (caps.hasHas) {
+    try {
+      containers = Array.from(doc.querySelectorAll(`:is(${selector}):has(> br)`));
+    } catch {
+      needFallbackScan = true;
+    }
+  }
+  if (needFallbackScan) {
+    containers = Array.from(doc.querySelectorAll(selector)).filter((el) => {
+      const children = el.children;
+      for (let i = 0; i < children.length; i++) {
+        if (children[i].tagName === "BR") return true;
+      }
+      return false;
+    });
+  }
+  for (const container of containers) {
     const align = inheritAlign(container);
     if (preserved.has(align)) {
       (container as HTMLElement).style.textAlign = align;
@@ -219,10 +288,7 @@ function analyzeCanvasIsLight(canvas: HTMLCanvasElement): boolean {
 }
 
 /** The PDF page canvas is rendered asynchronously (pdf.js); wait until it appears. */
-function waitForPdfPageCanvas(
-  doc: Document,
-  timeoutMs = 5000,
-): Promise<HTMLCanvasElement | null> {
+function waitForPdfPageCanvas(doc: Document, timeoutMs = 5000): Promise<HTMLCanvasElement | null> {
   return new Promise((resolve) => {
     const win = doc.defaultView ?? window;
     const raf =
@@ -958,10 +1024,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           isLight = canvas ? analyzeCanvasIsLight(canvas) : true;
           cache.set(index, isLight);
         }
-        doc.documentElement.style.setProperty(
-          "--readany-pdf-filter",
-          isLight ? filter : "none",
-        );
+        doc.documentElement.style.setProperty("--readany-pdf-filter", isLight ? filter : "none");
       },
       [bookKey],
     );
@@ -2171,7 +2234,16 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           }
         })();
       },
-      [appTheme, bookKey, viewSettings, onLoaded, onSectionLoad, isFixedLayout, format, applyPdfPageThemeFilter],
+      [
+        appTheme,
+        bookKey,
+        viewSettings,
+        onLoaded,
+        onSectionLoad,
+        isFixedLayout,
+        format,
+        applyPdfPageThemeFilter,
+      ],
     );
     const docLoadHandlerRef = useRef(docLoadHandlerImpl);
     docLoadHandlerRef.current = docLoadHandlerImpl;
@@ -3281,9 +3353,9 @@ function normalizeBrOnlyParagraphs(doc: Document) {
   const body = doc.body;
   if (!body || body.querySelectorAll("p").length > 2) return;
 
-  const containers: Element[] = Array.from(body.querySelectorAll("div, section, article, main")).filter(
-    shouldNormalizeBrParagraphContainer,
-  );
+  const containers: Element[] = Array.from(
+    body.querySelectorAll("div, section, article, main"),
+  ).filter(shouldNormalizeBrParagraphContainer);
   if (shouldNormalizeBrParagraphContainer(body)) containers.push(body);
 
   for (const container of containers) {
@@ -3624,7 +3696,7 @@ pre {
   tab-size: 2;
 }
 
-${settings.justifyBodyText !== false ? READANY_JUSTIFY_CSS : ""}
+${settings.justifyBodyText !== false ? getJustifyCss() : ""}
 `;
 }
 

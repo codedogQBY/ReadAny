@@ -45,6 +45,86 @@
     "}",
   ].join("\n");
 
+  /**
+   * Engine capability detection for the CSS features the fallback relies on.
+   *
+   * Support floor (caniuse): `:has()` needs Chromium 105 / Safari 15.4 /
+   * WebKitGTK 2.36; `@layer` needs Chromium 99 / Safari 15.4 / WebKitGTK 2.36.
+   * Engines below those lines degrade DIFFERENTLY, and both degradations are
+   * dangerous by default:
+   *   - `@layer` unknown → the parser discards the ENTIRE layer block, so the
+   *     body justify silently disappears;
+   *   - `:has()` unknown → any rule containing it is dropped AND
+   *     querySelectorAll(":is(...):has(...)") throws SyntaxError.
+   * getJustifyCss() / the scan therefore take these capabilities into account.
+   * `CSSLayerBlockRule` exists exactly when @layer is supported, and
+   * CSS.supports("selector(...)") answers :has()/:where() honestly on engines
+   * that have CSS.supports at all (Chromium 28+). On engines without
+   * CSS.supports (below our practical floor) we optimistically assume support
+   * — the guarded scan still protects the runtime if that guess is wrong.
+   */
+  function detectJustifyCapabilities(doc) {
+    const view = doc?.defaultView ?? root;
+    let hasLayer = false;
+    let hasHas = false;
+    let hasWhere = false;
+    try {
+      hasLayer = typeof view.CSSLayerBlockRule !== "undefined";
+    } catch {
+      hasLayer = false;
+    }
+    const supportsSelector = (condition) => {
+      try {
+        const css = view.CSS;
+        if (!css || typeof css.supports !== "function") return true;
+        return Boolean(css.supports.call(css, condition));
+      } catch {
+        return true;
+      }
+    };
+    hasHas = supportsSelector("selector(:has(> br))");
+    hasWhere = supportsSelector("selector(:where(p))");
+    return { hasLayer, hasHas, hasWhere };
+  }
+
+  /**
+   * Build the justify stylesheet for the detected capability set.
+   *  - @layer supported  → rules stay layered: any unlayered book style wins
+   *    regardless of specificity (the strongest guarantee).
+   *  - @layer missing    → rules are served unlayered. To keep the "never
+   *    override the book" property as long as possible, every selector is
+   *    wrapped in :where() (specificity 0) when the engine has :where — any
+   *    book rule with real specificity still beats ours. Engines without
+   *    :where (Chromium < 88, WebKitGTK < 2.30, Safari < 14) get the bare
+   *    selectors as a last resort; books that style body/text alignment at
+   *    equal specificity may lose the tie there.
+   *  - :has() missing    → the br-container rule is omitted entirely; the JS
+   *    scan below pins those blocks inline instead (it never needed :has for
+   *    that work).
+   */
+  function buildJustifyCss(caps) {
+    const guard = ":root:not([data-readany-vertical])";
+    const scoped = (baseSelector) =>
+      caps.hasWhere ? `:where(${guard} ${baseSelector})` : `${guard} ${baseSelector}`;
+    const rules = [`${scoped("body")} { text-align: justify; }`];
+    if (caps.hasHas) {
+      rules.push(`${scoped("*:has(> br)")} { text-align: start; }`);
+    }
+    const excludeTargets = ["pre", "code", "kbd", "samp", "table", "caption", "figcaption", "form"];
+    rules.push(`${excludeTargets.map((t) => scoped(t)).join(", ")} { text-align: start; }`);
+    return caps.hasLayer
+      ? `@layer readany-justify {\n${rules.map((rule) => `  ${rule}`).join("\n")}\n}`
+      : rules.join("\n");
+  }
+
+  /**
+   * Capability-aware stylesheet for the caller's engine. Without an argument
+   * the engine of the surrounding window/global is detected.
+   */
+  function getJustifyCss(doc) {
+    return buildJustifyCss(detectJustifyCapabilities(doc));
+  }
+
   // Inline alignment we pin so author alignment survives our start rule. We
   // mark pinned elements so disabling justify can remove exactly what we added.
   const PIN_ATTR = "data-readany-justify-pinned";
@@ -71,6 +151,39 @@
   }
 
   /**
+   * Collect block-level elements that DIRECTLY contain a <br>.
+   *
+   * With :has() available this is a single engine-native query. Without it,
+   * querySelectorAll(":is(...):has(...)") would THROW SyntaxError, so we fall
+   * back to the plain block selector and filter by iterating children — an
+   * API that exists on every engine we target. The try/catch additionally
+   * covers engines whose :has() works in stylesheets but not in
+   * querySelectorAll (or any other engine quirk).
+   */
+  function collectBrContainers(doc, caps) {
+    if (caps.hasHas) {
+      try {
+        return doc.querySelectorAll(`:is(${BR_CONTAINER_SELECTOR}):has(> br)`);
+      } catch {
+        // fall through to the manual scan
+      }
+    }
+    const candidates = doc.querySelectorAll(BR_CONTAINER_SELECTOR);
+    const matches = [];
+    for (const candidate of candidates) {
+      const children = candidate.children;
+      if (!children) continue;
+      for (let i = 0; i < children.length; i++) {
+        if (String(children[i].tagName).toUpperCase() === "BR") {
+          matches.push(candidate);
+          break;
+        }
+      }
+    }
+    return matches;
+  }
+
+  /**
    * Restore author-aligned, <br>-containing blocks to their computed alignment.
    *
    * When justify is on, `body { text-align: justify }` would stretch every
@@ -84,7 +197,7 @@
    * Runs before the justify CSS is injected: getComputedStyle then reflects the
    * book's own stylesheet, not our injected rules.
    */
-  function preserveAlignedBrContainers(doc) {
+  function preserveAlignedBrContainers(doc, caps) {
     if (!doc || !doc.defaultView) return;
 
     // Clean up leftovers from the previous marker-based implementation so
@@ -116,18 +229,15 @@
       // computed alignment is polluted.)
       cur = el;
       while (cur) {
-        const a = String(
-          doc.defaultView.getComputedStyle(cur).textAlign || "",
-        ).toLowerCase();
+        const a = String(doc.defaultView.getComputedStyle(cur).textAlign || "").toLowerCase();
         if (a !== "start" && a !== "inherit") return a;
         cur = cur.parentElement;
       }
       return "start";
     }
 
-    for (const container of doc.querySelectorAll(
-      `:is(${BR_CONTAINER_SELECTOR}):has(> br)`,
-    )) {
+    const containers = collectBrContainers(doc, caps);
+    for (const container of containers) {
       const align = inheritAlign(container);
       if (PRESERVED_ALIGNMENTS.has(align)) {
         container.style.textAlign = align;
@@ -158,11 +268,11 @@
   //   - unsupportedLayout (vertical / fixed) → same unpin; those documents
   //     must never be justified or pinned
   function apply(doc, enabled, unsupportedLayout) {
-    // Tag the document root so the @layer justify CSS can scope itself to
-    // horizontal text. The caller (reader.template.html) already passes
-    // unsupportedLayout = fixed || isVerticalDoc; when it is undefined (e.g.
-    // the desktop viewer calling without it) we fall back to our own O(1)
-    // isVerticalDoc — class check + one getComputedStyle on the body.
+    // Tag the document root so the justify CSS can scope itself to horizontal
+    // text. The caller (reader.template.html) already passes unsupportedLayout
+    // = fixed || isVerticalDoc; when it is undefined (e.g. the desktop viewer
+    // calling without it) we fall back to our own O(1) isVerticalDoc — class
+    // check + one getComputedStyle on the body.
     const isUnsupported = unsupportedLayout || isVerticalDoc(doc);
     if (doc?.documentElement) {
       if (isUnsupported) {
@@ -182,8 +292,15 @@
       unpinAlignedBrContainers(doc);
       return;
     }
-    preserveAlignedBrContainers(doc);
+    preserveAlignedBrContainers(doc, detectJustifyCapabilities(doc));
   }
 
-  root.ReadAnyJustifiedText = { apply, preserveAlignedBrContainers, JUSTIFY_CSS };
+  root.ReadAnyJustifiedText = {
+    apply,
+    preserveAlignedBrContainers,
+    detectJustifyCapabilities,
+    buildJustifyCss,
+    getJustifyCss,
+    JUSTIFY_CSS,
+  };
 })(globalThis);

@@ -69,6 +69,10 @@ describe("justified EPUB text setting", () => {
     expect(template).toContain("settings.justifyBodyText !== undefined");
     expect(template).toContain("syncJustifiedTextForAllDocs()");
     expect(template).toContain("globalThis.ReadAnyJustifiedText?.apply(");
+    // The template asks for the capability-aware stylesheet so old webviews
+    // (no @layer / :has()) get their degraded variant instead of rules they
+    // would drop.
+    expect(template).toContain("getJustifyCss");
     expect(buildScript).toContain('"justified-text.js"');
     expect(buildScript).toContain("JUSTIFIED_TEXT_MARKER");
     // The built reader carries the @layer justify fallback and pins
@@ -77,6 +81,9 @@ describe("justified EPUB text setting", () => {
     expect(builtReader).toContain("@layer readany-justify");
     expect(builtReader).toContain("justifyBodyText");
     expect(builtReader).toContain("preserveAlignedBrContainers");
+    // Capability detection + fallbacks must survive the esbuild bundle.
+    expect(builtReader).toContain("detectJustifyCapabilities");
+    expect(builtReader).toContain("CSSLayerBlockRule");
     expect(builtReader).not.toContain("setAttribute(marker");
   });
 });

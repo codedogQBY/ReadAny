@@ -14,17 +14,23 @@ const PIN_ATTR = "data-readany-justify-pinned";
 const BR_SELECTOR =
   "p, div, blockquote, dd, li, h1, h2, h3, h4, h5, h6, td, th, section, article, caption, figcaption";
 
+interface FakeElementChild {
+  tagName: string;
+}
+
 class FakeContainer {
   readonly style: Record<string, string> & { removeProperty?: (p: string) => void } = {};
   readonly attrs = new Set<string>();
+  readonly children: FakeElementChild[];
 
   constructor(
     public readonly textAlign: string,
     public readonly hasLineBreak = false,
   ) {
     this.style.removeProperty = (prop: string) => {
-      delete this.style[prop];
+      Reflect.deleteProperty(this.style, prop);
     };
+    this.children = hasLineBreak ? [{ tagName: "BR" }] : [];
   }
 
   setAttribute(name: string, _value: string): void {
@@ -37,23 +43,47 @@ class FakeContainer {
 
   removeAttribute(name: string): void {
     this.attrs.delete(name);
-    delete this.style.textAlign;
+    Reflect.deleteProperty(this.style, "textAlign");
   }
 }
 
+interface FakeCapabilities {
+  /** CSSLayerBlockRule presence in the engine (defaults to supported). */
+  layerSupported?: boolean;
+  /** CSS.supports() answers (defaults to modern engine: everything true). */
+  supports?: (condition: string) => boolean;
+}
+
 class FakeDoc {
-  constructor(readonly containers: FakeContainer[]) {}
+  queries: string[] = [];
+  failHasQuery = false;
+
+  constructor(
+    readonly containers: FakeContainer[],
+    readonly capabilities: FakeCapabilities = {},
+  ) {}
 
   get defaultView() {
+    const layerSupported = this.capabilities.layerSupported ?? true;
+    const supports = this.capabilities.supports ?? (() => true);
     return {
+      CSSLayerBlockRule: layerSupported ? function FakeLayerBlockRule() {} : undefined,
+      CSS: {
+        supports: (condition: string) => supports(condition),
+      },
       getComputedStyle: (container: FakeContainer) => ({ textAlign: container.textAlign }),
     };
   }
 
   querySelectorAll(selector: string): FakeContainer[] {
+    this.queries.push(selector);
+    if (this.failHasQuery && selector.includes(":has(")) {
+      throw new SyntaxError("simulated engine rejection of :has() in querySelectorAll");
+    }
     if (selector === `:is(${BR_SELECTOR}):has(> br)`) {
       return this.containers.filter((container) => container.hasLineBreak);
     }
+    if (selector === BR_SELECTOR) return this.containers;
     if (selector === `[${OLD_MARKER}]`) return [];
     if (selector === `[${PIN_ATTR}]`) {
       return this.containers.filter((container) => container.attrs.has(PIN_ATTR));
@@ -68,7 +98,14 @@ class FakeDoc {
 
 interface JustifiedTextApi {
   apply: (doc: FakeDoc, enabled: boolean, unsupportedLayout: boolean) => void;
-  preserveAlignedBrContainers: (doc: FakeDoc) => void;
+  preserveAlignedBrContainers: (doc: FakeDoc, caps?: unknown) => void;
+  detectJustifyCapabilities: (doc: FakeDoc) => {
+    hasLayer: boolean;
+    hasHas: boolean;
+    hasWhere: boolean;
+  };
+  buildJustifyCss: (caps: { hasLayer: boolean; hasHas: boolean; hasWhere: boolean }) => string;
+  getJustifyCss: (doc: FakeDoc) => string;
   JUSTIFY_CSS: string;
 }
 
@@ -167,5 +204,126 @@ describe("reader-side justified text helper", () => {
     );
     expect(api.JUSTIFY_CSS).toContain("figcaption");
     expect(api.JUSTIFY_CSS).toContain("text-align: start;");
+  });
+
+  it("detects modern engines as fully capable", () => {
+    const api = loadHelper();
+    expect(api).not.toBeNull();
+    if (!api) return;
+
+    const doc = new FakeDoc([]);
+    const caps = api.detectJustifyCapabilities(doc);
+    expect(caps).toEqual({ hasLayer: true, hasHas: true, hasWhere: true });
+  });
+
+  it("detects missing @layer / :has() / :where() from the engine", () => {
+    const api = loadHelper();
+    expect(api).not.toBeNull();
+    if (!api) return;
+
+    const oldEngine = new FakeDoc([], {
+      layerSupported: false,
+      supports: (condition: string) => !condition.includes(":has") && !condition.includes(":where"),
+    });
+    expect(api.detectJustifyCapabilities(oldEngine)).toEqual({
+      hasLayer: false,
+      hasHas: false,
+      hasWhere: false,
+    });
+
+    const midEngine = new FakeDoc([], {
+      layerSupported: true,
+      supports: (condition: string) => !condition.includes(":has"),
+    });
+    expect(api.detectJustifyCapabilities(midEngine)).toEqual({
+      hasLayer: true,
+      hasHas: false,
+      hasWhere: true,
+    });
+  });
+
+  it("scans br blocks without :has() when the engine lacks it", () => {
+    const api = loadHelper();
+    expect(api).not.toBeNull();
+    if (!api) return;
+
+    const left = new FakeContainer("left", true);
+    const centered = new FakeContainer("center", true);
+    const noBr = new FakeContainer("center", false);
+    const doc = new FakeDoc([left, centered, noBr], {
+      layerSupported: true,
+      supports: (condition: string) => !condition.includes(":has"),
+    });
+
+    api.apply(doc, true, false);
+
+    // The scan must never ask the engine for a :has() selector — it throws
+    // there — yet the alignment outcome is identical to the modern path.
+    expect(doc.queries.some((query) => query.includes(":has("))).toBe(false);
+    expect(doc.queries).toContain(BR_SELECTOR);
+    expect(centered.style.textAlign).toBe("center");
+    expect(centered.attrs.has(PIN_ATTR)).toBe(true);
+    expect(left.style.textAlign).toBe("start");
+    expect(noBr.style.textAlign).toBeUndefined();
+  });
+
+  it("falls back to the manual scan when querySelectorAll rejects :has()", () => {
+    const api = loadHelper();
+    expect(api).not.toBeNull();
+    if (!api) return;
+
+    const centered = new FakeContainer("center", true);
+    const doc = new FakeDoc([centered], { failHasQuery: true });
+
+    api.apply(doc, true, false);
+
+    expect(centered.style.textAlign).toBe("center");
+    expect(centered.attrs.has(PIN_ATTR)).toBe(true);
+  });
+
+  it("serves unlayered :where() CSS when @layer is unsupported", () => {
+    const api = loadHelper();
+    expect(api).not.toBeNull();
+    if (!api) return;
+
+    const doc = new FakeDoc([], {
+      layerSupported: false,
+      supports: (condition: string) => !condition.includes(":has"),
+    });
+    const css = api.getJustifyCss(doc);
+
+    // The old engine would discard the whole @layer block — the fallback must
+    // not use it, must keep the justify default, and must not ship a :has()
+    // rule the engine cannot match (the JS scan covers those blocks).
+    expect(css).not.toContain("@layer");
+    expect(css).toContain("text-align: justify");
+    expect(css).not.toContain(":has(");
+    // :where() keeps specificity at 0 so book rules still win.
+    expect(css).toContain(":where(");
+  });
+
+  it("serves the layered CSS untouched on fully capable engines", () => {
+    const api = loadHelper();
+    expect(api).not.toBeNull();
+    if (!api) return;
+
+    const doc = new FakeDoc([]);
+    const css = api.getJustifyCss(doc);
+    expect(css).toContain("@layer readany-justify");
+    expect(css).toContain("text-align: justify");
+    expect(css).toContain(":has(> br)");
+  });
+
+  it("builds the last-resort CSS without @layer/:has()/:where()", () => {
+    const api = loadHelper();
+    expect(api).not.toBeNull();
+    if (!api) return;
+
+    const css = api.buildJustifyCss({ hasLayer: false, hasHas: false, hasWhere: false });
+    expect(css).not.toContain("@layer");
+    expect(css).not.toContain(":has(");
+    expect(css).not.toContain(":where(");
+    expect(css).toContain("body { text-align: justify; }");
+    expect(css).toContain("figcaption");
   });
 });
