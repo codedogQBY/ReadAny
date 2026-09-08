@@ -153,7 +153,18 @@ export function ContextMenu() {
         { command: "selectAll", action: selectAll },
       ];
 
-      setMenu({ x: event.clientX, y: event.clientY, items });
+      // Keyboard invocation (ContextMenu key / Shift+F10) carries no pointer
+      // position (detail === 0; coordinates default to 0,0) — anchor the menu
+      // to the field itself instead, like readest's context menus do.
+      let x = event.clientX;
+      let y = event.clientY;
+      if (event.detail === 0) {
+        const rect = editable.getBoundingClientRect();
+        x = rect.left + 8;
+        y = rect.bottom + 4;
+      }
+
+      setMenu({ x, y, items });
     };
 
     const onPointerDown = (event: MouseEvent) => {
