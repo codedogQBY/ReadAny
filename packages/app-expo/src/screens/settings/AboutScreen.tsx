@@ -57,8 +57,12 @@ export default function AboutScreen() {
   // Filled at startup by the hidden UA probe webview (see UAProbe), and kept
   // fresh by the reader WebView on every book load via the bridge.
   const readerUa = useWebviewInfoStore((s) => s.ua);
-  const webviewLabel = readerUa
-    ? formatWebviewInfo(parseWebviewInfo(readerUa))
+  // Client Hints full build (e.g. 138.0.7204.67) — the plain UA parse yields a
+  // reduced x.0.0.0 on modern Chromium WebViews.
+  const fullVersion = useWebviewInfoStore((s) => s.fullVersion);
+  const parsed = readerUa ? parseWebviewInfo(readerUa) : null;
+  const webviewLabel = parsed
+    ? formatWebviewInfo({ ...parsed, version: fullVersion ?? parsed.version })
     : Platform.OS === "ios"
       ? "WebKit"
       : "Android WebView";

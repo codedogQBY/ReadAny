@@ -760,7 +760,11 @@ export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
         case "readany-ua":
           // reader.html reports its navigator.userAgent once at startup —
           // Settings → About displays it as the WebView version.
-          if (msg.ua) useWebviewInfoStore.getState().setUa(String(msg.ua));
+          if (msg.ua) {
+            useWebviewInfoStore
+              .getState()
+              .setUa(String(msg.ua), msg.fullVersion ? String(msg.fullVersion) : undefined);
+          }
           break;
         case "show-annotation":
           if (msg.value && msg.position) {
