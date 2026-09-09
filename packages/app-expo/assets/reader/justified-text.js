@@ -34,6 +34,13 @@
     "@layer readany-justify {",
     "  :root:not([data-readany-vertical]) body { text-align: justify; }",
     "  :root:not([data-readany-vertical]) :where(*:has(> br)) { text-align: start; }",
+    "  :root:not([data-readany-vertical]) html,",
+    "  :root:not([data-readany-vertical]) body,",
+    "  :root:not([data-readany-vertical]) p,",
+    "  :root:not([data-readany-vertical]) li,",
+    "  :root:not([data-readany-vertical]) blockquote,",
+    "  :root:not([data-readany-vertical]) dd",
+    "  { text-wrap-style: auto !important; }",
     "  :root:not([data-readany-vertical]) pre,",
     "  :root:not([data-readany-vertical]) code,",
     "  :root:not([data-readany-vertical]) kbd,",
@@ -107,6 +114,15 @@
     const scoped = (baseSelector) =>
       caps.hasWhere ? `:where(${guard} ${baseSelector})` : `${guard} ${baseSelector}`;
     const rules = [`${scoped("body")} { text-align: justify; }`];
+    // Authored `text-wrap: pretty` (e.g. Standard Ebooks core.css) makes
+    // engines that justify with it overshoot inter-word gaps. When justify is
+    // on the reader owns line breaking: reset only the style longhand, so an
+    // authored nowrap mode survives. Borrowed from readest (#5582).
+    rules.push(
+      `${["html", "body", "p", "li", "blockquote", "dd"]
+        .map((t) => scoped(t))
+        .join(", ")} { text-wrap-style: auto !important; }`,
+    );
     if (caps.hasHas) {
       rules.push(`${scoped("*:has(> br)")} { text-align: start; }`);
     }

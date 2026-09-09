@@ -106,6 +106,15 @@ function getJustifyCss(): string {
   const scoped = (baseSelector: string) =>
     caps.hasWhere ? `:where(${guard} ${baseSelector})` : `${guard} ${baseSelector}`;
   const rules = [`${scoped("body")} { text-align: justify; }`];
+  // Authored `text-wrap: pretty` (e.g. Standard Ebooks core.css) makes engines
+  // that justify with it overshoot inter-word gaps. When justify is on the
+  // reader owns line breaking: reset only the style longhand, so an authored
+  // nowrap mode survives. Borrowed from readest (#5582).
+  rules.push(
+    `${["html", "body", "p", "li", "blockquote", "dd"]
+      .map((t) => scoped(t))
+      .join(", ")} { text-wrap-style: auto !important; }`,
+  );
   if (caps.hasHas) {
     rules.push(`${scoped("*:has(> br)")} { text-align: start; }`);
   }

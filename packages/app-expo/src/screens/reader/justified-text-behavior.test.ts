@@ -204,6 +204,9 @@ describe("reader-side justified text helper", () => {
     );
     expect(api.JUSTIFY_CSS).toContain("figcaption");
     expect(api.JUSTIFY_CSS).toContain("text-align: start;");
+    // Justify owns line breaking: authored text-wrap: pretty must be
+    // neutralized (readest #5582).
+    expect(api.JUSTIFY_CSS).toContain("text-wrap-style: auto !important;");
   });
 
   it("detects modern engines as fully capable", () => {
@@ -300,6 +303,7 @@ describe("reader-side justified text helper", () => {
     expect(css).not.toContain(":has(");
     // :where() keeps specificity at 0 so book rules still win.
     expect(css).toContain(":where(");
+    expect(css).toContain("text-wrap-style: auto !important");
   });
 
   it("serves the layered CSS untouched on fully capable engines", () => {
@@ -312,6 +316,7 @@ describe("reader-side justified text helper", () => {
     expect(css).toContain("@layer readany-justify");
     expect(css).toContain("text-align: justify");
     expect(css).toContain(":has(> br)");
+    expect(css).toContain("text-wrap-style: auto !important");
   });
 
   it("builds the last-resort CSS without @layer/:has()/:where()", () => {
@@ -325,5 +330,6 @@ describe("reader-side justified text helper", () => {
     expect(css).not.toContain(":where(");
     expect(css).toContain("body { text-align: justify; }");
     expect(css).toContain("figcaption");
+    expect(css).toContain("text-wrap-style: auto !important");
   });
 });
