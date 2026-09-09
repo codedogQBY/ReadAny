@@ -18,6 +18,7 @@ import {
   resetStatus,
   subscribeToUpdates,
 } from "@/lib/updater";
+import { formatWebviewInfo } from "@/lib/webview-info";
 import { getVersion } from "@tauri-apps/api/app";
 import {
   AlertCircle,
@@ -36,6 +37,8 @@ import {
  */
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+
+const WEBVIEW_LABEL = formatWebviewInfo();
 
 const TECH_STACK = [
   { name: "Tauri", descKey: "settings.techStackTauri", icon: Shield },
@@ -146,6 +149,10 @@ export function AboutSettings() {
               <RefreshCw className={`h-4 w-4 ${status === "checking" ? "animate-spin" : ""}`} />
             </button>
           </div>
+        </div>
+        <div className="mt-2 flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">{t("settings.webviewEngine")}</span>
+          <span className="font-mono text-sm text-muted-foreground">{WEBVIEW_LABEL || "—"}</span>
         </div>
       </div>
 

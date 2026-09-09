@@ -13,6 +13,7 @@
     "other": "Plus",
     "aboutDesc": "Lisez tout, comprenez davantage",
     "version": "Version",
+    "webviewEngine": "Moteur Web",
     "techStack": "Stack technique",
     "techStackTauri": "Framework bureau multiplateforme",
     "techStackReact": "Bibliothèque de composants UI",

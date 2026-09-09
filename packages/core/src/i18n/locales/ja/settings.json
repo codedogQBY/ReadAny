@@ -13,6 +13,7 @@
     "other": "その他",
     "aboutDesc": "Read Any, Understand More",
     "version": "バージョン",
+    "webviewEngine": "Web エンジン",
     "techStack": "技術スタック",
     "techStackTauri": "クロスプラットフォームデスクトップフレームワーク",
     "techStackReact": "UIコンポーネントライブラリ",
