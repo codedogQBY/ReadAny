@@ -1,3 +1,5 @@
+export { formatWebviewInfo, parseWebviewInfo } from "./webview-info";
+export type { WebviewInfo } from "./webview-info";
 export { cn } from "./cn";
 export { debounce } from "./debounce";
 export { throttle } from "./throttle";

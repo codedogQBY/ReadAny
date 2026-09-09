@@ -1,6 +1,10 @@
+import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
+import { useUpdateStore } from "@/stores/update-store";
+import { useWebviewInfoStore } from "@/stores/webview-info-store";
 import { getPlatformService } from "@readany/core/services";
 import { checkForUpdate } from "@readany/core/update";
-import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
+import { formatWebviewInfo, parseWebviewInfo } from "@readany/core/utils/webview-info";
+import * as Clipboard from "expo-clipboard";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -8,6 +12,7 @@ import {
   Alert,
   Image,
   Linking,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,6 +20,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import AppIcon from "../../../assets/icon.png";
 import {
   type ThemeColors,
   fontSize,
@@ -23,9 +29,7 @@ import {
   spacing,
   useColors,
 } from "../../styles/theme";
-import { useUpdateStore } from "@/stores/update-store";
 import { SettingsHeader } from "./SettingsHeader";
-import AppIcon from "../../../assets/icon.png";
 
 const TECH_STACK = [
   { label: "Expo SDK 55", descKey: "about.nativeContainer" },
@@ -48,6 +52,23 @@ export default function AboutScreen() {
   const layout = useResponsiveLayout();
   const [version, setVersion] = useState("1.0.0");
   const [checking, setChecking] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // The reader WebView reports its own UA over the bridge once a book has
+  // been opened; before that we can only name the engine, not the build.
+  const readerUa = useWebviewInfoStore((s) => s.ua);
+  const webviewLabel = readerUa
+    ? formatWebviewInfo(parseWebviewInfo(readerUa))
+    : Platform.OS === "ios"
+      ? "WebKit"
+      : "Android WebView";
+
+  const handleCopyVersion = useCallback(async () => {
+    const versionInfo = [`ReadAny v${version}`, webviewLabel].filter(Boolean).join("\n");
+    await Clipboard.setStringAsync(versionInfo);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, [version, webviewLabel]);
 
   const checkResult = useUpdateStore((s) => s.checkResult);
   const setCheckResult = useUpdateStore((s) => s.setCheckResult);
@@ -83,12 +104,19 @@ export default function AboutScreen() {
     >
       <SettingsHeader title={t("about.title", "关于")} />
 
-      <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, { alignItems: "center" }]}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.scrollContent, { alignItems: "center" }]}
+      >
         <View style={{ width: "100%", maxWidth: layout.centeredContentWidth }}>
           {/* Logo & Version */}
           <View style={styles.logoSection}>
             <View style={styles.logoBadge}>
-              <Image source={AppIcon} style={{ width: 80, height: 80, borderRadius: 18 }} resizeMode="contain" />
+              <Image
+                source={AppIcon}
+                style={{ width: 80, height: 80, borderRadius: 18 }}
+                resizeMode="contain"
+              />
             </View>
             <Text style={styles.appName}>ReadAny</Text>
             <Text style={styles.version}>v{version}</Text>
@@ -122,6 +150,29 @@ export default function AboutScreen() {
                 <Text style={styles.linkArrow}>→</Text>
               </TouchableOpacity>
             )}
+          </View>
+
+          {/* WebView Version — tap to copy both versions for bug reports.
+              Touch has no hover, so the whole row is the affordance. */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t("settings.webviewVersion")}</Text>
+            <TouchableOpacity
+              style={[styles.linkItem, styles.webviewCard]}
+              onPress={() => void handleCopyVersion()}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.linkText} numberOfLines={1} ellipsizeMode="middle">
+                {webviewLabel}
+              </Text>
+              <Text
+                style={[
+                  styles.linkArrow,
+                  copied && { color: colors.primary, fontWeight: fontWeight.medium },
+                ]}
+              >
+                {copied ? "✓" : t("settings.copyVersionInfo")}
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Tech Stack */}
@@ -249,6 +300,12 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: fontSize.sm,
       fontWeight: fontWeight.medium,
       color: colors.primary,
+    },
+    webviewCard: {
+      borderRadius: radius.xl,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
     },
     techGrid: {
       flexDirection: "row",

@@ -17,6 +17,12 @@ const OUTPUT = path.resolve(ASSETS_DIR, "reader.html");
 async function buildReader() {
   // Create a temporary entry point
   const entryContent = `
+    // Report the WebView's own UA to RN once at startup — Settings → About
+    // shows it as the "WebView version" (RN itself has no real UA).
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'readany-ua', ua: navigator.userAgent }));
+    }
+
     import { makeBook, View } from "${FOLIATE_DIR.replace(/\\/g, "/")}/view.js";
     import { Overlayer } from "${FOLIATE_DIR.replace(/\\/g, "/")}/overlayer.js";
     import * as CFI from "${FOLIATE_DIR.replace(/\\/g, "/")}/epubcfi.js";
