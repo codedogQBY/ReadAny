@@ -5,6 +5,8 @@
     "confirm": "Confirmar",
     "save": "Guardar",
     "close": "Cerrar",
+    "cut": "Cortar",
+    "undo": "Deshacer",
     "copy": "Copiar",
     "copied": "Copiado",
     "remove": "Eliminar",
@@ -42,6 +44,7 @@
     "insertLink": "Insertar enlace",
     "linkText": "Texto del enlace",
     "paste": "Pegar",
+    "selectAll": "Seleccionar todo",
     "rename": "Renombrar",
     "reset": "Restablecer",
     "writeYourThoughts": "Escribe tus ideas..."

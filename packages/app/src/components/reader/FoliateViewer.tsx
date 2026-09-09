@@ -2472,6 +2472,9 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         };
 
         const handlePointerUp = (ev: PointerEvent) => {
+          // Right-click is reserved for context-menu suppression only — never
+          // treat it as a page-turn tap (or any other pointer action).
+          if (ev.button === 2) return;
           // Clicks on links are handled by their own navigation (internal
           // links / footnotes); never treat them as page-turn taps. Use
           // composedPath() with a realm-independent nodeType check: ev.target

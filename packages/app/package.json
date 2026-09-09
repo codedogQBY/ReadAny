@@ -31,6 +31,7 @@
     "@radix-ui/react-tooltip": "^1.1.6",
     "@readany/core": "workspace:*",
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-clipboard-manager": "^2.3.3",
     "@tauri-apps/plugin-dialog": "^2.6.0",
     "@tauri-apps/plugin-fs": "^2",
     "@tauri-apps/plugin-http": "^2.5.7",
