@@ -25,6 +25,7 @@ import {
   BookOpen,
   Check,
   Code2,
+  Copy,
   Download,
   ExternalLink,
   Github,
@@ -37,6 +38,7 @@ import {
  */
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
 const TECH_STACK = [
   { name: "Tauri", descKey: "settings.techStackTauri", icon: Shield },
@@ -58,6 +60,7 @@ export function AboutSettings() {
   const [isRelaunching, setIsRelaunching] = useState(false);
   const [appVersion, setAppVersion] = useState<string>("");
   const [webviewLabel, setWebviewLabel] = useState<string>("");
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     getVersion().then(setAppVersion).catch(console.error);
@@ -100,6 +103,20 @@ export function AboutSettings() {
   const handleCheckUpdate = () => {
     setIsChecking(true);
     checkForUpdate();
+  };
+
+  // Both version lines at once — the pair is what a bug report needs (see the
+  // justify engine-fallback work: features vary per WebView build).
+  const handleCopyVersion = async () => {
+    const versionInfo = [`ReadAny ${appVersion}`, webviewLabel].filter(Boolean).join("\n");
+    try {
+      await navigator.clipboard.writeText(versionInfo);
+      setCopied(true);
+      toast.success(t("common.copied"));
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch (error) {
+      console.error("[AboutSettings] Copy version info failed:", error);
+    }
   };
 
   const handleDownload = () => {
@@ -145,14 +162,23 @@ export function AboutSettings() {
         <p className="mt-1 text-sm text-muted-foreground">{t("settings.aboutDesc")}</p>
       </div>
 
-      {/* Version Card */}
-      <div className="mb-4 w-full max-w-md rounded-xl bg-muted/60 p-4">
+      {/* Version Card — hover reveals a copy button; click copies the app
+          version and the web engine together for bug reports. */}
+      <div className="group mb-4 w-full max-w-md rounded-xl bg-muted/60 p-4">
         <div className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">{t("settings.version")}</span>
           <div className="flex items-center gap-2">
             <span className="font-mono text-sm font-medium text-foreground">
               {appVersion || "..."}
             </span>
+            <button
+              onClick={() => void handleCopyVersion()}
+              className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+              title={t("settings.copyVersionInfo")}
+              aria-label={t("settings.copyVersionInfo")}
+            >
+              {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+            </button>
             <button
               onClick={handleCheckUpdate}
               disabled={status === "checking" || status === "downloading"}

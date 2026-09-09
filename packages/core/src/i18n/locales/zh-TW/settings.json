@@ -14,6 +14,7 @@
     "aboutDesc": "閱讀無界，理解無限",
     "version": "版本",
     "webviewVersion": "WebView 版本",
+    "copyVersionInfo": "複製版本資訊",
     "techStack": "技術棧",
     "techStackTauri": "跨平台桌面框架",
     "techStackReact": "UI 元件庫",

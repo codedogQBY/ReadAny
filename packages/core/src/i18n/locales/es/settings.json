@@ -14,6 +14,7 @@
     "aboutDesc": "Lee cualquier cosa, comprende más",
     "version": "Versión",
     "webviewVersion": "Versión de WebView",
+    "copyVersionInfo": "Copiar información de la versión",
     "techStack": "Tecnologías",
     "techStackTauri": "Framework de escritorio multiplataforma",
     "techStackReact": "Librería de componentes UI",
