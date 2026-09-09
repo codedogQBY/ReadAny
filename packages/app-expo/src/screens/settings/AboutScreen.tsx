@@ -54,8 +54,8 @@ export default function AboutScreen() {
   const [checking, setChecking] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // The reader WebView reports its own UA over the bridge once a book has
-  // been opened; before that we can only name the engine, not the build.
+  // Filled at startup by the hidden UA probe webview (see UAProbe), and kept
+  // fresh by the reader WebView on every book load via the bridge.
   const readerUa = useWebviewInfoStore((s) => s.ua);
   const webviewLabel = readerUa
     ? formatWebviewInfo(parseWebviewInfo(readerUa))
