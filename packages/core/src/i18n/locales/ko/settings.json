@@ -13,7 +13,7 @@
     "other": "기타",
     "aboutDesc": "Read Any, Understand More",
     "version": "버전",
-    "webviewEngine": "웹 엔진",
+    "webviewVersion": "WebView 버전",
     "techStack": "기술 스택",
     "techStackTauri": "크로스 플랫폼 데스크톱 프레임워크",
     "techStackReact": "UI 컴포넌트 라이브러리",

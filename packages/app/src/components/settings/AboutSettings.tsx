@@ -18,7 +18,7 @@ import {
   resetStatus,
   subscribeToUpdates,
 } from "@/lib/updater";
-import { formatWebviewInfo } from "@/lib/webview-info";
+import { getWebviewLabel } from "@/lib/webview-info";
 import { getVersion } from "@tauri-apps/api/app";
 import {
   AlertCircle,
@@ -37,8 +37,6 @@ import {
  */
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-
-const WEBVIEW_LABEL = formatWebviewInfo();
 
 const TECH_STACK = [
   { name: "Tauri", descKey: "settings.techStackTauri", icon: Shield },
@@ -59,9 +57,24 @@ export function AboutSettings() {
   const [isChecking, setIsChecking] = useState(false);
   const [isRelaunching, setIsRelaunching] = useState(false);
   const [appVersion, setAppVersion] = useState<string>("");
+  const [webviewLabel, setWebviewLabel] = useState<string>("");
 
   useEffect(() => {
     getVersion().then(setAppVersion).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    // Async: the full WebView2/Chrome build needs a Client Hints round-trip
+    // (the UA string itself is reduced to x.0.0.0).
+    let mounted = true;
+    getWebviewLabel()
+      .then((label) => {
+        if (mounted && label) setWebviewLabel(label);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -151,8 +164,8 @@ export function AboutSettings() {
           </div>
         </div>
         <div className="mt-2 flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">{t("settings.webviewEngine")}</span>
-          <span className="font-mono text-sm text-muted-foreground">{WEBVIEW_LABEL || "—"}</span>
+          <span className="text-sm text-muted-foreground">{t("settings.webviewVersion")}</span>
+          <span className="font-mono text-sm text-muted-foreground">{webviewLabel}</span>
         </div>
       </div>
 

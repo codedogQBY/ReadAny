@@ -13,7 +13,7 @@
     "other": "More",
     "aboutDesc": "Read Any, Understand More",
     "version": "Version",
-    "webviewEngine": "Web engine",
+    "webviewVersion": "WebView version",
     "techStack": "Tech Stack",
     "techStackTauri": "Cross-platform desktop framework",
     "techStackReact": "UI component library",
