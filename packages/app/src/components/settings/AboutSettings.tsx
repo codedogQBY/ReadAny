@@ -162,9 +162,9 @@ export function AboutSettings() {
         <p className="mt-1 text-sm text-muted-foreground">{t("settings.aboutDesc")}</p>
       </div>
 
-      {/* Version Card — hover reveals a copy button; click copies the app
-          version and the web engine together for bug reports. */}
-      <div className="group mb-4 w-full max-w-md rounded-xl bg-muted/60 p-4">
+      {/* Version Card — the copy button copies the app version and the web
+          engine together for bug reports. */}
+      <div className="mb-4 w-full max-w-md rounded-xl bg-muted/60 p-4">
         <div className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">{t("settings.version")}</span>
           <div className="flex items-center gap-2">
@@ -173,7 +173,7 @@ export function AboutSettings() {
             </span>
             <button
               onClick={() => void handleCopyVersion()}
-              className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+              className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               title={t("settings.copyVersionInfo")}
               aria-label={t("settings.copyVersionInfo")}
             >
