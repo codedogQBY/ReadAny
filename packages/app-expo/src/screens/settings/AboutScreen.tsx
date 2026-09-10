@@ -5,7 +5,6 @@ import { getPlatformService } from "@readany/core/services";
 import { checkForUpdate } from "@readany/core/update";
 import { formatWebviewInfo, parseWebviewInfo } from "@readany/core/utils/webview-info";
 import * as Clipboard from "expo-clipboard";
-import expoPkg from "expo/package.json";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -32,12 +31,8 @@ import {
 } from "../../styles/theme";
 import { SettingsHeader } from "./SettingsHeader";
 
-// The expo package's major version has matched the SDK number since SDK 51,
-// so derive the label instead of hardcoding it (a hardcoded "55" went stale).
-const EXPO_SDK_LABEL = `Expo SDK ${expoPkg.version.split(".")[0]}`;
-
 const TECH_STACK = [
-  { label: EXPO_SDK_LABEL, descKey: "about.nativeContainer" },
+  { label: "Expo SDK 55", descKey: "about.nativeContainer" },
   { label: "React Native", descKey: "about.uiFramework" },
   { label: "Foliate.js", descKey: "about.ebookRenderer" },
   { label: "SQLite", descKey: "about.localDatabase" },
