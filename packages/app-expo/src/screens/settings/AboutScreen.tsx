@@ -123,7 +123,25 @@ export default function AboutScreen() {
               />
             </View>
             <Text style={styles.appName}>ReadAny</Text>
-            <Text style={styles.version}>v{version}</Text>
+            {/* Tap the two version lines to copy both — bug reports need the
+                pair (app version + web engine build). No hover on touch. */}
+            <TouchableOpacity
+              onPress={() => void handleCopyVersion()}
+              activeOpacity={0.7}
+              style={styles.versionBlock}
+            >
+              <Text style={styles.version}>v{version}</Text>
+              {webviewLabel ? (
+                <Text
+                  style={[
+                    styles.version,
+                    copied && { color: colors.primary, fontWeight: fontWeight.medium },
+                  ]}
+                >
+                  {copied ? `✓ ${t("common.copied")}` : webviewLabel}
+                </Text>
+              ) : null}
+            </TouchableOpacity>
             <Text style={styles.desc}>
               {t("about.desc", "一个跨平台的智能电子书阅读器，支持 AI 对话、TTS 朗读、多语言翻译")}
             </Text>
@@ -154,29 +172,6 @@ export default function AboutScreen() {
                 <Text style={styles.linkArrow}>→</Text>
               </TouchableOpacity>
             )}
-          </View>
-
-          {/* WebView Version — tap to copy both versions for bug reports.
-              Touch has no hover, so the whole row is the affordance. */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t("settings.webviewVersion")}</Text>
-            <TouchableOpacity
-              style={[styles.linkItem, styles.webviewCard]}
-              onPress={() => void handleCopyVersion()}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.linkText} numberOfLines={1} ellipsizeMode="middle">
-                {webviewLabel}
-              </Text>
-              <Text
-                style={[
-                  styles.linkArrow,
-                  copied && { color: colors.primary, fontWeight: fontWeight.medium },
-                ]}
-              >
-                {copied ? "✓" : t("settings.copyVersionInfo")}
-              </Text>
-            </TouchableOpacity>
           </View>
 
           {/* Tech Stack */}
@@ -258,6 +253,10 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors.mutedForeground,
       marginTop: 4,
     },
+    versionBlock: {
+      alignItems: "center",
+      paddingVertical: 4,
+    },
     desc: {
       fontSize: fontSize.sm,
       color: colors.mutedForeground,
@@ -304,12 +303,6 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: fontSize.sm,
       fontWeight: fontWeight.medium,
       color: colors.primary,
-    },
-    webviewCard: {
-      borderRadius: radius.xl,
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
     },
     techGrid: {
       flexDirection: "row",
