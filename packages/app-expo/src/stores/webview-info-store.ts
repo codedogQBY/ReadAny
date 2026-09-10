@@ -30,6 +30,12 @@ export const useWebviewInfoStore = create<WebviewInfoState>((set) => ({
     }),
 }));
 
+/** Engine-only label when no UA has been reported yet. */
+const FALLBACK_LABELS: Partial<Record<string, string>> = {
+  ios: "WebKit",
+  android: "Android WebView",
+};
+
 /**
  * Engine + build label for About and feedback payloads
  * ("Android WebView 138.0.7204.67"). Before the probe/bridge has reported a
@@ -39,8 +45,10 @@ export function useWebviewLabel(): string {
   const ua = useWebviewInfoStore((s) => s.ua);
   const fullVersion = useWebviewInfoStore((s) => s.fullVersion);
   const parsed = ua ? parseWebviewInfo(ua) : null;
-  if (!parsed) {
-    return Platform.OS === "ios" ? "WebKit" : Platform.OS === "android" ? "Android WebView" : "";
+  // Key the fallback on a missing engine (not on a missing UA): an
+  // unrecognized WebView UA must not make the label silently disappear.
+  if (!parsed?.engine) {
+    return FALLBACK_LABELS[Platform.OS] ?? "";
   }
   return formatWebviewInfo({ ...parsed, version: fullVersion ?? parsed.version });
 }

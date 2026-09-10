@@ -36,7 +36,8 @@ import {
 /**
  * AboutSettings — 关于页面
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+// Timer cleanup for the copy feedback flag (unmount-safe).
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -61,10 +62,14 @@ export function AboutSettings() {
   const [appVersion, setAppVersion] = useState<string>("");
   const [webviewLabel, setWebviewLabel] = useState<string>("");
   const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     getVersion().then(setAppVersion).catch(console.error);
   }, []);
+
+  // Unmount cleanup for the copy feedback timer.
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
 
   useEffect(() => {
     // Async: the full WebView2/Chrome build needs a Client Hints round-trip
@@ -113,7 +118,8 @@ export function AboutSettings() {
       await navigator.clipboard.writeText(versionInfo);
       setCopied(true);
       toast.success(t("common.copied"));
-      window.setTimeout(() => setCopied(false), 1500);
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+      copiedTimer.current = window.setTimeout(() => setCopied(false), 1500);
     } catch (error) {
       console.error("[AboutSettings] Copy version info failed:", error);
     }
@@ -172,6 +178,7 @@ export function AboutSettings() {
               {appVersion || "..."}
             </span>
             <button
+              type="button"
               onClick={() => void handleCopyVersion()}
               className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               title={t("settings.copyVersionInfo")}
@@ -180,6 +187,7 @@ export function AboutSettings() {
               {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
             </button>
             <button
+              type="button"
               onClick={handleCheckUpdate}
               disabled={status === "checking" || status === "downloading"}
               className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"

@@ -1,4 +1,5 @@
 import { useWebviewInfoStore } from "@/stores/webview-info-store";
+import { useEffect, useState } from "react";
 import { View } from "react-native";
 import { WebView } from "react-native-webview";
 
@@ -8,7 +9,8 @@ const PROBE_HTML =
 // The UA string is reduced (Chrome/138.0.0.0) on modern Chromium WebViews, so
 // also ask Client Hints for the fullVersionList of the matching brand — the
 // About screen then shows the real build (e.g. 138.0.7204.67) instead of
-// x.0.0.0. Mirrors the desktop client-hints logic in lib/webview-info.ts.
+// x.0.0.0. Keep this brand list in sync with the desktop client-hints lookup
+// in packages/app/src/lib/webview-info.ts.
 const INJECTED_JS = `(async () => {
   let fullVersion = null;
   try {
@@ -19,7 +21,9 @@ const INJECTED_JS = `(async () => {
       if (hit) fullVersion = hit.version;
     }
   } catch (e) {}
-  ReactNativeWebView.postMessage(JSON.stringify({ type: "readany-ua", ua: navigator.userAgent, fullVersion }));
+  if (window.ReactNativeWebView) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: "readany-ua", ua: navigator.userAgent, fullVersion }));
+  }
 })(); true;`;
 
 /**
@@ -30,11 +34,21 @@ const INJECTED_JS = `(async () => {
  * The RN layer has no real UA (App.tsx polyfills "ReactNative"), and our only
  * other webview — the reader — mounts per book. This probe makes
  * Settings → About show the exact engine/build immediately at app startup,
- * before any book is opened.
+ * before any book is opened. Best-effort by design: if the probe never
+ * reports (load failure, no bridge), it unmounts after a short timeout and
+ * the reader bridge fills the store on the first book open instead.
  */
 export function UAProbe() {
   const ua = useWebviewInfoStore((s) => s.ua);
-  if (ua) return null;
+  const [gaveUp, setGaveUp] = useState(false);
+
+  useEffect(() => {
+    if (ua) return;
+    const timer = setTimeout(() => setGaveUp(true), 5000);
+    return () => clearTimeout(timer);
+  }, [ua]);
+
+  if (ua || gaveUp) return null;
 
   return (
     <View pointerEvents="none" style={{ height: 0, opacity: 0, width: 0 }}>
@@ -55,6 +69,7 @@ export function UAProbe() {
             // ignore probe noise
           }
         }}
+        onError={() => setGaveUp(true)}
         style={{ height: 0, width: 0 }}
       />
     </View>

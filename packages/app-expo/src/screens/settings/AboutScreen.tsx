@@ -4,7 +4,7 @@ import { useWebviewLabel } from "@/stores/webview-info-store";
 import { getPlatformService } from "@readany/core/services";
 import { checkForUpdate } from "@readany/core/update";
 import * as Clipboard from "expo-clipboard";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
@@ -51,16 +51,25 @@ export default function AboutScreen() {
   const [version, setVersion] = useState("1.0.0");
   const [checking, setChecking] = useState(false);
   const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Filled at startup by the hidden UA probe webview (see UAProbe), and kept
   // fresh by the reader WebView on every book load via the bridge.
   const webviewLabel = useWebviewLabel();
 
+  // Unmount cleanup for the copy feedback timer.
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
+
   const handleCopyVersion = useCallback(async () => {
-    const versionInfo = [`ReadAny v${version}`, webviewLabel].filter(Boolean).join("\n");
-    await Clipboard.setStringAsync(versionInfo);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    const versionInfo = [`ReadAny ${version}`, webviewLabel].filter(Boolean).join("\n");
+    try {
+      await Clipboard.setStringAsync(versionInfo);
+      setCopied(true);
+      clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopied(false), 1500);
+    } catch (error) {
+      console.error("[AboutScreen] Copy version info failed:", error);
+    }
   }, [version, webviewLabel]);
 
   const checkResult = useUpdateStore((s) => s.checkResult);
