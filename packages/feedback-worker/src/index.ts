@@ -293,18 +293,26 @@ function buildIssueBody(
   payload: Required<Pick<FeedbackPayload, "type">> & FeedbackPayload & { gistUrl?: string },
 ): string {
   const device = payload.deviceInfo ?? {};
+  // Device fields are client-supplied and rendered into issue Markdown:
+  // strip line breaks and Markdown-significant characters so they cannot
+  // inject headings, links, or mentions.
+  const clean = (value: unknown): string =>
+    String(value ?? "unknown")
+      .replace(/[\r\n\t]+/g, " ")
+      .replace(/[`[\]<>!]/g, "")
+      .slice(0, 300);
   const details = [
     `### Type\n${TYPE_LABELS[payload.type]}`,
     `### Description\n${payload.description}`,
-    `### Device\n- Platform: ${device.platform ?? "unknown"}`,
-    `- OS: ${device.osVersion ?? "unknown"}`,
-    `- App: ${device.appVersion ?? "unknown"}`,
-    `- WebView: ${device.webview ?? "unknown"}`,
-    `- Locale: ${device.locale ?? "unknown"}`,
+    `### Device\n- Platform: ${clean(device.platform)}`,
+    `- OS: ${clean(device.osVersion)}`,
+    `- App: ${clean(device.appVersion)}`,
+    `- WebView: ${clean(device.webview)}`,
+    `- Locale: ${clean(device.locale)}`,
   ];
 
   if (device.deviceModel) {
-    details[details.length - 1] += `\n- Device: ${device.deviceModel}`;
+    details[details.length - 1] += `\n- Device: ${clean(device.deviceModel)}`;
   }
 
   if (payload.gistUrl) {
