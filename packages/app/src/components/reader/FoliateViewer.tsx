@@ -14,6 +14,13 @@ import type {
 } from "@readany/core/translation/chapter-translator";
 import { cleanText, isTTSFootnoteMarker, shouldSkipTTSNode } from "@readany/core/tts";
 import type { ViewSettings } from "@readany/core/types";
+import {
+  buildJustifyCss,
+  detectJustifyCapabilities,
+  pinAlignedBrContainers,
+  unpinAlignedBrContainers,
+  type JustifyCapabilities,
+} from "@readany/core/reader/justified-text";
 import { Overlayer } from "foliate-js/overlayer.js";
 import { marked } from "marked";
 /**
@@ -42,6 +49,64 @@ const THEME_COLORS: Record<AppTheme, { bg: string; fg: string; link: string }> =
 };
 
 const READER_OVERRIDE_STYLE_ID = "__readany_reader_overrides__";
+
+/**
+ * Justified body text — the full engine lives in core
+ * (packages/core/src/reader/justified-text.ts) and is shared with the mobile
+ * reader WebView: capability fallbacks for @layer/:has-less webviews, CSS
+ * generation (layered / :where()-zeroed / bare per capability set), and the
+ * alignment pinning with original-inline-value restore. This file only adds
+ * the desktop runtime bits: capability memoization for the app's own webview,
+ * and the Client Hints lookup for the full WebView2 build shown in About
+ * (see lib/webview-info.ts).
+ */
+let justifyCapabilitiesCache: JustifyCapabilities | null = null;
+
+function getJustifyCapabilities(): JustifyCapabilities {
+  if (!justifyCapabilitiesCache) {
+    justifyCapabilitiesCache = detectJustifyCapabilities(window);
+  }
+  return justifyCapabilitiesCache;
+}
+
+function getJustifyCss(): string {
+  return buildJustifyCss(getJustifyCapabilities());
+}
+
+function preserveAlignedBrContainers(doc: Document) {
+  pinAlignedBrContainers(doc, getJustifyCapabilities());
+}
+
+/**
+ * Unified per-document justify sync: tag the root so the @layer CSS scopes to
+ * horizontal text, always unpin (clean undo), then pin author-aligned <br>
+ * blocks when justify is on and the layout is supported. Mirrors the mobile
+ * justified-text.js apply().
+ */
+function syncJustifyForDoc(doc: Document, enabled: boolean) {
+  if (!doc) return;
+  // Reuse the reader's existing getDirection (already called on section load)
+  // to detect vertical writing — document-level, per section, matching foliate.
+  const isUnsupported = getDirection(doc).vertical;
+  const root = doc.documentElement;
+  if (root) {
+    if (isUnsupported) {
+      root.setAttribute("data-readany-vertical", "");
+    } else {
+      root.removeAttribute("data-readany-vertical");
+    }
+  }
+  // Idempotent: only unpin when justify is disabled or the layout is
+  // unsupported. When enabled we must NOT unpin first — re-running this on a
+  // later render (after the justify stylesheet is already injected) would
+  // clear a pinned center, and re-reading the alignment would see `start`
+  // (from :has(> br)) instead of the book's center, dropping the alignment.
+  if (!enabled || isUnsupported) {
+    unpinAlignedBrContainers(doc);
+    return;
+  }
+  preserveAlignedBrContainers(doc);
+}
 
 function getAppTheme(): AppTheme {
   if (typeof document === "undefined") return "dark";
@@ -91,10 +156,7 @@ function analyzeCanvasIsLight(canvas: HTMLCanvasElement): boolean {
 }
 
 /** The PDF page canvas is rendered asynchronously (pdf.js); wait until it appears. */
-function waitForPdfPageCanvas(
-  doc: Document,
-  timeoutMs = 5000,
-): Promise<HTMLCanvasElement | null> {
+function waitForPdfPageCanvas(doc: Document, timeoutMs = 5000): Promise<HTMLCanvasElement | null> {
   return new Promise((resolve) => {
     const win = doc.defaultView ?? window;
     const raf =
@@ -830,10 +892,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           isLight = canvas ? analyzeCanvasIsLight(canvas) : true;
           cache.set(index, isLight);
         }
-        doc.documentElement.style.setProperty(
-          "--readany-pdf-filter",
-          isLight ? filter : "none",
-        );
+        doc.documentElement.style.setProperty("--readany-pdf-filter", isLight ? filter : "none");
       },
       [bookKey],
     );
@@ -2043,7 +2102,16 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           }
         })();
       },
-      [appTheme, bookKey, viewSettings, onLoaded, onSectionLoad, isFixedLayout, format, applyPdfPageThemeFilter],
+      [
+        appTheme,
+        bookKey,
+        viewSettings,
+        onLoaded,
+        onSectionLoad,
+        isFixedLayout,
+        format,
+        applyPdfPageThemeFilter,
+      ],
     );
     const docLoadHandlerRef = useRef(docLoadHandlerImpl);
     docLoadHandlerRef.current = docLoadHandlerImpl;
@@ -3118,6 +3186,10 @@ function applyDocumentStyles(
 
   normalizeBrOnlyParagraphs(doc);
   syncRemoteFontStylesInDocument(doc, settings.customFontCssUrls);
+  // Unify justify state: tag vertical/fixed roots, unpin (clean undo), then
+  // pin author-aligned <br> blocks BEFORE the override stylesheet (which
+  // carries the justify fallback) so getComputedStyle sees the book's own CSS.
+  syncJustifyForDoc(doc, settings.justifyBodyText !== false);
   syncReaderOverrideStylesInDocument(doc, getRendererStyles(settings, theme));
 }
 
@@ -3149,9 +3221,9 @@ function normalizeBrOnlyParagraphs(doc: Document) {
   const body = doc.body;
   if (!body || body.querySelectorAll("p").length > 2) return;
 
-  const containers: Element[] = Array.from(body.querySelectorAll("div, section, article, main")).filter(
-    shouldNormalizeBrParagraphContainer,
-  );
+  const containers: Element[] = Array.from(
+    body.querySelectorAll("div, section, article, main"),
+  ).filter(shouldNormalizeBrParagraphContainer);
   if (shouldNormalizeBrParagraphContainer(body)) containers.push(body);
 
   for (const container of containers) {
@@ -3491,6 +3563,8 @@ pre {
   white-space: pre-wrap !important;
   tab-size: 2;
 }
+
+${settings.justifyBodyText !== false ? getJustifyCss() : ""}
 `;
 }
 
@@ -3529,6 +3603,12 @@ function applyRendererStyles(
     lineHeight: settings.lineHeight,
   });
   const styles = getRendererStyles(settings, theme);
+  // Always unpin first (restores the book's own cascade when justify is
+  // disabled), then re-pin author-aligned <br>-containing blocks.
+  for (const content of getRendererContents(view)) {
+    const doc = content?.doc as Document | undefined;
+    if (doc) syncJustifyForDoc(doc, settings.justifyBodyText !== false);
+  }
   renderer.setStyles(styles);
   syncReaderOverrideStyles(view, styles);
 }

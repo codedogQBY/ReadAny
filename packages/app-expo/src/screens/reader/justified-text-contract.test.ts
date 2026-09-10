@@ -69,8 +69,26 @@ describe("justified EPUB text setting", () => {
     expect(template).toContain("settings.justifyBodyText !== undefined");
     expect(template).toContain("syncJustifiedTextForAllDocs()");
     expect(template).toContain("globalThis.ReadAnyJustifiedText?.apply(");
-    expect(buildScript).toContain('"justified-text.js"');
+    // The template asks for the capability-aware stylesheet so old webviews
+    // (no @layer / :has()) get their degraded variant instead of rules they
+    // would drop.
+    expect(template).toContain("getJustifyCss");
+    // The justify engine is bundled from core — the exact same implementation
+    // the desktop viewer imports.
+    expect(buildScript).toContain("core/src/reader");
+    expect(buildScript).toContain("installReadAnyJustifiedText");
     expect(buildScript).toContain("JUSTIFIED_TEXT_MARKER");
-    expect(builtReader).toContain("data-readany-justify-body");
+    // The built reader carries the @layer justify fallback and pins
+    // author-aligned <br> blocks; the old marker-based *marking* logic is gone
+    // (the marker string survives only as a cleanup constant).
+    expect(builtReader).toContain("@layer readany-justify");
+    expect(builtReader).toContain("justifyBodyText");
+    expect(builtReader).toContain("preserveAlignedBrContainers");
+    // Capability detection + fallbacks must survive the esbuild bundle.
+    expect(builtReader).toContain("detectJustifyCapabilities");
+    expect(builtReader).toContain("CSSLayerBlockRule");
+    // The save/restore of the author's own inline alignment must survive too.
+    expect(builtReader).toContain("data-readany-justify-original");
+    expect(builtReader).not.toContain("setAttribute(marker");
   });
 });
