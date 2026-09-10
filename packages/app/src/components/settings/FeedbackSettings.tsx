@@ -4,6 +4,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { getWebviewLabel } from "@/lib/webview-info";
 import {
   collectDeviceInfo,
   collectLogs,
@@ -21,6 +22,8 @@ import type {
   FeedbackType,
 } from "@readany/core/feedback";
 import { cn } from "@readany/core/utils";
+import { getVersion } from "@tauri-apps/api/app";
+import i18n from "i18next";
 import {
   AlertCircle,
   ArrowLeft,
@@ -36,8 +39,6 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import i18n from "i18next";
-import { getVersion } from "@tauri-apps/api/app";
 
 const FEEDBACK_TYPES: {
   key: FeedbackType;
@@ -79,8 +80,14 @@ export function FeedbackSettings() {
   const remaining = getRemainingSubmissions();
 
   const [appVersion, setAppVersion] = useState("...");
+  const [webview, setWebview] = useState("");
   useEffect(() => {
-    getVersion().then(setAppVersion).catch(() => setAppVersion("unknown"));
+    getVersion()
+      .then(setAppVersion)
+      .catch(() => setAppVersion("unknown"));
+    getWebviewLabel()
+      .then((label) => setWebview(label))
+      .catch(() => setWebview(""));
   }, []);
 
   const deviceInfo: DeviceInfo = useMemo(() => {
@@ -94,9 +101,10 @@ export function FeedbackSettings() {
       platform,
       osVersion: navigator.userAgent,
       appVersion,
+      webview: webview || undefined,
       locale: i18n.language || navigator.language,
     });
-  }, [appVersion]);
+  }, [appVersion, webview]);
 
   const loadRecords = useCallback(async (refreshStatus = false) => {
     const history = await getFeedbackHistory();
@@ -300,11 +308,7 @@ export function FeedbackSettings() {
             <span className="text-xs text-muted-foreground">
               {t("feedback.remaining", "今日还可提交 {{count}} 次", { count: remaining })}
             </span>
-            <Button
-              onClick={handleSubmit}
-              disabled={!canSubmit || submitting}
-              className="min-w-28"
-            >
+            <Button onClick={handleSubmit} disabled={!canSubmit || submitting} className="min-w-28">
               {submitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (

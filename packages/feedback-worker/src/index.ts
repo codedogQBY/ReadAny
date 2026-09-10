@@ -18,6 +18,7 @@ interface DeviceInfo {
   platform?: string;
   osVersion?: string;
   appVersion?: string;
+  webview?: string;
   deviceModel?: string;
   locale?: string;
 }
@@ -298,6 +299,7 @@ function buildIssueBody(
     `### Device\n- Platform: ${device.platform ?? "unknown"}`,
     `- OS: ${device.osVersion ?? "unknown"}`,
     `- App: ${device.appVersion ?? "unknown"}`,
+    `- WebView: ${device.webview ?? "unknown"}`,
     `- Locale: ${device.locale ?? "unknown"}`,
   ];
 

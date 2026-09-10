@@ -1,3 +1,5 @@
+import { formatWebviewInfo, parseWebviewInfo } from "@readany/core/utils/webview-info";
+import { Platform } from "react-native";
 import { create } from "zustand";
 
 interface WebviewInfoState {
@@ -27,3 +29,18 @@ export const useWebviewInfoStore = create<WebviewInfoState>((set) => ({
       ...(fullVersion !== undefined ? { fullVersion } : {}),
     }),
 }));
+
+/**
+ * Engine + build label for About and feedback payloads
+ * ("Android WebView 138.0.7204.67"). Before the probe/bridge has reported a
+ * UA, falls back to the engine name only.
+ */
+export function useWebviewLabel(): string {
+  const ua = useWebviewInfoStore((s) => s.ua);
+  const fullVersion = useWebviewInfoStore((s) => s.fullVersion);
+  const parsed = ua ? parseWebviewInfo(ua) : null;
+  if (!parsed) {
+    return Platform.OS === "ios" ? "WebKit" : Platform.OS === "android" ? "Android WebView" : "";
+  }
+  return formatWebviewInfo({ ...parsed, version: fullVersion ?? parsed.version });
+}

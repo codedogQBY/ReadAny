@@ -1,9 +1,8 @@
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { useUpdateStore } from "@/stores/update-store";
-import { useWebviewInfoStore } from "@/stores/webview-info-store";
+import { useWebviewLabel } from "@/stores/webview-info-store";
 import { getPlatformService } from "@readany/core/services";
 import { checkForUpdate } from "@readany/core/update";
-import { formatWebviewInfo, parseWebviewInfo } from "@readany/core/utils/webview-info";
 import * as Clipboard from "expo-clipboard";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -12,7 +11,6 @@ import {
   Alert,
   Image,
   Linking,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -56,16 +54,7 @@ export default function AboutScreen() {
 
   // Filled at startup by the hidden UA probe webview (see UAProbe), and kept
   // fresh by the reader WebView on every book load via the bridge.
-  const readerUa = useWebviewInfoStore((s) => s.ua);
-  // Client Hints full build (e.g. 138.0.7204.67) — the plain UA parse yields a
-  // reduced x.0.0.0 on modern Chromium WebViews.
-  const fullVersion = useWebviewInfoStore((s) => s.fullVersion);
-  const parsed = readerUa ? parseWebviewInfo(readerUa) : null;
-  const webviewLabel = parsed
-    ? formatWebviewInfo({ ...parsed, version: fullVersion ?? parsed.version })
-    : Platform.OS === "ios"
-      ? "WebKit"
-      : "Android WebView";
+  const webviewLabel = useWebviewLabel();
 
   const handleCopyVersion = useCallback(async () => {
     const versionInfo = [`ReadAny v${version}`, webviewLabel].filter(Boolean).join("\n");
