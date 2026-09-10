@@ -197,23 +197,37 @@ function preserveAlignedBrContainers(doc: Document) {
     });
   }
   for (const container of containers) {
+    const htmlContainer = container as HTMLElement;
     const align = inheritAlign(container);
-    if (preserved.has(align)) {
-      (container as HTMLElement).style.textAlign = align;
-      container.setAttribute("data-readany-justify-pinned", "");
-    } else {
-      // Unaligned br-bearing block (poetry/lyrics): force start so short lines
-      // are not stretched by the body justify.
-      (container as HTMLElement).style.textAlign = "start";
+    const pinnedValue = preserved.has(align) ? align : "start";
+    // Remember the element's own inline text-align (if any) BEFORE we touch
+    // it, so disabling justify can put it back verbatim. Only captured on
+    // first pin — re-running apply must not mistake our own pinned value for
+    // the book's original.
+    if (!htmlContainer.hasAttribute("data-readany-justify-original")) {
+      htmlContainer.setAttribute(
+        "data-readany-justify-original",
+        htmlContainer.style.getPropertyValue("text-align"),
+      );
     }
+    htmlContainer.style.setProperty("text-align", pinnedValue);
+    htmlContainer.setAttribute("data-readany-justify-pinned", "");
   }
 }
 
-/** Remove every text-align we pinned, restoring the book's own cascade. */
+/** Remove every text-align we pinned, restoring each element's original
+ * inline text-align exactly (or removing ours when there was none). */
 function unpinAlignedBrContainers(doc: Document) {
   if (!doc) return;
   for (const el of doc.querySelectorAll("[data-readany-justify-pinned]")) {
-    (el as HTMLElement).style.removeProperty("text-align");
+    const htmlEl = el as HTMLElement;
+    const original = el.getAttribute("data-readany-justify-original") ?? "";
+    if (original) {
+      htmlEl.style.setProperty("text-align", original);
+    } else {
+      htmlEl.style.removeProperty("text-align");
+    }
+    el.removeAttribute("data-readany-justify-original");
     el.removeAttribute("data-readany-justify-pinned");
   }
 }

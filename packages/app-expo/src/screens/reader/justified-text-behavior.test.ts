@@ -18,32 +18,52 @@ interface FakeElementChild {
   tagName: string;
 }
 
+const kebabToCamel = (p: string) => p.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+
 class FakeContainer {
-  readonly style: Record<string, string> & { removeProperty?: (p: string) => void } = {};
-  readonly attrs = new Set<string>();
+  readonly style: Record<string, string> & {
+    removeProperty?: (p: string) => void;
+    setProperty?: (p: string, value: string) => void;
+    getPropertyValue?: (p: string) => string;
+  } = {};
+  readonly attrs = new Map<string, string>();
   readonly children: FakeElementChild[];
 
   constructor(
     public readonly textAlign: string,
     public readonly hasLineBreak = false,
+    /** Inline text-align the book itself set before we pin (null = none). */
+    public readonly inlineTextAlign: string | null = null,
   ) {
     this.style.removeProperty = (prop: string) => {
-      Reflect.deleteProperty(this.style, prop);
+      Reflect.deleteProperty(this.style, kebabToCamel(prop));
+    };
+    this.style.setProperty = (prop: string, value: string) => {
+      this.style[kebabToCamel(prop)] = value;
+    };
+    this.style.getPropertyValue = (prop: string) => {
+      // Once pinned the inline value is ours; before that it's the book's.
+      if (this.attrs.has(PIN_ATTR)) return this.style[kebabToCamel(prop)] ?? "";
+      return prop === "text-align" ? (this.inlineTextAlign ?? "") : "";
     };
     this.children = hasLineBreak ? [{ tagName: "BR" }] : [];
   }
 
-  setAttribute(name: string, _value: string): void {
-    this.attrs.add(name);
+  setAttribute(name: string, value: string): void {
+    this.attrs.set(name, value);
   }
 
-  getAttribute(_name: string): string | null {
-    return null;
+  getAttribute(name: string): string | null {
+    return this.attrs.get(name) ?? null;
+  }
+
+  hasAttribute(name: string): boolean {
+    return this.attrs.has(name);
   }
 
   removeAttribute(name: string): void {
     this.attrs.delete(name);
-    Reflect.deleteProperty(this.style, "textAlign");
+    Reflect.deleteProperty(this.style, kebabToCamel(name));
   }
 }
 
@@ -188,6 +208,37 @@ describe("reader-side justified text helper", () => {
     // same doc becomes unsupported (vertical) → unpin
     api.apply(doc, true, true);
     expect(centered.style.textAlign).toBeUndefined();
+  });
+
+  it("restores an author's pre-existing inline alignment when unpinning", () => {
+    const api = loadHelper();
+    expect(api).not.toBeNull();
+    if (!api) return;
+
+    // The book itself set inline text-align: center on this block.
+    const centered = new FakeContainer("center", true, "center");
+    const doc = new FakeDoc([centered]);
+
+    api.apply(doc, true, false);
+    expect(centered.attrs.get("data-readany-justify-original")).toBe("center");
+    api.apply(doc, false, false);
+    // The author's own inline center must come back verbatim, not be wiped.
+    expect(centered.style.textAlign).toBe("center");
+  });
+
+  it("does not mistake the pinned value for the original across repeated apply", () => {
+    const api = loadHelper();
+    expect(api).not.toBeNull();
+    if (!api) return;
+
+    const centered = new FakeContainer("center", true, "center");
+    const doc = new FakeDoc([centered]);
+
+    api.apply(doc, true, false);
+    api.apply(doc, true, false);
+    expect(centered.attrs.get("data-readany-justify-original")).toBe("center");
+    api.apply(doc, false, false);
+    expect(centered.style.textAlign).toBe("center");
   });
 
   it("exports the @layer justify stylesheet scoped to horizontal text", () => {

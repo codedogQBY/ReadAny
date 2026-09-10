@@ -306,8 +306,11 @@
   }
 
   // Inline alignment we pin so author alignment survives our start rule. We
-  // mark pinned elements so disabling justify can remove exactly what we added.
+  // mark pinned elements and record their PREVIOUS inline text-align so
+  // disabling justify restores exactly what the book had — removing the
+  // property outright would also wipe an author's own inline alignment.
   const PIN_ATTR = "data-readany-justify-pinned";
+  const ORIGINAL_ATTR = "data-readany-justify-original";
 
   function isVerticalDoc(doc) {
     if (!doc?.documentElement || !doc?.defaultView) return false;
@@ -419,24 +422,36 @@
     const containers = collectBrContainers(doc, caps);
     for (const container of containers) {
       const align = inheritAlign(container);
-      if (PRESERVED_ALIGNMENTS.has(align)) {
-        container.style.textAlign = align;
-        container.setAttribute(PIN_ATTR, "");
-      } else {
-        // Unaligned br-bearing block (poetry/lyrics): force start so short
-        // lines are not stretched by the body justify.
-        container.style.textAlign = "start";
+      const pinnedValue = PRESERVED_ALIGNMENTS.has(align) ? align : "start";
+      // Remember the element's own inline text-align (if any) BEFORE we touch
+      // it, so disabling justify can put it back verbatim. Only captured on
+      // first pin — re-running apply must not mistake our own pinned value for
+      // the book's original.
+      if (!container.hasAttribute(PIN_ATTR)) {
+        container.setAttribute(
+          ORIGINAL_ATTR,
+          container.style.getPropertyValue("text-align"),
+        );
       }
+      container.style.setProperty("text-align", pinnedValue);
+      container.setAttribute(PIN_ATTR, "");
     }
   }
 
-  // Remove every text-align we pinned previously, restoring the book's own
-  // cascade exactly. Used when justify is disabled or the layout is
-  // unsupported, so toggling off is a clean, complete undo.
+  // Remove every text-align we pinned previously, restoring each element's
+  // original inline text-align exactly (or removing ours when there was none),
+  // so the book's own cascade is restored bit-for-bit. Used when justify is
+  // disabled or the layout is unsupported.
   function unpinAlignedBrContainers(doc) {
     if (!doc) return;
     for (const el of doc.querySelectorAll(`[${PIN_ATTR}]`)) {
-      el.style.removeProperty("text-align");
+      const original = el.getAttribute(ORIGINAL_ATTR) ?? "";
+      if (original) {
+        el.style.setProperty("text-align", original);
+      } else {
+        el.style.removeProperty("text-align");
+      }
+      el.removeAttribute(ORIGINAL_ATTR);
       el.removeAttribute(PIN_ATTR);
     }
   }
