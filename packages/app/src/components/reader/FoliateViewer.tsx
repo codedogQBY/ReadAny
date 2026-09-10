@@ -2060,13 +2060,15 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           viewRef.current?.renderer && typeof viewRef.current.renderer.pages === "number"
             ? viewRef.current.renderer.pages
             : null;
+        // renderer.page is 0-based and renderer.pages is the real page count:
+        // the renderer adds no padding pages around a section.
         const detail: RelocateDetail =
-          rendererPage != null && rendererPages != null && rendererPages > 2
+          rendererPage != null && rendererPages != null && rendererPages > 0
             ? {
                 ...rawDetail,
                 page: {
-                  current: Math.max(1, Math.min(rendererPage, rendererPages - 2)),
-                  total: Math.max(1, rendererPages - 2),
+                  current: Math.min(Math.max(rendererPage + 1, 1), rendererPages),
+                  total: rendererPages,
                 },
               }
             : rawDetail;
