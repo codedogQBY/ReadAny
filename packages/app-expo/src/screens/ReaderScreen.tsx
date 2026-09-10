@@ -3,6 +3,7 @@ import { BookmarkRibbon } from "@/components/reader/BookmarkRibbon";
 import { ChapterTranslationSheet } from "@/components/reader/ChapterTranslationSheet";
 import { ReadingProgressSlider } from "@/components/reader/ReadingProgressSlider";
 import { SelectionPopover } from "@/components/reader/SelectionPopover";
+import { ImageViewerModal } from "@/components/reader/ImageViewerModal";
 import { TTSPage } from "@/components/reader/TTSPage";
 import { TranslationPanel } from "@/components/reader/TranslationPanel";
 import {
@@ -149,11 +150,7 @@ const NOTE_TOOLTIP_TOP_THRESHOLD = 180;
 import { useRubyStore } from "@readany/core/stores/ruby-store";
 import { ReaderSettingsPanel } from "./reader/ReaderSettingsPanel";
 import { ReaderTOCPanel } from "./reader/ReaderTOCPanel";
-import {
-  CONTROLS_TIMEOUT,
-  SCREEN_HEIGHT,
-  SCREEN_WIDTH,
-} from "./reader/reader-constants";
+import { CONTROLS_TIMEOUT, SCREEN_HEIGHT, SCREEN_WIDTH } from "./reader/reader-constants";
 import { BatteryIcon, ListIcon, SettingsIcon } from "./reader/reader-icons";
 import { makeStyles, noteTooltipMdStyles } from "./reader/reader-styles";
 import { useReaderBookmark } from "./reader/useReaderBookmark";
@@ -241,6 +238,7 @@ export function ReaderScreen({ route, navigation }: Props) {
   const [readerHtmlUri, setReaderHtmlUri] = useState<string | null>(null);
   const [currentCfi, setCurrentCfi] = useState("");
   const [selection, setSelection] = useState<SelectionEvent | null>(null);
+  const [imageViewerSource, setImageViewerSource] = useState<string | null>(null);
   const [fontServerUrl, setFontServerUrl] = useState<string | null>(null);
   const [noteViewHighlight, setNoteViewHighlight] = useState<{
     id: string;
@@ -813,6 +811,7 @@ export function ReaderScreen({ route, navigation }: Props) {
       }
       toggleControls();
     },
+    onImageTap: ({ src }) => setImageViewerSource(src),
     onToggleBookmark: () => {
       handleToggleBookmark();
     },
@@ -908,10 +907,25 @@ export function ReaderScreen({ route, navigation }: Props) {
       appActive,
     // 维护约定：任何新增遮盖正文/输入态/导航跳转，必须在此追加判定。
     [
-      readSettings.volumeButtonsPageTurn, webViewReady, loading, error, isReimporting,
-      showSearch, showTOC, showSettings, showNotebook, showTTS,
-      showTranslation, showChapterTranslation, chapterTranslation.state.status,
-      selection, noteViewHighlight, noteTooltip, ttsPlayState, isFocused, appActive,
+      readSettings.volumeButtonsPageTurn,
+      webViewReady,
+      loading,
+      error,
+      isReimporting,
+      showSearch,
+      showTOC,
+      showSettings,
+      showNotebook,
+      showTTS,
+      showTranslation,
+      showChapterTranslation,
+      chapterTranslation.state.status,
+      selection,
+      noteViewHighlight,
+      noteTooltip,
+      ttsPlayState,
+      isFocused,
+      appActive,
     ],
   );
 
@@ -2030,6 +2044,7 @@ export function ReaderScreen({ route, navigation }: Props) {
       />
 
       {/* ─── Notebook Panel ─── */}
+      <ImageViewerModal source={imageViewerSource} onClose={() => setImageViewerSource(null)} />
       <Modal
         visible={showNotebook}
         transparent

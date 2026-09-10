@@ -2684,6 +2684,17 @@ html, body {
         }
 
         const target = e.target || state.target;
+        const imageTarget = target && target.closest ? target.closest('img, picture, svg, image, canvas') : null;
+        if (imageTarget) {
+          e.preventDefault();
+          e.stopPropagation();
+          const image = imageTarget.matches && imageTarget.matches('img')
+            ? imageTarget
+            : imageTarget.querySelector && imageTarget.querySelector('img');
+          const src = image && (image.currentSrc || image.src);
+          if (src) postToRN('imageTap', { src, alt: image.alt || '' });
+          return;
+        }
         const interactiveTarget = target && target.closest
           ? target.closest('a[href], audio, video, button, input, select, textarea')
           : null;
