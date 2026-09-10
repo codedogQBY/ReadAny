@@ -33,3 +33,19 @@ export {
   compareCfiPosition,
   sortAnnotationsByPosition,
 } from "./annotation-order";
+
+// Justified body text (shared by desktop viewer and mobile reader WebView)
+export {
+  applyJustifiedText,
+  BR_CONTAINER_SELECTOR,
+  buildJustifyCss,
+  collectBrContainers,
+  detectJustifyCapabilities,
+  installReadAnyJustifiedText,
+  JUSTIFY_CSS,
+  ORIGINAL_ATTR,
+  pinAlignedBrContainers,
+  PIN_ATTR,
+  unpinAlignedBrContainers,
+} from "./justified-text";
+export type { JustifyCapabilities } from "./justified-text";

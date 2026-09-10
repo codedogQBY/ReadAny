@@ -14,6 +14,13 @@ import type {
 } from "@readany/core/translation/chapter-translator";
 import { cleanText, isTTSFootnoteMarker, shouldSkipTTSNode } from "@readany/core/tts";
 import type { ViewSettings } from "@readany/core/types";
+import {
+  buildJustifyCss,
+  detectJustifyCapabilities,
+  pinAlignedBrContainers,
+  unpinAlignedBrContainers,
+  type JustifyCapabilities,
+} from "@readany/core/reader/justified-text";
 import { Overlayer } from "foliate-js/overlayer.js";
 import { marked } from "marked";
 /**
@@ -44,192 +51,30 @@ const THEME_COLORS: Record<AppTheme, { bg: string; fg: string; link: string }> =
 const READER_OVERRIDE_STYLE_ID = "__readany_reader_overrides__";
 
 /**
- * Engine capability detection for the CSS features the justify fallback
- * relies on. Support floors (caniuse): `:has()` needs Chromium 105 /
- * Safari 15.4 / WebKitGTK 2.36; `@layer` needs Chromium 99 / Safari 15.4 /
- * WebKitGTK 2.36; `:where()` needs Chromium 88 / Safari 14 / WebKitGTK 2.32.
- * Below those lines the degradations are dangerous by default: engines that
- * don't know `@layer` discard the ENTIRE layer block (justify silently
- * disappears), and `:has()` makes the whole containing rule drop plus
- * querySelectorAll throws. `CSSLayerBlockRule` exists exactly when @layer is
- * supported; CSS.supports("selector(...)") answers :has()/:where() honestly
- * on engines that have CSS.supports at all (Chromium 28+). On engines without
- * it (below our practical floor) we optimistically assume support — the
- * guarded br scan still protects the runtime if the guess is wrong.
- * Mirrors packages/app-expo/assets/reader/justified-text.js.
+ * Justified body text — the full engine lives in core
+ * (packages/core/src/reader/justified-text.ts) and is shared with the mobile
+ * reader WebView: capability fallbacks for @layer/:has-less webviews, CSS
+ * generation (layered / :where()-zeroed / bare per capability set), and the
+ * alignment pinning with original-inline-value restore. This file only adds
+ * the desktop runtime bits: capability memoization for the app's own webview,
+ * and the Client Hints lookup for the full WebView2 build shown in About
+ * (see lib/webview-info.ts).
  */
-interface JustifyCapabilities {
-  hasLayer: boolean;
-  hasHas: boolean;
-  hasWhere: boolean;
-}
-
 let justifyCapabilitiesCache: JustifyCapabilities | null = null;
 
 function getJustifyCapabilities(): JustifyCapabilities {
-  if (justifyCapabilitiesCache) return justifyCapabilitiesCache;
-  const view = window as unknown as Record<string, unknown>;
-  let hasLayer = false;
-  try {
-    hasLayer = typeof view.CSSLayerBlockRule !== "undefined";
-  } catch {
-    hasLayer = false;
+  if (!justifyCapabilitiesCache) {
+    justifyCapabilitiesCache = detectJustifyCapabilities(window);
   }
-  const supportsSelector = (condition: string): boolean => {
-    try {
-      const css = view.CSS as { supports?: (c: string) => boolean } | undefined;
-      if (!css || typeof css.supports !== "function") return true;
-      return Boolean(css.supports.call(css, condition));
-    } catch {
-      return true;
-    }
-  };
-  justifyCapabilitiesCache = {
-    hasLayer,
-    hasHas: supportsSelector("selector(:has(> br))"),
-    hasWhere: supportsSelector("selector(:where(p))"),
-  };
   return justifyCapabilitiesCache;
 }
 
-/**
- * Build the justify stylesheet for the detected capability set. Layered when
- * @layer exists (strongest "never override the book" guarantee); otherwise
- * unlayered with every selector wrapped in :where() (specificity 0) when the
- * engine has :where, so book rules with real specificity still win. The
- * br-container rule requires :has() — without it the JS scan pins those
- * blocks inline instead. Mirrors justified-text.js buildJustifyCss().
- */
 function getJustifyCss(): string {
-  const caps = getJustifyCapabilities();
-  const guard = ":root:not([data-readany-vertical])";
-  const scoped = (baseSelector: string) =>
-    caps.hasWhere ? `:where(${guard} ${baseSelector})` : `${guard} ${baseSelector}`;
-  const rules = [`${scoped("body")} { text-align: justify; }`];
-  // Authored `text-wrap: pretty` (e.g. Standard Ebooks core.css) makes engines
-  // that justify with it overshoot inter-word gaps. When justify is on the
-  // reader owns line breaking: reset only the style longhand, so an authored
-  // nowrap mode survives. Borrowed from readest (#5582).
-  rules.push(
-    `${["html", "body", "p", "li", "blockquote", "dd"]
-      .map((t) => scoped(t))
-      .join(", ")} { text-wrap-style: auto !important; }`,
-  );
-  if (caps.hasHas) {
-    rules.push(`${scoped("*:has(> br)")} { text-align: start; }`);
-  }
-  const excludeTargets = ["pre", "code", "kbd", "samp", "table", "caption", "figcaption", "form"];
-  rules.push(`${excludeTargets.map((t) => scoped(t)).join(", ")} { text-align: start; }`);
-  return caps.hasLayer
-    ? `@layer readany-justify {\n${rules.map((rule) => `  ${rule}`).join("\n")}\n}`
-    : rules.join("\n");
+  return buildJustifyCss(getJustifyCapabilities());
 }
 
-/**
- * Pin author-aligned, <br>-containing blocks to their computed alignment.
- * When justify is on, body { text-align: justify } would stretch short lines
- * inside blocks that contain <br> — but only for blocks the author left
- * unaligned. Blocks the author aligned (center/right/end, via class, id,
- * inline style, align attribute or an aligned ancestor) must keep their
- * alignment. CSS cannot see the computed alignment, so we read it here and
- * pin it inline; inline style beats the @layer rule.
- *
- * Call BEFORE injecting the justify stylesheet so getComputedStyle reflects
- * the book's own CSS, not our injected rules.
- */
 function preserveAlignedBrContainers(doc: Document) {
-  if (!doc?.defaultView) return;
-  const selector =
-    "p, div, blockquote, dd, li, h1, h2, h3, h4, h5, h6, td, th, section, article, caption, figcaption";
-  // Alignments that differ from the start edge and must be preserved. `left` /
-  // `start` render identically to the fallback; `justify` is our own request.
-  const preserved = new Set(["center", "right", "end", "-webkit-center", "-webkit-right"]);
-  const inheritAlign = (el: Element): string => {
-    // First honour explicit align="" attributes on the element or its
-    // ancestors — these may not produce a computed text-align in the reader's
-    // sandboxed document, so they must be read directly.
-    let cur: Element | null = el;
-    while (cur) {
-      const al = cur.getAttribute("align")?.toLowerCase();
-      if (al) {
-        if (al === "center") return "center";
-        if (al === "right") return "right";
-        if (al === "left") return "start";
-        if (al === "justify") return "justify";
-      }
-      cur = cur.parentElement;
-    }
-    // The element itself may report `start` because our `:has(> br) { text-align:
-    // start }` rule directly applies and overrides an inherited center/right —
-    // read the nearest ancestor's alignment instead. (In the reader the justify
-    // stylesheet is already injected when this runs, so the element's own
-    // computed alignment is polluted.)
-    cur = el;
-    while (cur) {
-      const a = String(doc.defaultView?.getComputedStyle(cur).textAlign || "").toLowerCase();
-      if (a !== "start" && a !== "inherit") return a;
-      cur = cur.parentElement;
-    }
-    return "start";
-  };
-  // :has()-capable engines answer with one query; engines without :has (or
-  // where querySelectorAll rejects it) fall back to the plain block list
-  // filtered by iterating children — an API set that works everywhere. The
-  // fallback filter reads no computed styles, so it stays cheap even though
-  // it walks every block.
-  const caps = getJustifyCapabilities();
-  let containers: Element[] = [];
-  let needFallbackScan = !caps.hasHas;
-  if (caps.hasHas) {
-    try {
-      containers = Array.from(doc.querySelectorAll(`:is(${selector}):has(> br)`));
-    } catch {
-      needFallbackScan = true;
-    }
-  }
-  if (needFallbackScan) {
-    containers = Array.from(doc.querySelectorAll(selector)).filter((el) => {
-      const children = el.children;
-      for (let i = 0; i < children.length; i++) {
-        if (children[i].tagName === "BR") return true;
-      }
-      return false;
-    });
-  }
-  for (const container of containers) {
-    const htmlContainer = container as HTMLElement;
-    const align = inheritAlign(container);
-    const pinnedValue = preserved.has(align) ? align : "start";
-    // Remember the element's own inline text-align (if any) BEFORE we touch
-    // it, so disabling justify can put it back verbatim. Only captured on
-    // first pin — re-running apply must not mistake our own pinned value for
-    // the book's original.
-    if (!htmlContainer.hasAttribute("data-readany-justify-original")) {
-      htmlContainer.setAttribute(
-        "data-readany-justify-original",
-        htmlContainer.style.getPropertyValue("text-align"),
-      );
-    }
-    htmlContainer.style.setProperty("text-align", pinnedValue);
-    htmlContainer.setAttribute("data-readany-justify-pinned", "");
-  }
-}
-
-/** Remove every text-align we pinned, restoring each element's original
- * inline text-align exactly (or removing ours when there was none). */
-function unpinAlignedBrContainers(doc: Document) {
-  if (!doc) return;
-  for (const el of doc.querySelectorAll("[data-readany-justify-pinned]")) {
-    const htmlEl = el as HTMLElement;
-    const original = el.getAttribute("data-readany-justify-original") ?? "";
-    if (original) {
-      htmlEl.style.setProperty("text-align", original);
-    } else {
-      htmlEl.style.removeProperty("text-align");
-    }
-    el.removeAttribute("data-readany-justify-original");
-    el.removeAttribute("data-readany-justify-pinned");
-  }
+  pinAlignedBrContainers(doc, getJustifyCapabilities());
 }
 
 /**

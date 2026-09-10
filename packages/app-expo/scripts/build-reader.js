@@ -9,10 +9,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const FOLIATE_DIR = path.resolve(__dirname, "../../foliate-js");
+const CORE_READER = path.resolve(__dirname, "../../core/src/reader");
 const ASSETS_DIR = path.resolve(__dirname, "../assets/reader");
 const TEMPLATE = path.resolve(ASSETS_DIR, "reader.template.html");
 const OUTPUT = path.resolve(ASSETS_DIR, "reader.html");
-const JUSTIFIED_TEXT = path.resolve(ASSETS_DIR, "justified-text.js");
 
 async function buildReader() {
   // Create a temporary entry point
@@ -59,9 +59,27 @@ async function buildReader() {
 
     const bundledJS = result.outputFiles[0].text;
 
+    // Bundle the shared justified-text engine from core — the exact same
+    // implementation the desktop viewer imports — and install it on the
+    // reader's globalThis (unminified so the logic stays auditable).
+    const justifyResult = await esbuild.build({
+      stdin: {
+        contents: `
+          import { installReadAnyJustifiedText } from "${CORE_READER.replace(/\\/g, "/")}/justified-text";
+          installReadAnyJustifiedText(globalThis);
+        `,
+        resolveDir: path.resolve(__dirname, "../../core/src/reader"),
+        sourcefile: "justified-text-entry.ts",
+      },
+      bundle: true,
+      format: "iife",
+      target: "es2020",
+      write: false,
+    });
+    const justifiedText = justifyResult.outputFiles[0].text;
+
     // Read the template HTML and reader-side helper sources (never modified)
     const template = fs.readFileSync(TEMPLATE, "utf-8");
-    const justifiedText = fs.readFileSync(JUSTIFIED_TEXT, "utf-8");
 
     const JUSTIFIED_TEXT_MARKER = "<!-- __READANY_JUSTIFIED_TEXT_INSERT_POINT_6c18f4d2__ -->";
     const justifiedTextParts = template.split(JUSTIFIED_TEXT_MARKER);

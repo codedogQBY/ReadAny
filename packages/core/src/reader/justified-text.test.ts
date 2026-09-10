@@ -1,16 +1,13 @@
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
+import {
+  applyJustifiedText,
+  buildJustifyCss,
+  detectJustifyCapabilities,
+  JUSTIFY_CSS,
+  ORIGINAL_ATTR,
+  PIN_ATTR,
+} from "./justified-text";
 
-const helperPath = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "../../../assets/reader/justified-text.js",
-);
-
-const OLD_MARKER = "data-readany-justify-body";
-const PIN_ATTR = "data-readany-justify-pinned";
 const BR_SELECTOR =
   "p, div, blockquote, dd, li, h1, h2, h3, h4, h5, h6, td, th, section, article, caption, figcaption";
 
@@ -84,8 +81,9 @@ class FakeDoc {
   ) {}
 
   get defaultView() {
-    const layerSupported = this.capabilities.layerSupported ?? true;
-    const supports = this.capabilities.supports ?? (() => true);
+    const self = this;
+    const layerSupported = self.capabilities.layerSupported ?? true;
+    const supports = self.capabilities.supports ?? (() => true);
     return {
       CSSLayerBlockRule: layerSupported ? function FakeLayerBlockRule() {} : undefined,
       CSS: {
@@ -104,7 +102,6 @@ class FakeDoc {
       return this.containers.filter((container) => container.hasLineBreak);
     }
     if (selector === BR_SELECTOR) return this.containers;
-    if (selector === `[${OLD_MARKER}]`) return [];
     if (selector === `[${PIN_ATTR}]`) {
       return this.containers.filter((container) => container.attrs.has(PIN_ATTR));
     }
@@ -116,40 +113,19 @@ class FakeDoc {
   }
 }
 
-interface JustifiedTextApi {
-  apply: (doc: FakeDoc, enabled: boolean, unsupportedLayout: boolean) => void;
-  preserveAlignedBrContainers: (doc: FakeDoc, caps?: unknown) => void;
-  detectJustifyCapabilities: (doc: FakeDoc) => {
-    hasLayer: boolean;
-    hasHas: boolean;
-    hasWhere: boolean;
-  };
-  buildJustifyCss: (caps: { hasLayer: boolean; hasHas: boolean; hasWhere: boolean }) => string;
-  getJustifyCss: (doc: FakeDoc) => string;
-  JUSTIFY_CSS: string;
-}
-
-function loadHelper(): JustifiedTextApi | null {
-  if (!existsSync(helperPath)) return null;
-  const context: Record<string, unknown> = {};
-  context.globalThis = context;
-  runInNewContext(readFileSync(helperPath, "utf8"), context);
-  return context.ReadAnyJustifiedText as JustifiedTextApi;
+function asDoc(doc: FakeDoc): Document {
+  return doc as unknown as Document;
 }
 
 describe("reader-side justified text helper", () => {
   it("pins only author-aligned <br>-containing blocks to their alignment", () => {
-    const api = loadHelper();
-    expect(api).not.toBeNull();
-    if (!api) return;
-
     const left = new FakeContainer("left", true);
     const centered = new FakeContainer("center", true);
     const right = new FakeContainer("right", true);
     const noBr = new FakeContainer("center", false);
     const doc = new FakeDoc([left, centered, right, noBr]);
 
-    api.apply(doc, true, false);
+    applyJustifiedText(asDoc(doc), true, false);
 
     // author-aligned, <br>-containing blocks get pinned inline + marked
     expect(centered.style.textAlign).toBe("center");
@@ -163,123 +139,70 @@ describe("reader-side justified text helper", () => {
   });
 
   it("unpins previously pinned alignment when disabled (clean undo)", () => {
-    const api = loadHelper();
-    expect(api).not.toBeNull();
-    if (!api) return;
-
     const centered = new FakeContainer("center", true);
     const doc = new FakeDoc([centered]);
 
     // enable → pins
-    api.apply(doc, true, false);
+    applyJustifiedText(asDoc(doc), true, false);
     expect(centered.style.textAlign).toBe("center");
     expect(centered.attrs.has(PIN_ATTR)).toBe(true);
 
     // disable → unpins, restoring the book's own cascade
-    api.apply(doc, false, false);
+    applyJustifiedText(asDoc(doc), false, false);
     expect(centered.style.textAlign).toBeUndefined();
     expect(centered.attrs.has(PIN_ATTR)).toBe(false);
   });
 
   it("does nothing when the justify setting is disabled", () => {
-    const api = loadHelper();
-    expect(api).not.toBeNull();
-    if (!api) return;
-
     const centered = new FakeContainer("center", true);
     const doc = new FakeDoc([centered]);
 
-    api.apply(doc, false, false);
+    applyJustifiedText(asDoc(doc), false, false);
     expect(centered.style.textAlign).toBeUndefined();
   });
 
   it("skips unsupported (vertical / fixed) layouts and unpins leftovers", () => {
-    const api = loadHelper();
-    expect(api).not.toBeNull();
-    if (!api) return;
-
     const centered = new FakeContainer("center", true);
     const doc = new FakeDoc([centered]);
 
     // enable in a normal layout → pins
-    api.apply(doc, true, false);
+    applyJustifiedText(asDoc(doc), true, false);
     expect(centered.style.textAlign).toBe("center");
 
     // same doc becomes unsupported (vertical) → unpin
-    api.apply(doc, true, true);
+    applyJustifiedText(asDoc(doc), true, true);
     expect(centered.style.textAlign).toBeUndefined();
   });
 
-  it("restores an author's pre-existing inline alignment when unpinning", () => {
-    const api = loadHelper();
-    expect(api).not.toBeNull();
-    if (!api) return;
-
-    // The book itself set inline text-align: center on this block.
-    const centered = new FakeContainer("center", true, "center");
-    const doc = new FakeDoc([centered]);
-
-    api.apply(doc, true, false);
-    expect(centered.attrs.get("data-readany-justify-original")).toBe("center");
-    api.apply(doc, false, false);
-    // The author's own inline center must come back verbatim, not be wiped.
-    expect(centered.style.textAlign).toBe("center");
-  });
-
-  it("does not mistake the pinned value for the original across repeated apply", () => {
-    const api = loadHelper();
-    expect(api).not.toBeNull();
-    if (!api) return;
-
-    const centered = new FakeContainer("center", true, "center");
-    const doc = new FakeDoc([centered]);
-
-    api.apply(doc, true, false);
-    api.apply(doc, true, false);
-    expect(centered.attrs.get("data-readany-justify-original")).toBe("center");
-    api.apply(doc, false, false);
-    expect(centered.style.textAlign).toBe("center");
-  });
-
   it("exports the @layer justify stylesheet scoped to horizontal text", () => {
-    const api = loadHelper();
-    expect(api).not.toBeNull();
-    if (!api) return;
-
-    expect(api.JUSTIFY_CSS).toContain("@layer readany-justify");
-    expect(api.JUSTIFY_CSS).toContain(
+    expect(JUSTIFY_CSS).toContain("@layer readany-justify");
+    expect(JUSTIFY_CSS).toContain(
       ":root:not([data-readany-vertical]) body { text-align: justify; }",
     );
-    expect(api.JUSTIFY_CSS).toContain(
-      ":root:not([data-readany-vertical]) :where(*:has(> br)) { text-align: start; }",
+    // Inside @layer the selectors stay bare — the layer position alone
+    // guarantees unlayered book styles win, no :where() needed.
+    expect(JUSTIFY_CSS).toContain(
+      ":root:not([data-readany-vertical]) *:has(> br) { text-align: start; }",
     );
-    expect(api.JUSTIFY_CSS).toContain("figcaption");
-    expect(api.JUSTIFY_CSS).toContain("text-align: start;");
+    expect(JUSTIFY_CSS).toContain("figcaption");
+    expect(JUSTIFY_CSS).toContain("text-align: start;");
     // Justify owns line breaking: authored text-wrap: pretty must be
     // neutralized (readest #5582).
-    expect(api.JUSTIFY_CSS).toContain("text-wrap-style: auto !important;");
+    expect(JUSTIFY_CSS).toContain("text-wrap-style: auto !important;");
   });
 
   it("detects modern engines as fully capable", () => {
-    const api = loadHelper();
-    expect(api).not.toBeNull();
-    if (!api) return;
-
     const doc = new FakeDoc([]);
-    const caps = api.detectJustifyCapabilities(doc);
+    const caps = detectJustifyCapabilities(doc.defaultView);
     expect(caps).toEqual({ hasLayer: true, hasHas: true, hasWhere: true });
   });
 
   it("detects missing @layer / :has() / :where() from the engine", () => {
-    const api = loadHelper();
-    expect(api).not.toBeNull();
-    if (!api) return;
-
     const oldEngine = new FakeDoc([], {
       layerSupported: false,
       supports: (condition: string) => !condition.includes(":has") && !condition.includes(":where"),
     });
-    expect(api.detectJustifyCapabilities(oldEngine)).toEqual({
+    expect(detectJustifyCapabilities(oldEngine.defaultView)).toEqual({
       hasLayer: false,
       hasHas: false,
       hasWhere: false,
@@ -289,7 +212,7 @@ describe("reader-side justified text helper", () => {
       layerSupported: true,
       supports: (condition: string) => !condition.includes(":has"),
     });
-    expect(api.detectJustifyCapabilities(midEngine)).toEqual({
+    expect(detectJustifyCapabilities(midEngine.defaultView)).toEqual({
       hasLayer: true,
       hasHas: false,
       hasWhere: true,
@@ -297,10 +220,6 @@ describe("reader-side justified text helper", () => {
   });
 
   it("scans br blocks without :has() when the engine lacks it", () => {
-    const api = loadHelper();
-    expect(api).not.toBeNull();
-    if (!api) return;
-
     const left = new FakeContainer("left", true);
     const centered = new FakeContainer("center", true);
     const noBr = new FakeContainer("center", false);
@@ -309,7 +228,7 @@ describe("reader-side justified text helper", () => {
       supports: (condition: string) => !condition.includes(":has"),
     });
 
-    api.apply(doc, true, false);
+    applyJustifiedText(asDoc(doc), true, false);
 
     // The scan must never ask the engine for a :has() selector — it throws
     // there — yet the alignment outcome is identical to the modern path.
@@ -322,29 +241,21 @@ describe("reader-side justified text helper", () => {
   });
 
   it("falls back to the manual scan when querySelectorAll rejects :has()", () => {
-    const api = loadHelper();
-    expect(api).not.toBeNull();
-    if (!api) return;
-
     const centered = new FakeContainer("center", true);
     const doc = new FakeDoc([centered], { failHasQuery: true });
 
-    api.apply(doc, true, false);
+    applyJustifiedText(asDoc(doc), true, false);
 
     expect(centered.style.textAlign).toBe("center");
     expect(centered.attrs.has(PIN_ATTR)).toBe(true);
   });
 
   it("serves unlayered :where() CSS when @layer is unsupported", () => {
-    const api = loadHelper();
-    expect(api).not.toBeNull();
-    if (!api) return;
-
     const doc = new FakeDoc([], {
       layerSupported: false,
       supports: (condition: string) => !condition.includes(":has"),
     });
-    const css = api.getJustifyCss(doc);
+    const css = buildJustifyCss(detectJustifyCapabilities(doc.defaultView));
 
     // The old engine would discard the whole @layer block — the fallback must
     // not use it, must keep the justify default, and must not ship a :has()
@@ -358,12 +269,8 @@ describe("reader-side justified text helper", () => {
   });
 
   it("serves the layered CSS untouched on fully capable engines", () => {
-    const api = loadHelper();
-    expect(api).not.toBeNull();
-    if (!api) return;
-
     const doc = new FakeDoc([]);
-    const css = api.getJustifyCss(doc);
+    const css = buildJustifyCss(detectJustifyCapabilities(doc.defaultView));
     expect(css).toContain("@layer readany-justify");
     expect(css).toContain("text-align: justify");
     expect(css).toContain(":has(> br)");
@@ -371,16 +278,35 @@ describe("reader-side justified text helper", () => {
   });
 
   it("builds the last-resort CSS without @layer/:has()/:where()", () => {
-    const api = loadHelper();
-    expect(api).not.toBeNull();
-    if (!api) return;
-
-    const css = api.buildJustifyCss({ hasLayer: false, hasHas: false, hasWhere: false });
+    const css = buildJustifyCss({ hasLayer: false, hasHas: false, hasWhere: false });
     expect(css).not.toContain("@layer");
     expect(css).not.toContain(":has(");
     expect(css).not.toContain(":where(");
     expect(css).toContain("body { text-align: justify; }");
     expect(css).toContain("figcaption");
     expect(css).toContain("text-wrap-style: auto !important");
+  });
+
+  it("restores an author's pre-existing inline alignment when unpinning", () => {
+    // The book itself set inline text-align: center on this block.
+    const centered = new FakeContainer("center", true, "center");
+    const doc = new FakeDoc([centered]);
+
+    applyJustifiedText(asDoc(doc), true, false);
+    expect(centered.attrs.get(ORIGINAL_ATTR)).toBe("center");
+    applyJustifiedText(asDoc(doc), false, false);
+    // The author's own inline center must come back verbatim, not be wiped.
+    expect(centered.style.textAlign).toBe("center");
+  });
+
+  it("does not mistake the pinned value for the original across repeated apply", () => {
+    const centered = new FakeContainer("center", true, "center");
+    const doc = new FakeDoc([centered]);
+
+    applyJustifiedText(asDoc(doc), true, false);
+    applyJustifiedText(asDoc(doc), true, false);
+    expect(centered.attrs.get(ORIGINAL_ATTR)).toBe("center");
+    applyJustifiedText(asDoc(doc), false, false);
+    expect(centered.style.textAlign).toBe("center");
   });
 });

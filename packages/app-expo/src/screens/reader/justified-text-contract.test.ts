@@ -73,7 +73,10 @@ describe("justified EPUB text setting", () => {
     // (no @layer / :has()) get their degraded variant instead of rules they
     // would drop.
     expect(template).toContain("getJustifyCss");
-    expect(buildScript).toContain('"justified-text.js"');
+    // The justify engine is bundled from core — the exact same implementation
+    // the desktop viewer imports.
+    expect(buildScript).toContain("core/src/reader");
+    expect(buildScript).toContain("installReadAnyJustifiedText");
     expect(buildScript).toContain("JUSTIFIED_TEXT_MARKER");
     // The built reader carries the @layer justify fallback and pins
     // author-aligned <br> blocks; the old marker-based *marking* logic is gone
@@ -84,6 +87,8 @@ describe("justified EPUB text setting", () => {
     // Capability detection + fallbacks must survive the esbuild bundle.
     expect(builtReader).toContain("detectJustifyCapabilities");
     expect(builtReader).toContain("CSSLayerBlockRule");
+    // The save/restore of the author's own inline alignment must survive too.
+    expect(builtReader).toContain("data-readany-justify-original");
     expect(builtReader).not.toContain("setAttribute(marker");
   });
 });
