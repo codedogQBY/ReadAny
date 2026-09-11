@@ -33,6 +33,7 @@ const PROVIDERS: { id: AIProviderType; label: string }[] = [
   { id: "lmstudio", label: "LM Studio" },
   { id: "openrouter", label: "OpenRouter" },
   { id: "siliconflow", label: "SiliconFlow" },
+  { id: "orcarouter", label: "OrcaRouter" },
   { id: "moonshot", label: "Moonshot" },
   { id: "zhipu", label: "智谱 GLM" },
   { id: "aliyun", label: "阿里云通义" },

@@ -97,6 +97,14 @@ export const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
     placeholder: "https://api.siliconflow.cn",
     keyPlaceholder: "sk-...",
   },
+  orcarouter: {
+    id: "orcarouter",
+    name: "OrcaRouter",
+    defaultBaseUrl: "https://api.orcarouter.ai/v1",
+    needsV1Suffix: false,
+    placeholder: "https://api.orcarouter.ai/v1",
+    keyPlaceholder: "sk-orca-...",
+  },
   moonshot: {
     id: "moonshot",
     name: "Moonshot (Kimi)",
@@ -566,6 +574,7 @@ export function detectProviderFromUrl(url: string): string {
   if (urlLower.includes("mistral.ai")) return "mistral";
   if (urlLower.includes("perplexity.ai")) return "perplexity";
   if (urlLower.includes("aihubmix.com")) return "aihubmix";
+  if (urlLower.includes("api.orcarouter.ai")) return "orcarouter";
 
   return "custom";
 }

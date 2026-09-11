@@ -41,7 +41,7 @@
 - **Chat with your library** - Ask questions about the current book or selected passages, with answers grounded in your reading context
 - **Find ideas semantically** - Hybrid vector retrieval + BM25 search helps you find concepts even when the exact keyword is missing
 - **Keep knowledge private** - Local embeddings and a local vector store keep your books, highlights, and notes offline-capable
-- **Use your preferred model** - Connect OpenAI, Claude, Gemini, Ollama, DeepSeek, or custom-compatible providers
+- **Use your preferred model** - Connect OpenAI, Claude, Gemini, Ollama, DeepSeek, OrcaRouter, or custom-compatible providers
 
 ## Why ReadAny?
 
@@ -122,7 +122,7 @@
 - **Intelligent Chat** - Ask questions about your books, AI knows your position, selected text, and highlights
 - **Semantic Search** - Beyond keywords, vector retrieval + BM25 hybrid search
 - **Instant Translation** - AI translation or DeepL, 19 languages supported
-- **Multiple AI Providers** - OpenAI, Claude, Gemini, Ollama, DeepSeek
+- **Multiple AI Providers** - OpenAI, Claude, Gemini, Ollama, DeepSeek, OrcaRouter
 - **Skills System** - Built-in skills (summarizer, concept explainer, character tracker, etc.) + create custom skills
 
 ### 📝 Annotation & Knowledge Management
@@ -238,6 +238,7 @@ Mobile app source lives in [`packages/app-expo`](packages/app-expo).
 | Anthropic Claude | [console.anthropic.com](https://console.anthropic.com/) |
 | Google Gemini | [aistudio.google.com](https://aistudio.google.com/) |
 | Ollama / DeepSeek | Local or custom endpoint |
+| OrcaRouter | [orcarouter.ai](https://www.orcarouter.ai/) |
 
 ---
 
