@@ -2108,21 +2108,34 @@ ${rules.map((rule) => `  ${rule}`).join("\n")}
         // !important AND higher specificity, because specificity still breaks
         // ties between important author declarations: a plain `pre, code, kbd`
         // at (0,0,1) loses to an authored `body pre { ... !important }` at
-        // (0,0,2). `html body :is(...)` at (0,0,3) outranks both.
+        // (0,0,2). The guarded `:root ... body :is(...)` sits at (0,2,2).
+        // Inner code/kbd/samp INSIDE a pre get an explicit `inherit` instead:
+        // the UA stylesheet declares `code { font-family: monospace }` and a
+        // direct declaration (even a UA one) always beats inheritance, so
+        // exclusion alone would still cut `<pre><code>` off from the book's
+        // font declared on pre. The zero-specificity inherit restores the
+        // chain while any author declaration on the element still wins it.
+        // Standalone inline code keeps the monospace fallback.
+        // Vertical writing (.vrtl/.vltr) keeps its own behavior: the forced
+        // overrides carry the horizontal guard like the pre-existing rules.
         const readerFontOverride = currentUseBookFonts
           ? `:where(html) {
   font-family: var(--readany-font-family);
 }
-:where(pre, code, kbd, samp) {
+:where(pre, :not(pre) > code, :not(pre) > kbd, :not(pre) > samp) {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+:where(pre :is(code, kbd, samp)) {
+  font-family: inherit;
 }`
-          : `html, body {
+          : `:root:not(.vrtl):not(.vltr),
+:root:not(.vrtl):not(.vltr) body {
   font-family: var(--readany-font-family) !important;
 }
-body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *) {
+:root:not(.vrtl):not(.vltr) body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *) {
   font-family: var(--readany-font-family) !important;
 }
-html body :is(pre, code, kbd, samp) {
+:root:not(.vrtl):not(.vltr) body :is(pre, code, kbd, samp) {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
 }`;
 

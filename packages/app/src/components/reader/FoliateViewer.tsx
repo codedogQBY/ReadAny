@@ -3482,6 +3482,10 @@ function getRendererStyles(settings: ViewSettings, theme: AppTheme): string {
   // between important author declarations: a plain `pre, code, kbd` at (0,0,1)
   // loses to an authored `body pre { ... !important }` at (0,0,2).
   // `html body :is(...)` at (0,0,3) outranks both.
+  // Inner code/kbd/samp INSIDE a pre are excluded from the fallback so they
+  // keep INHERITING the book's font from pre (a direct declaration on `code`
+  // would cut the inheritance — `<pre><code>` is the dominant code markup);
+  // standalone inline code still gets the fallback.
   const readerFontOverride =
     settings.useBookFonts === false
       ? `html, body {
@@ -3497,8 +3501,11 @@ html body :is(pre, code, kbd, samp) {
       : `:where(html) {
   font-family: var(--readany-font-family);
 }
-:where(pre, code, kbd, samp) {
+:where(pre, :not(pre) > code, :not(pre) > kbd, :not(pre) > samp) {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+:where(pre :is(code, kbd, samp)) {
+  font-family: inherit;
 }
 `;
 
