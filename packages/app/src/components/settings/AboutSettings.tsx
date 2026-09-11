@@ -33,19 +33,31 @@ import {
   RefreshCw,
   Shield,
   Zap,
+  type LucideIcon,
 } from "lucide-react";
 /**
  * AboutSettings — 关于页面
  */
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 // Timer cleanup for the copy feedback flag (unmount-safe).
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import tsPkg from "typescript/package.json";
 
-const TECH_STACK = [
-  { name: "Tauri", descKey: "settings.techStackTauri", icon: Shield },
-  { name: "React", descKey: "settings.techStackReact", icon: Code2 },
-  { name: "TypeScript", descKey: "settings.techStackTypeScript", icon: Zap },
+type TechStackItem = {
+  name: string;
+  version?: string;
+  descKey: string;
+  icon: LucideIcon;
+};
+
+// Versions come from the real installed sources (runtime React, the resolved
+// lockfile, the toolchain package) so the cards cannot drift the way a
+// hardcoded version label does.
+const TECH_STACK: TechStackItem[] = [
+  { name: "Tauri", version: __TAURI_VERSION__, descKey: "settings.techStackTauri", icon: Shield },
+  { name: "React", version: React.version, descKey: "settings.techStackReact", icon: Code2 },
+  { name: "TypeScript", version: tsPkg.version, descKey: "settings.techStackTypeScript", icon: Zap },
   { name: "Foliate", descKey: "settings.techStackFoliate", icon: BookOpen },
 ];
 
@@ -305,13 +317,18 @@ export function AboutSettings() {
       <div className="mb-6 w-full max-w-md">
         <h2 className="mb-3 text-sm font-medium text-foreground">{t("settings.techStack")}</h2>
         <div className="grid grid-cols-2 gap-2">
-          {TECH_STACK.map(({ name, descKey, icon: Icon }) => (
+          {TECH_STACK.map(({ name, version, descKey, icon: Icon }) => (
             <div key={name} className="flex items-center gap-3 rounded-lg bg-muted/60 p-3">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
                 <Icon className="h-4 w-4 text-primary" />
               </div>
               <div>
-                <div className="text-sm font-medium text-foreground">{name}</div>
+                <div className="text-sm font-medium text-foreground">
+                  {name}
+                  {version ? (
+                    <span className="ml-1.5 font-normal text-muted-foreground">{version}</span>
+                  ) : null}
+                </div>
                 <div className="text-xs text-muted-foreground">{t(descKey)}</div>
               </div>
             </div>
