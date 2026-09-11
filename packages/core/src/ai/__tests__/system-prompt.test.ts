@@ -133,4 +133,23 @@ describe("buildSystemPrompt citations", () => {
     expect(prompt).not.toContain("addCitation");
     expect(prompt).not.toContain("mindmap");
   });
+
+  it("treats prefetched annotations as available user data without citation registration", () => {
+    const prompt = buildSystemPrompt({
+      book: makeBook(),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: true,
+      userLanguage: "en",
+      questionCategory: "annotation_request",
+      routeHint: "The user's annotations have already been fetched for this turn.",
+      allowedToolNames: ["getAnnotations"],
+    });
+
+    expect(prompt).toContain("Treat the matching getAnnotations tool result as current user data");
+    expect(prompt).toContain("never claim annotation access is unavailable");
+    expect(prompt).toContain("do not call addCitation or invent [N] markers");
+    expect(prompt).toContain("pagination.hasMore");
+    expect(prompt).not.toContain("- **addCitation**");
+  });
 });

@@ -1,4 +1,4 @@
-import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import i18n from "i18next";
@@ -23,12 +23,15 @@ import type { ToolDefinition, ToolParameter } from "../tools/tool-types";
 
 const CHAPTER_REFERENCE_RE =
   /(?:第\s*)?[零〇一二两三四五六七八九十百千万\d]{1,8}\s*(?:章|卷|节|回|讲|篇|话)|这一章|这一节|chapter\s*\d+/iu;
+const EXPLICIT_CHAPTER_REFERENCE_RE =
+  /(?:第\s*[零〇一二两三四五六七八九十百千万\d]{1,8}|\d{1,8})\s*(?:章|卷|节|回|讲|篇|话)|chapter\s*\d+/iu;
 const CHAPTER_REFERENCE_EXECUTION_LIMIT = 3;
 const CHAPTER_TOOL_EXECUTION_LIMIT = 8;
 const DEFAULT_RECURSION_LIMIT = 24;
 const CHAPTER_TASK_RECURSION_LIMIT = 24;
 const DEFAULT_TOOL_TIMEOUT_MS = 45_000;
-const TOOL_EXECUTION_LIMIT = 12;
+const NON_CITATION_TOOL_EXECUTION_LIMIT = 12;
+const CITATION_TOOL_EXECUTION_LIMIT = 16;
 const REPEATED_TOOL_CALL_LIMIT = 2;
 const TOOL_TIMEOUT_MS_BY_NAME: Record<string, number> = {
   getSelection: 5_000,
@@ -112,6 +115,11 @@ const CURRENT_PAGE_CONTEXT_RE =
   /(?:这里|這裡|当前页|當前頁|这一页|這一頁|这页|這頁|当前位置|當前位置|目前看到|我看到这里|我看到這裡)/u;
 const CURRENT_CHAPTER_CONTEXT_RE =
   /(?:这一章|這一章|这章|這章|当前章节|當前章節|当前章|當前章|現在這章|现在这章|本章)/u;
+const CURRENT_CHAPTER_CONTEXT_EN_RE = /\b(?:this|current)\s+chapter\b/iu;
+const ANNOTATION_REQUEST_RE =
+  /(?:\bmy\s+(?:notes?|highlights?|annotations?)\b|\b(?:look\s+at|review|analy[sz]e|summari[sz]e|discuss|read|check)\s+(?:my\s+)?(?:notes?|highlights?|annotations?)\b|(?:我(?:的|对.{0,24})?)?(?:笔记|筆記|高亮|标注|標註|划线|劃線))/iu;
+const ANNOTATION_BOOK_COMPARISON_RE =
+  /(?:\b(?:compare|contrast|connect|relate)\b.{0,80}\b(?:book|text|chapter|passage|author)\b|\b(?:book|text|chapter|passage|author)\b.{0,80}\b(?:compare|contrast|connect|relate)\b|(?:对照|對照|比较|比較|结合|結合).{0,80}(?:原文|正文|章节|章節|书中|書中))/iu;
 const IMMEDIATE_CONTEXT_RE =
   /(?:什么意思|什麼意思|看不懂|沒看懂|没看懂|解释一下|解釋一下|怎么理解|怎麼理解)/u;
 const BOOK_CONTENT_RE =
@@ -146,6 +154,7 @@ const CATEGORY_TOOL_ORDER: Record<ReadingQuestionCategory, string[]> = {
     "updateBookMetadata",
     "manageBookGroups",
   ],
+  annotation_request: ["getAnnotations"],
   current_selection: [
     "getSelection",
     "getSurroundingContext",
@@ -218,6 +227,7 @@ const CATEGORY_TOOL_ORDER: Record<ReadingQuestionCategory, string[]> = {
 type ReadingQuestionCategory =
   | "general_chat"
   | "library_request"
+  | "annotation_request"
   | "current_selection"
   | "current_page_context"
   | "current_chapter_context"
@@ -270,7 +280,8 @@ function detectQuestionCategory(options: {
   if (LIBRARY_REQUEST_RE.test(text) || !options.hasBookContext) return "library_request";
   const hasExplicitCurrentSelectionCue = CURRENT_SELECTION_RE.test(text);
   const hasExplicitCurrentPageCue = CURRENT_PAGE_CONTEXT_RE.test(text);
-  const hasExplicitCurrentChapterCue = CURRENT_CHAPTER_CONTEXT_RE.test(text);
+  const hasExplicitCurrentChapterCue =
+    CURRENT_CHAPTER_CONTEXT_RE.test(text) || CURRENT_CHAPTER_CONTEXT_EN_RE.test(text);
   const asksForImmediateExplanation = IMMEDIATE_CONTEXT_RE.test(text);
 
   if (options.selectionActive && hasExplicitCurrentSelectionCue) {
@@ -279,6 +290,7 @@ function detectQuestionCategory(options: {
   if (hasExplicitCurrentPageCue || (asksForImmediateExplanation && hasExplicitCurrentPageCue)) {
     return "current_page_context";
   }
+  if (ANNOTATION_REQUEST_RE.test(text)) return "annotation_request";
   if (CHAPTER_REFERENCE_RE.test(text)) return "specific_chapter_request";
   if (hasExplicitCurrentChapterCue) return "current_chapter_context";
   if (BOOK_CONTENT_RE.test(text)) return "book_wide_search";
@@ -288,12 +300,21 @@ function detectQuestionCategory(options: {
 function getFocusedToolNames(
   category: ReadingQuestionCategory,
   isVectorized: boolean,
+  annotationNeedsBookContent: boolean,
 ): Set<string> | null {
   switch (category) {
     case "general_chat":
       return new Set();
     case "library_request":
       return GENERAL_TOOL_NAMES;
+    case "annotation_request":
+      return new Set(
+        annotationNeedsBookContent
+          ? isVectorized
+            ? ["getAnnotations", "ragSearch", "ragContext", "addCitation"]
+            : ["getAnnotations", "fallbackSearch", "fallbackChapterContext", "addCitation"]
+          : ["getAnnotations"],
+      );
     case "current_selection":
       return new Set(
         isVectorized
@@ -397,8 +418,13 @@ function filterToolsForQuestion(options: {
   tools: ToolDefinition[];
   category: ReadingQuestionCategory;
   isVectorized: boolean;
+  userInput: string;
 }): ToolDefinition[] {
-  const focusedNames = getFocusedToolNames(options.category, options.isVectorized);
+  const focusedNames = getFocusedToolNames(
+    options.category,
+    options.isVectorized,
+    ANNOTATION_BOOK_COMPARISON_RE.test(options.userInput),
+  );
   if (focusedNames === null) {
     return sortToolsForCategory(
       options.tools.filter((tool) => !GENERAL_TOOL_NAMES.has(tool.name)),
@@ -428,6 +454,8 @@ function buildRouteHint(
       return isVectorized
         ? "This question is about the chapter the user is currently reading. Get the current chapter first, then prefer indexed chapter/content retrieval."
         : "This question is about the chapter the user is currently reading. Get the current chapter first, then use fallback chapter content.";
+    case "annotation_request":
+      return "The user's annotations have already been fetched for this turn. Use that getAnnotations result as current user data and paginate only if its metadata says more results are available.";
     case "specific_chapter_request":
       return isVectorized
         ? "This question targets a specific chapter reference. Resolve the chapter reference first; if resolution is weak or the user asks for content, use ragSearch/ragToc/ragContext instead of guessing."
@@ -454,11 +482,42 @@ function getRecursionLimitForCategory(category: ReadingQuestionCategory): number
       return CHAPTER_TASK_RECURSION_LIMIT;
     case "library_request":
       return 20;
+    case "annotation_request":
+      return 20;
     case "book_wide_search":
       return DEFAULT_RECURSION_LIMIT;
     default:
       return DEFAULT_RECURSION_LIMIT;
   }
+}
+
+function extractAnnotationChapterQuery(userInput: string): string | undefined {
+  const match = userInput.normalize("NFKC").match(EXPLICIT_CHAPTER_REFERENCE_RE)?.[0]?.trim();
+  return match || undefined;
+}
+
+function buildAnnotationPreflightArgs(options: {
+  userInput: string;
+  currentChapterTitle?: string;
+}): Record<string, unknown> {
+  const explicitChapter = extractAnnotationChapterQuery(options.userInput);
+  const currentChapter =
+    CURRENT_CHAPTER_CONTEXT_RE.test(options.userInput) ||
+    CURRENT_CHAPTER_CONTEXT_EN_RE.test(options.userInput)
+      ? options.currentChapterTitle?.trim()
+      : undefined;
+
+  return {
+    type: "all",
+    order: "book",
+    offset: 0,
+    limit: 50,
+    ...(explicitChapter
+      ? { chapterTitle: explicitChapter }
+      : currentChapter
+        ? { chapterTitle: currentChapter }
+        : {}),
+  };
 }
 
 function simplifyChapterLookupQuery(query: string, fallback: string): string {
@@ -546,6 +605,17 @@ function buildRepeatedToolCallResult(
         : "Tool execution limit reached for this turn.",
     instruction:
       "Stop calling tools now. Use the tool results already available in the conversation to answer the user directly. If the available results are insufficient, ask one concise clarification question.",
+  };
+}
+
+function buildCitationLimitResult(): Record<string, unknown> {
+  return {
+    type: "notice",
+    citationLimitReached: true,
+    stopCitationCalls: true,
+    reason: "Citation registration limit reached for this turn.",
+    instruction:
+      "Stop registering citations. Finish the answer now and use plain chapter/source references for any remaining sources.",
   };
 }
 
@@ -842,7 +912,8 @@ export async function* streamReadingAgent(
   const searchResultCache = new Map<string, unknown>();
   const toolExecutionCounts = new Map<string, number>();
   const lastToolResults = new Map<string, unknown>();
-  let totalToolExecutions = 0;
+  let totalNonCitationToolExecutions = 0;
+  let totalCitationToolExecutions = 0;
   const pendingToolCallNames: string[] = [];
   const isChapterTask =
     questionCategory === "specific_chapter_request" || CHAPTER_REFERENCE_RE.test(userInput);
@@ -877,6 +948,7 @@ export async function* streamReadingAgent(
       }),
       category: questionCategory,
       isVectorized,
+      userInput,
     });
     console.log(
       "[ReadingAgent] tools",
@@ -929,6 +1001,45 @@ export async function* streamReadingAgent(
       }),
       new HumanMessage(userInput),
     ];
+
+    if (questionCategory === "annotation_request") {
+      const annotationTool = tools.find((tool) => tool.name === "getAnnotations");
+      if (annotationTool) {
+        const preflightArgs = buildAnnotationPreflightArgs({
+          userInput,
+          currentChapterTitle:
+            readingContextSnapshot?.currentChapter.title || semanticContext?.currentChapter,
+        });
+        yield { type: "tool_call", name: annotationTool.name, args: preflightArgs };
+        const preflightResult = await executeTool(
+          annotationTool,
+          preflightArgs,
+          getToolTimeoutMs(annotationTool, toolTimeoutMs),
+        );
+        toolResultCache.set(buildToolCacheKey(annotationTool.name, preflightArgs), preflightResult);
+
+        const toolCallId = `annotation-preflight-${Date.now()}`;
+        inputMessages.push(
+          new AIMessage({
+            content: "",
+            tool_calls: [
+              {
+                id: toolCallId,
+                name: annotationTool.name,
+                args: preflightArgs,
+                type: "tool_call",
+              },
+            ],
+          }),
+          new ToolMessage({
+            content: JSON.stringify(preflightResult),
+            tool_call_id: toolCallId,
+            name: annotationTool.name,
+          }),
+        );
+        yield { type: "tool_result", name: annotationTool.name, result: preflightResult };
+      }
+    }
 
     // If no tools available, stream directly without agent graph
     if (tools.length === 0) {
@@ -1060,14 +1171,6 @@ export async function* streamReadingAgent(
               buildRepeatedToolCallResult(lastToolResults.get(progressKey), tool.name, "duplicate"),
             );
           }
-          if (totalToolExecutions >= TOOL_EXECUTION_LIMIT) {
-            return JSON.stringify(
-              buildRepeatedToolCallResult(lastToolResults.get(progressKey), tool.name, "limit"),
-            );
-          }
-          toolExecutionCounts.set(progressKey, previousExecutions + 1);
-          totalToolExecutions += 1;
-
           const skipExactCache =
             tool.name === "addCitation" || tool.name === "resolveChapterReference";
           const exactCacheKey = skipExactCache
@@ -1075,6 +1178,7 @@ export async function* streamReadingAgent(
             : buildToolCacheKey(tool.name, toolInput);
           if (exactCacheKey && toolResultCache.has(exactCacheKey)) {
             const cachedResult = toolResultCache.get(exactCacheKey);
+            toolExecutionCounts.set(progressKey, previousExecutions + 1);
             lastToolResults.set(progressKey, cachedResult);
             return JSON.stringify(cachedResult);
           }
@@ -1085,9 +1189,25 @@ export async function* streamReadingAgent(
               : undefined;
           if (searchCacheKey && searchResultCache.has(searchCacheKey)) {
             const cachedResult = searchResultCache.get(searchCacheKey);
+            toolExecutionCounts.set(progressKey, previousExecutions + 1);
             lastToolResults.set(progressKey, cachedResult);
             return JSON.stringify(cachedResult);
           }
+
+          if (tool.name === "addCitation") {
+            if (totalCitationToolExecutions >= CITATION_TOOL_EXECUTION_LIMIT) {
+              return JSON.stringify(buildCitationLimitResult());
+            }
+            totalCitationToolExecutions += 1;
+          } else {
+            if (totalNonCitationToolExecutions >= NON_CITATION_TOOL_EXECUTION_LIMIT) {
+              return JSON.stringify(
+                buildRepeatedToolCallResult(lastToolResults.get(progressKey), tool.name, "limit"),
+              );
+            }
+            totalNonCitationToolExecutions += 1;
+          }
+          toolExecutionCounts.set(progressKey, previousExecutions + 1);
 
           const result = await executeTool(tool, toolInput, getToolTimeoutMs(tool, toolTimeoutMs));
           if (exactCacheKey) {
