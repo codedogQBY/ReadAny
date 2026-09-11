@@ -129,7 +129,7 @@ export default function AboutScreen() {
               style={styles.versionBlock}
             >
               <Text style={styles.version}>v{version}</Text>
-              {webviewLabel ? (
+              {webviewLabel || copied ? (
                 <Text
                   style={[
                     styles.version,

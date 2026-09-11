@@ -19,6 +19,7 @@ import {
   subscribeToUpdates,
 } from "@/lib/updater";
 import { getWebviewLabel } from "@/lib/webview-info";
+import { buildVersionInfo } from "@readany/core/utils/webview-info";
 import { getVersion } from "@tauri-apps/api/app";
 import {
   AlertCircle,
@@ -113,7 +114,7 @@ export function AboutSettings() {
   // Both version lines at once — the pair is what a bug report needs (see the
   // justify engine-fallback work: features vary per WebView build).
   const handleCopyVersion = async () => {
-    const versionInfo = [`ReadAny ${appVersion}`, webviewLabel].filter(Boolean).join("\n");
+    const versionInfo = buildVersionInfo(appVersion, webviewLabel);
     try {
       await navigator.clipboard.writeText(versionInfo);
       setCopied(true);
@@ -122,6 +123,7 @@ export function AboutSettings() {
       copiedTimer.current = window.setTimeout(() => setCopied(false), 1500);
     } catch (error) {
       console.error("[AboutSettings] Copy version info failed:", error);
+      toast.error(t("common.failed"));
     }
   };
 
@@ -199,7 +201,7 @@ export function AboutSettings() {
         </div>
         <div className="mt-2 flex items-center justify-between">
           <span className="text-sm text-muted-foreground">{t("settings.webviewVersion")}</span>
-          <span className="font-mono text-sm text-muted-foreground">{webviewLabel}</span>
+          <span className="font-mono text-sm text-muted-foreground">{webviewLabel || "..."}</span>
         </div>
       </div>
 

@@ -104,7 +104,7 @@ export function FeedbackSettings() {
       webview: webview || undefined,
       locale: i18n.language || navigator.language,
     });
-  }, [appVersion, webview]);
+  }, [appVersion, webview, i18n.language]);
 
   const loadRecords = useCallback(async (refreshStatus = false) => {
     const history = await getFeedbackHistory();

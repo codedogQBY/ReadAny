@@ -50,5 +50,5 @@ export function useWebviewLabel(): string {
   if (!parsed?.engine) {
     return FALLBACK_LABELS[Platform.OS] ?? "";
   }
-  return formatWebviewInfo({ ...parsed, version: fullVersion ?? parsed.version });
+  return formatWebviewInfo({ ...parsed, version: fullVersion || parsed.version });
 }

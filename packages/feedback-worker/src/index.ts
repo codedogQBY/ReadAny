@@ -299,7 +299,7 @@ function buildIssueBody(
   const clean = (value: unknown): string =>
     String(value ?? "unknown")
       .replace(/[\r\n\t]+/g, " ")
-      .replace(/[`[\]<>!]/g, "")
+      .replace(/[`[\]<>!@]/g, "")
       .slice(0, 300);
   const details = [
     `### Type\n${TYPE_LABELS[payload.type]}`,

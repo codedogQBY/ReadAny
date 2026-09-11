@@ -89,3 +89,12 @@ export function parseWebviewInfo(ua: string, inAppShell = true): WebviewInfo {
 export function formatWebviewInfo(info: WebviewInfo): string {
   return info.engine ? (info.version ? `${info.engine} ${info.version}` : info.engine) : "";
 }
+
+/**
+ * The two-line version info pasted into bug reports — the pair (app version +
+ * web engine build) is what the issue template needs. Shared by the desktop
+ * About card and the mobile About screen so the format cannot drift.
+ */
+export function buildVersionInfo(appVersion: string, webviewLabel: string): string {
+  return [`ReadAny ${appVersion}`, webviewLabel].filter(Boolean).join("\n");
+}

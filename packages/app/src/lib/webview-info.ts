@@ -67,5 +67,5 @@ export async function getWebviewLabel(): Promise<string> {
   const { engine, version } = getWebviewInfo();
   if (!engine) return "";
   const fullVersion = (await getFullVersionFromClientHints(engine)) || version;
-  return formatWebviewInfo({ engine, version: fullVersion || version });
+  return formatWebviewInfo({ engine, version: fullVersion });
 }
