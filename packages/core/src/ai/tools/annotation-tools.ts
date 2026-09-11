@@ -5,43 +5,129 @@ import { getChunks, getHighlights, getNotes } from "../../db/database";
 import { resolveFallbackCitationSource } from "../fallback-source-resolver";
 import type { ToolDefinition } from "./tool-types";
 
+const DEFAULT_ANNOTATION_LIMIT = 20;
+const MAX_ANNOTATION_LIMIT = 50;
+
+interface AnnotationPageMetadata {
+  total: number;
+  returned: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+}
+
+function clampInteger(value: unknown, fallback: number, min: number, max: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(value)));
+}
+
+function normalizeChapterTitle(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+  return normalized || undefined;
+}
+
+function pageAnnotations<T extends { chapterTitle?: string }>(
+  items: T[],
+  options: { chapterTitle?: string; reverse: boolean; offset: number; limit: number },
+): { page: T[]; metadata: AnnotationPageMetadata } {
+  const matching = options.chapterTitle
+    ? items.filter((item) => normalizeChapterTitle(item.chapterTitle) === options.chapterTitle)
+    : items;
+  const ordered = options.reverse ? [...matching].reverse() : matching;
+  const page = ordered.slice(options.offset, options.offset + options.limit);
+
+  return {
+    page,
+    metadata: {
+      total: ordered.length,
+      returned: page.length,
+      offset: options.offset,
+      limit: options.limit,
+      hasMore: options.offset + page.length < ordered.length,
+    },
+  };
+}
+
 /** Create get annotations tool for a specific book */
 export function createGetAnnotationsTool(bookId: string): ToolDefinition {
   return {
     name: "getAnnotations",
     description:
-      "Get the user's highlights and notes from the book. Use this to reference what the user has marked as important.",
+      "Get the user's highlights and notes from the book. For the current chapter, pass its exact chapterTitle. For recent or later chapters, use order 'reverse_book'. Results are paginated.",
     parameters: {
       type: {
         type: "string",
         description: "'highlights' for highlights only, 'notes' for notes only, 'all' for both",
       },
+      chapterTitle: {
+        type: "string",
+        description:
+          "Optional exact chapter title to filter before pagination. Match is case-insensitive and ignores surrounding/repeated whitespace.",
+      },
+      order: {
+        type: "string",
+        description:
+          "'book' for beginning-to-end book position (default), or 'reverse_book' for later book positions first",
+      },
+      offset: {
+        type: "number",
+        description:
+          "Zero-based annotation offset after chapter filtering and ordering (default 0)",
+      },
+      limit: {
+        type: "number",
+        description:
+          "Maximum annotations of each requested type to return (default 20, maximum 50)",
+      },
     },
     execute: async (args) => {
       const type = (args.type as string) || "all";
+      const chapterTitle = normalizeChapterTitle(args.chapterTitle);
+      const reverse = args.order === "reverse_book";
+      const offset = clampInteger(args.offset, 0, 0, Number.MAX_SAFE_INTEGER);
+      const limit = clampInteger(args.limit, DEFAULT_ANNOTATION_LIMIT, 1, MAX_ANNOTATION_LIMIT);
 
       const result: {
         highlights?: Array<{ text: string; note?: string; chapterTitle?: string; color: string }>;
         notes?: Array<{ title: string; content: string; chapterTitle?: string }>;
-      } = {};
+        pagination: {
+          highlights?: AnnotationPageMetadata;
+          notes?: AnnotationPageMetadata;
+        };
+      } = { pagination: {} };
 
       if (type === "highlights" || type === "all") {
         const highlights = await getHighlights(bookId);
-        result.highlights = highlights.slice(0, 20).map((h) => ({
+        const { page, metadata } = pageAnnotations(highlights, {
+          chapterTitle,
+          reverse,
+          offset,
+          limit,
+        });
+        result.highlights = page.map((h) => ({
           text: h.text,
           note: h.note,
           chapterTitle: h.chapterTitle,
           color: h.color,
         }));
+        result.pagination.highlights = metadata;
       }
 
       if (type === "notes" || type === "all") {
         const notes = await getNotes(bookId);
-        result.notes = notes.slice(0, 20).map((n) => ({
+        const { page, metadata } = pageAnnotations(notes, {
+          chapterTitle,
+          reverse,
+          offset,
+          limit,
+        });
+        result.notes = page.map((n) => ({
           title: n.title,
           content: n.content,
           chapterTitle: n.chapterTitle,
         }));
+        result.pagination.notes = metadata;
       }
 
       return result;

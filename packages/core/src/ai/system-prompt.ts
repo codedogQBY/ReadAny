@@ -289,7 +289,7 @@ function buildToolsSection(
   if (hasBookContext) {
     pushTool(
       "getAnnotations",
-      "- **getAnnotations**: Get user's highlights and notes (params: type)",
+      "- **getAnnotations**: Get user's highlights and notes. Pass chapterTitle for the current chapter; use order=reverse_book for recent/later chapters (params: type, chapterTitle, order, offset, limit)",
     );
     if (isVectorized && canUse("addCitation")) {
       const citationSourceHint = canUse("ragSearch")
