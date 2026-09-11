@@ -38,7 +38,7 @@ export class ExpoPlatformService implements IPlatformService {
   readonly isMobile = true;
   readonly isDesktop = false;
 
-  // ---- File system (expo-file-system v55 — File/Directory/Paths API) ----
+  // ---- File system (expo-file-system — File/Directory/Paths API) ----
 
   async readFile(path: string): Promise<Uint8Array> {
     try {
