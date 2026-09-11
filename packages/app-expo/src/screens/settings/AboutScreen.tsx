@@ -31,15 +31,16 @@ import {
 } from "../../styles/theme";
 import { SettingsHeader } from "./SettingsHeader";
 
-// The expo package's major version has matched the SDK number since SDK 51,
-// so derive the label instead of hardcoding it (a hardcoded "55" went stale
-// while the installed expo is 54.x). RN comes from the runtime's own constant.
-const EXPO_SDK_LABEL = `Expo SDK ${expoPkg.version.split(".")[0]}`;
+// The full expo package version, same granularity as the Tauri and React
+// Native labels: an in-SDK patch bump (54.0.33 → 54.0.35) is exactly the
+// kind of difference a bug report needs. The major IS the SDK number
+// (54 here), so no information is lost versus the "Expo SDK 54" phrasing.
+const EXPO_LABEL = `Expo ${expoPkg.version}`;
 const rnVersion = Platform.constants.reactNativeVersion;
 const REACT_NATIVE_VERSION = `${rnVersion.major}.${rnVersion.minor}.${rnVersion.patch}`;
 
 const TECH_STACK = [
-  { label: EXPO_SDK_LABEL, descKey: "about.nativeContainer" },
+  { label: EXPO_LABEL, descKey: "about.nativeContainer" },
   { label: `React Native ${REACT_NATIVE_VERSION}`, descKey: "about.uiFramework" },
   { label: "Foliate.js", descKey: "about.ebookRenderer" },
   { label: "SQLite", descKey: "about.localDatabase" },
