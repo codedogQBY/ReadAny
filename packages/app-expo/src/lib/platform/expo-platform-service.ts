@@ -2,7 +2,8 @@ import i18n from "@readany/core/i18n";
 /**
  * ExpoPlatformService — IPlatformService implementation for Expo / React Native.
  *
- * Uses Expo SDK 55+ modules:
+ * Uses Expo SDK modules (the actual SDK number lives in package.json —
+ * hardcoded numbers here went stale before):
  * - expo-file-system (new File/Directory/Paths API) for FS operations
  * - expo-sqlite for database
  * - expo-secure-store for KV storage
@@ -37,7 +38,7 @@ export class ExpoPlatformService implements IPlatformService {
   readonly isMobile = true;
   readonly isDesktop = false;
 
-  // ---- File system (expo-file-system v55 — File/Directory/Paths API) ----
+  // ---- File system (expo-file-system — File/Directory/Paths API) ----
 
   async readFile(path: string): Promise<Uint8Array> {
     try {
