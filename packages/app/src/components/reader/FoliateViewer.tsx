@@ -3474,6 +3474,14 @@ function getRendererStyles(settings: ViewSettings, theme: AppTheme): string {
   // book sets one on html it propagates to body text instead of body being
   // pinned to the reader font by a direct rule. When disabled, force the
   // reader font on html/body and every descendant.
+  //
+  // The monospace rule swaps sides with the same toggle: with book fonts
+  // honored it is zero-specificity (a book's own `pre { font-family: ... }` —
+  // its embedded code font — wins), and when overriding it needs BOTH
+  // !important AND higher specificity, because specificity still breaks ties
+  // between important author declarations: a plain `pre, code, kbd` at (0,0,1)
+  // loses to an authored `body pre { ... !important }` at (0,0,2).
+  // `html body :is(...)` at (0,0,3) outranks both.
   const readerFontOverride =
     settings.useBookFonts === false
       ? `html, body {
@@ -3482,9 +3490,15 @@ function getRendererStyles(settings: ViewSettings, theme: AppTheme): string {
 body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *) {
   font-family: var(--readany-font-family) !important;
 }
+html body :is(pre, code, kbd, samp) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+}
 `
       : `:where(html) {
   font-family: var(--readany-font-family);
+}
+:where(pre, code, kbd, samp) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 `;
 
@@ -3508,10 +3522,6 @@ html, body {
 ${readerFontOverride}
 body :not(#__readany_font_size_override):not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *):not(rt):not(rp) {
   font-size: ${settings.fontSize}px !important;
-}
-
-pre, code, kbd, samp {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
 }
 
 /* Line height for text blocks */
