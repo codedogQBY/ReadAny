@@ -1,7 +1,10 @@
+import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
+import { useUpdateStore } from "@/stores/update-store";
+import { useWebviewLabel } from "@/stores/webview-info-store";
 import { getPlatformService } from "@readany/core/services";
 import { checkForUpdate } from "@readany/core/update";
-import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
-import { useCallback, useEffect, useState } from "react";
+import * as Clipboard from "expo-clipboard";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
@@ -15,6 +18,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import AppIcon from "../../../assets/icon.png";
 import {
   type ThemeColors,
   fontSize,
@@ -23,9 +27,7 @@ import {
   spacing,
   useColors,
 } from "../../styles/theme";
-import { useUpdateStore } from "@/stores/update-store";
 import { SettingsHeader } from "./SettingsHeader";
-import AppIcon from "../../../assets/icon.png";
 
 const TECH_STACK = [
   { label: "Expo SDK 55", descKey: "about.nativeContainer" },
@@ -48,6 +50,27 @@ export default function AboutScreen() {
   const layout = useResponsiveLayout();
   const [version, setVersion] = useState("1.0.0");
   const [checking, setChecking] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Filled at startup by the hidden UA probe webview (see UAProbe), and kept
+  // fresh by the reader WebView on every book load via the bridge.
+  const webviewLabel = useWebviewLabel();
+
+  // Unmount cleanup for the copy feedback timer.
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
+
+  const handleCopyVersion = useCallback(async () => {
+    const versionInfo = [`ReadAny ${version}`, webviewLabel].filter(Boolean).join("\n");
+    try {
+      await Clipboard.setStringAsync(versionInfo);
+      setCopied(true);
+      clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopied(false), 1500);
+    } catch (error) {
+      console.error("[AboutScreen] Copy version info failed:", error);
+    }
+  }, [version, webviewLabel]);
 
   const checkResult = useUpdateStore((s) => s.checkResult);
   const setCheckResult = useUpdateStore((s) => s.setCheckResult);
@@ -83,15 +106,40 @@ export default function AboutScreen() {
     >
       <SettingsHeader title={t("about.title", "关于")} />
 
-      <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, { alignItems: "center" }]}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.scrollContent, { alignItems: "center" }]}
+      >
         <View style={{ width: "100%", maxWidth: layout.centeredContentWidth }}>
           {/* Logo & Version */}
           <View style={styles.logoSection}>
             <View style={styles.logoBadge}>
-              <Image source={AppIcon} style={{ width: 80, height: 80, borderRadius: 18 }} resizeMode="contain" />
+              <Image
+                source={AppIcon}
+                style={{ width: 80, height: 80, borderRadius: 18 }}
+                resizeMode="contain"
+              />
             </View>
             <Text style={styles.appName}>ReadAny</Text>
-            <Text style={styles.version}>v{version}</Text>
+            {/* Tap the two version lines to copy both — bug reports need the
+                pair (app version + web engine build). No hover on touch. */}
+            <TouchableOpacity
+              onPress={() => void handleCopyVersion()}
+              activeOpacity={0.7}
+              style={styles.versionBlock}
+            >
+              <Text style={styles.version}>v{version}</Text>
+              {webviewLabel || copied ? (
+                <Text
+                  style={[
+                    styles.version,
+                    copied && { color: colors.primary, fontWeight: fontWeight.medium },
+                  ]}
+                >
+                  {copied ? `✓ ${t("common.copied")}` : webviewLabel}
+                </Text>
+              ) : null}
+            </TouchableOpacity>
             <Text style={styles.desc}>
               {t("about.desc", "一个跨平台的智能电子书阅读器，支持 AI 对话、TTS 朗读、多语言翻译")}
             </Text>
@@ -202,6 +250,10 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: fontSize.sm,
       color: colors.mutedForeground,
       marginTop: 4,
+    },
+    versionBlock: {
+      alignItems: "center",
+      paddingVertical: 4,
     },
     desc: {
       fontSize: fontSize.sm,

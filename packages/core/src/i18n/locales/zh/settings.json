@@ -13,6 +13,8 @@
     "other": "更多",
     "aboutDesc": "阅读无界，理解无限",
     "version": "版本",
+    "webviewVersion": "WebView 版本",
+    "copyVersionInfo": "复制版本信息",
     "techStack": "技术栈",
     "techStackTauri": "跨平台桌面框架",
     "techStackReact": "UI 组件库",
