@@ -4,6 +4,7 @@ import { useWebviewLabel } from "@/stores/webview-info-store";
 import { getPlatformService } from "@readany/core/services";
 import { checkForUpdate } from "@readany/core/update";
 import * as Clipboard from "expo-clipboard";
+import expoPkg from "expo/package.json";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -11,6 +12,7 @@ import {
   Alert,
   Image,
   Linking,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -29,9 +31,16 @@ import {
 } from "../../styles/theme";
 import { SettingsHeader } from "./SettingsHeader";
 
+// The expo package's major version has matched the SDK number since SDK 51,
+// so derive the label instead of hardcoding it (a hardcoded "55" went stale
+// while the installed expo is 54.x). RN comes from the runtime's own constant.
+const EXPO_SDK_LABEL = `Expo SDK ${expoPkg.version.split(".")[0]}`;
+const rnVersion = Platform.constants.reactNativeVersion;
+const REACT_NATIVE_VERSION = `${rnVersion.major}.${rnVersion.minor}.${rnVersion.patch}`;
+
 const TECH_STACK = [
-  { label: "Expo SDK 55", descKey: "about.nativeContainer" },
-  { label: "React Native", descKey: "about.uiFramework" },
+  { label: EXPO_SDK_LABEL, descKey: "about.nativeContainer" },
+  { label: `React Native ${REACT_NATIVE_VERSION}`, descKey: "about.uiFramework" },
   { label: "Foliate.js", descKey: "about.ebookRenderer" },
   { label: "SQLite", descKey: "about.localDatabase" },
 ];

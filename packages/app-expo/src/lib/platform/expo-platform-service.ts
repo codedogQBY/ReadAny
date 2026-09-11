@@ -2,7 +2,8 @@ import i18n from "@readany/core/i18n";
 /**
  * ExpoPlatformService — IPlatformService implementation for Expo / React Native.
  *
- * Uses Expo SDK 55+ modules:
+ * Uses Expo SDK modules (the actual SDK number lives in package.json —
+ * hardcoded numbers here went stale before):
  * - expo-file-system (new File/Directory/Paths API) for FS operations
  * - expo-sqlite for database
  * - expo-secure-store for KV storage
