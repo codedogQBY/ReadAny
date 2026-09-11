@@ -4,6 +4,10 @@
 // framework version shown on the About tech-stack cards.
 declare const __TAURI_VERSION__: string;
 
+// Injected by vite.config.ts from the resolved typescript/package.json —
+// same pattern, keeps a dev-only manifest out of the client bundle.
+declare const __TS_VERSION__: string;
+
 declare interface PromiseConstructor {
   withResolvers<T>(): {
     promise: Promise<T>;

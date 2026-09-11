@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
@@ -21,10 +22,23 @@ function readTauriVersion(): string {
   }
 }
 
+// Same pattern for the TypeScript toolchain version: application source must
+// not import a dev-only package's manifest for one field. Resolve through
+// Node so hoisting cannot break the path.
+function readTypeScriptVersion(): string {
+  try {
+    const require = createRequire(path.resolve(__dirname, "package.json"));
+    return require("typescript/package.json").version ?? "";
+  } catch {
+    return "";
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   define: {
     __TAURI_VERSION__: JSON.stringify(readTauriVersion()),
+    __TS_VERSION__: JSON.stringify(readTypeScriptVersion()),
   },
   plugins: [react(), tailwindcss()],
   worker: {
