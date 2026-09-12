@@ -253,6 +253,12 @@ export class WebDavClient {
    * failure. Reset per WebDavClient instance.
    */
   private hadAuthSuccess = false;
+  /**
+   * Collections confirmed to exist during this client's lifetime (PROPFIND
+   * probe or successful MKCOL). Lets ensureDirectory() skip re-probing paths
+   * it created minutes ago and keeps the retry helpers cheap.
+   */
+  private knownCollections = new Set<string>();
 
   constructor(url: string, username: string, password: string, allowInsecure?: boolean) {
     // Normalize: remove control chars/whitespace and trailing slash
@@ -419,22 +425,72 @@ export class WebDavClient {
     } catch (e) {
       if (await this.collectionExists(collectionPath)) {
         console.warn(`[WebDAV] MKCOL ${path} failed but directory exists; continuing`);
+        this.knownCollections.add(collectionPath);
         return;
       }
       throw e;
     }
     const status = resp.status;
     if (resp.ok || status === 201) {
+      this.knownCollections.add(collectionPath);
       return;
     }
-    if (status === 405 || status === 409) {
+    if (status === 405) {
+      // RFC 4918 §9.3: the resource already exists.
+      return;
+    }
+    if (status === 409) {
+      // RFC 4918 §9.3.1: an intermediate collection is missing. Real-world
+      // servers also answer 409 when the PROPFIND probe wrongly reports the
+      // parent as existing, or when they mishandle the trailing slash on
+      // MKCOL, so recovery must not trust the probe: force-MKCOL every
+      // ancestor (405 = already exists) plus the target itself, retrying
+      // each once without the trailing slash.
+      await this.mkcolChain(collectionPath);
       return;
     }
     if ((status === 401 || status === 403) && (await this.collectionExists(collectionPath))) {
       console.warn(`[WebDAV] MKCOL ${path} returned ${status} but directory exists; continuing`);
+      this.knownCollections.add(collectionPath);
       return;
     }
     throw new Error(`WebDAV MKCOL failed for ${path}: ${status} ${resp.statusText || ""}`);
+  }
+
+  /**
+   * MKCOL every path segment including the target, tolerating 405 (already
+   * exists). Unlike ensureDirectory() this does not trust PROPFIND probes —
+   * it is used on recovery paths where a probe has been proven wrong (409 on
+   * a collection whose parent probe reports as existing) and for PUT
+   * self-healing after a 404/409.
+   */
+  private async mkcolChain(path: string): Promise<void> {
+    const segments = path.split("/").filter(Boolean);
+    let current = "";
+    for (const segment of segments) {
+      current += `/${segment}`;
+      const collectionPath = toCollectionPath(current);
+      if (this.knownCollections.has(collectionPath)) continue;
+      let resp = await this.request("MKCOL", collectionPath);
+      if (!resp.ok && resp.status !== 201 && resp.status !== 405) {
+        // Some servers and gateways mishandle the trailing slash on MKCOL.
+        resp = await this.request("MKCOL", current);
+      }
+      if (resp.ok || resp.status === 201 || resp.status === 405) {
+        this.knownCollections.add(collectionPath);
+        continue;
+      }
+      if (
+        (resp.status === 401 || resp.status === 403) &&
+        (await this.collectionExists(collectionPath))
+      ) {
+        this.knownCollections.add(collectionPath);
+        continue;
+      }
+      throw new Error(
+        `WebDAV MKCOL failed for ${current}: ${resp.status} ${resp.statusText || ""}`,
+      );
+    }
   }
 
   /** Ensure a full directory path exists (creates each segment) */
@@ -443,22 +499,18 @@ export class WebDavClient {
     let current = "";
     for (const segment of segments) {
       current += `/${segment}`;
+      const collectionPath = toCollectionPath(current);
+      if (this.knownCollections.has(collectionPath)) continue;
       if (
-        await this.propfindExists(toCollectionPath(current), {
+        await this.propfindExists(collectionPath, {
           timeoutMs: DIRECTORY_PROBE_TIMEOUT_MS,
         })
       ) {
         continue;
       }
-      try {
-        await this.mkcol(current);
-      } catch (e: unknown) {
-        const err = e as { message?: string };
-        if (err.message?.includes("405") || err.message?.includes("409")) {
-          continue;
-        }
-        throw e;
-      }
+      // mkcol() self-heals a 409 (missing parent) by creating the parent
+      // chain; any error it throws here is a real failure and must surface.
+      await this.mkcol(current);
     }
   }
 
@@ -468,10 +520,28 @@ export class WebDavClient {
     data: string | Uint8Array | ArrayBuffer,
     contentType = "application/octet-stream",
   ): Promise<void> {
-    const resp = await this.request("PUT", path, {
+    let resp = await this.request("PUT", path, {
       body: data,
       contentType,
     });
+    if (!resp.ok && (resp.status === 404 || resp.status === 409)) {
+      // PUT never creates parent collections. First upload into a directory
+      // that doesn't exist yet (e.g. /readany/sync on a fresh WebDAV account)
+      // fails with 404 on many servers and 409 on the rest — force-create the
+      // parent chain and retry once so every upload path (put/putJSON/…)
+      // self-heals instead of bubbling a 404 to the UI.
+      const parent = getParentCollectionPath(path)?.parent;
+      if (parent && parent !== "/") {
+        console.warn(
+          `[WebDAV] PUT ${path} got ${resp.status}; ensuring parent collection and retrying once`,
+        );
+        await this.mkcolChain(parent);
+        resp = await this.request("PUT", path, {
+          body: data,
+          contentType,
+        });
+      }
+    }
     if (!resp.ok) {
       throw new Error(`WebDAV PUT failed for ${path}: ${resp.status} ${resp.statusText || ""}`);
     }
@@ -508,13 +578,26 @@ export class WebDavClient {
     await this.put(path, JSON.stringify(data), "application/json");
   }
 
+  /**
+   * Error for a failed HTTP verb response. Message keeps the legacy
+   * "WebDAV <METHOD> failed for <path>: <status> ..." format — callers match
+   * on it — while `status` is attached for status-based handling (getJSON).
+   */
+  private createStatusError(method: string, path: string, resp: Response): WebDavError {
+    return new WebDavError(
+      resp.status === 404 ? "not-found" : "http",
+      `WebDAV ${method} failed for ${path}: ${resp.status} ${resp.statusText || ""}`,
+      { status: resp.status, method, url: this.buildUrl(path) },
+    );
+  }
+
   /** Download data from a path (GET) — returns Uint8Array */
   async get(path: string): Promise<Uint8Array> {
     const resp = await this.request("GET", path, {
       responseType: "arraybuffer",
     });
     if (!resp.ok) {
-      throw new Error(`WebDAV GET failed for ${path}: ${resp.status} ${resp.statusText || ""}`);
+      throw this.createStatusError("GET", path, resp);
     }
     const buffer = await resp.arrayBuffer();
     return new Uint8Array(buffer);
@@ -544,7 +627,7 @@ export class WebDavClient {
       const elapsed = Date.now() - startTime;
       if (!resp.ok) {
         console.error(`[WebDAV] GET ${logPath} failed after ${elapsed}ms: ${resp.status}`);
-        throw new Error(`WebDAV GET failed for ${path}: ${resp.status} ${resp.statusText || ""}`);
+        throw this.createStatusError("GET", path, resp);
       }
       console.log(`[WebDAV] GET ${logPath} completed in ${elapsed}ms (status: ${resp.status})`);
       const buffer = await resp.arrayBuffer();
@@ -599,7 +682,7 @@ export class WebDavClient {
       responseType: "text",
     });
     if (!resp.ok) {
-      throw new Error(`WebDAV GET failed for ${path}: ${resp.status} ${resp.statusText || ""}`);
+      throw this.createStatusError("GET", path, resp);
     }
     return resp.text();
   }
@@ -610,8 +693,12 @@ export class WebDavClient {
       const text = await this.getText(path);
       return JSON.parse(text) as T;
     } catch (e: unknown) {
-      const err = e as { message?: string };
-      if (err.message?.includes("404") || err.message?.includes("409")) return null;
+      // 404/409 mean "not there yet" for callers like the device snapshot and
+      // the remote file manifest. Check the attached status instead of string
+      // matching so paths that happen to contain "404" can't fake a miss.
+      if (e instanceof WebDavError && (e.status === 404 || e.status === 409)) {
+        return null;
+      }
       throw e;
     }
   }
@@ -621,7 +708,7 @@ export class WebDavClient {
     const resp = await this.request("DELETE", path);
     // 204 No Content or 404 Not Found — both OK for delete
     if (!resp.ok && resp.status !== 404) {
-      throw new Error(`WebDAV DELETE failed for ${path}: ${resp.status} ${resp.statusText || ""}`);
+      throw this.createStatusError("DELETE", path, resp);
     }
   }
 
@@ -640,8 +727,10 @@ export class WebDavClient {
     // 201 Created (target newly created) and 204 No Content (target overwritten) are success.
     // 207 Multi-Status can also be returned for collection moves with partial errors — treat as failure.
     if (!resp.ok && resp.status !== 201 && resp.status !== 204) {
-      throw new Error(
+      throw new WebDavError(
+        resp.status === 404 ? "not-found" : "http",
         `WebDAV MOVE failed for ${fromPath} -> ${toPath}: ${resp.status} ${resp.statusText || ""}`,
+        { status: resp.status, method: "MOVE", url: destination },
       );
     }
   }
@@ -669,7 +758,11 @@ export class WebDavClient {
         contentType: "application/xml",
         timeoutMs: options?.timeoutMs,
       });
-      return resp.ok || resp.status === 207;
+      const exists = resp.ok || resp.status === 207;
+      if (exists) {
+        this.knownCollections.add(toCollectionPath(path));
+      }
+      return exists;
     } catch {
       return false;
     }

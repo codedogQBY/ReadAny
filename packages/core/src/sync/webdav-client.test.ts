@@ -204,6 +204,121 @@ describe("WebDavClient PROPFIND parsing", () => {
   });
 });
 
+describe("WebDavClient PUT/mkcol self-healing", () => {
+  afterEach(() => {
+    setPlatformService(null as unknown as IPlatformService);
+  });
+
+  it("heals a PUT 404 by force-creating the parent collection chain and retrying once", async () => {
+    const calls: { method: string; url: string }[] = [];
+    installFetchStub((url, options) => {
+      const method = String(options?.method ?? "GET");
+      calls.push({ method, url });
+      if (method === "PUT") {
+        const putCount = calls.filter((call) => call.method === "PUT").length;
+        return new Response("", { status: putCount === 1 ? 404 : 200 });
+      }
+      if (method === "MKCOL") {
+        return new Response("", { status: 201 });
+      }
+      return new Response("", { status: 404 });
+    });
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const client = new WebDavClient("https://dav.example.com/dav", "alice", "secret");
+      await client.putJSON("/readany/sync/device-abc.json", { ok: true });
+    } finally {
+      warnSpy.mockRestore();
+      logSpy.mockRestore();
+    }
+
+    expect(calls.map((call) => call.method)).toEqual(["PUT", "MKCOL", "MKCOL", "PUT"]);
+    expect(calls[1]?.url).toBe("https://dav.example.com/dav/readany/");
+    expect(calls[2]?.url).toBe("https://dav.example.com/dav/readany/sync/");
+    expect(calls[0]?.url).toBe("https://dav.example.com/dav/readany/sync/device-abc.json");
+    expect(calls[3]?.url).toBe(calls[0]?.url);
+  });
+
+  it("heals an MKCOL 409 by force-creating the whole collection chain", async () => {
+    const calls: { method: string; url: string }[] = [];
+    installFetchStub((url, options) => {
+      const method = String(options?.method ?? "GET");
+      calls.push({ method, url });
+      if (method === "PROPFIND") {
+        return new Response("", { status: 207 });
+      }
+      if (method === "MKCOL") {
+        const isBooksCall = url.endsWith("/readany/data/books/");
+        const booksAttempts = calls.filter(
+          (call) => call.method === "MKCOL" && call.url.endsWith("/readany/data/books/"),
+        ).length;
+        return new Response("", { status: isBooksCall && booksAttempts === 1 ? 409 : 201 });
+      }
+      return new Response("", { status: 404 });
+    });
+
+    const client = new WebDavClient("https://dav.example.com/dav", "alice", "secret");
+    await client.mkcol("/readany/data/books");
+
+    expect(calls.map((call) => call.method)).toEqual(["MKCOL", "MKCOL", "MKCOL", "MKCOL"]);
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://dav.example.com/dav/readany/data/books/",
+      "https://dav.example.com/dav/readany/",
+      "https://dav.example.com/dav/readany/data/",
+      "https://dav.example.com/dav/readany/data/books/",
+    ]);
+  });
+
+  it("retries MKCOL without the trailing slash on servers that 409 collection URIs", async () => {
+    const calls: { method: string; url: string }[] = [];
+    installFetchStub((url, options) => {
+      const method = String(options?.method ?? "GET");
+      calls.push({ method, url });
+      if (method === "MKCOL") {
+        return new Response("", { status: url.endsWith("/") ? 409 : 201 });
+      }
+      return new Response("", { status: 404 });
+    });
+
+    const client = new WebDavClient("https://dav.example.com/dav", "alice", "secret");
+    await client.mkcol("/readany/sync");
+
+    expect(calls.map((call) => call.method)).toEqual(["MKCOL", "MKCOL", "MKCOL", "MKCOL", "MKCOL"]);
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://dav.example.com/dav/readany/sync/",
+      "https://dav.example.com/dav/readany/",
+      "https://dav.example.com/dav/readany",
+      "https://dav.example.com/dav/readany/sync/",
+      "https://dav.example.com/dav/readany/sync",
+    ]);
+  });
+
+  it("getJSON returns null for 404 by status and rethrows other failures", async () => {
+    installFetchStub(() => new Response("", { status: 404 }));
+    const client = new WebDavClient("https://dav.example.com/dav", "alice", "secret");
+    await expect(client.getJSON("/readany/sync/missing.json")).resolves.toBeNull();
+
+    installFetchStub(() => new Response("", { status: 401 }));
+    await expect(client.getJSON("/readany/sync/missing.json")).rejects.toThrow();
+  });
+
+  it("skips re-probing collections confirmed earlier in the same client", async () => {
+    const calls: { method: string; url: string }[] = [];
+    installFetchStub((url, options) => {
+      calls.push({ method: String(options?.method ?? "GET"), url });
+      return new Response("", { status: 207 });
+    });
+
+    const client = new WebDavClient("https://dav.example.com/dav", "alice", "secret");
+    await client.ensureDirectory("/readany");
+    await client.ensureDirectory("/readany");
+
+    expect(calls).toHaveLength(1);
+  });
+});
+
 describe("sanitizeWebDavRemoteRoot", () => {
   it("preserves case because WebDAV paths can be case-sensitive", () => {
     expect(sanitizeWebDavRemoteRoot("ReadAny/DeviceSync")).toBe("ReadAny/DeviceSync");
