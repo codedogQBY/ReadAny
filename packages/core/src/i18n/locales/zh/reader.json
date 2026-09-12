@@ -117,6 +117,7 @@
     "pageNoteBadge": "页级笔记",
     "pageNotePage": "第 {{page}} 页",
     "pageNoteNoPage": "当前位置",
+    "pageNoteWithPage": "第 {{page}} 页笔记",
     "deleteHighlightBtn": "删除高亮"
   },
   "editor": {

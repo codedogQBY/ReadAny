@@ -113,6 +113,7 @@
     "pageNoteBadge": "Nota de página",
     "pageNotePage": "Página {{page}}",
     "pageNoteNoPage": "Posición actual",
+    "pageNoteWithPage": "Nota en la página {{page}}",
     "deleteHighlightBtn": "Eliminar subrayado"
   },
   "editor": {

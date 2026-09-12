@@ -117,6 +117,7 @@
     "pageNoteBadge": "Page note",
     "pageNotePage": "Page {{page}}",
     "pageNoteNoPage": "Current position",
+    "pageNoteWithPage": "Note on page {{page}}",
     "deleteHighlightBtn": "Delete highlight"
   },
   "editor": {

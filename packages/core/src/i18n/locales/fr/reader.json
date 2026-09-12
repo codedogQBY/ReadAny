@@ -113,6 +113,7 @@
     "pageNoteBadge": "Note de page",
     "pageNotePage": "Page {{page}}",
     "pageNoteNoPage": "Position actuelle",
+    "pageNoteWithPage": "Note page {{page}}",
     "deleteHighlightBtn": "Supprimer le surlignage"
   },
   "editor": {

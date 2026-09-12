@@ -113,6 +113,7 @@
     "pageNoteBadge": "頁級筆記",
     "pageNotePage": "第 {{page}} 頁",
     "pageNoteNoPage": "當前位置",
+    "pageNoteWithPage": "第 {{page}} 頁筆記",
     "deleteHighlightBtn": "刪除醒目標示"
   },
   "editor": {

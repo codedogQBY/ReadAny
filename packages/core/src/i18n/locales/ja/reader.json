@@ -113,6 +113,7 @@
     "pageNoteBadge": "ページメモ",
     "pageNotePage": "{{page}} ページ",
     "pageNoteNoPage": "現在位置",
+    "pageNoteWithPage": "{{page}} ページのメモ",
     "deleteHighlightBtn": "ハイライトを削除"
   },
   "editor": {
