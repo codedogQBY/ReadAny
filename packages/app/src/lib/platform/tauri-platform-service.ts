@@ -7,6 +7,7 @@
  * All Tauri imports are dynamic so the module graph stays clean in SSR/test contexts.
  */
 import type {
+  type FileTransferOptions,
   FetchOptions,
   FilePickerOptions,
   IDatabase,
@@ -220,6 +221,56 @@ export class TauriPlatformService implements IPlatformService {
         return globalThis.fetch(url, fetchOptions);
       }
       throw error;
+    }
+  }
+
+  /**
+   * Native streaming upload: the file is read and PUT inside Rust, so
+   * multi-megabyte payloads never cross the webview main thread
+   * (plugin-http serializes bodies as JS number arrays, which froze sync).
+   */
+  async uploadFile(
+    url: string,
+    filePath: string,
+    options?: FileTransferOptions,
+  ): Promise<void> {
+    const { invoke } = await import("@tauri-apps/api/core");
+    try {
+      await invoke("webdav_upload_file", {
+        url,
+        filePath,
+        headers: options?.headers ?? {},
+        allowInsecure: options?.allowInsecure ?? false,
+      });
+    } catch (error) {
+      // Surface the server status inside the message — the sync layer's
+      // directory-heal retry matches on 403/404/409 in the message text.
+      throw new Error(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /** Native streaming download to a local path, with progress via channel. */
+  async downloadFile(
+    url: string,
+    filePath: string,
+    options?: FileTransferOptions,
+  ): Promise<void> {
+    const { invoke, Channel } = await import("@tauri-apps/api/core");
+    const onProgress = options?.onProgress;
+    const channel = new Channel<{ loaded: number; total: number }>();
+    if (onProgress) {
+      channel.onmessage = (payload) => onProgress(payload.loaded, payload.total);
+    }
+    try {
+      await invoke("webdav_download_file", {
+        url,
+        filePath,
+        headers: options?.headers ?? {},
+        allowInsecure: options?.allowInsecure ?? false,
+        onProgress: channel,
+      });
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : String(error));
     }
   }
 

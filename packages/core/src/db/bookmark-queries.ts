@@ -47,6 +47,11 @@ export async function insertBookmark(bookmark: Bookmark): Promise<void> {
 
 export async function deleteBookmark(id: string): Promise<void> {
   const database = await getDB();
-  await insertTombstone(database, id, "bookmarks");
+  const rows = await database.select<{ book_id: string | null }>(
+    "SELECT book_id FROM bookmarks WHERE id = ?",
+    [id],
+  );
+  const tombstoneBookId: [] | [string] = rows[0]?.book_id ? [rows[0].book_id] : [];
+  await insertTombstone(database, id, "bookmarks", ...tombstoneBookId);
   await database.execute("DELETE FROM bookmarks WHERE id = ?", [id]);
 }

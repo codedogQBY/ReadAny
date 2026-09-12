@@ -55,6 +55,7 @@ vi.mock("../services/platform", () => ({
 
 vi.mock("../sync/sync-backend-factory", () => factoryMocks);
 vi.mock("../sync/simple-sync", () => syncMocks);
+vi.mock("../sync/per-book-sync", () => ({ runPerBookSync: syncMocks.runSimpleSync }));
 vi.mock("../sync/sync-files", () => syncMocks);
 vi.mock("../events/library-events", () => libraryEventMocks);
 vi.mock("./reading-session-store", () => readingSessionMocks);
@@ -191,6 +192,7 @@ describe("useSyncStore", () => {
     expect(JSON.parse(savedConfigCall?.[1] as string)).toEqual({
       ...baseConfig,
       allowInsecure: true,
+      concurrency: 2,
     });
     expect(mockPlatformService.kvSetItem).toHaveBeenCalledWith("sync_webdav_password", "password");
     expect(useSyncStore.getState()).toMatchObject({

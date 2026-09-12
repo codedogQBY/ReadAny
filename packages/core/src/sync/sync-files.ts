@@ -12,7 +12,7 @@
 import { getDB } from "../db/database";
 import { canonicalBookFilePath } from "./local-book-paths";
 import { getSyncAdapter } from "./sync-adapter";
-import type { ISyncBackend, RemoteFile } from "./sync-backend";
+import { DEFAULT_SYNC_CONFIG, type ISyncBackend, type RemoteFile } from "./sync-backend";
 import {
   buildBookFolderName,
   buildBookRemoteCover,
@@ -37,10 +37,14 @@ import {
  * some NAS) that reject under burst load. See issue #195. Pair with the
  * WebDavClient retry-on-transient-401 in webdav-client.ts.
  */
-const UPLOAD_CONCURRENCY = 3;
-const DOWNLOAD_CONCURRENCY = 5;
-const MIGRATION_CONCURRENCY = 3;
-const REMOTE_CLEANUP_CONCURRENCY = 3;
+/**
+ * Chunk progress from concurrent transfers arrives far more often than the UI
+ * needs to repaint. Emitting every chunk floods the renderer main thread with
+ * store updates + React re-renders and freezes the whole app while transfers
+ * run, so per-task chunk progress is throttled to this interval (task start
+ * and completion still always emit).
+ */
+const PROGRESS_EMIT_MIN_INTERVAL_MS = 300;
 
 export interface SyncFilesOptions {
   forceUploadAll?: boolean;
@@ -48,6 +52,13 @@ export interface SyncFilesOptions {
   downloadRemoteBooks?: boolean;
   disableUploads?: boolean;
   disableRemoteDeletes?: boolean;
+  /** Concurrent transfers per phase (1-6). Default 2; keep low for weak gateways. */
+  concurrency?: number;
+}
+
+function effectiveConcurrency(options: SyncFilesOptions): number {
+  const value = Math.round(options.concurrency ?? DEFAULT_SYNC_CONFIG.concurrency);
+  return Math.max(1, Math.min(6, Number.isFinite(value) ? value : 2));
 }
 
 function isAbsoluteOrProtocolPath(path: string): boolean {
@@ -317,9 +328,15 @@ async function runFileTasks(
       });
     };
 
+    let lastChunkEmitAt = 0;
+
     emitProgress();
     const result = await task.run((loaded, taskTotal) => {
-      if (taskTotal > 0) emitProgress(loaded, taskTotal);
+      if (taskTotal <= 0) return;
+      const now = Date.now();
+      if (now - lastChunkEmitAt < PROGRESS_EMIT_MIN_INTERVAL_MS) return;
+      lastChunkEmitAt = now;
+      emitProgress(loaded, taskTotal);
     });
     completed++;
     const finalTotal =
@@ -362,6 +379,12 @@ export async function syncFiles(
 }> {
   const syncFilesStart = Date.now();
   console.log("[Sync] 📁 Starting file sync...");
+
+  const concurrency = effectiveConcurrency(options);
+  const uploadConcurrency = concurrency;
+  const downloadConcurrency = concurrency;
+  const migrationConcurrency = concurrency;
+  const remoteCleanupConcurrency = concurrency;
 
   const adapter = getSyncAdapter();
   const db = await getDB();
@@ -477,7 +500,7 @@ export async function syncFiles(
     }
   });
   if (migrationTasks.length > 0) {
-    await parallelLimit(migrationTasks, MIGRATION_CONCURRENCY);
+    await parallelLimit(migrationTasks, migrationConcurrency);
   }
 
   // --- Phase 2: build upload/download task lists based on post-migration state ---
@@ -625,10 +648,10 @@ export async function syncFiles(
 
   if (uploadTasks.length > 0) {
     console.log(
-      `[Sync] 📤 Starting upload of ${uploadTasks.length} files (${UPLOAD_CONCURRENCY} concurrent)...`,
+      `[Sync] 📤 Starting upload of ${uploadTasks.length} files (${uploadConcurrency} concurrent)...`,
     );
     const uploadStart = Date.now();
-    const uploadResults = await runFileTasks(uploadTasks, "upload", UPLOAD_CONCURRENCY, onProgress);
+    const uploadResults = await runFileTasks(uploadTasks, "upload", uploadConcurrency, onProgress);
     filesUploaded = uploadResults.filter((r) => r).length;
     filesUploadFailed = uploadResults.length - filesUploaded;
     console.log(
@@ -638,13 +661,13 @@ export async function syncFiles(
 
   if (downloadTasks.length > 0) {
     console.log(
-      `[Sync] 📥 Starting download of ${downloadTasks.length} files (${DOWNLOAD_CONCURRENCY} concurrent)...`,
+      `[Sync] 📥 Starting download of ${downloadTasks.length} files (${downloadConcurrency} concurrent)...`,
     );
     const downloadStart = Date.now();
     const downloadResults = await runFileTasks(
       downloadTasks,
       "download",
-      DOWNLOAD_CONCURRENCY,
+      downloadConcurrency,
       onProgress,
     );
     filesDownloaded = downloadResults.filter((r) => r).length;
@@ -656,7 +679,7 @@ export async function syncFiles(
 
   // --- Phase 3: orphan cleanup ---
   if (!disableRemoteDeletes) {
-    await cleanupRemoteOrphans(backend, listings, currentBookIds);
+    await cleanupRemoteOrphans(backend, listings, currentBookIds, remoteCleanupConcurrency);
   }
   await cleanupLocalOrphans(adapter, appDataDir, currentBookIds, books);
 
@@ -1194,6 +1217,7 @@ async function cleanupRemoteOrphans(
   backend: ISyncBackend,
   listings: RemoteListings,
   currentBookIds: Set<string>,
+  concurrency: number,
 ): Promise<void> {
   const tasks: (() => Promise<boolean>)[] = [];
 
@@ -1267,7 +1291,7 @@ async function cleanupRemoteOrphans(
 
   if (tasks.length > 0) {
     console.log(`[Sync] 🧹 Cleaning up ${tasks.length} remote orphans...`);
-    await parallelLimit(tasks, REMOTE_CLEANUP_CONCURRENCY);
+    await parallelLimit(tasks, concurrency);
   }
 }
 

@@ -168,6 +168,7 @@ export interface SyncState {
   forceFullSync: (direction: "upload" | "download") => Promise<SyncResult | null>;
   setAutoSync: (enabled: boolean) => Promise<void>;
   setSyncIntervalMins: (minutes: number) => Promise<void>;
+  setConcurrency: (value: number) => Promise<void>;
   setWifiOnly: (enabled: boolean) => Promise<void>;
   setNotifyOnComplete: (enabled: boolean) => Promise<void>;
   resetSync: () => Promise<void>;
@@ -358,6 +359,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         ) || DEFAULT_WEBDAV_REMOTE_ROOT,
       allowInsecure: allowInsecure ?? (existing as WebDavConfig)?.allowInsecure ?? false,
       autoSync: (existing as WebDavConfig)?.autoSync ?? DEFAULT_SYNC_CONFIG.autoSync,
+      concurrency: (existing as WebDavConfig)?.concurrency ?? DEFAULT_SYNC_CONFIG.concurrency,
       syncIntervalMins:
         (existing as WebDavConfig)?.syncIntervalMins ?? DEFAULT_SYNC_CONFIG.syncIntervalMins,
       wifiOnly: (existing as WebDavConfig)?.wifiOnly ?? DEFAULT_SYNC_CONFIG.wifiOnly,
@@ -388,6 +390,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
           DEFAULT_WEBDAV_REMOTE_ROOT,
         allowInsecure: allowInsecure ?? false,
         autoSync: false,
+        concurrency: DEFAULT_SYNC_CONFIG.concurrency,
         syncIntervalMins: DEFAULT_SYNC_CONFIG.syncIntervalMins,
         wifiOnly: DEFAULT_SYNC_CONFIG.wifiOnly,
         notifyOnComplete: DEFAULT_SYNC_CONFIG.notifyOnComplete,
@@ -408,6 +411,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
           s3Config.remoteRoot ?? (existing as S3Config)?.remoteRoot ?? DEFAULT_S3_REMOTE_ROOT,
         ) || DEFAULT_S3_REMOTE_ROOT,
       autoSync: (existing as S3Config)?.autoSync ?? DEFAULT_SYNC_CONFIG.autoSync,
+      concurrency: (existing as S3Config)?.concurrency ?? DEFAULT_SYNC_CONFIG.concurrency,
       syncIntervalMins:
         (existing as S3Config)?.syncIntervalMins ?? DEFAULT_SYNC_CONFIG.syncIntervalMins,
       wifiOnly: (existing as S3Config)?.wifiOnly ?? DEFAULT_SYNC_CONFIG.wifiOnly,
@@ -590,11 +594,17 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     set({ status: "syncing-files", error: null, progress: null });
 
     try {
+      const { runPerBookSync } = await import("../sync/per-book-sync");
       const { runSimpleSync } = await import("../sync/simple-sync");
+      // LAN keeps the legacy device-snapshot protocol; cloud backends use the
+      // per-book engine.
+      const runSync = backend.type === "lan" ? runSimpleSync : runPerBookSync;
 
       const receiveOnly = backend.type === "lan" || resolvedDirection === "download";
+      const configConcurrency = (state.config as { concurrency?: number } | undefined)
+        ?.concurrency;
       const uploadOnly = resolvedDirection === "upload";
-      const result = await runSimpleSync(
+      const result = await runSync(
         backend,
         (progress) => {
           set({ progress });
@@ -607,12 +617,14 @@ export const useSyncStore = create<SyncState>((set, get) => ({
                 downloadRemoteBooks: true,
                 disableUploads: true,
                 disableRemoteDeletes: true,
+                concurrency: configConcurrency,
               },
             }
           : uploadOnly
             ? {
                 fileSyncOptions: {
                   forceUploadAll: true,
+                  concurrency: configConcurrency,
                 },
               }
             : undefined,
@@ -799,13 +811,17 @@ export const useSyncStore = create<SyncState>((set, get) => ({
           return result;
         }
 
+        const { runPerBookSync } = await import("../sync/per-book-sync");
         const { runSimpleSync } = await import("../sync/simple-sync");
+        const runSync = backend.type === "lan" ? runSimpleSync : runPerBookSync;
+        const configConcurrency = (state.config as { concurrency?: number } | undefined)
+          ?.concurrency;
 
         set({ status: "syncing-files", error: null, progress: null });
 
         const receiveOnly = direction === "download";
         const startTime = Date.now();
-        const simpleResult = await runSimpleSync(
+        const simpleResult = await runSync(
           backend,
           (progress) => {
             set({
@@ -818,12 +834,16 @@ export const useSyncStore = create<SyncState>((set, get) => ({
             forceApply: receiveOnly,
             fileSyncOptions:
               direction === "upload"
-                ? { forceUploadAll: true }
+                ? {
+                    forceUploadAll: true,
+                    concurrency: configConcurrency,
+                  }
                 : {
                     forceDownloadAll: true,
                     downloadRemoteBooks: true,
                     disableUploads: true,
                     disableRemoteDeletes: true,
+                    concurrency: configConcurrency,
                   },
           },
         );
@@ -916,6 +936,15 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       Math.min(720, Math.round(minutes || DEFAULT_SYNC_CONFIG.syncIntervalMins)),
     );
     const config = { ...state.config, syncIntervalMins: clampedMinutes };
+    await persistCurrentConfigUpdate(config);
+    set({ config });
+  },
+
+  setConcurrency: async (value) => {
+    const state = get();
+    if (!state.config || state.config.type === "lan") return;
+    const clamped = Math.max(1, Math.min(6, Math.round(value || DEFAULT_SYNC_CONFIG.concurrency)));
+    const config = { ...state.config, concurrency: clamped };
     await persistCurrentConfigUpdate(config);
     set({ config });
   },

@@ -374,13 +374,13 @@ export async function deleteBook(id: string, options: DeleteBookOptions = {}): P
   ]);
 
   for (const row of highlightRows) {
-    await insertTombstone(database, row.id, "highlights");
+    await insertTombstone(database, row.id, "highlights", id);
   }
   for (const row of noteRows) {
-    await insertTombstone(database, row.id, "notes");
+    await insertTombstone(database, row.id, "notes", id);
   }
   for (const row of bookmarkRows) {
-    await insertTombstone(database, row.id, "bookmarks");
+    await insertTombstone(database, row.id, "bookmarks", id);
   }
 
   await database.execute("DELETE FROM highlights WHERE book_id = ?", [id]);

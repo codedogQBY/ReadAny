@@ -264,6 +264,8 @@
     "syncAutoSync": "Sincronización automática",
     "syncAutoSyncDesc": "Sincronizar datos automáticamente en segundo plano",
     "syncInterval": "Intervalo de sincronización",
+    "syncConcurrency": "Transferencias simultáneas",
+    "syncConcurrencyDesc": "Archivos transferidos a la vez. Reduzca a 1-2 para pasarelas/NAS débiles",
     "syncIntervalDesc": "Cuando la sincronización automática está habilitada, buscar actualizaciones cada N minutos",
     "syncIntervalMinutes": "{{count}} min",
     "syncAllowInsecure": "Permitir conexión insegura",
