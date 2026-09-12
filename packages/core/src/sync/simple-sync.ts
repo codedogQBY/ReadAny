@@ -360,7 +360,9 @@ export async function applyChanges(
           }
 
           processedRecords++;
-          if (processedRecords % 100 === 0) {
+          // Yield the main thread regularly: applying a large remote snapshot
+          // must not starve UI interactions (clicks, navigation) while it runs.
+          if (processedRecords % 25 === 0) {
             console.log(
               `[SimpleSync] Applying table ${tableName}: ${processedRecords}/${tableData.records.length} record(s) processed`,
             );
