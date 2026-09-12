@@ -2856,9 +2856,14 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           view.addEventListener("link", linkHandler);
           setViewReady(true);
 
-          // Navigate to last location or start
+          // Navigate to last location or start.
+          // Fixed-layout books (PDF/CBZ) restore via their fake page CFI
+          // (epubcfi(/6/N)), which the PDF backend's resolveCFI maps back to
+          // the recorded page — same mechanism as annotation navigation.
           if (isFixedLayout) {
-            await view.init({});
+            console.log("[PDFRestore] init lastLocation =", JSON.stringify(lastLocation));
+            await view.init(lastLocation ? { lastLocation } : {});
+            console.log("[PDFRestore] init done, current index =", view.renderer?.index);
           } else if (lastLocation) {
             try {
               await view.init({ lastLocation });
