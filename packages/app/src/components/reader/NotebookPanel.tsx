@@ -15,6 +15,7 @@ import {
   Edit3,
   FileText,
   Highlighter,
+  Plus,
   NotebookPen,
   Save,
   Trash2,
@@ -26,6 +27,7 @@ import {
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
+import { pageNoteLabel } from "@/lib/reader/page-note";
 import remarkGfm from "remark-gfm";
 
 interface NotebookPanelProps {
@@ -212,7 +214,7 @@ export function NotebookPanel({
             disabled={!onAddPageNote}
             title={t("notebook.addPageNote")}
           >
-            <NotebookPen className="h-3.5 w-3.5" />
+            <Plus className="h-4 w-4" />
           </button>
           <ExportDropdown onExport={handleExport} disabled={bookHighlights.length === 0} />
           <button
@@ -298,8 +300,6 @@ export function NotebookPanel({
                   onClick={handleSave}
                   disabled={Boolean(pendingNote && !pendingNote.text && !noteContent.trim())}
                 >
-                  <Save className="h-3.5 w-3.5 mr-1" />
-                  {t("common.save")}
                   <Save className="h-3.5 w-3.5 mr-1" />
                   {t("common.save")}
                 </Button>
@@ -424,7 +424,7 @@ function HighlightNoteItem({
             <p className="text-sm text-foreground line-clamp-2">"{highlight.text}"</p>
           ) : (
             <p className="text-sm text-muted-foreground italic line-clamp-2">
-              {t("notebook.pageNoteBadge")}
+              {pageNoteLabel(highlight.cfi, t)}
             </p>
           )}
           {highlight.note && (
@@ -489,7 +489,7 @@ function HighlightItem({ highlight, onClick, onAddNote, onDelete }: HighlightIte
           <p className="text-sm text-foreground line-clamp-2">"{highlight.text}"</p>
         ) : (
           <p className="text-sm text-muted-foreground italic line-clamp-2">
-            {t("notebook.pageNoteBadge")}
+            {pageNoteLabel(highlight.cfi, t)}
           </p>
         )}
         {highlight.chapterTitle && (

@@ -33,6 +33,7 @@ import {
  */
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { pageNoteLabel } from "@/lib/reader/page-note";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
@@ -666,7 +667,7 @@ function NoteDetailCard({
             className="text-xs text-muted-foreground italic leading-relaxed cursor-pointer hover:text-primary transition-colors line-clamp-2"
             onClick={onNavigate}
           >
-            {t("reader.notebook.pageNoteBadge")}
+            {pageNoteLabel(highlight.cfi, t)}
           </p>
         )}
 
@@ -772,7 +773,7 @@ function HighlightDetailCard({ highlight, onDelete, onNavigate, t }: HighlightDe
             className="text-sm text-muted-foreground italic leading-relaxed cursor-pointer hover:text-primary transition-colors"
             onClick={onNavigate}
           >
-            {t("reader.notebook.pageNoteBadge")}
+            {pageNoteLabel(highlight.cfi, t)}
           </p>
         )}
 
