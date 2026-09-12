@@ -534,7 +534,13 @@ export async function runPerBookSync(
     // 1. Remote directory skeleton
     progress("检查远程目录...");
     for (const dir of [BOOKS_DIR, THREADS_DIR, CHAT_DIR, PROFILE_DIR, SESSIONS_DIR]) {
-      await backend.ensureDirectory?.(dir);
+      try {
+        await backend.ensureDirectory?.(dir);
+      } catch (error) {
+        // Flaky tunnels fail individual MKCOLs; per-file self-heal retries
+        // later, so a missed directory must not abort the whole sync.
+        console.warn(`[PerBookSync] ensureDirectory ${dir} failed (continuing):`, error);
+      }
     }
 
     // 2. Index (pull)
@@ -547,6 +553,7 @@ export async function runPerBookSync(
     for (const row of bookRows) localBooksById.set(String(row.id), row);
 
     progress("拉取书籍数据...");
+    let pullFailures = 0;
     for (const [bookId, entry] of Object.entries(remoteIndex.books ?? {})) {
       const localRow = localBooksById.get(bookId);
       const localB = Number(localRow?.updated_at ?? 0);
@@ -578,14 +585,19 @@ export async function runPerBookSync(
         `[PerBookSync] book ${bookId} pull (remote=${remoteMax}, local=${localMax}, localRow=${Boolean(localRow)})`,
       );
 
-      const file = await backend.getJSON<BookSyncFile>(`${BOOKS_DIR}/${bookId}.json`);
-      if (!file || file.schemaVersion !== 1) {
-        console.warn(`[PerBookSync] Missing/invalid book file for ${bookId}; skipping`);
-        continue;
+      try {
+        const file = await backend.getJSON<BookSyncFile>(`${BOOKS_DIR}/${bookId}.json`);
+        if (!file || file.schemaVersion !== 1) {
+          console.warn(`[PerBookSync] Missing/invalid book file for ${bookId}; skipping`);
+          continue;
+        }
+        progress(`应用书籍 ${String(file.book?.title ?? bookId).slice(0, 24)}...`);
+        changes += await applyBookFile(db, file, forceApply, deviceId);
+        await sleep(0);
+      } catch (error) {
+        pullFailures++;
+        console.warn(`[PerBookSync] Failed to pull book ${bookId} (will retry next sync):`, error);
       }
-      progress(`应用书籍 ${String(file.book?.title ?? bookId).slice(0, 24)}...`);
-      changes += await applyBookFile(db, file, forceApply, deviceId);
-      await sleep(0);
     }
 
     // 4. Books — push (read-merge-write)
@@ -596,6 +608,7 @@ export async function runPerBookSync(
       progress("上传书籍数据...");
       const liveBooks = await tableRows(db, "books");
       let processed = 0;
+      let pushFailures = 0;
       for (const row of liveBooks) {
         const bookId = String(row.id);
         const entry = remoteIndex.books?.[bookId];
@@ -616,10 +629,11 @@ export async function runPerBookSync(
 
         const local = await loadLocalBookState(db, bookId, refreshedMarkers);
         if (!local) continue;
-        const remoteFile = await backend.getJSON<BookSyncFile>(`${BOOKS_DIR}/${bookId}.json`);
-        const file = buildBookFile(local, remoteFile, deviceId);
-        await backend.putJSON(`${BOOKS_DIR}/${bookId}.json`, file);
-        pendingIndexBooks[bookId] = mergeIndexEntry(entry, {
+        try {
+          const remoteFile = await backend.getJSON<BookSyncFile>(`${BOOKS_DIR}/${bookId}.json`);
+          const file = buildBookFile(local, remoteFile, deviceId);
+          await backend.putJSON(`${BOOKS_DIR}/${bookId}.json`, file);
+          pendingIndexBooks[bookId] = mergeIndexEntry(entry, {
           b: markerB,
           a: markerA,
           d:
@@ -632,6 +646,13 @@ export async function runPerBookSync(
         if (processed % 5 === 0) {
           progress(`上传书籍数据 (${processed})...`);
           await sleep(0);
+        }
+        } catch (error) {
+          pushFailures++;
+          console.warn(
+            `[PerBookSync] Failed to push book ${bookId} (will retry next sync):`,
+            error,
+          );
         }
       }
 
