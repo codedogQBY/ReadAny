@@ -6,7 +6,6 @@ import { estimateTokens } from "../../rag/chunker";
 import { search } from "../../rag/search";
 import type { SearchQuery } from "../../types";
 import { resolveChapterReference } from "../chapter-reference-resolver";
-import { fallbackContentService } from "../fallback-content-service";
 import { getFallbackChaptersForBook } from "../fallback-source-resolver";
 import type { ToolDefinition } from "./tool-types";
 
@@ -236,7 +235,6 @@ export function createRagTocTool(bookId: string): ToolDefinition {
         .map(([index, title]) => ({ index, title }));
 
       if (shouldPreferOriginalToc(chapters)) {
-        fallbackContentService.clear(bookId);
         const fallback = await getFallbackChaptersForBook(bookId);
         if (!("error" in fallback) && fallback.chapters.length > 0) {
           console.log("[ragToc] Rebuilt generic section TOC from original book", {

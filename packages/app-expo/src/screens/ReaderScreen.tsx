@@ -40,6 +40,7 @@ import { runWithDbRetry } from "@readany/core/db/write-retry";
 import { useChapterTranslation } from "@readany/core/hooks";
 import { useReadingSession } from "@readany/core/hooks/use-reading-session";
 import { createSelectionNoteMutation } from "@readany/core/reader";
+import { resolveCurrentChapterFromToc } from "@readany/core/reader/toc";
 import { getPlatformService } from "@readany/core/services";
 import { getCSSFontFace, useFontStore } from "@readany/core/stores";
 import type { HighlightColor, ReadSettings, TOCItem } from "@readany/core/types";
@@ -149,11 +150,7 @@ const NOTE_TOOLTIP_TOP_THRESHOLD = 180;
 import { useRubyStore } from "@readany/core/stores/ruby-store";
 import { ReaderSettingsPanel } from "./reader/ReaderSettingsPanel";
 import { ReaderTOCPanel } from "./reader/ReaderTOCPanel";
-import {
-  CONTROLS_TIMEOUT,
-  SCREEN_HEIGHT,
-  SCREEN_WIDTH,
-} from "./reader/reader-constants";
+import { CONTROLS_TIMEOUT, SCREEN_HEIGHT, SCREEN_WIDTH } from "./reader/reader-constants";
 import { BatteryIcon, ListIcon, SettingsIcon } from "./reader/reader-icons";
 import { makeStyles, noteTooltipMdStyles } from "./reader/reader-styles";
 import { useReaderBookmark } from "./reader/useReaderBookmark";
@@ -358,6 +355,7 @@ export function ReaderScreen({ route, navigation }: Props) {
   } | null>(null);
   const totalBookCharactersRef = useRef<number | null>(null);
   const progressTrackingGuardUntilRef = useRef(0);
+  const lastRelocateRef = useRef<RelocateEvent | null>(null);
 
   const incrementPagesRead = useReadingSessionStore((s) => s.incrementPagesRead);
   const incrementCharactersRead = useReadingSessionStore((s) => s.incrementCharactersRead);
@@ -383,6 +381,25 @@ export function ReaderScreen({ route, navigation }: Props) {
     removeBookmark,
   } = useAnnotationStore();
   const book = useMemo(() => books.find((b) => b.id === bookId), [books, bookId]);
+
+  const syncAIReadingContext = useCallback(
+    (detail: RelocateEvent, tocItems: TOCItem[]) => {
+      readingContextService.updateContext({
+        bookId,
+        bookTitle: book?.meta?.title || "",
+        currentChapter: resolveCurrentChapterFromToc(
+          tocItems,
+          detail.tocItem ?? {},
+          detail.section?.current ?? 0,
+        ),
+        currentPosition: {
+          cfi: detail.cfi || "",
+          percentage: (detail.fraction ?? 0) * 100,
+        },
+      });
+    },
+    [book?.meta?.title, bookId],
+  );
 
   // ── System info (clock/battery/statusBar/SafeArea) ─────────────────────────
   const { readerClock, batteryLevel, isBatteryCharging, stableTopInset, insets } =
@@ -438,6 +455,7 @@ export function ReaderScreen({ route, navigation }: Props) {
     progressRef.current = progress;
   }, [progress]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Reset only when the active book changes.
   useEffect(() => {
     sessionProgressRef.current = null;
     totalBookCharactersRef.current = null;
@@ -626,6 +644,7 @@ export function ReaderScreen({ route, navigation }: Props) {
       totalBookCharactersRef.current = totalCharacters > 0 ? totalCharacters : null;
     },
     onRelocate: (detail: RelocateEvent) => {
+      lastRelocateRef.current = detail;
       console.log("[ReaderScreen] onRelocate", {
         section: detail.section,
         fraction: detail.fraction,
@@ -769,22 +788,13 @@ export function ReaderScreen({ route, navigation }: Props) {
       }
 
       // Sync reading context for AI tools
-      readingContextService.updateContext({
-        bookId,
-        bookTitle: book?.meta?.title || "",
-        currentChapter: {
-          index: detail.section?.current ?? 0,
-          title: detail.tocItem?.label || "",
-          href: detail.tocItem?.href || "",
-        },
-        currentPosition: {
-          cfi: detail.cfi || "",
-          percentage: (detail.fraction ?? 0) * 100,
-        },
-      });
+      syncAIReadingContext(detail, toc);
     },
     onTocReady: (items: TOCItem[]) => {
       setToc(items);
+      if (lastRelocateRef.current) {
+        syncAIReadingContext(lastRelocateRef.current, items);
+      }
     },
     onSelection: (detail: SelectionEvent) => {
       setSelection(detail);
@@ -908,10 +918,25 @@ export function ReaderScreen({ route, navigation }: Props) {
       appActive,
     // 维护约定：任何新增遮盖正文/输入态/导航跳转，必须在此追加判定。
     [
-      readSettings.volumeButtonsPageTurn, webViewReady, loading, error, isReimporting,
-      showSearch, showTOC, showSettings, showNotebook, showTTS,
-      showTranslation, showChapterTranslation, chapterTranslation.state.status,
-      selection, noteViewHighlight, noteTooltip, ttsPlayState, isFocused, appActive,
+      readSettings.volumeButtonsPageTurn,
+      webViewReady,
+      loading,
+      error,
+      isReimporting,
+      showSearch,
+      showTOC,
+      showSettings,
+      showNotebook,
+      showTTS,
+      showTranslation,
+      showChapterTranslation,
+      chapterTranslation.state.status,
+      selection,
+      noteViewHighlight,
+      noteTooltip,
+      ttsPlayState,
+      isFocused,
+      appActive,
     ],
   );
 
@@ -1057,6 +1082,7 @@ export function ReaderScreen({ route, navigation }: Props) {
   // ── Book loading effects ───────────────────────────────────────────────────
 
   // Load book metadata and annotations
+  // biome-ignore lint/correctness/useExhaustiveDependencies: This lifecycle is intentionally keyed to bookId; book progress changes must not reload metadata.
   useEffect(() => {
     if (!book) {
       setError(t("reader.bookNotFound", "书籍未找到"));
@@ -1102,6 +1128,7 @@ export function ReaderScreen({ route, navigation }: Props) {
   }, [bookId]);
 
   // When WebView is ready and book is available, send the open command
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Opening is intentionally keyed to file/readiness/retry; later effects apply live settings and theme changes.
   useEffect(() => {
     if (!webViewReady || !book?.filePath) {
       return;
@@ -1222,7 +1249,7 @@ export function ReaderScreen({ route, navigation }: Props) {
     } finally {
       setIsReimporting(false);
     }
-  }, [bookId, isReimporting, t]);
+  }, [book, bookId, isReimporting, t]);
 
   // Apply theme colors when theme changes
   useEffect(() => {
@@ -1234,7 +1261,15 @@ export function ReaderScreen({ route, navigation }: Props) {
       primary: colors.primary,
       themeMode,
     });
-  }, [themeMode, webViewReady]);
+  }, [
+    bridge.setThemeColors,
+    colors.background,
+    colors.foreground,
+    colors.mutedForeground,
+    colors.primary,
+    themeMode,
+    webViewReady,
+  ]);
 
   // Re-apply font settings when custom fonts or selected font changes
   useEffect(() => {
@@ -1243,7 +1278,7 @@ export function ReaderScreen({ route, navigation }: Props) {
       customFontFaceCSS: customFontFaceCSS,
       customFontFamily: customFontFamily,
     });
-  }, [customFontFaceCSS, customFontFamily, webViewReady]);
+  }, [bridge.applySettings, customFontFaceCSS, customFontFamily, webViewReady]);
 
   // Re-apply effective fontSize when the OS-level font scale changes while
   // the reader is open (e.g. user changes "Display & Brightness → Text Size"
@@ -1255,6 +1290,7 @@ export function ReaderScreen({ route, navigation }: Props) {
   // layoutScale-based scaling (in reader.template.html) re-runs against the
   // new effective font size — otherwise the renderer would keep margins
   // computed from the previous size.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: systemFontScale is an intentional external trigger even though the computed settings read the stored scale.
   useEffect(() => {
     if (!webViewReady) return;
     if (!readSettings.followSystemFontScale) return;
@@ -1280,9 +1316,10 @@ export function ReaderScreen({ route, navigation }: Props) {
     for (const h of highlights) {
       bridge.addAnnotation({ value: h.cfi, type: "highlight", color: h.color, note: h.note });
     }
-  }, [webViewReady, loading, highlights]);
+  }, [bridge.addAnnotation, webViewReady, loading, highlights]);
 
   // Reset last navigated CFI when book changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: bookId is an intentional reset trigger for this ref.
   useEffect(() => {
     lastNavigatedCfiRef.current = undefined;
   }, [bookId]);
@@ -1304,7 +1341,16 @@ export function ReaderScreen({ route, navigation }: Props) {
       };
       setTimeout(doFlash, 100);
     }
-  }, [webViewReady, loading, cfi, shouldHighlight, goToCFISafely, navigation, bookId]);
+  }, [
+    bridge.flashHighlight,
+    webViewReady,
+    loading,
+    cfi,
+    shouldHighlight,
+    goToCFISafely,
+    navigation,
+    bookId,
+  ]);
 
   // Open TTS lyrics page when navigating from notification
   useEffect(() => {
@@ -1328,7 +1374,17 @@ export function ReaderScreen({ route, navigation }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [bookId, currentCfi, goToCFISafely, loading, navigation, openTTS, webViewReady]);
+  }, [
+    bookId,
+    currentCfi,
+    goToCFISafely,
+    loading,
+    navigation,
+    openTTS,
+    tts.resolvedTTSSegmentCfi,
+    tts.ttsDisplaySegments,
+    webViewReady,
+  ]);
 
   if (loading && !webViewReady && !readerHtmlUri) {
     return (
@@ -1944,7 +2000,8 @@ export function ReaderScreen({ route, navigation }: Props) {
             <TouchableOpacity
               style={s.searchNavBtn}
               onPress={() => {
-                if (search.searchStartCfi && search.searchResultCount > 0) {
+                const searchStartCfi = search.searchStartCfi;
+                if (searchStartCfi && search.searchResultCount > 0) {
                   Alert.alert(
                     t("reader.searchComplete", "搜索完成"),
                     t("reader.returnToOriginal", "是否返回搜索前的位置？"),
@@ -1959,7 +2016,7 @@ export function ReaderScreen({ route, navigation }: Props) {
                       {
                         text: t("common.confirm", "确定"),
                         onPress: () => {
-                          goToCFISafely(search.searchStartCfi!);
+                          goToCFISafely(searchStartCfi);
                           search.setSearchStartCfi(null);
                         },
                       },

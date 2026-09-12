@@ -27,6 +27,11 @@
       "explainConcepts": "解釋關鍵概念",
       "analyzeAuthor": "分析作者的論點"
     },
+    "errors": {
+      "inputTooLong": "內容過長，請分段提問。",
+      "chapterLookupFailed": "未能可靠定位章節，請補充更準確的章節名稱。",
+      "retrievalLimitReached": "本輪檢索未能穩定完成，請換個更具體的問法或重試一次。"
+    },
     "aiAssistant": "AI 閱讀助手",
     "aiAssistantDesc": "分析內容、回答問題，幫助你更好地理解書籍。",
     "deepThinking": "深度思考",

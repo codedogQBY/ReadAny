@@ -88,7 +88,9 @@ describe("streamReadingAgent tool registration", () => {
       events.push(event);
     }
 
-    expect(events).toEqual([{ type: "token", content: "内容过长，请分段提问。" }]);
+    expect(events).toEqual([
+      { type: "token", content: "That message is too long. Please send it in smaller parts." },
+    ]);
     expect(createReactAgentMock).not.toHaveBeenCalled();
   });
 
@@ -572,8 +574,44 @@ describe("streamReadingAgent tool registration", () => {
 
     const fourth = JSON.parse(await wrappedResolveTool.func({ query: "张三疯那一章讲了什么" }));
     expect(fourth.attemptLimitReached).toBe(true);
-    expect(fourth.notice).toBe("未能可靠定位章节，请补充更准确的章节名");
+    expect(fourth.notice).toBe(
+      "I couldn't reliably identify that chapter. Please give me a more specific chapter title.",
+    );
     expect(fourth.attemptedQueries).toEqual(["张三疯那一章讲了什么", "张三疯", "张三疯"]);
+  });
+
+  it("returns the retrieval-limit guardrail in the active UI language", async () => {
+    createReactAgentMock.mockReturnValue({
+      streamEvents: vi.fn(() => ({
+        [Symbol.asyncIterator]() {
+          return {
+            next: vi.fn().mockRejectedValue(new Error("Recursion limit of 24 reached")),
+          };
+        },
+      })),
+    });
+
+    const events = [];
+    for await (const event of streamReadingAgent(
+      {
+        aiConfig: makeAIConfig(),
+        book: null,
+        bookId: "book-1",
+        semanticContext: null,
+        enabledSkills: [],
+        isVectorized: true,
+        getAvailableTools,
+      },
+      "Analyze the themes across this book",
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({
+      type: "token",
+      content:
+        "I couldn't complete that retrieval reliably. Please try a more specific question or retry.",
+    });
   });
 
   it("keeps RAG fallback available for current-page questions on indexed books", async () => {
