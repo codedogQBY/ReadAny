@@ -104,7 +104,9 @@ $sdkDefault = Join-Path $env:LOCALAPPDATA "Android\Sdk"
 if (-not $sdk) { $sdk = $sdkDefault }
 $sdkOk = Test-Path $sdk
 $sdkWarn = $sdkOk -and -not $sdkFromEnv
-Write-Result "Android SDK ($sdk)" $sdkOk (
+# Pass only when the SDK is BOTH found AND env-sourced; a bare default-path
+# hit lands in the WARN branch ($Ok false, -Warn true).
+Write-Result "Android SDK ($sdk)" ($sdkOk -and $sdkFromEnv) (
   "Install Android Studio or the command-line tools, then set the ANDROID_HOME user environment variable to the SDK folder (e.g. $sdkDefault)."
 ) -Warn:$sdkWarn
 if ($sdkWarn) {
@@ -155,7 +157,7 @@ if ($sdkOk) {
 
 # --- Summary ---------------------------------------------------------
 Write-Host ""
-$color = if ($script:Fail -eq 0) { "Green" } else { "Red" }
+$color = if ($script:Fail -gt 0) { "Red" } elseif ($script:Warn -gt 0) { "Yellow" } else { "Green" }
 Write-Host ("{0} passed, {1} warned, {2} failed" -f $script:Pass, $script:Warn, $script:Fail) -ForegroundColor $color
 if ($script:Fail -gt 0) {
   exit 1
