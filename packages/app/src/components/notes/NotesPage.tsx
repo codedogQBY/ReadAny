@@ -33,6 +33,7 @@ import {
  */
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { pageNoteLabel } from "@/lib/reader/page-note";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
@@ -654,12 +655,21 @@ function NoteDetailCard({
     <div className="group rounded-lg border border-border/40 bg-card transition-colors hover:border-border/70">
       <div className="p-3">
         {/* Quoted highlight text */}
-        <p
-          className="text-xs text-muted-foreground/80 leading-relaxed cursor-pointer hover:text-primary transition-colors line-clamp-2"
-          onClick={onNavigate}
-        >
-          "{highlight.text}"
-        </p>
+        {highlight.text ? (
+          <p
+            className="text-xs text-muted-foreground/80 leading-relaxed cursor-pointer hover:text-primary transition-colors line-clamp-2"
+            onClick={onNavigate}
+          >
+            "{highlight.text}"
+          </p>
+        ) : (
+          <p
+            className="text-xs text-muted-foreground italic leading-relaxed cursor-pointer hover:text-primary transition-colors line-clamp-2"
+            onClick={onNavigate}
+          >
+            {pageNoteLabel(highlight.cfi, t)}
+          </p>
+        )}
 
         {/* Note content */}
         {isEditing ? (
@@ -751,12 +761,21 @@ function HighlightDetailCard({ highlight, onDelete, onNavigate, t }: HighlightDe
       />
 
       <div className="pl-4 pr-3 py-3">
-        <p
-          className="text-sm text-foreground/90 leading-relaxed cursor-pointer hover:text-primary transition-colors"
-          onClick={onNavigate}
-        >
-          "{highlight.text}"
-        </p>
+        {highlight.text ? (
+          <p
+            className="text-sm text-foreground/90 leading-relaxed cursor-pointer hover:text-primary transition-colors"
+            onClick={onNavigate}
+          >
+            "{highlight.text}"
+          </p>
+        ) : (
+          <p
+            className="text-sm text-muted-foreground italic leading-relaxed cursor-pointer hover:text-primary transition-colors"
+            onClick={onNavigate}
+          >
+            {pageNoteLabel(highlight.cfi, t)}
+          </p>
+        )}
 
         <div className="mt-2 flex items-center justify-between">
           <span className="text-[11px] text-muted-foreground/60">

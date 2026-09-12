@@ -1673,6 +1673,19 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     setSelection(null);
   }, [selection, bookId, highlights, readerTab?.chapterTitle]);
 
+  // Handle page-level note button — anchor a note to the current position so
+  // formats without usable text selection (e.g. PDF) can still take notes.
+  const handleAddPageNote = useCallback(() => {
+    const cfi = readerTab?.currentCfi;
+    if (!cfi) return;
+    useNotebookStore.getState().startNewNote({
+      text: "",
+      cfi,
+      chapterTitle: readerTab?.chapterTitle,
+      page: currentPage || undefined,
+    });
+  }, [readerTab?.currentCfi, readerTab?.chapterTitle, currentPage]);
+
   const handleCopy = useCallback(() => {
     if (selection?.text) navigator.clipboard.writeText(selection.text);
     setSelection(null);
@@ -2870,6 +2883,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       {/* Notebook sidebar — LEFT side */}
       <NotebookSidebarWrapper
         bookId={bookId}
+        onAddPageNote={handleAddPageNote}
         onGoToCfi={navigateToCfi}
         onAddAnnotation={(cfi, color, note) => {
           foliateRef.current?.addAnnotation({
@@ -3214,6 +3228,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 // Separate component to use notebook store hook
 function NotebookSidebarWrapper({
   bookId,
+  onAddPageNote,
   onGoToCfi,
   onAddAnnotation,
   onDeleteAnnotation,
@@ -3223,6 +3238,7 @@ function NotebookSidebarWrapper({
   onResizeEnd,
 }: {
   bookId: string;
+  onAddPageNote?: () => void;
   onGoToCfi: (cfi: string) => void;
   onAddAnnotation: (cfi: string, color: string, note?: string) => void;
   onDeleteAnnotation: (cfi: string) => void;
@@ -3250,6 +3266,7 @@ function NotebookSidebarWrapper({
       <NotebookPanel
         bookId={bookId}
         onClose={closeNotebook}
+        onAddPageNote={onAddPageNote}
         onGoToCfi={onGoToCfi}
         onAddAnnotation={onAddAnnotation}
         onDeleteAnnotation={onDeleteAnnotation}

@@ -111,6 +111,11 @@
     "emptyHint": "책에서 텍스트를 선택하여 하이라이트하거나 노트를 추가하세요",
     "editNote": "노트 편집",
     "addNoteBtn": "노트 추가",
+    "addPageNote": "페이지 메모 추가",
+    "pageNoteBadge": "페이지 메모",
+    "pageNotePage": "{{page}}쪽",
+    "pageNoteNoPage": "현재 위치",
+    "pageNoteWithPage": "{{page}}쪽 메모",
     "deleteHighlightBtn": "하이라이트 삭제"
   },
   "editor": {

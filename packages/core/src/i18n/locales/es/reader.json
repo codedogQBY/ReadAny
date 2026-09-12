@@ -111,6 +111,11 @@
     "emptyHint": "Selecciona texto en el libro para subrayar o agregar notas",
     "editNote": "Editar nota",
     "addNoteBtn": "Agregar nota",
+    "addPageNote": "Añadir nota de página",
+    "pageNoteBadge": "Nota de página",
+    "pageNotePage": "Página {{page}}",
+    "pageNoteNoPage": "Posición actual",
+    "pageNoteWithPage": "Nota en la página {{page}}",
     "deleteHighlightBtn": "Eliminar subrayado"
   },
   "editor": {

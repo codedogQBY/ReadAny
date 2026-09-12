@@ -111,6 +111,11 @@
     "emptyHint": "本のテキストを選択してハイライトやノートを追加",
     "editNote": "ノートを編集",
     "addNoteBtn": "ノートを追加",
+    "addPageNote": "ページメモを追加",
+    "pageNoteBadge": "ページメモ",
+    "pageNotePage": "{{page}} ページ",
+    "pageNoteNoPage": "現在位置",
+    "pageNoteWithPage": "{{page}} ページのメモ",
     "deleteHighlightBtn": "ハイライトを削除"
   },
   "editor": {
