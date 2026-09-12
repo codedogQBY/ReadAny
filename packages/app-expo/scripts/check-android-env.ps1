@@ -45,7 +45,10 @@ $nodeVer = $null
 $nodeOk = $false
 if ($node) {
   $nodeVer = (& node -v 2>$null | Select-Object -First 1)
-  $nodeOk = ($nodeVer -match '^v(\d+)') -and ([int]$Matches[1] -ge 18)
+  # Explicit if, not `-and` chaining: PowerShell's -and does not short-circuit,
+  # so a failed match would still evaluate [int]$Matches[1] against whatever
+  # the previous regex (JDK check) left behind.
+  if ($nodeVer -match '^v(\d+)') { $nodeOk = [int]$Matches[1] -ge 18 }
 }
 Write-Result "Node.js" $nodeOk (
   "Node.js 18+ is required (found: $(if ($nodeVer) { $nodeVer.Trim() } else { 'not installed' })). Install from https://nodejs.org"
@@ -105,12 +108,16 @@ if (-not $sdk) { $sdk = $sdkDefault }
 $sdkOk = Test-Path $sdk
 $sdkWarn = $sdkOk -and -not $sdkFromEnv
 # Pass only when the SDK is BOTH found AND env-sourced; a bare default-path
-# hit lands in the WARN branch ($Ok false, -Warn true).
-Write-Result "Android SDK ($sdk)" ($sdkOk -and $sdkFromEnv) (
+# hit lands in the WARN branch ($Ok false, -Warn true). The WARN hint points
+# at the actual fix (set the env var / pin sdk.dir) — not at reinstalling.
+$sdkHint = if ($sdkWarn) {
+  "ANDROID_HOME is not set. Set the ANDROID_HOME user environment variable to the SDK folder (e.g. $sdkDefault), or pin sdk.dir in android/local.properties."
+} else {
   "Install Android Studio or the command-line tools, then set the ANDROID_HOME user environment variable to the SDK folder (e.g. $sdkDefault)."
-) -Warn:$sdkWarn
+}
+Write-Result "Android SDK ($sdk)" ($sdkOk -and $sdkFromEnv) $sdkHint -Warn:$sdkWarn
 if ($sdkWarn) {
-  Write-Host "       > ANDROID_HOME is not set. If android/local.properties does not pin sdk.dir, Gradle will fail with 'SDK location not found' even though the default folder exists." -ForegroundColor Yellow
+  Write-Host "       > Without one of those, Gradle fails with 'SDK location not found' even though the default folder exists." -ForegroundColor Yellow
 }
 
 if ($sdkOk) {
