@@ -45,9 +45,9 @@ $nodeVer = $null
 $nodeOk = $false
 if ($node) {
   $nodeVer = (& node -v 2>$null | Select-Object -First 1)
-  # Explicit if, not `-and` chaining: PowerShell's -and does not short-circuit,
-  # so a failed match would still evaluate [int]$Matches[1] against whatever
-  # the previous regex (JDK check) left behind.
+  # Explicit if keeps the version comparison self-contained and independent
+  # of $Matches state. (PowerShell's -and short-circuits, so the previous
+  # chained form was correct too — this is for clarity, not a fix.)
   if ($nodeVer -match '^v(\d+)') { $nodeOk = [int]$Matches[1] -ge 18 }
 }
 Write-Result "Node.js" $nodeOk (
@@ -95,30 +95,42 @@ if ($javaHome) {
 Write-Result "JDK (JAVA_HOME=$javaHome)" $jdkOk $jdkHint
 
 # --- Android SDK -----------------------------------------------------
-# Gradle resolves the SDK from ANDROID_HOME/ANDROID_SDK_ROOT or
-# android/local.properties — NOT from Android Studio's default install
-# folder. A bare default-path fallback therefore must not report PASS,
-# or the doctor passes while `pnpm expo:android` still fails with
-# "SDK location not found".
+# Gradle resolves the SDK from ANDROID_HOME/ANDROID_SDK_ROOT, then from
+# android/local.properties (sdk.dir — written by Android Studio / Gradle
+# on first sync). Everything else must NOT pass: a bare default-folder
+# fallback used to print a green PASS while the build failed with
+# "SDK location not found" — exactly the trap this doctor exists to catch.
 $sdk = $env:ANDROID_HOME
 if (-not $sdk) { $sdk = $env:ANDROID_SDK_ROOT }
 $sdkFromEnv = [bool]$sdk
 $sdkDefault = Join-Path $env:LOCALAPPDATA "Android\Sdk"
 if (-not $sdk) { $sdk = $sdkDefault }
 $sdkOk = Test-Path $sdk
-$sdkWarn = $sdkOk -and -not $sdkFromEnv
-# Pass only when the SDK is BOTH found AND env-sourced; a bare default-path
-# hit lands in the WARN branch ($Ok false, -Warn true). The WARN hint points
-# at the actual fix (set the env var / pin sdk.dir) — not at reinstalling.
-$sdkHint = if ($sdkWarn) {
-  "ANDROID_HOME is not set. Set the ANDROID_HOME user environment variable to the SDK folder (e.g. $sdkDefault), or pin sdk.dir in android/local.properties."
-} else {
-  "Install Android Studio or the command-line tools, then set the ANDROID_HOME user environment variable to the SDK folder (e.g. $sdkDefault)."
+
+# Honor a pinned sdk.dir as the alternative source the env vars would be.
+$localProps = Join-Path (Split-Path $PSScriptRoot -Parent) "android\local.properties"
+$sdkDirPinned = $false
+$sdkPinnedPath = $null
+if (Test-Path $localProps) {
+  $pinnedLine = Get-Content $localProps | Where-Object { $_ -match '^sdk\.dir=(.+)$' } | Select-Object -First 1
+  if ($pinnedLine) {
+    # properties-file escapes: backslashes doubled, colon written as \:
+    $sdkPinnedPath = $pinnedLine.Substring(8).Replace('\\', '\').Replace('\:', ':')
+    $sdkDirPinned = Test-Path $sdkPinnedPath
+  }
 }
-Write-Result "Android SDK ($sdk)" ($sdkOk -and $sdkFromEnv) $sdkHint -Warn:$sdkWarn
-if ($sdkWarn) {
-  Write-Host "       > Without one of those, Gradle fails with 'SDK location not found' even though the default folder exists." -ForegroundColor Yellow
-}
+
+$sdkPass = ($sdkOk -and $sdkFromEnv) -or $sdkDirPinned
+$sdkDisplay = if (-not $sdkFromEnv -and $sdkDirPinned) { $sdkPinnedPath } else { $sdk }
+$sdkHint =
+  if ($sdkOk -and -not $sdkFromEnv -and -not $sdkDirPinned) {
+    "Found the SDK only at the default location, but Gradle does not look there. Set the ANDROID_HOME user environment variable to $sdkDefault (or let Android Studio write android/local.properties)."
+  } elseif ($sdkFromEnv -and -not $sdkOk) {
+    "ANDROID_HOME/ANDROID_SDK_ROOT is set to `"$sdk`" but that folder does not exist. Update the variable (e.g. to $sdkDefault) or reinstall the SDK there."
+  } else {
+    "Install Android Studio or the command-line tools, then set the ANDROID_HOME user environment variable to the SDK folder (e.g. $sdkDefault)."
+  }
+Write-Result "Android SDK ($sdkDisplay)" $sdkPass $sdkHint
 
 if ($sdkOk) {
   $adb = Join-Path $sdk "platform-tools\adb.exe"
