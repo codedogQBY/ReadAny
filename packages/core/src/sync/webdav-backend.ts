@@ -77,28 +77,40 @@ export class WebDavBackend implements ISyncBackend {
     await this.client.ensureDirectory(this.resolvePath(REMOTE_DATA));
     // New per-book layout root
     await this.client.ensureDirectory(this.resolvePath(REMOTE_BOOKS_ROOT));
-    // Legacy directories kept ensured during the transition window (cheap & safe)
-    await this.client.mkcol(this.resolvePath(REMOTE_FILES));
-    await this.client.mkcol(this.resolvePath(REMOTE_COVERS));
+    // Legacy directories kept ensured during the transition window (cheap & safe).
+    // ensureDirectory (not bare mkcol): some servers answer 409 to MKCOL when
+    // an intermediate collection is missing, which must not be read as success.
+    await this.client.ensureDirectory(this.resolvePath(REMOTE_FILES));
+    await this.client.ensureDirectory(this.resolvePath(REMOTE_COVERS));
     this.directoriesEnsured = true;
   }
 
-  async put(path: string, data: Uint8Array): Promise<void> {
+  /**
+   * Some WebDAV servers (Synology, QNAP, 飞牛, etc.) return 403/404/409 when
+   * PUT-ing into a directory that doesn't exist yet. Ensure the parent and
+   * retry once — most uploads land on an existing dir, so this catch path
+   * only fires for first-time uploads into a brand-new folder. Shared by
+   * every upload entry point (put/putFile/putJSON) so no caller can bypass it.
+   */
+  private async putWithDirectoryHeal(
+    path: string,
+    write: (resolvedPath: string) => Promise<void>,
+  ): Promise<void> {
     const resolved = this.resolvePath(path);
     try {
-      await this.client.put(resolved, data);
+      await write(resolved);
     } catch (e) {
-      // Some WebDAV servers (Synology, QNAP, 飞牛, etc.) return 403/404/409 when
-      // PUT-ing into a directory that doesn't exist yet. Ensure the parent and
-      // retry once — most uploads land on an existing dir, so this catch path
-      // only fires for first-time uploads into a brand-new per-book folder.
       const message = e instanceof Error ? e.message : String(e);
       if (!/\b(403|404|409)\b/.test(message)) throw e;
       const parent = resolved.substring(0, resolved.lastIndexOf("/"));
       if (!parent || parent === "/") throw e;
       await this.client.ensureDirectory(parent);
-      await this.client.put(resolved, data);
+      await write(resolved);
     }
+  }
+
+  async put(path: string, data: Uint8Array): Promise<void> {
+    await this.putWithDirectoryHeal(path, (resolved) => this.client.put(resolved, data));
   }
 
   async putFile(
@@ -106,17 +118,9 @@ export class WebDavBackend implements ISyncBackend {
     localFilePath: string,
     onProgress?: (loaded: number, total: number) => void,
   ): Promise<void> {
-    const resolved = this.resolvePath(path);
-    try {
-      await this.client.putFile(resolved, localFilePath, onProgress);
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      if (!/\b(403|404|409)\b/.test(message)) throw e;
-      const parent = resolved.substring(0, resolved.lastIndexOf("/"));
-      if (!parent || parent === "/") throw e;
-      await this.client.ensureDirectory(parent);
-      await this.client.putFile(resolved, localFilePath, onProgress);
-    }
+    await this.putWithDirectoryHeal(path, (resolved) =>
+      this.client.putFile(resolved, localFilePath, onProgress),
+    );
   }
 
   async get(path: string): Promise<Uint8Array> {
@@ -143,7 +147,11 @@ export class WebDavBackend implements ISyncBackend {
   }
 
   async putJSON<T>(path: string, data: T): Promise<void> {
-    await this.client.putJSON(this.resolvePath(path), data);
+    // Must go through the shared heal path: this is how device snapshots and
+    // the file manifest get written, and a missing /readany/sync used to
+    // surface here as "WebDAV PUT failed … 404" because client.putJSON
+    // bypassed the retry that put()/putFile() had.
+    await this.putWithDirectoryHeal(path, (resolved) => this.client.putJSON(resolved, data));
   }
 
   async listDir(path: string): Promise<RemoteFile[]> {
