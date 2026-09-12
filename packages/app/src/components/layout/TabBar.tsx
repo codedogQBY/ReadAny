@@ -11,6 +11,7 @@ import { useReaderStore } from "@/stores/reader-store";
 import { useSyncStore } from "@/stores/sync-store";
 import { BookOpen, FilePenLine, Home, MessageSquare, NotebookPen, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 const TAB_ICONS: Record<string, React.ElementType> = {
   home: Home,
@@ -131,6 +132,7 @@ function TabItem({
   onClose: () => void;
 }) {
   const Icon = TAB_ICONS[tab.type] ?? BookOpen;
+  const { t } = useTranslation();
 
   return (
     <div
@@ -147,7 +149,10 @@ function TabItem({
       <span className="max-w-[120px] truncate">{tab.title}</span>
       <button
         type="button"
-        className="ml-0.5 hidden h-4 w-4 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-neutral-200/80 hover:text-foreground group-hover:flex"
+        title={t("tabs.close")}
+        // Always visible on the active tab — hover-gated elsewhere. Hover-only
+        // UI is unusable on devices whose webview reports (hover: none).
+        className={`ml-0.5 ${isActive ? "flex" : "hidden group-hover:flex"} h-4 w-4 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-neutral-200/80 hover:text-foreground`}
         data-no-window-drag
         onClick={(e) => { e.stopPropagation(); onClose(); }}
       >

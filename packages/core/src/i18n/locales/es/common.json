@@ -63,6 +63,7 @@
     "deleteGroupConfirm": "¿Eliminar este grupo? Los libros no se eliminarán."
   },
   "tabs": {
+    "close": "Cerrar pestaña",
     "library": "Biblioteca",
     "ai": "IA",
     "notes": "Notas",

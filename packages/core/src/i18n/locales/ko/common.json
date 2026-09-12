@@ -63,6 +63,7 @@
     "deleteGroupConfirm": "이 그룹을 삭제하시겠습니까? 책은 삭제되지 않습니다."
   },
   "tabs": {
+    "close": "탭 닫기",
     "library": "서재",
     "ai": "AI",
     "notes": "노트",

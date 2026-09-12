@@ -63,6 +63,7 @@
     "deleteGroupConfirm": "確定刪除此分組？書籍不會被刪除。"
   },
   "tabs": {
+    "close": "關閉標籤頁",
     "library": "書庫",
     "ai": "AI",
     "notes": "筆記",
