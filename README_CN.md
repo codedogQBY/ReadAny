@@ -227,6 +227,34 @@ Expo Go。Expo Go 无法加载 ReadAny 当前依赖的原生模块和应用配�
 模拟器调试时，iOS 使用 `pnpm expo:ios:simulator`；Android 先启动 Android
 模拟器，再运行 `pnpm expo:android`。
 
+#### Windows：Android 开发环境配置
+
+上面的 npm 脚本都用了 `cross-env`，在 Windows 的 PowerShell/cmd 下可直接运行。
+首次 Android 构建需要原生工具链：
+
+1. 安装 **JDK 17 或 21**（[Eclipse Temurin](https://adoptium.net)），并把
+   `JAVA_HOME` 用户环境变量指向其目录。
+2. 安装 **[Android Studio](https://developer.android.com/studio)**，在
+   **SDK Manager** 中安装：Android 平台（`Android 15/16`，API 35/36）、
+   **Android SDK Build-Tools**、**Android SDK Platform-Tools**，以及一个
+   `x86_64` 模拟器系统镜像。
+3. 在 **Device Manager** 创建 AVD（或用开启 USB 调试的真机）。
+4. 把 `ANDROID_HOME` 用户环境变量设为 SDK 路径（默认
+   `%LOCALAPPDATA%\Android\Sdk`）。
+
+检查环境是否就绪：
+
+```powershell
+pnpm expo:doctor:android
+```
+
+然后启动 Metro 并构建 dev client（首次构建会下载 Gradle 和原生依赖，耗时较长）：
+
+```powershell
+pnpm expo:start      # 终端 1：Metro dev server
+pnpm expo:android    # 终端 2：构建并安装 dev client
+```
+
 移动端源码位于 [`packages/app-expo`](packages/app-expo)。
 
 ### AI 配置
