@@ -24,6 +24,6 @@ type LabelT = (key: string, options?: Record<string, unknown>) => string;
 export function pageNoteLabel(cfi: string, t: LabelT): string {
   const page = parseFakeCfiPage(cfi);
   return page
-    ? t("reader.notebook.pageNoteWithPage", { page })
-    : t("reader.notebook.pageNoteBadge");
+    ? t("notebook.pageNoteWithPage", { page })
+    : t("notebook.pageNoteBadge");
 }
