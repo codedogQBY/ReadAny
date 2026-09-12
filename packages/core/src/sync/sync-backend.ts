@@ -25,6 +25,8 @@ export interface ISyncBackend {
 
   /** Ensure the remote directory structure exists */
   ensureDirectories(): Promise<void>;
+  /** Create one remote directory (best-effort; cloud-layout engines use it). */
+  ensureDirectory?(path: string): Promise<void>;
 
   /** Upload data to a path */
   put(path: string, data: Uint8Array): Promise<void>;

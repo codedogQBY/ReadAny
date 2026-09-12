@@ -310,12 +310,13 @@ export async function insertTombstone(
   database: IDatabase,
   id: string,
   tableName: string,
+  bookId?: string,
 ): Promise<void> {
   const deviceId = await getDeviceId();
   try {
     await database.execute(
-      "INSERT OR REPLACE INTO sync_tombstones (id, table_name, deleted_at, device_id) VALUES (?, ?, ?, ?)",
-      [id, tableName, Date.now(), deviceId],
+      "INSERT OR REPLACE INTO sync_tombstones (id, table_name, deleted_at, device_id, book_id) VALUES (?, ?, ?, ?, ?)",
+      [id, tableName, Date.now(), deviceId, bookId ?? null],
     );
   } catch {
     // sync_tombstones table might not exist on older schema
@@ -573,6 +574,13 @@ export async function initDatabase(): Promise<void> {
       await database.execute(
         "CREATE INDEX IF NOT EXISTS idx_tombstones_deleted_at ON sync_tombstones(deleted_at)",
       );
+      // Migration 5b: attribute tombstones to their book so per-book sync can
+      // propagate annotation deletions inside the book's own sync file.
+      try {
+        await database.execute("ALTER TABLE sync_tombstones ADD COLUMN book_id TEXT");
+      } catch {
+        // Column already exists
+      }
 
       // Migration 6: Sync metadata table
       await database.execute(`

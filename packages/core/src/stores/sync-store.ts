@@ -590,11 +590,15 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     set({ status: "syncing-files", error: null, progress: null });
 
     try {
+      const { runPerBookSync } = await import("../sync/per-book-sync");
       const { runSimpleSync } = await import("../sync/simple-sync");
+      // LAN keeps the legacy device-snapshot protocol; cloud backends use the
+      // per-book engine.
+      const runSync = backend.type === "lan" ? runSimpleSync : runPerBookSync;
 
       const receiveOnly = backend.type === "lan" || resolvedDirection === "download";
       const uploadOnly = resolvedDirection === "upload";
-      const result = await runSimpleSync(
+      const result = await runSync(
         backend,
         (progress) => {
           set({ progress });
@@ -799,13 +803,15 @@ export const useSyncStore = create<SyncState>((set, get) => ({
           return result;
         }
 
+        const { runPerBookSync } = await import("../sync/per-book-sync");
         const { runSimpleSync } = await import("../sync/simple-sync");
+        const runSync = backend.type === "lan" ? runSimpleSync : runPerBookSync;
 
         set({ status: "syncing-files", error: null, progress: null });
 
         const receiveOnly = direction === "download";
         const startTime = Date.now();
-        const simpleResult = await runSimpleSync(
+        const simpleResult = await runSync(
           backend,
           (progress) => {
             set({

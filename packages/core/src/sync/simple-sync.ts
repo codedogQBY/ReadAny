@@ -140,7 +140,7 @@ async function filterRecordToExistingColumns(
   );
 }
 
-async function withDatabaseLockRetry<T>(operation: () => Promise<T>, label: string): Promise<T> {
+export async function withDatabaseLockRetry<T>(operation: () => Promise<T>, label: string): Promise<T> {
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= DB_LOCK_MAX_RETRIES; attempt++) {
@@ -167,6 +167,12 @@ export interface TableChangeset {
   records: Record<string, unknown>[];
   deletedIds: string[];
   deletedTimestamps?: Record<string, number>;
+  /**
+   * Book attribution for annotation tombstones (highlights/notes/bookmarks),
+   * so per-book sync files can carry the deletion forward. Optional for
+   * backward compatibility with snapshots written before book_id existed.
+   */
+  deletedBookIds?: Record<string, string>;
 }
 
 export interface DeviceSyncPayload {
@@ -188,7 +194,7 @@ async function getDeviceId(): Promise<string> {
   return getLocalDeviceId();
 }
 
-async function getLastSyncTimestamp(): Promise<number> {
+export async function getLastSyncTimestamp(): Promise<number> {
   const db = await getDB();
   const rows = await db.select<{ value: string }>(
     "SELECT value FROM sync_metadata WHERE key = 'last_sync_at'",
@@ -196,7 +202,7 @@ async function getLastSyncTimestamp(): Promise<number> {
   return rows[0]?.value ? Number.parseInt(rows[0].value, 10) : 0;
 }
 
-async function setLastSyncTimestamp(timestamp: number): Promise<void> {
+export async function setLastSyncTimestamp(timestamp: number): Promise<void> {
   const db = await getDB();
   await db.execute("INSERT OR REPLACE INTO sync_metadata (key, value) VALUES ('last_sync_at', ?)", [
     String(timestamp),
@@ -248,9 +254,14 @@ export async function collectChanges(since: number): Promise<DeviceSyncPayload> 
 
     let deletedIds: string[] = [];
     const deletedTimestamps: Record<string, number> = {};
+    let deletedBookIds: Record<string, string> | undefined;
     try {
-      const tombstones = await db.select<{ id: string; deleted_at: number }>(
-        `SELECT id, deleted_at
+      const tombstones = await db.select<{
+        id: string;
+        deleted_at: number;
+        book_id: string | null;
+      }>(
+        `SELECT id, deleted_at, book_id
          FROM sync_tombstones
          WHERE table_name = ?
            AND deleted_at > ?
@@ -260,13 +271,16 @@ export async function collectChanges(since: number): Promise<DeviceSyncPayload> 
       deletedIds = tombstones.map((t) => t.id);
       for (const t of tombstones) {
         deletedTimestamps[t.id] = t.deleted_at;
+        if (t.book_id) {
+          (deletedBookIds ??= {})[t.id] = t.book_id;
+        }
       }
     } catch {
       // sync_tombstones may not exist on older schema
     }
 
     if (records.length > 0 || deletedIds.length > 0) {
-      payload.tables[name] = { records, deletedIds, deletedTimestamps };
+      payload.tables[name] = { records, deletedIds, deletedTimestamps, deletedBookIds };
     }
   }
 
@@ -393,7 +407,14 @@ export async function applyChanges(
           }
           await db.execute(`DELETE FROM ${tableName} WHERE ${pk} = ?`, [deletedId]);
           if (deletedAt > 0) {
-            await rememberRemoteTombstone(db, tableName, deletedId, deletedAt, payload.deviceId);
+            await rememberRemoteTombstone(
+              db,
+              tableName,
+              deletedId,
+              deletedAt,
+              payload.deviceId,
+              tableData.deletedBookIds?.[deletedId],
+            );
           }
           applied++;
           existingRecords.set(String(deletedId), {
@@ -411,7 +432,7 @@ export async function applyChanges(
   );
 }
 
-async function upsertRecord(
+export async function upsertRecord(
   db: Awaited<ReturnType<typeof getDB>>,
   table: string,
   record: Record<string, unknown>,
@@ -445,7 +466,7 @@ async function upsertRecord(
   );
 }
 
-function localizeSyncedBookRecord(record: Record<string, unknown>): Record<string, unknown> {
+export function localizeSyncedBookRecord(record: Record<string, unknown>): Record<string, unknown> {
   const id = record.id;
   const filePath = canonicalBookFilePath(id, record.file_path, record.format);
   if (!filePath) return record;
@@ -493,7 +514,7 @@ function normalizeDeletedAt(value: unknown): number | null | undefined {
   return typeof value === "number" ? value : Number(value) || null;
 }
 
-function shouldApplyRemoteRecord(
+export function shouldApplyRemoteRecord(
   record: Record<string, unknown>,
   timestampCol: string,
   localState: ExistingRecordState | undefined,
@@ -522,11 +543,12 @@ async function rememberRemoteTombstone(
   id: string,
   deletedAt: number,
   deviceId: string,
+  bookId?: string,
 ): Promise<void> {
   try {
     await db.execute(
-      `INSERT INTO sync_tombstones (id, table_name, deleted_at, device_id)
-       VALUES (?, ?, ?, ?)
+      `INSERT INTO sync_tombstones (id, table_name, deleted_at, device_id, book_id)
+       VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(id, table_name) DO UPDATE SET
          deleted_at = CASE
            WHEN excluded.deleted_at > sync_tombstones.deleted_at
@@ -537,8 +559,13 @@ async function rememberRemoteTombstone(
            WHEN excluded.deleted_at > sync_tombstones.deleted_at
            THEN excluded.device_id
            ELSE sync_tombstones.device_id
+         END,
+         book_id = CASE
+           WHEN excluded.deleted_at >= sync_tombstones.deleted_at
+           THEN COALESCE(excluded.book_id, sync_tombstones.book_id)
+           ELSE sync_tombstones.book_id
          END`,
-      [id, tableName, deletedAt, deviceId],
+      [id, tableName, deletedAt, deviceId, bookId ?? null],
     );
   } catch {
     // sync_tombstones may not exist on older schema variants.
