@@ -3027,6 +3027,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
               <SelectionPopover
                 position={selectionPos}
                 selectedText={selection.text}
+                selectionRects={selection.rects}
                 annotated={selection.annotated}
                 currentColor={selection.color as HighlightColor | undefined}
                 defaultColor={viewSettings.defaultHighlightColor ?? "yellow"}
