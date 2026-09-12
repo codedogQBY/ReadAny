@@ -66,6 +66,7 @@
     "deleteGroupConfirm": "确定删除此分组？书籍不会被删除。"
   },
   "tabs": {
+    "close": "关闭标签页",
     "library": "书库",
     "ai": "AI",
     "notes": "笔记",
