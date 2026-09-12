@@ -2,6 +2,7 @@ mod db;
 mod readany_cli;
 mod storage;
 mod sync;
+mod transfer;
 mod vector;
 
 use std::sync::Mutex;
@@ -31,6 +32,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             sync::commands::sync_vacuum_into,
+            transfer::webdav_upload_file,
+            transfer::webdav_download_file,
             sync::commands::sync_integrity_check,
             sync::commands::sync_hash_file,
             sync::commands::get_local_ip,
