@@ -192,6 +192,7 @@ describe("useSyncStore", () => {
     expect(JSON.parse(savedConfigCall?.[1] as string)).toEqual({
       ...baseConfig,
       allowInsecure: true,
+      concurrency: 2,
     });
     expect(mockPlatformService.kvSetItem).toHaveBeenCalledWith("sync_webdav_password", "password");
     expect(useSyncStore.getState()).toMatchObject({

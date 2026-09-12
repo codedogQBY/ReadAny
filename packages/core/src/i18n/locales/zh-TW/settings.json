@@ -266,6 +266,8 @@
     "syncAutoSync": "自動同步",
     "syncAutoSyncDesc": "在背景自動同步資料",
     "syncInterval": "同步間隔",
+    "syncConcurrency": "同步並行數",
+    "syncConcurrencyDesc": "同時傳輸的檔案數量。伺服器閘道較弱（NAS、內網穿透等）建議設為 1-2",
     "syncIntervalDesc": "自動同步開啟後，每隔多少分鐘檢查一次",
     "syncIntervalMinutes": "{{count}} 分鐘",
     "syncAllowInsecure": "允許不安全連接",

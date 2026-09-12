@@ -97,6 +97,8 @@ export interface WebDavConfig {
   syncIntervalMins: number;
   wifiOnly: boolean;
   notifyOnComplete: boolean;
+  /** Concurrent file transfers per sync pass (1-6). */
+  concurrency?: number;
 }
 
 /** S3 configuration */
@@ -112,6 +114,8 @@ export interface S3Config {
   syncIntervalMins: number;
   wifiOnly: boolean;
   notifyOnComplete: boolean;
+  /** Concurrent file transfers per sync pass (1-6). */
+  concurrency?: number;
 }
 
 /** LAN sync configuration (temporary, not persisted) */
@@ -128,6 +132,8 @@ export const DEFAULT_SYNC_CONFIG = {
   syncIntervalMins: 30,
   wifiOnly: false,
   notifyOnComplete: true,
+  /** Concurrent file transfers per sync pass. Lower it for weak gateways/NAS. */
+  concurrency: 2,
 } as const;
 
 export const DEFAULT_WEBDAV_REMOTE_ROOT = "readany";

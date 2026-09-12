@@ -266,6 +266,8 @@
     "syncAutoSync": "自动同步",
     "syncAutoSyncDesc": "在后台自动同步数据",
     "syncInterval": "同步间隔",
+    "syncConcurrency": "同步并发数",
+    "syncConcurrencyDesc": "同时传输的文件数量。服务器网关较弱（NAS、内网穿透等）建议设为 1-2",
     "syncIntervalDesc": "自动同步开启后，每隔多少分钟检查一次",
     "syncIntervalMinutes": "{{count}} 分钟",
     "syncAllowInsecure": "允许不安全连接",
