@@ -5,8 +5,10 @@ import { create } from "zustand";
 import type { Highlight } from "../types";
 
 export interface PendingNote {
-  /** Selected text to annotate */
+  /** Selected text to annotate (empty string = page-level note) */
   text: string;
+  /** Page number for page-level notes (fixed-layout books) */
+  page?: number;
   /** CFI location */
   cfi: string;
   /** Chapter title for context */

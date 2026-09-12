@@ -113,6 +113,10 @@
     "emptyHint": "Select text in the book to highlight or add notes",
     "editNote": "Edit note",
     "addNoteBtn": "Add note",
+    "addPageNote": "Add page note",
+    "pageNoteBadge": "Page note",
+    "pageNotePage": "Page {{page}}",
+    "pageNoteNoPage": "Current position",
     "deleteHighlightBtn": "Delete highlight"
   },
   "editor": {

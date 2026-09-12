@@ -13,6 +13,7 @@ import {
   ChevronDown,
   ChevronRight,
   Edit3,
+  FileText,
   Highlighter,
   NotebookPen,
   Save,
@@ -30,6 +31,7 @@ import remarkGfm from "remark-gfm";
 interface NotebookPanelProps {
   bookId: string;
   onClose: () => void;
+  onAddPageNote?: () => void;
   onGoToCfi?: (cfi: string) => void;
   onAddAnnotation?: (cfi: string, color: string, note?: string) => void;
   onDeleteAnnotation?: (cfi: string) => void;
@@ -38,6 +40,7 @@ interface NotebookPanelProps {
 export function NotebookPanel({
   bookId,
   onClose,
+  onAddPageNote,
   onGoToCfi,
   onAddAnnotation,
   onDeleteAnnotation,
@@ -202,6 +205,15 @@ export function NotebookPanel({
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/40 px-3">
         <span className="text-xs font-medium text-foreground">{t("notebook.title")}</span>
         <div className="flex items-center gap-1">
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            onClick={onAddPageNote}
+            disabled={!onAddPageNote}
+            title={t("notebook.addPageNote")}
+          >
+            <NotebookPen className="h-3.5 w-3.5" />
+          </button>
           <ExportDropdown onExport={handleExport} disabled={bookHighlights.length === 0} />
           <button
             type="button"
@@ -218,19 +230,38 @@ export function NotebookPanel({
         {/* Note Editor - shown when creating/editing */}
         {isEditing && (
           <div className="border-b border-border/40 p-3">
-            {/* Selected text preview */}
-            <div className="mb-3 rounded-md bg-muted/50 p-2">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
-                <Highlighter className="h-3 w-3" />
-                <span>{t("notebook.selectedText")}</span>
+            {/* Context preview: selected text, or page info for page-level notes */}
+            {editingText ? (
+              <div className="mb-3 rounded-md bg-muted/50 p-2">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+                  <Highlighter className="h-3 w-3" />
+                  <span>{t("notebook.selectedText")}</span>
+                </div>
+                <p className="text-sm text-foreground line-clamp-3">"{editingText}"</p>
+                {(pendingNote?.chapterTitle || editingHighlight?.chapterTitle) && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {pendingNote?.chapterTitle || editingHighlight?.chapterTitle}
+                  </p>
+                )}
               </div>
-              <p className="text-sm text-foreground line-clamp-3">"{editingText}"</p>
-              {(pendingNote?.chapterTitle || editingHighlight?.chapterTitle) && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {pendingNote?.chapterTitle || editingHighlight?.chapterTitle}
+            ) : (
+              <div className="mb-3 rounded-md bg-muted/50 p-2">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+                  <FileText className="h-3 w-3" />
+                  <span>{t("notebook.pageNoteBadge")}</span>
+                </div>
+                <p className="text-sm text-foreground">
+                  {pendingNote?.page
+                    ? t("notebook.pageNotePage", { page: pendingNote.page })
+                    : t("notebook.pageNoteNoPage")}
                 </p>
-              )}
-            </div>
+                {(pendingNote?.chapterTitle || editingHighlight?.chapterTitle) && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {pendingNote?.chapterTitle || editingHighlight?.chapterTitle}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Note input */}
             <MarkdownEditor
@@ -260,7 +291,15 @@ export function NotebookPanel({
                 <Button variant="ghost" size="sm" onClick={handleCancel}>
                   {t("common.cancel")}
                 </Button>
-                <Button size="sm" onClick={handleSave}>
+                {/* Page-level notes must carry content — an empty note would be
+                    an invisible row in the list. */}
+                <Button
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={Boolean(pendingNote && !pendingNote.text && !noteContent.trim())}
+                >
+                  <Save className="h-3.5 w-3.5 mr-1" />
+                  {t("common.save")}
                   <Save className="h-3.5 w-3.5 mr-1" />
                   {t("common.save")}
                 </Button>
@@ -381,7 +420,13 @@ function HighlightNoteItem({
           style={{ backgroundColor: HIGHLIGHT_COLOR_HEX[highlight.color] }}
         />
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-foreground line-clamp-2">"{highlight.text}"</p>
+          {highlight.text ? (
+            <p className="text-sm text-foreground line-clamp-2">"{highlight.text}"</p>
+          ) : (
+            <p className="text-sm text-muted-foreground italic line-clamp-2">
+              {t("notebook.pageNoteBadge")}
+            </p>
+          )}
           {highlight.note && (
             <div className="mt-1.5 text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1.5 prose prose-xs dark:prose-invert max-w-none break-words overflow-hidden [overflow-wrap:anywhere]">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{highlight.note}</ReactMarkdown>
@@ -440,7 +485,13 @@ function HighlightItem({ highlight, onClick, onAddNote, onDelete }: HighlightIte
         style={{ backgroundColor: HIGHLIGHT_COLOR_HEX[highlight.color] }}
       />
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-foreground line-clamp-2">"{highlight.text}"</p>
+        {highlight.text ? (
+          <p className="text-sm text-foreground line-clamp-2">"{highlight.text}"</p>
+        ) : (
+          <p className="text-sm text-muted-foreground italic line-clamp-2">
+            {t("notebook.pageNoteBadge")}
+          </p>
+        )}
         {highlight.chapterTitle && (
           <p className="mt-1 text-xs text-muted-foreground/70">{highlight.chapterTitle}</p>
         )}

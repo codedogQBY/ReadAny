@@ -109,6 +109,10 @@
     "emptyHint": "選取書中文字進行醒目標示或新增筆記",
     "editNote": "編輯筆記",
     "addNoteBtn": "新增筆記",
+    "addPageNote": "新增頁級筆記",
+    "pageNoteBadge": "頁級筆記",
+    "pageNotePage": "第 {{page}} 頁",
+    "pageNoteNoPage": "當前位置",
     "deleteHighlightBtn": "刪除醒目標示"
   },
   "editor": {

@@ -113,6 +113,10 @@
     "emptyHint": "选择书中文本进行高亮或添加笔记",
     "editNote": "编辑笔记",
     "addNoteBtn": "添加笔记",
+    "addPageNote": "添加页级笔记",
+    "pageNoteBadge": "页级笔记",
+    "pageNotePage": "第 {{page}} 页",
+    "pageNoteNoPage": "当前位置",
     "deleteHighlightBtn": "删除高亮"
   },
   "editor": {

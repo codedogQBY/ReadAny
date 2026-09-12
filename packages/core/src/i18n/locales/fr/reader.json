@@ -109,6 +109,10 @@
     "emptyHint": "Sélectionnez du texte dans le livre pour surligner ou ajouter des notes",
     "editNote": "Modifier la note",
     "addNoteBtn": "Ajouter une note",
+    "addPageNote": "Ajouter une note de page",
+    "pageNoteBadge": "Note de page",
+    "pageNotePage": "Page {{page}}",
+    "pageNoteNoPage": "Position actuelle",
     "deleteHighlightBtn": "Supprimer le surlignage"
   },
   "editor": {
