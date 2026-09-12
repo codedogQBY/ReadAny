@@ -83,6 +83,12 @@ if ($javaHome) {
           $jdkHint = "Found JDK $major - Gradle 8.13 needs JDK 17 or 21 (JDK 22+ is too new)."
         }
       }
+      # A JRE passes the java -version check but Gradle needs the compiler:
+      # JRE installs ship bin\java.exe without bin\javac.exe.
+      if ($jdkOk -and -not (Test-Path (Join-Path $javaHome "bin\javac.exe"))) {
+        $jdkOk = $false
+        $jdkHint = "JAVA_HOME points to a JRE (no bin\javac.exe) - Gradle needs a full JDK. Install JDK 17 or 21 from https://adoptium.net (choose JDK, not JRE)."
+      }
     } else {
       $jdkHint = "Could not read the JDK version from $javaBin."
     }
