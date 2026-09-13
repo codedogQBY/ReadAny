@@ -25,7 +25,8 @@
       "generateNotes": "Générer des notes d'étude",
       "summarizeChapter": "Résumer ce chapitre",
       "explainConcepts": "Expliquer les concepts clés",
-      "analyzeAuthor": "Analyser l'argumentation de l'auteur"
+      "analyzeAuthor": "Analyser l'argumentation de l'auteur",
+      "reviewChapterNotes": "Relire mes notes sur ce chapitre"
     },
     "aiAssistant": "Assistant de lecture IA",
     "aiAssistantDesc": "Analysez le contenu, répondez aux questions et comprenez mieux vos livres.",
