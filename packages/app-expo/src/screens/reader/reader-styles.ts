@@ -7,8 +7,6 @@ import { makeToolbarStyles } from "./styles/reader-base-styles";
 import { makeSheetStyles } from "./styles/reader-sheet-styles";
 import { makeNoteStyles } from "./styles/reader-note-styles";
 
-export { TOOLTIP_FG, TOOLTIP_MUTED, noteTooltipMdStyles } from "./styles/reader-note-styles";
-
 export const makeStyles = (colors: ThemeColors) => ({
   ...makeToolbarStyles(colors),
   ...makeSheetStyles(colors),
