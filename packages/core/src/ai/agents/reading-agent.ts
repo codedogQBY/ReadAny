@@ -30,6 +30,11 @@ const CHAPTER_TASK_RECURSION_LIMIT = 24;
 const DEFAULT_TOOL_TIMEOUT_MS = 45_000;
 const TOOL_EXECUTION_LIMIT = 12;
 const REPEATED_TOOL_CALL_LIMIT = 2;
+const FALLBACK_CONTENT_TOOL_NAMES = new Set([
+  "fallbackSearch",
+  "fallbackToc",
+  "fallbackChapterContext",
+]);
 const TOOL_TIMEOUT_MS_BY_NAME: Record<string, number> = {
   getSelection: 5_000,
   getCurrentChapter: 5_000,
@@ -842,6 +847,7 @@ export async function* streamReadingAgent(
   const searchResultCache = new Map<string, unknown>();
   const toolExecutionCounts = new Map<string, number>();
   const lastToolResults = new Map<string, unknown>();
+  let fallbackSourceFailure: Record<string, unknown> | null = null;
   let totalToolExecutions = 0;
   const pendingToolCallNames: string[] = [];
   const isChapterTask =
@@ -1012,6 +1018,10 @@ export async function* streamReadingAgent(
             );
           }
 
+          if (fallbackSourceFailure && FALLBACK_CONTENT_TOOL_NAMES.has(tool.name)) {
+            return JSON.stringify(fallbackSourceFailure);
+          }
+
           if (isChapterTask && isChapterLookupTool) {
             if (chapterReferenceState.totalChapterToolExecutions >= CHAPTER_TOOL_EXECUTION_LIMIT) {
               chapterReferenceState.limitReached = true;
@@ -1089,7 +1099,20 @@ export async function* streamReadingAgent(
             return JSON.stringify(cachedResult);
           }
 
-          const result = await executeTool(tool, toolInput, getToolTimeoutMs(tool, toolTimeoutMs));
+          let result = await executeTool(tool, toolInput, getToolTimeoutMs(tool, toolTimeoutMs));
+          if (
+            FALLBACK_CONTENT_TOOL_NAMES.has(tool.name) &&
+            result &&
+            typeof result === "object" &&
+            (result as Record<string, unknown>).sourceUnavailable === true &&
+            typeof (result as Record<string, unknown>).error === "string"
+          ) {
+            fallbackSourceFailure = {
+              ...(result as Record<string, unknown>),
+              stopFallbackToolCalls: true,
+            };
+            result = fallbackSourceFailure;
+          }
           if (exactCacheKey) {
             toolResultCache.set(exactCacheKey, result);
           }

@@ -31,6 +31,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { MobileFallbackExtractorHost } from "@/components/rag/MobileFallbackExtractorHost";
 import { AnimatedSplash } from "@/components/splash/AnimatedSplash";
 import { rnSessionEventSource } from "@/hooks";
 import { setStreamingFetch } from "@readany/core/ai/llm-provider";
@@ -290,6 +291,7 @@ function AppInner() {
             <StatusBar style={isDark ? "light" : "dark"} />
             <RootNavigator />
           </NavigationContainer>
+          <MobileFallbackExtractorHost />
           <UpdateDialog />
           <FloatingTTSBubble />
         </SafeAreaProvider>

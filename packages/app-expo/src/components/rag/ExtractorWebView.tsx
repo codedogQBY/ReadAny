@@ -145,11 +145,11 @@ export const ExtractorWebView = forwardRef<ExtractorRef>((_, ref) => {
   if (!htmlUri) return null;
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+    <View style={styles.host} pointerEvents="none">
       <WebView
         ref={webViewRef}
         source={{ uri: htmlUri }}
-        style={{ width: 0, height: 0, opacity: 0 }}
+        style={styles.webView}
         originWhitelist={["*"]}
         javaScriptEnabled
         domStorageEnabled
@@ -160,4 +160,20 @@ export const ExtractorWebView = forwardRef<ExtractorRef>((_, ref) => {
       />
     </View>
   );
+});
+
+const styles = StyleSheet.create({
+  host: {
+    position: "absolute",
+    left: 0,
+    bottom: 0,
+    width: 1,
+    height: 1,
+    overflow: "hidden",
+    opacity: 0.01,
+  },
+  webView: {
+    width: 1,
+    height: 1,
+  },
 });
