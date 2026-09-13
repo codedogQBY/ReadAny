@@ -1,3 +1,4 @@
+import { normalizeIsbn } from "@readany/core/utils";
 /**
  * Book metadata + cover extraction for React Native (Expo).
  *
@@ -852,15 +853,9 @@ function extractOpfIsbn(opfXml: string): string {
   const identifierRegex = /<[^>]*identifier\b([^>]*)>([^<]*)<\/[^>]*identifier>/gi;
   let match = identifierRegex.exec(opfXml);
   while (match !== null) {
-    const attrs = match[1] || "";
     const value = (match[2] || "").trim();
-    const scheme = getAttr(attrs, "opf:scheme") || getAttr(attrs, "scheme");
-    if (
-      scheme.toLowerCase() === "isbn" ||
-      /(?:97[89][-\s]?)?(?:\d[-\s]?){9,12}[\dXx]/.test(value)
-    ) {
-      return value;
-    }
+    const isbn = normalizeIsbn(value);
+    if (isbn) return isbn;
     match = identifierRegex.exec(opfXml);
   }
   return "";

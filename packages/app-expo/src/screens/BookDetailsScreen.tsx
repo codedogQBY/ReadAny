@@ -9,6 +9,7 @@ import {
 import { KeyboardAwareScrollView } from "@/components/ui/KeyboardAwareScrollView";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { extractLocalBookMetadata } from "@/lib/book/auto-metadata";
+import { commitCustomCover, saveExtractedCoverIfStillMissing } from "@/lib/book/cover-storage";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { SettingsHeader } from "@/screens/settings/SettingsHeader";
 import { useLibraryStore } from "@/stores/library-store";
@@ -27,6 +28,7 @@ import { getPlatformService } from "@readany/core/services";
 import type { Book, BookReview } from "@readany/core/types";
 import {
   type BookMetadataFormValues,
+  applyBookMetadataFormUpdate,
   buildBookMetadataUpdate,
   createBookMetadataFormValues,
   createEmptyBookReview,
@@ -296,6 +298,14 @@ export function BookDetailsScreen({ route }: Props) {
   const hydratedBookIdRef = useRef<string | null>(null);
   const autoFilledBookIdRef = useRef<string | null>(null);
   const latestValuesRef = useRef<BookMetadataFormValues | null>(null);
+  const commitValues = useCallback(
+    (
+      update:
+        | BookMetadataFormValues
+        | ((current: BookMetadataFormValues) => BookMetadataFormValues),
+    ) => applyBookMetadataFormUpdate(latestValuesRef, setValues, update),
+    [],
+  );
 
   useEffect(() => {
     void loadBooks();
@@ -305,12 +315,9 @@ export function BookDetailsScreen({ route }: Props) {
     if (!book) return;
     if (hydratedBookIdRef.current === book.id) return;
     hydratedBookIdRef.current = book.id;
-    setValues(createBookMetadataFormValues(book));
-  }, [book]);
-
-  useEffect(() => {
-    latestValuesRef.current = values;
-  }, [values]);
+    const nextValues = createBookMetadataFormValues(book);
+    commitValues(nextValues);
+  }, [book, commitValues]);
 
   useEffect(() => {
     if (!book || !values) return;
@@ -319,20 +326,35 @@ export function BookDetailsScreen({ route }: Props) {
     autoFilledBookIdRef.current = book.id;
 
     let cancelled = false;
-    void extractLocalBookMetadata(book).then((metadata) => {
+    void extractLocalBookMetadata(book).then(async (metadata) => {
       if (cancelled || !metadata) return;
+      let extracted = metadata;
+      if (metadata.coverBytes?.length) {
+        try {
+          const coverUrl = await saveExtractedCoverIfStillMissing(
+            book.id,
+            metadata.coverBytes,
+            metadata.coverMimeType,
+            () => (cancelled ? "__cancelled__" : latestValuesRef.current?.coverUrl),
+          );
+          if (coverUrl) extracted = { ...metadata, coverUrl };
+        } catch (error) {
+          console.warn("[BookMetadata] Failed to persist extracted mobile cover:", error);
+        }
+      }
+      if (cancelled) return;
       const nextValues = latestValuesRef.current
-        ? mergeMissingBookMetadataValues(latestValuesRef.current, metadata)
+        ? mergeMissingBookMetadataValues(latestValuesRef.current, extracted)
         : null;
       if (!nextValues) return;
-      setValues(nextValues);
+      commitValues(nextValues);
       updateBook(book.id, buildBookMetadataUpdate(book, nextValues));
     });
 
     return () => {
       cancelled = true;
     };
-  }, [book, updateBook, values]);
+  }, [book, commitValues, updateBook, values]);
 
   useEffect(() => {
     const raw = values?.coverUrl;
@@ -362,73 +384,75 @@ export function BookDetailsScreen({ route }: Props) {
 
   const setField = useCallback(
     <K extends keyof BookMetadataFormValues>(field: K, value: BookMetadataFormValues[K]) => {
-      setValues((current) => {
-        if (!current) return current;
-        const next = { ...current, [field]: value };
-        if (book) updateBook(book.id, buildBookMetadataUpdate(book, next));
-        return next;
-      });
+      const next = commitValues((current) => ({ ...current, [field]: value }));
+      if (book && next) updateBook(book.id, buildBookMetadataUpdate(book, next));
     },
-    [book, updateBook],
+    [book, commitValues, updateBook],
   );
 
   const persistCoverUrl = useCallback(
     async (coverUrl: string) => {
-      if (!book || !values) return;
-      const nextValues = { ...values, coverUrl };
-      setValues(nextValues);
+      if (!book) return;
+      const nextValues = commitValues((current) => ({ ...current, coverUrl }));
+      if (!nextValues) return;
       await updateBook(book.id, buildBookMetadataUpdate(book, nextValues));
     },
-    [book, updateBook, values],
+    [book, commitValues, updateBook],
   );
 
   const setRating = useCallback(
     (rating: number) => {
-      if (!book || !values) return;
-      const next = { ...values, rating: values.rating === rating ? null : rating };
-      setValues(next);
+      if (!book) return;
+      const next = commitValues((current) => ({
+        ...current,
+        rating: current.rating === rating ? null : rating,
+      }));
+      if (!next) return;
       updateBook(book.id, buildBookMetadataUpdate(book, next));
     },
-    [book, updateBook, values],
+    [book, commitValues, updateBook],
   );
 
   const addReview = useCallback(
     (content: string) => {
-      if (!book || !values) return;
+      if (!book) return;
       const review = { ...createEmptyBookReview(), content };
-      const next = { ...values, reviews: [...values.reviews, review] };
-      setValues(next);
+      const next = commitValues((current) => ({
+        ...current,
+        reviews: [...current.reviews, review],
+      }));
+      if (!next) return;
       updateBook(book.id, buildBookMetadataUpdate(book, next));
     },
-    [book, updateBook, values],
+    [book, commitValues, updateBook],
   );
 
   const updateReview = useCallback(
     (reviewId: string, content: string) => {
-      if (!book || !values) return;
-      const next = {
-        ...values,
-        reviews: values.reviews.map((review) =>
+      if (!book) return;
+      const next = commitValues((current) => ({
+        ...current,
+        reviews: current.reviews.map((review) =>
           review.id === reviewId ? { ...review, content } : review,
         ),
-      };
-      setValues(next);
+      }));
+      if (!next) return;
       updateBook(book.id, buildBookMetadataUpdate(book, next));
     },
-    [book, updateBook, values],
+    [book, commitValues, updateBook],
   );
 
   const removeReview = useCallback(
     (reviewId: string) => {
-      if (!book || !values) return;
-      const next = {
-        ...values,
-        reviews: values.reviews.filter((review) => review.id !== reviewId),
-      };
-      setValues(next);
+      if (!book) return;
+      const next = commitValues((current) => ({
+        ...current,
+        reviews: current.reviews.filter((review) => review.id !== reviewId),
+      }));
+      if (!next) return;
       updateBook(book.id, buildBookMetadataUpdate(book, next));
     },
-    [book, updateBook, values],
+    [book, commitValues, updateBook],
   );
 
   const handleTextEditorDone = useCallback(
@@ -478,7 +502,7 @@ export function BookDetailsScreen({ route }: Props) {
       const targetPath = await platform.joinPath(appData, relativePath);
       const bytes = await platform.readFile(selected.uri);
       await platform.writeFile(targetPath, bytes);
-      await persistCoverUrl(relativePath);
+      await commitCustomCover(book.id, relativePath, persistCoverUrl);
       Alert.alert(t("common.success", "成功"), t("library.detailsCoverSaved", "封面已保存"));
     } catch (error) {
       console.warn("[BookDetailsScreen] Failed to change cover:", error);
