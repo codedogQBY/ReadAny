@@ -22,6 +22,18 @@ const TAB_ICONS: Record<string, React.ElementType> = {
 
 const NO_DRAG_STYLE = { WebkitAppRegion: "no-drag" } as Record<string, string>;
 
+/**
+ * Leading inset that keeps the tab row clear of the macOS window controls.
+ *
+ * `trafficLightPosition` in packages/app/src-tauri/tauri.conf.json pins the left edge
+ * of the group to x = 12 and puts its vertical centre on the centre of this 32pt row.
+ * Current macOS draws three 14pt buttons on 23pt centres, so the group ends at
+ * 12 + 3 * 14 + 2 * 9 = 72pt; older releases used 12pt buttons on 20pt centres and
+ * ended at 64pt (hence the previous 68). Reserve the wider geometry plus 8pt of
+ * breathing room — the extra space on older macOS is harmless.
+ */
+const MAC_TRAFFIC_LIGHTS_INSET = 80;
+
 function usePlatformInfo() {
   const [info, setInfo] = useState({ isTauri: false, isMac: false, isWinOrLinux: false });
   useEffect(() => {
@@ -86,7 +98,10 @@ export function TabBar() {
       className="flex h-8 shrink-0 select-none items-center border-neutral-200 bg-muted"
     >
       {/* macOS: space for native traffic lights (hidden in reader mode) */}
-      <div className="flex h-full shrink-0 items-center" style={{ paddingLeft: (isMac && !isFullscreen) ? 68 : 4 }}>
+      <div
+        className="flex h-full shrink-0 items-center"
+        style={{ paddingLeft: isMac && !isFullscreen ? MAC_TRAFFIC_LIGHTS_INSET : 4 }}
+      >
         <button
           type="button"
           className="flex items-center justify-center rounded-md p-1 text-neutral-500 transition-colors hover:bg-neutral-200/60 hover:text-neutral-800"
