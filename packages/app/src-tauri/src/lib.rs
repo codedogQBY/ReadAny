@@ -8,6 +8,46 @@ use std::sync::Mutex;
 use tauri::Manager;
 use vector::VectorDBState;
 
+#[derive(serde::Serialize)]
+struct WebViewInfo {
+    engine: String,
+    version: String,
+}
+
+/// The WebView engine label + real build number for Settings → About and the
+/// feedback device info. The User-Agent is reduced to a stub on Windows
+/// WebView2 (UA Reduction) and carries frozen fallback tokens for the WebKit
+/// engines, so this runtime query is the desktop authority for BOTH fields;
+/// the frontend falls back to its UA parse when this returns None.
+#[tauri::command]
+fn get_webview_version() -> Option<WebViewInfo> {
+    let engine = match std::env::consts::OS {
+        "windows" => "WebView2",
+        "macos" => "WebKit",
+        "linux" => "WebKitGTK",
+        _ => return None,
+    };
+    let version = match tauri::webview_version() {
+        Ok(v) => v.trim().to_string(),
+        // A genuine desktop query failure must stay distinguishable from an
+        // unsupported platform: the frontend only logs on invoke rejection,
+        // so a resolved None with no trace would silently degrade to the
+        // UA-reduced version.
+        Err(e) => {
+            eprintln!("[webview-info] webview_version() failed: {e}");
+            return None;
+        }
+    };
+    if version.is_empty() {
+        eprintln!("[webview-info] webview_version() returned an empty string");
+        return None;
+    }
+    Some(WebViewInfo {
+        engine: engine.to_string(),
+        version,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -46,6 +86,7 @@ pub fn run() {
             vector::vector_reinit,
             vector::vector_shutdown,
             readany_cli::readany_cli_run,
+            get_webview_version,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();

@@ -1,5 +1,6 @@
 import { KeyboardAwareScrollView } from "@/components/ui/KeyboardAwareScrollView";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
+import { useWebviewLabel } from "@/stores/webview-info-store";
 /**
  * FeedbackScreen — Submit bug reports / feature requests and track history.
  * Submissions are sent to a Cloudflare Worker that creates GitHub Issues.
@@ -112,9 +113,7 @@ export default function FeedbackScreen() {
             >
               {t("feedback.historyTab", "我的反馈")}
             </Text>
-            {hasUnread && (
-              <View style={[styles.tabDot, { backgroundColor: colors.destructive }]} />
-            )}
+            {hasUnread && <View style={[styles.tabDot, { backgroundColor: colors.destructive }]} />}
           </View>
         </TouchableOpacity>
       </View>
@@ -139,6 +138,7 @@ function SubmitTab({ colors, t, locale }: FeedbackTabProps & { locale: string })
   const [description, setDescription] = useState("");
   const [includeLogs, setIncludeLogs] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const webviewLabel = useWebviewLabel();
   const remaining = getRemainingSubmissions();
 
   const deviceInfo: DeviceInfo = useMemo(
@@ -147,9 +147,10 @@ function SubmitTab({ colors, t, locale }: FeedbackTabProps & { locale: string })
         platform: Platform.OS as DeviceInfo["platform"],
         osVersion: `${Platform.OS} ${Platform.Version}`,
         appVersion: Constants.expoConfig?.version ?? "unknown",
+        webview: webviewLabel || undefined,
         locale,
       }),
-    [locale],
+    [locale, webviewLabel],
   );
 
   const canSubmit = title.trim().length > 0 && description.trim().length > 0 && remaining > 0;
@@ -199,132 +200,128 @@ function SubmitTab({ colors, t, locale }: FeedbackTabProps & { locale: string })
       extraKeyboardSpace={spacing.xxl * 2}
       contentBottomInset={spacing.xxl * 3}
     >
-        <View style={[styles.introBlock, { borderBottomColor: colors.border }]}>
-          <Text style={[styles.introTitle, { color: colors.foreground }]}>
-            {t("feedback.title", "反馈建议")}
-          </Text>
-          <Text style={[styles.introText, { color: colors.mutedForeground }]}>
-            {t("feedback.desc", "提交 bug 报告或功能建议，我们会尽快处理")}
-          </Text>
-        </View>
-
-        <Text style={[styles.label, { color: colors.foreground }]}>
-          {t("feedback.type", "类型")}
+      <View style={[styles.introBlock, { borderBottomColor: colors.border }]}>
+        <Text style={[styles.introTitle, { color: colors.foreground }]}>
+          {t("feedback.title", "反馈建议")}
         </Text>
-        <View style={styles.typeRow}>
-          {FEEDBACK_TYPES.map((ft) => (
-            <TouchableOpacity
-              key={ft.key}
-              style={[
-                styles.typeBtn,
-                { borderColor: type === ft.key ? colors.primary : colors.border },
-                type === ft.key && { backgroundColor: `${colors.primary}15` },
-              ]}
-              onPress={() => setType(ft.key)}
-            >
-              <ft.Icon size={14} color={type === ft.key ? colors.primary : colors.foreground} />
-              <Text
-                style={[
-                  styles.typeBtnText,
-                  { color: type === ft.key ? colors.primary : colors.foreground },
-                ]}
-              >
-                {t(ft.labelKey, ft.fallback)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Title */}
-        <Text style={[styles.label, { color: colors.foreground }]}>
-          {t("feedback.titleLabel", "标题")} *
+        <Text style={[styles.introText, { color: colors.mutedForeground }]}>
+          {t("feedback.desc", "提交 bug 报告或功能建议，我们会尽快处理")}
         </Text>
-        <TextInput
-          style={[
-            styles.input,
-            { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card },
-          ]}
-          placeholder={t("feedback.titlePlaceholder", "简要描述问题或建议")}
-          placeholderTextColor={colors.mutedForeground}
-          value={title}
-          onChangeText={setTitle}
-          maxLength={100}
-        />
+      </View>
 
-        {/* Description */}
-        <Text style={[styles.label, { color: colors.foreground }]}>
-          {t("feedback.descLabel", "详细描述")} *
-        </Text>
-        <TextInput
-          style={[
-            styles.textArea,
-            { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card },
-          ]}
-          placeholder={t("feedback.descPlaceholder", "请详细描述你遇到的问题或建议...")}
-          placeholderTextColor={colors.mutedForeground}
-          value={description}
-          onChangeText={setDescription}
-          multiline
-          numberOfLines={5}
-          textAlignVertical="top"
-        />
-
-        <View
-          style={[styles.logPanel, { borderColor: colors.border, backgroundColor: colors.card }]}
-        >
+      <Text style={[styles.label, { color: colors.foreground }]}>{t("feedback.type", "类型")}</Text>
+      <View style={styles.typeRow}>
+        {FEEDBACK_TYPES.map((ft) => (
           <TouchableOpacity
-            style={styles.checkRow}
-            onPress={() => setIncludeLogs((checked) => !checked)}
-            activeOpacity={0.75}
+            key={ft.key}
+            style={[
+              styles.typeBtn,
+              { borderColor: type === ft.key ? colors.primary : colors.border },
+              type === ft.key && { backgroundColor: `${colors.primary}15` },
+            ]}
+            onPress={() => setType(ft.key)}
           >
-            <View
+            <ft.Icon size={14} color={type === ft.key ? colors.primary : colors.foreground} />
+            <Text
               style={[
-                styles.checkbox,
-                {
-                  borderColor: includeLogs ? colors.primary : colors.border,
-                  backgroundColor: includeLogs ? colors.primary : colors.background,
-                },
+                styles.typeBtnText,
+                { color: type === ft.key ? colors.primary : colors.foreground },
               ]}
             >
-              {includeLogs && <Check size={13} color={colors.primaryForeground} strokeWidth={3} />}
-            </View>
-            <Text style={[styles.logTitle, { color: colors.foreground }]}>
-              {t("feedback.uploadLogs", "上传应用日志")}
+              {t(ft.labelKey, ft.fallback)}
             </Text>
           </TouchableOpacity>
-          <Text style={[styles.hint, { color: colors.mutedForeground }]}>
-            {t("feedback.logsHint", "仅在勾选时附带最近 1 小时诊断日志，帮助定位问题。")}
-          </Text>
-        </View>
+        ))}
+      </View>
 
-        <View style={[styles.deviceInfoBox, { backgroundColor: colors.muted }]}>
-          <Text style={[styles.deviceInfoText, { color: colors.mutedForeground }]}>
-            {t("feedback.deviceInfo", "{{platform}} · v{{version}} · {{locale}}", {
-              platform: `${deviceInfo.platform} ${deviceInfo.osVersion}`,
-              version: deviceInfo.appVersion,
-              locale: deviceInfo.locale,
-            })}
-          </Text>
-        </View>
+      {/* Title */}
+      <Text style={[styles.label, { color: colors.foreground }]}>
+        {t("feedback.titleLabel", "标题")} *
+      </Text>
+      <TextInput
+        style={[
+          styles.input,
+          { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card },
+        ]}
+        placeholder={t("feedback.titlePlaceholder", "简要描述问题或建议")}
+        placeholderTextColor={colors.mutedForeground}
+        value={title}
+        onChangeText={setTitle}
+        maxLength={100}
+      />
 
-        {/* Submit */}
+      {/* Description */}
+      <Text style={[styles.label, { color: colors.foreground }]}>
+        {t("feedback.descLabel", "详细描述")} *
+      </Text>
+      <TextInput
+        style={[
+          styles.textArea,
+          { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card },
+        ]}
+        placeholder={t("feedback.descPlaceholder", "请详细描述你遇到的问题或建议...")}
+        placeholderTextColor={colors.mutedForeground}
+        value={description}
+        onChangeText={setDescription}
+        multiline
+        numberOfLines={5}
+        textAlignVertical="top"
+      />
+
+      <View style={[styles.logPanel, { borderColor: colors.border, backgroundColor: colors.card }]}>
         <TouchableOpacity
-          style={[styles.submitBtn, { backgroundColor: submitBackgroundColor }]}
-          onPress={handleSubmit}
-          disabled={!canSubmit || submitting}
-          activeOpacity={0.8}
+          style={styles.checkRow}
+          onPress={() => setIncludeLogs((checked) => !checked)}
+          activeOpacity={0.75}
         >
-          {submitting ? (
-            <ActivityIndicator color={submitForegroundColor} size="small" />
-          ) : (
-            <Text style={[styles.submitBtnText, { color: submitForegroundColor }]}>
-              {t("feedback.submit", "提交反馈")}
-            </Text>
-          )}
+          <View
+            style={[
+              styles.checkbox,
+              {
+                borderColor: includeLogs ? colors.primary : colors.border,
+                backgroundColor: includeLogs ? colors.primary : colors.background,
+              },
+            ]}
+          >
+            {includeLogs && <Check size={13} color={colors.primaryForeground} strokeWidth={3} />}
+          </View>
+          <Text style={[styles.logTitle, { color: colors.foreground }]}>
+            {t("feedback.uploadLogs", "上传应用日志")}
+          </Text>
         </TouchableOpacity>
-        <Text style={[styles.remainingText, { color: colors.mutedForeground }]}>
-          {t("feedback.remaining", "今日还可提交 {{count}} 次", { count: remaining })}
+        <Text style={[styles.hint, { color: colors.mutedForeground }]}>
+          {t("feedback.logsHint", "仅在勾选时附带最近 1 小时诊断日志，帮助定位问题。")}
         </Text>
+      </View>
+
+      <View style={[styles.deviceInfoBox, { backgroundColor: colors.muted }]}>
+        <Text style={[styles.deviceInfoText, { color: colors.mutedForeground }]}>
+          {t("feedback.deviceInfo", "{{platform}} · v{{version}} · {{locale}}", {
+            platform: `${deviceInfo.platform} ${deviceInfo.osVersion}`,
+            version: deviceInfo.appVersion,
+            locale: deviceInfo.locale,
+          })}
+        </Text>
+      </View>
+
+      {/* Submit */}
+      <TouchableOpacity
+        style={[styles.submitBtn, { backgroundColor: submitBackgroundColor }]}
+        onPress={handleSubmit}
+        disabled={!canSubmit || submitting}
+        activeOpacity={0.8}
+      >
+        {submitting ? (
+          <ActivityIndicator color={submitForegroundColor} size="small" />
+        ) : (
+          <Text style={[styles.submitBtnText, { color: submitForegroundColor }]}>
+            {t("feedback.submit", "提交反馈")}
+          </Text>
+        )}
+      </TouchableOpacity>
+      <Text style={[styles.remainingText, { color: colors.mutedForeground }]}>
+        {t("feedback.remaining", "今日还可提交 {{count}} 次", { count: remaining })}
+      </Text>
     </KeyboardAwareScrollView>
   );
 }

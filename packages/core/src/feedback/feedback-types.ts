@@ -8,6 +8,8 @@ export interface DeviceInfo {
   platform: "ios" | "android" | "macos" | "windows" | "linux";
   osVersion: string;
   appVersion: string;
+  /** Web engine + build rendering the app UI (e.g. "WebView2 152.0.4191.62"). */
+  webview?: string;
   deviceModel?: string;
   locale: string;
 }

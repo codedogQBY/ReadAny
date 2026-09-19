@@ -3,6 +3,7 @@ import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { useTheme } from "@/styles/ThemeContext";
 import type { ThemeMode } from "@/styles/ThemeContext";
 import { fontSize, fontWeight, radius, spacing } from "@/styles/theme";
+import { changeAndPersistLanguage } from "@readany/core/i18n";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -49,7 +50,6 @@ export default function AppearanceSettingsScreen() {
     setLang(code);
     setShowLangPicker(false);
     try {
-      const { changeAndPersistLanguage } = await import("@readany/core/i18n");
       await changeAndPersistLanguage(code);
     } catch (err) {
       console.warn("[Settings] Failed to change and persist language:", err);

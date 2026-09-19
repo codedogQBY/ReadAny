@@ -18,12 +18,15 @@ import {
   resetStatus,
   subscribeToUpdates,
 } from "@/lib/updater";
+import { getWebviewLabel } from "@/lib/webview-info";
+import { buildVersionInfo } from "@readany/core/utils/webview-info";
 import { getVersion } from "@tauri-apps/api/app";
 import {
   AlertCircle,
   BookOpen,
   Check,
   Code2,
+  Copy,
   Download,
   ExternalLink,
   Github,
@@ -34,8 +37,10 @@ import {
 /**
  * AboutSettings — 关于页面
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+// Timer cleanup for the copy feedback flag (unmount-safe).
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
 const TECH_STACK = [
   { name: "Tauri", descKey: "settings.techStackTauri", icon: Shield },
@@ -56,9 +61,29 @@ export function AboutSettings() {
   const [isChecking, setIsChecking] = useState(false);
   const [isRelaunching, setIsRelaunching] = useState(false);
   const [appVersion, setAppVersion] = useState<string>("");
+  const [webviewLabel, setWebviewLabel] = useState<string>("");
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     getVersion().then(setAppVersion).catch(console.error);
+  }, []);
+
+  // Unmount cleanup for the copy feedback timer.
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
+
+  useEffect(() => {
+    // Async: the full WebView2/Chrome build needs a Client Hints round-trip
+    // (the UA string itself is reduced to x.0.0.0).
+    let mounted = true;
+    getWebviewLabel()
+      .then((label) => {
+        if (mounted && label) setWebviewLabel(label);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -84,6 +109,22 @@ export function AboutSettings() {
   const handleCheckUpdate = () => {
     setIsChecking(true);
     checkForUpdate();
+  };
+
+  // Both version lines at once — the pair is what a bug report needs (see the
+  // justify engine-fallback work: features vary per WebView build).
+  const handleCopyVersion = async () => {
+    const versionInfo = buildVersionInfo(appVersion, webviewLabel);
+    try {
+      await navigator.clipboard.writeText(versionInfo);
+      setCopied(true);
+      toast.success(t("common.copied"));
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+      copiedTimer.current = window.setTimeout(() => setCopied(false), 1500);
+    } catch (error) {
+      console.error("[AboutSettings] Copy version info failed:", error);
+      toast.error(t("common.failed"));
+    }
   };
 
   const handleDownload = () => {
@@ -129,7 +170,8 @@ export function AboutSettings() {
         <p className="mt-1 text-sm text-muted-foreground">{t("settings.aboutDesc")}</p>
       </div>
 
-      {/* Version Card */}
+      {/* Version Card — the copy button copies the app version and the web
+          engine together for bug reports. */}
       <div className="mb-4 w-full max-w-md rounded-xl bg-muted/60 p-4">
         <div className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">{t("settings.version")}</span>
@@ -138,6 +180,16 @@ export function AboutSettings() {
               {appVersion || "..."}
             </span>
             <button
+              type="button"
+              onClick={() => void handleCopyVersion()}
+              className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title={t("settings.copyVersionInfo")}
+              aria-label={t("settings.copyVersionInfo")}
+            >
+              {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+            </button>
+            <button
+              type="button"
               onClick={handleCheckUpdate}
               disabled={status === "checking" || status === "downloading"}
               className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
@@ -146,6 +198,10 @@ export function AboutSettings() {
               <RefreshCw className={`h-4 w-4 ${status === "checking" ? "animate-spin" : ""}`} />
             </button>
           </div>
+        </div>
+        <div className="mt-2 flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">{t("settings.webviewVersion")}</span>
+          <span className="font-mono text-sm text-muted-foreground">{webviewLabel || "..."}</span>
         </div>
       </div>
 
