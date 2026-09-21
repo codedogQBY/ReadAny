@@ -74,6 +74,8 @@
     "volumeButtonsPageTurnDesc": "読書中は音量ボタンでページ送りします",
     "smoothReading": "スムーズリーディング",
     "smoothReadingDesc": "ページめくりアニメーションとスクロール慣性を有効化。低スペック端末ではオフにすると快適です",
+    "keepScreenOnWhileReading": "読書中は画面をオンに保つ",
+    "keepScreenOnWhileReadingDesc": "本を開いている間、画面が自動で消えないようにします",
     "followSystemFontScale": "システムフォントサイズに従う",
     "followSystemFontScaleDesc": "OSのアクセシビリティフォントサイズで自動調整",
     "fixedLayoutNotice": "PDFは固定レイアウト形式です。フォントとレイアウト設定は利用できません。",

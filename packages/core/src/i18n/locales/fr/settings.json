@@ -74,6 +74,8 @@
     "volumeButtonsPageTurnDesc": "En lecture, les boutons de volume tournent les pages",
     "smoothReading": "Lecture fluide",
     "smoothReadingDesc": "Active l'animation de transition de page et l'inertie de défilement. Désactivez pour de meilleures performances sur les appareils modestes",
+    "keepScreenOnWhileReading": "Garder l'écran allumé pendant la lecture",
+    "keepScreenOnWhileReadingDesc": "Empêcher l'écran de s'éteindre lorsqu'un livre est ouvert",
     "followSystemFontScale": "Suivre l'échelle de police système",
     "followSystemFontScaleDesc": "Mise à l'échelle auto selon la taille de police d'accessibilité du système",
     "fixedLayoutNotice": "Le PDF est un format à mise en page fixe. Les paramètres de police et mise en page ne sont pas disponibles.",
