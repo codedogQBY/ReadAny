@@ -111,7 +111,11 @@ export async function fetchXiaomiTTSWav(text: string, config: TTSConfig): Promis
   return base64ToBytes(audioData);
 }
 
-export async function fetchOpenAITTSAudio(text: string, config: TTSConfig): Promise<Uint8Array> {
+export async function fetchOpenAITTSAudio(
+  text: string,
+  config: TTSConfig,
+  signal?: AbortSignal,
+): Promise<Uint8Array> {
   if (!config.openaiTtsApiKey) throw new Error("OpenAI-compatible TTS API key is required");
 
   const platform = getPlatformService();
@@ -127,6 +131,7 @@ export async function fetchOpenAITTSAudio(text: string, config: TTSConfig): Prom
           voice: config.openaiTtsVoice,
         },
       }),
+      signal,
     });
 
     if (!response.ok) {
@@ -150,6 +155,7 @@ export async function fetchOpenAITTSAudio(text: string, config: TTSConfig): Prom
       voice: config.openaiTtsVoice,
       response_format: config.openaiTtsFormat,
     }),
+    signal,
   });
 
   if (!response.ok) {

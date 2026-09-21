@@ -761,9 +761,16 @@ class BufferedAudioTTSPlayer implements ITTSPlayer {
 
   onStateChange?: (state: "playing" | "paused" | "stopped") => void;
   onChunkChange?: (index: number, total: number) => void;
+  onError?: (error: Error) => void;
   onEnd?: () => void;
 
-  constructor(private fetchAudio: (text: string, config: TTSConfig) => Promise<Uint8Array>) {}
+  constructor(
+    private fetchAudio: (
+      text: string,
+      config: TTSConfig,
+      signal?: AbortSignal,
+    ) => Promise<Uint8Array>,
+  ) {}
 
   get paused() {
     return this._paused;
@@ -814,7 +821,7 @@ class BufferedAudioTTSPlayer implements ITTSPlayer {
       if (!this._playing || myRun !== this.runId) return;
       this.abortController = new AbortController();
       try {
-        const bytes = await this.fetchAudio(chunks[i], config);
+        const bytes = await this.fetchAudio(chunks[i], config, this.abortController?.signal);
         if (!this._playing || myRun !== this.runId || !this.audioCtx || !this.gainNode) return;
         const audioBuffer = await this.audioCtx.decodeAudioData(bytesToArrayBuffer(bytes));
         if (!this._playing || myRun !== this.runId || !this.audioCtx || !this.gainNode) return;
@@ -830,6 +837,13 @@ class BufferedAudioTTSPlayer implements ITTSPlayer {
       } catch (err) {
         if (!this._playing || myRun !== this.runId || isTTSAbortError(err)) return;
         console.error("[Buffered TTS] chunk error:", err);
+        // Without this, a failing endpoint (an unreachable local server, a bad
+        // model id) produced no audio and then reported a normal end of
+        // playback, so the failure was invisible outside the console.
+        const error = err instanceof Error ? err : new Error(String(err));
+        this.stop();
+        this.onError?.(error);
+        return;
       }
     }
 
@@ -934,6 +948,7 @@ export class OpenAICompatibleTTSPlayer implements ITTSPlayer {
 
   onStateChange?: (state: "playing" | "paused" | "stopped") => void;
   onChunkChange?: (index: number, total: number) => void;
+  onError?: (error: Error) => void;
   onEnd?: () => void;
 
   get paused() {
@@ -947,6 +962,7 @@ export class OpenAICompatibleTTSPlayer implements ITTSPlayer {
         : this.bufferedPlayer;
     this.activePlayer.onStateChange = (state) => this.onStateChange?.(state);
     this.activePlayer.onChunkChange = (index, total) => this.onChunkChange?.(index, total);
+    this.activePlayer.onError = (error) => this.onError?.(error);
     this.activePlayer.onEnd = () => this.onEnd?.();
     return this.activePlayer.speak(text, config);
   }

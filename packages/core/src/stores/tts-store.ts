@@ -197,6 +197,7 @@ function detachAndStopPlayer(player: ITTSPlayer | null): void {
   if (!player) return;
   player.onStateChange = undefined;
   player.onChunkChange = undefined;
+  player.onError = undefined;
   player.onEnd = undefined;
   try {
     player.stop();
@@ -259,6 +260,13 @@ function startPlayback(
       currentChunkIndex: absoluteIndex,
       totalChunks: Math.max(_sessionSegments.length, total),
     });
+  };
+
+  player.onError = (error) => {
+    if (gen !== _sessionGeneration) return;
+    console.error("[TTSStore][player] error", error);
+    _activeTTS = null;
+    set({ playState: "stopped" });
   };
 
   player.onEnd = () => {
