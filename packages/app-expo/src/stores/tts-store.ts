@@ -380,7 +380,11 @@ export const useTTSStore = create<TTSState>()(
       playState: "stopped",
       currentText: "",
       currentSegmentText: "",
-      config: DEFAULT_TTS_CONFIG,
+      // Normalized, not raw: DEFAULT_TTS_CONFIG carries an empty `profiles`
+      // array, and normalizeTTSConfig is what fills in the built-in voice
+      // profiles. The persist layer only runs it when a config file already
+      // exists, so a fresh install would otherwise show an empty provider list.
+      config: normalizeTTSConfig(DEFAULT_TTS_CONFIG),
       onEnd: null,
       currentBookTitle: "",
       currentChapterTitle: "",
