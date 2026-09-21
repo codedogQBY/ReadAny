@@ -786,6 +786,16 @@ class BufferedAudioTTSPlayer implements ITTSPlayer {
     this.gainNode.connect(this.audioCtx.destination);
     this.scheduledEnd = 0;
 
+    // A webview hands back a suspended AudioContext under its autoplay policy,
+    // and scheduling into one is silent: the clock never advances, so nothing
+    // plays and playback never reports finishing either. EdgeTTSPlayer already
+    // guards for this. resume() can reject if a newer run closed this context
+    // while we awaited, and the runId guard below discards that run anyway.
+    if (this.audioCtx.state === "suspended") {
+      await this.audioCtx.resume().catch(() => {});
+    }
+    if (myRun !== this.runId) return;
+
     this.checkEndTimer = setInterval(() => {
       if (!this._playing || !this.audioCtx) return;
       const current = resolveCurrentChunk(this.chunkBoundaries, this.audioCtx.currentTime);
