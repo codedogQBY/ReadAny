@@ -1,0 +1,31 @@
+{
+  "manifestVersion": 1,
+  "packs": {
+    "en": {
+      "language": "en",
+      "version": "1.0.0",
+      "schemaVersion": 1,
+      "sourceEdition": "wordnet-3.1",
+      "sourceDumpDate": "2011-05-26",
+      "sizeBytes": 29069312,
+      "sha256": "90adbeab5ee325b31f2e34bbfa7c5b699932c900bfd1efdfc62eabd9e004ee0e",
+      "url": "https://github.com/cha1latte/ReadAny/releases/download/dictionary-packs-v1/readany-dictionary-en-v1.sqlite",
+      "sourceArchiveUrl": "https://wordnetcode.princeton.edu/wn3.1.dict.tar.gz",
+      "attributionUrl": "https://wordnet.princeton.edu/license-and-commercial-use",
+      "license": "WordNet 3.1 License"
+    },
+    "zh": {
+      "language": "zh",
+      "version": "1.0.0",
+      "schemaVersion": 1,
+      "sourceEdition": "zhwiktionary",
+      "sourceDumpDate": "2026-09-01",
+      "sizeBytes": 11866112,
+      "sha256": "d50218459f78a5e7bcba819fbb7db699271bdaf30757dc8b2443cb1e37bc11b1",
+      "url": "https://github.com/cha1latte/ReadAny/releases/download/dictionary-packs-v1/readany-dictionary-zh-v1.sqlite",
+      "sourceArchiveUrl": "https://dumps.wikimedia.org/zhwiktionary/20260901/zhwiktionary-20260901-pages-articles.xml.bz2",
+      "attributionUrl": "https://zh.wiktionary.org/wiki/Wiktionary:%E7%89%88%E6%9D%83%E4%BF%A1%E6%81%AF",
+      "license": "CC BY-SA 4.0"
+    }
+  }
+}

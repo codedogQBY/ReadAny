@@ -43,6 +43,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { BookmarkRibbon } from "./BookmarkRibbon";
+import { DefinitionDialog } from "./DefinitionDialog";
 import type { BookSelection, FoliateViewerHandle, RelocateDetail, TOCItem } from "./FoliateViewer";
 import { FoliateViewer } from "./FoliateViewer";
 import { FooterBar } from "./FooterBar";
@@ -799,6 +800,10 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const [showChat, setShowChat] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [definition, setDefinition] = useState<{ bookId: string; text: string } | null>(null);
+  useEffect(() => {
+    setDefinition((current) => (current?.bookId === bookId ? current : null));
+  }, [bookId]);
   const [showTTS, setShowTTS] = useState(false);
   const [isReimporting, setIsReimporting] = useState(false);
   const [ttsSourceKind, setTtsSourceKind] = useState<"page" | "selection">("page");
@@ -3035,10 +3040,25 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
                 onRemoveHighlight={handleRemoveHighlight}
                 onNote={handleNote}
                 onCopy={handleCopy}
+                onDefine={() => {
+                  setDefinition({ bookId, text: selection.text });
+                  handleCloseSelection();
+                }}
                 onTranslate={handleTranslate}
                 onAskAI={handleAskAI}
                 onSpeak={handleSpeakSelection}
                 onClose={handleCloseSelection}
+              />
+            )}
+
+            {definition?.bookId === bookId && (
+              <DefinitionDialog
+                key={bookId}
+                text={definition.text}
+                onClose={() => setDefinition(null)}
+                onManageDictionaries={() =>
+                  useAppStore.getState().setShowSettings(true, "dictionaries")
+                }
               />
             )}
 

@@ -1,4 +1,5 @@
 import { PasswordInput } from "@/components/ui/password-input";
+import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { useSyncStore } from "@/stores/sync-store";
 import { getPlatformService } from "@readany/core/services";
@@ -755,18 +756,11 @@ export function SyncSettings() {
             {statusLabel() && <p className="mt-0.5 text-xs text-primary">{statusLabel()}</p>}
             {isBusy && progress && (
               <div className="mt-2 w-48">
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                  {progress.phase === "database" ? (
-                    <div className="h-full w-full animate-pulse rounded-full bg-primary" />
-                  ) : (
-                    <div
-                      className="h-full rounded-full bg-primary transition-all duration-300 ease-out"
-                      style={{
-                        width: `${progressPercent() ?? 0}%`,
-                      }}
-                    />
-                  )}
-                </div>
+                <Progress
+                  className="h-1.5"
+                  value={progress.phase === "database" ? undefined : progressPercent() ?? 0}
+                  aria-label={progressLabel() ?? t("settings.syncStatus")}
+                />
                 <p className="mt-1 text-xs text-muted-foreground">{progressLabel()}</p>
               </div>
             )}

@@ -115,11 +115,13 @@
     "@babel/core": "^7.25.0",
     "@types/pako": "^2.0.4",
     "@types/react": "^19.1.17",
+    "@types/react-test-renderer": "19.1.0",
     "babel-plugin-module-resolver": "^5.0.2",
     "babel-plugin-transform-import-meta": "^2.3.2",
     "eas-cli": "^18.11.0",
     "esbuild": "^0.27.3",
     "react-native-svg-transformer": "^1.5.3",
+    "react-test-renderer": "19.1.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.2"
   }
