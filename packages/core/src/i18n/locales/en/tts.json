@@ -32,6 +32,10 @@
       "openai-compatible": {
         "label": "OpenAI Compatible",
         "description": "Custom OpenAI audio/speech or chat audio endpoint."
+      },
+      "voxcpm": {
+        "label": "VoxCPM",
+        "description": "OpenBMB VoxCPM on your own OpenAI-compatible server."
       }
     },
     "providerCategory": {
@@ -139,7 +143,12 @@
     "systemVoiceNote": "Choose the system voice in your device settings",
     "browserVoiceNote": "Choose the system voice in your device settings",
     "stop": "Stop",
-    "noTextFound": "No readable text found on this page"
+    "noTextFound": "No readable text found on this page",
+    "voiceDesign": "Voice design",
+    "voiceDesignPlaceholder": "A young woman, gentle and warm",
+    "voiceDesignHint": "Describe the voice you want in plain words. Leave empty to use the model's default voice.",
+    "apiKeyOptional": "API Key (optional)",
+    "voxcpmBaseUrlHint": "Point this at a VoxCPM server you run, for example vllm serve openbmb/VoxCPM2 --omni --port 8000."
   },
   "fonts": {
     "title": "Fonts",

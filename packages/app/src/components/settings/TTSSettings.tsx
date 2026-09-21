@@ -24,6 +24,9 @@ import {
 import { previewTTSConfig, stopTTSPreview } from "@/lib/tts/tts-preview";
 import { useTTSStore } from "@/stores/tts-store";
 import {
+  DEFAULT_VOXCPM_BASE_URL,
+  DEFAULT_VOXCPM_MODEL,
+  DEFAULT_VOXCPM_VOICE,
   DEFAULT_XIAOMI_STYLE_PROMPT,
   getActiveTTSProfile,
   getLocaleDisplayLabel,
@@ -32,7 +35,7 @@ import {
   type TTSProviderType,
   type TTSProfile,
 } from "@readany/core/tts";
-import { Cloud, Headphones, Mic, Play, Settings2, Square, Zap } from "lucide-react";
+import { Cloud, Headphones, Mic, Play, Settings2, Sparkles, Square, Zap } from "lucide-react";
 import type { TFunction } from "i18next";
 /**
  * TTSSettings — TTS configuration panel in the settings dialog.
@@ -164,7 +167,9 @@ export function TTSSettings() {
         ? Mic
         : activeProfile.provider === "xiaomi"
           ? Cloud
-          : Settings2;
+          : activeProfile.provider === "voxcpm"
+            ? Sparkles
+            : Settings2;
   const ProviderIcon = providerIcon;
 
   const selectProfile = (profileId: string) => {
@@ -573,6 +578,101 @@ export function TTSSettings() {
                   />
                 </div>
               )}
+            </>
+          )}
+
+          {config.engine === "voxcpm" && (
+            <>
+              <div className="space-y-2">
+                <span className="text-sm text-foreground">{t("tts.baseUrl", "Base URL")}</span>
+                <input
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={config.voxcpmBaseUrl}
+                  onChange={(e) => {
+                    updateActiveProfile({ baseUrl: e.target.value });
+                    updateConfig({ voxcpmBaseUrl: e.target.value });
+                  }}
+                  placeholder={DEFAULT_VOXCPM_BASE_URL}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t("tts.voxcpmBaseUrlHint", "")}
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <span className="text-sm text-foreground">{t("tts.model", "Model")}</span>
+                  <input
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={config.voxcpmModel}
+                    onChange={(e) => {
+                      updateActiveProfile({ model: e.target.value });
+                      updateConfig({ voxcpmModel: e.target.value });
+                    }}
+                    placeholder={DEFAULT_VOXCPM_MODEL}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <span className="text-sm text-foreground">{t("tts.voice")}</span>
+                  <input
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={config.voxcpmVoice}
+                    onChange={(e) => {
+                      updateActiveProfile({ voice: e.target.value });
+                      updateConfig({ voxcpmVoice: e.target.value });
+                    }}
+                    placeholder={DEFAULT_VOXCPM_VOICE}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <span className="text-sm text-foreground">
+                  {t("tts.voiceDesign", "Voice design")}
+                </span>
+                <textarea
+                  className="min-h-[74px] w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={config.voxcpmVoiceDesign}
+                  onChange={(e) => {
+                    updateActiveProfile({ stylePrompt: e.target.value });
+                    updateConfig({ voxcpmVoiceDesign: e.target.value });
+                  }}
+                  placeholder={t("tts.voiceDesignPlaceholder", "")}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t("tts.voiceDesignHint", "")}
+                </p>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-foreground">{t("tts.format", "Format")}</span>
+                <Select
+                  value={config.voxcpmFormat}
+                  onValueChange={(v) => {
+                    const format = v as "mp3" | "wav";
+                    updateActiveProfile({ format });
+                    updateConfig({ voxcpmFormat: format });
+                  }}
+                >
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="wav">wav</SelectItem>
+                    <SelectItem value="mp3">mp3</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <span className="text-sm text-foreground">
+                  {t("tts.apiKeyOptional", "API Key (optional)")}
+                </span>
+                <PasswordInput
+                  placeholder=""
+                  value={config.voxcpmApiKey}
+                  onChange={(e) => {
+                    updateActiveProfile({ apiKey: e.target.value });
+                    updateConfig({ voxcpmApiKey: e.target.value });
+                  }}
+                />
+              </div>
             </>
           )}
         </div>

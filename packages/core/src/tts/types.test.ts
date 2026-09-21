@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_XIAOMI_TTS_VOICE,
   XIAOMI_TTS_VOICES,
+  buildVoxCPMInput,
   normalizeTTSConfig,
+  normalizeTTSEngine,
 } from "./types";
 
 describe("normalizeTTSConfig", () => {
@@ -94,5 +96,63 @@ describe("normalizeTTSConfig", () => {
       "Milo",
       "Dean",
     ]);
+  });
+});
+
+describe("VoxCPM provider", () => {
+  it("keeps voxcpm as a known engine instead of falling back to edge", () => {
+    expect(normalizeTTSEngine("voxcpm")).toBe("voxcpm");
+    expect(normalizeTTSEngine("not-a-real-engine")).toBe("edge");
+  });
+
+  it("ships a default VoxCPM profile pointing at a local server", () => {
+    const config = normalizeTTSConfig({ engine: "voxcpm" });
+
+    expect(config.activeProfileId).toBe("voxcpm-default");
+    expect(config.voxcpmBaseUrl).toBe("http://localhost:8000/v1");
+    expect(config.voxcpmModel).toBe("openbmb/VoxCPM2");
+    expect(config.voxcpmApiKey).toBe("");
+    expect(config.voxcpmFormat).toBe("wav");
+  });
+
+  it("restores persisted VoxCPM profile settings onto the flat config", () => {
+    const config = normalizeTTSConfig({
+      engine: "voxcpm",
+      activeProfileId: "voxcpm-default",
+      profiles: [
+        {
+          id: "voxcpm-default",
+          name: "VoxCPM",
+          provider: "voxcpm",
+          baseUrl: "http://192.168.1.9:8000/v1",
+          model: "openbmb/VoxCPM1.5",
+          voice: "narrator",
+          format: "mp3",
+          stylePrompt: "a calm older man",
+        },
+      ],
+    });
+
+    expect(config.voxcpmBaseUrl).toBe("http://192.168.1.9:8000/v1");
+    expect(config.voxcpmModel).toBe("openbmb/VoxCPM1.5");
+    expect(config.voxcpmVoice).toBe("narrator");
+    expect(config.voxcpmFormat).toBe("mp3");
+    expect(config.voxcpmVoiceDesign).toBe("a calm older man");
+  });
+});
+
+describe("buildVoxCPMInput", () => {
+  it("wraps a bare Voice Design description in parentheses", () => {
+    expect(buildVoxCPMInput("Hello", "a warm young woman")).toBe("(a warm young woman)Hello");
+  });
+
+  it("leaves an already-parenthesized description untouched", () => {
+    expect(buildVoxCPMInput("Hello", "(a warm young woman)")).toBe("(a warm young woman)Hello");
+  });
+
+  it("returns the text unchanged when there is no description", () => {
+    expect(buildVoxCPMInput("Hello", "")).toBe("Hello");
+    expect(buildVoxCPMInput("Hello", "   ")).toBe("Hello");
+    expect(buildVoxCPMInput("Hello", undefined)).toBe("Hello");
   });
 });

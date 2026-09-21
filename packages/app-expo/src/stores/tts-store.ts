@@ -28,6 +28,7 @@ export interface TTSPlayerFactories {
   createDashScopeTTS: () => ITTSPlayer;
   createXiaomiTTS: () => ITTSPlayer;
   createOpenAICompatibleTTS: () => ITTSPlayer;
+  createVoxCPMTTS: () => ITTSPlayer;
 }
 
 const defaultFactories: TTSPlayerFactories = {
@@ -44,6 +45,7 @@ const defaultFactories: TTSPlayerFactories = {
   createDashScopeTTS: () => new TrackPlayerDashScopeTTSPlayer(),
   createXiaomiTTS: () => new TrackPlayerCloudTTSPlayer(),
   createOpenAICompatibleTTS: () => new TrackPlayerCloudTTSPlayer(),
+  createVoxCPMTTS: () => new TrackPlayerCloudTTSPlayer(),
 };
 
 let _factories: TTSPlayerFactories = defaultFactories;
@@ -52,6 +54,7 @@ let _edgeTTS: ITTSPlayer | null = null;
 let _dashscopeTTS: ITTSPlayer | null = null;
 let _xiaomiTTS: ITTSPlayer | null = null;
 let _openAICompatibleTTS: ITTSPlayer | null = null;
+let _voxcpmTTS: ITTSPlayer | null = null;
 let _activeTTS: ITTSPlayer | null = null;
 
 let _sessionSegments: string[] = [];
@@ -84,6 +87,11 @@ function getOpenAICompatibleTTS(): ITTSPlayer {
     _openAICompatibleTTS = _factories.createOpenAICompatibleTTS();
   }
   return _openAICompatibleTTS;
+}
+
+function getVoxCPMTTS(): ITTSPlayer {
+  if (!_voxcpmTTS) _voxcpmTTS = _factories.createVoxCPMTTS();
+  return _voxcpmTTS;
 }
 
 function clearSleepTimerHandle(): void {
@@ -133,6 +141,7 @@ function detachAndStopAllPlayers(): void {
   detachAndStopPlayer(_dashscopeTTS);
   detachAndStopPlayer(_xiaomiTTS);
   detachAndStopPlayer(_openAICompatibleTTS);
+  detachAndStopPlayer(_voxcpmTTS);
 }
 
 function normalizeSegments(text: string | string[]): string[] {
@@ -183,6 +192,15 @@ function syncProfileUpdatesFromLegacyFields(
     if (updates.openaiTtsStylePrompt !== undefined) {
       profileUpdates.stylePrompt = updates.openaiTtsStylePrompt;
     }
+  } else if (targetProvider === "voxcpm") {
+    if (updates.voxcpmBaseUrl !== undefined) profileUpdates.baseUrl = updates.voxcpmBaseUrl;
+    if (updates.voxcpmApiKey !== undefined) profileUpdates.apiKey = updates.voxcpmApiKey;
+    if (updates.voxcpmModel !== undefined) profileUpdates.model = updates.voxcpmModel;
+    if (updates.voxcpmVoice !== undefined) profileUpdates.voice = updates.voxcpmVoice;
+    if (updates.voxcpmFormat !== undefined) profileUpdates.format = updates.voxcpmFormat;
+    if (updates.voxcpmVoiceDesign !== undefined) {
+      profileUpdates.stylePrompt = updates.voxcpmVoiceDesign;
+    }
   }
 
   if (Object.keys(profileUpdates).length === 0) return updates;
@@ -216,6 +234,9 @@ function getPlayerForConfig(config: TTSConfig): ITTSPlayer {
   }
   if (config.engine === "openai-compatible") {
     return getOpenAICompatibleTTS();
+  }
+  if (config.engine === "voxcpm") {
+    return getVoxCPMTTS();
   }
   return getSystemTTS();
 }
@@ -687,4 +708,5 @@ export function setTTSPlayerFactories(factories: Partial<TTSPlayerFactories>): v
   _dashscopeTTS = null;
   _xiaomiTTS = null;
   _openAICompatibleTTS = null;
+  _voxcpmTTS = null;
 }

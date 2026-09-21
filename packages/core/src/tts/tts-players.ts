@@ -15,6 +15,7 @@ import {
   buildXiaomiTTSUrl,
   buildXiaomiTTSMessages,
   fetchOpenAITTSAudio,
+  fetchVoxCPMAudio,
   isTTSAbortError,
 } from "./cloud-tts";
 import { fetchEdgeTTSAudio } from "./edge-tts";
@@ -744,7 +745,11 @@ export class XiaomiTTSPlayer extends PCMStreamingTTSPlayer {
   }
 }
 
-class BufferedAudioTTSPlayer implements ITTSPlayer {
+/**
+ * Fetch a whole audio file per chunk, decode it, and schedule the chunks
+ * gaplessly. Exported so engines that return complete files can subclass it.
+ */
+export class BufferedAudioTTSPlayer implements ITTSPlayer {
   private audioCtx: AudioContext | null = null;
   private gainNode: GainNode | null = null;
   private scheduledEnd = 0;
@@ -978,6 +983,20 @@ export class OpenAICompatibleTTSPlayer implements ITTSPlayer {
   stop() {
     this.pcmPlayer.stop();
     this.bufferedPlayer.stop();
+  }
+}
+
+// ── VoxCPM (OpenBMB — self-hosted OpenAI-compatible endpoint) ──
+
+/**
+ * VoxCPM returns a whole WAV/MP3 per chunk, so it reuses the buffered player.
+ * `/v1/audio/speech` has no streaming shape we can consume yet; when vLLM-Omni
+ * exposes SSE audio deltas this can gain a `PCMStreamingTTSPlayer` path the way
+ * `OpenAICompatibleTTSPlayer` does.
+ */
+export class VoxCPMTTSPlayer extends BufferedAudioTTSPlayer {
+  constructor() {
+    super(fetchVoxCPMAudio);
   }
 }
 

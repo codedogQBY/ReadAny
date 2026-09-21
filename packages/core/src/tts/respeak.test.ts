@@ -92,3 +92,32 @@ describe("isActivePlay", () => {
     expect(isActivePlay("stopped")).toBe(false);
   });
 });
+
+describe("shouldRespeakForSynthChange — VoxCPM", () => {
+  const base = { ...DEFAULT_TTS_CONFIG, engine: "voxcpm" as const };
+
+  it("re-speaks when the voice design changes", () => {
+    expect(
+      shouldRespeakForSynthChange(base, { ...base, voxcpmVoiceDesign: "a calm older man" }),
+    ).toBe(true);
+  });
+
+  it("re-speaks when the server or model changes", () => {
+    expect(
+      shouldRespeakForSynthChange(base, { ...base, voxcpmBaseUrl: "http://10.0.0.2:8000/v1" }),
+    ).toBe(true);
+    expect(shouldRespeakForSynthChange(base, { ...base, voxcpmModel: "openbmb/VoxCPM1.5" })).toBe(
+      true,
+    );
+  });
+
+  it("does not re-speak when nothing synthesis-affecting changed", () => {
+    expect(shouldRespeakForSynthChange(base, { ...base })).toBe(false);
+  });
+
+  it("does not require an API key, unlike the cloud providers", () => {
+    expect(
+      shouldRespeakForSynthChange(base, { ...base, voxcpmVoice: "narrator", voxcpmApiKey: "" }),
+    ).toBe(true);
+  });
+});

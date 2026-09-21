@@ -32,6 +32,10 @@
       "openai-compatible": {
         "label": "OpenAI 兼容",
         "description": "自定义 OpenAI audio/speech 或聊天音频接口"
+      },
+      "voxcpm": {
+        "label": "VoxCPM",
+        "description": "OpenBMB VoxCPM，连接你自建的 OpenAI 兼容服务。"
       }
     },
     "providerCategory": {
@@ -139,7 +143,12 @@
     "systemVoiceNote": "系统音色请在设备系统设置中选择",
     "browserVoiceNote": "系统音色请在设备系统设置中选择",
     "stop": "停止",
-    "noTextFound": "当前页面未找到可朗读的文本"
+    "noTextFound": "当前页面未找到可朗读的文本",
+    "voiceDesign": "音色描述",
+    "voiceDesignPlaceholder": "年轻女声，温柔亲切",
+    "voiceDesignHint": "用一句话描述想要的音色。留空则使用模型默认音色。",
+    "apiKeyOptional": "API 密钥（可选）",
+    "voxcpmBaseUrlHint": "填写你自己部署的 VoxCPM 服务地址，例如先运行 vllm serve openbmb/VoxCPM2 --omni --port 8000。"
   },
   "fonts": {
     "title": "字体",
