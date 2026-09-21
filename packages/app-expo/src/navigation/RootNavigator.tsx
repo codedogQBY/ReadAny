@@ -14,6 +14,7 @@ import AppearanceSettingsScreen from "@/screens/settings/AppearanceSettingsScree
 import FeedbackDetailScreen from "@/screens/settings/FeedbackDetailScreen";
 import FeedbackScreen from "@/screens/settings/FeedbackScreen";
 import FontSettingsScreen from "@/screens/settings/FontSettingsScreen";
+import ReadingSettingsScreen from "@/screens/settings/ReadingSettingsScreen";
 import SyncSettingsScreen from "@/screens/settings/SyncSettingsScreen";
 import TTSSettingsScreen from "@/screens/settings/TTSSettingsScreen";
 import TranslationSettingsScreen from "@/screens/settings/TranslationSettingsScreen";
@@ -37,6 +38,7 @@ export type RootStackParamList = {
   Skills: undefined;
   VectorModelSettings: undefined;
   AppearanceSettings: undefined;
+  ReadingSettings: undefined;
   AISettings: undefined;
   TTSSettings: undefined;
   TranslationSettings: undefined;
@@ -102,6 +104,7 @@ export function RootNavigator() {
               options={{ animation: "slide_from_right" }}
             />
             <Stack.Screen name="AppearanceSettings" component={AppearanceSettingsScreen} />
+            <Stack.Screen name="ReadingSettings" component={ReadingSettingsScreen} />
             <Stack.Screen name="AISettings" component={AISettingsScreen} />
             <Stack.Screen name="TTSSettings" component={TTSSettingsScreen} />
             <Stack.Screen name="TranslationSettings" component={TranslationSettingsScreen} />
