@@ -39,6 +39,8 @@ export interface SimpleSyncOptions {
   receiveOnly?: boolean;
   /** When true, bypass timestamp comparisons and force-apply all remote records */
   forceApply?: boolean;
+  /** When true, always upload a fresh full local device snapshot. */
+  forceUploadSnapshot?: boolean;
   fileSyncOptions?: SyncFilesOptions;
 }
 
@@ -828,7 +830,7 @@ export async function runSimpleSync(
       );
 
       try {
-        if (changeCount > 0 || totalApplied > 0) {
+        if (options.forceUploadSnapshot || changeCount > 0 || totalApplied > 0) {
           onProgress?.({
             phase: "database",
             operation: "upload",
