@@ -12,6 +12,9 @@ import { previewTTSConfig, stopTTSPreview } from "@/lib/platform/tts-preview";
 import { useTTSStore } from "@/stores";
 import {
   DASHSCOPE_VOICES,
+  DEFAULT_VOXCPM_BASE_URL,
+  DEFAULT_VOXCPM_MODEL,
+  DEFAULT_VOXCPM_VOICE,
   DEFAULT_XIAOMI_STYLE_PROMPT,
   EDGE_TTS_VOICES,
   type TTSProfile,
@@ -573,6 +576,113 @@ export default function TTSSettingsScreen() {
                 </View>
               </>
             )}
+
+            {config.engine === "voxcpm" && (
+              <>
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>{t("tts.baseUrl", "Base URL")}</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={config.voxcpmBaseUrl}
+                    onChangeText={(v) => {
+                      updateActiveProfile({ baseUrl: v });
+                      updateConfig({ voxcpmBaseUrl: v });
+                    }}
+                    placeholder={DEFAULT_VOXCPM_BASE_URL}
+                    placeholderTextColor={colors.mutedForeground}
+                    autoCapitalize="none"
+                  />
+                  <Text style={styles.fieldHint}>{t("tts.voxcpmBaseUrlHint", "")}</Text>
+                </View>
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>{t("tts.model", "Model")}</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={config.voxcpmModel}
+                    onChangeText={(v) => {
+                      updateActiveProfile({ model: v });
+                      updateConfig({ voxcpmModel: v });
+                    }}
+                    placeholder={DEFAULT_VOXCPM_MODEL}
+                    placeholderTextColor={colors.mutedForeground}
+                    autoCapitalize="none"
+                  />
+                </View>
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>{t("tts.voice", "语音")}</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={config.voxcpmVoice}
+                    onChangeText={(v) => {
+                      updateActiveProfile({ voice: v });
+                      updateConfig({ voxcpmVoice: v });
+                    }}
+                    placeholder={DEFAULT_VOXCPM_VOICE}
+                    placeholderTextColor={colors.mutedForeground}
+                    autoCapitalize="none"
+                  />
+                </View>
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>{t("tts.voiceDesign", "Voice design")}</Text>
+                  <TextInput
+                    style={[styles.input, styles.multilineInput]}
+                    value={config.voxcpmVoiceDesign}
+                    onChangeText={(v) => {
+                      updateActiveProfile({ stylePrompt: v });
+                      updateConfig({ voxcpmVoiceDesign: v });
+                    }}
+                    multiline
+                    placeholder={t("tts.voiceDesignPlaceholder", "")}
+                    placeholderTextColor={colors.mutedForeground}
+                  />
+                  <Text style={styles.fieldHint}>{t("tts.voiceDesignHint", "")}</Text>
+                </View>
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>{t("tts.format", "Format")}</Text>
+                  <View style={styles.optionRow}>
+                    {(["wav", "mp3"] as const).map((format) => {
+                      const active = config.voxcpmFormat === format;
+                      return (
+                        <TouchableOpacity
+                          key={format}
+                          style={[styles.optionChip, active && styles.optionChipActive]}
+                          onPress={() => {
+                            updateActiveProfile({ format });
+                            updateConfig({ voxcpmFormat: format });
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Text
+                            style={[
+                              styles.optionChipText,
+                              active && styles.optionChipTextActive,
+                            ]}
+                          >
+                            {format}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>
+                    {t("tts.apiKeyOptional", "API Key (optional)")}
+                  </Text>
+                  <TextInput
+                    style={styles.input}
+                    value={config.voxcpmApiKey || ""}
+                    onChangeText={(v) => {
+                      updateActiveProfile({ apiKey: v });
+                      updateConfig({ voxcpmApiKey: v });
+                    }}
+                    placeholder=""
+                    placeholderTextColor={colors.mutedForeground}
+                    autoCapitalize="none"
+                  />
+                </View>
+              </>
+            )}
             </View>
 
             {/* Rate & Pitch */}
@@ -781,6 +891,11 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: fontSize.sm,
       fontWeight: fontWeight.medium,
       color: colors.foreground,
+    },
+    fieldHint: {
+      fontSize: fontSize.xs,
+      color: colors.mutedForeground,
+      lineHeight: 16,
     },
     input: {
       borderRadius: radius.lg,

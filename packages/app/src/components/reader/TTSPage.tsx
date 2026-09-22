@@ -399,7 +399,16 @@ export function TTSPage({
                     <div className="sticky top-0 z-10 border-b border-border/30 bg-background/95 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                       {t("tts.selectEngine")}
                     </div>
-                    {(["edge", "dashscope", "xiaomi", "openai-compatible", "system"] as const).map((eng) => {
+                    {(
+                      [
+                        "edge",
+                        "dashscope",
+                        "xiaomi",
+                        "openai-compatible",
+                        "voxcpm",
+                        "system",
+                      ] as const
+                    ).map((eng) => {
                       const isActive = config.engine === eng;
                       const label =
                         eng === "edge"

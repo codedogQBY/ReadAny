@@ -4,6 +4,7 @@ import {
   DashScopeTTSPlayer,
   EdgeTTSPlayer,
   OpenAICompatibleTTSPlayer,
+  VoxCPMTTSPlayer,
   XiaomiTTSPlayer,
 } from "@readany/core/tts";
 
@@ -12,6 +13,7 @@ const edgePreviewPlayer = new EdgeTTSPlayer();
 const dashscopePreviewPlayer = new DashScopeTTSPlayer();
 const xiaomiPreviewPlayer = new XiaomiTTSPlayer();
 const openAICompatiblePreviewPlayer = new OpenAICompatibleTTSPlayer();
+const voxcpmPreviewPlayer = new VoxCPMTTSPlayer();
 
 export interface TTSPreviewCallbacks {
   onStateChange?: (state: "playing" | "paused" | "stopped") => void;
@@ -32,6 +34,7 @@ export function stopTTSPreview() {
   stopPlayer(dashscopePreviewPlayer);
   stopPlayer(xiaomiPreviewPlayer);
   stopPlayer(openAICompatiblePreviewPlayer);
+  stopPlayer(voxcpmPreviewPlayer);
 }
 
 export async function previewTTSConfig(
@@ -49,7 +52,9 @@ export async function previewTTSConfig(
           ? xiaomiPreviewPlayer
           : config.engine === "openai-compatible"
             ? openAICompatiblePreviewPlayer
-            : systemPreviewPlayer;
+            : config.engine === "voxcpm"
+              ? voxcpmPreviewPlayer
+              : systemPreviewPlayer;
   player.onStateChange = undefined;
   player.onEnd = undefined;
   try {

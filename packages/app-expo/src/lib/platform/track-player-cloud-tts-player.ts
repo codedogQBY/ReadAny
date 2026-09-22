@@ -2,6 +2,7 @@ import {
   type ITTSPlayer,
   type TTSConfig,
   fetchOpenAITTSAudio,
+  fetchVoxCPMAudio,
   fetchXiaomiTTSWav,
   isTTSAbortError,
   splitIntoChunks,
@@ -25,10 +26,19 @@ const DEFAULT_ARTWORK = (() => {
 
 function extensionForConfig(config: TTSConfig): string {
   if (config.engine === "xiaomi") return "wav";
+  if (config.engine === "voxcpm") {
+    return config.voxcpmFormat === "pcm16" ? "wav" : config.voxcpmFormat || "wav";
+  }
   if (config.openaiTtsEndpoint === "chat-completions") {
     return config.openaiTtsFormat === "pcm16" ? "wav" : config.openaiTtsFormat;
   }
   return config.openaiTtsFormat || "mp3";
+}
+
+function fetchChunkAudio(text: string, config: TTSConfig): Promise<Uint8Array> {
+  if (config.engine === "xiaomi") return fetchXiaomiTTSWav(text, config);
+  if (config.engine === "voxcpm") return fetchVoxCPMAudio(text, config);
+  return fetchOpenAITTSAudio(text, config);
 }
 
 export class TrackPlayerCloudTTSPlayer implements ITTSPlayer {
@@ -264,10 +274,7 @@ export class TrackPlayerCloudTTSPlayer implements ITTSPlayer {
   private async _fetchChunkFile(index: number, gen: number): Promise<string> {
     if (this._stopped || gen !== this._speakGen || !this._config) throw new Error("aborted");
     const config = this._config;
-    const bytes =
-      config.engine === "xiaomi"
-        ? await fetchXiaomiTTSWav(this._chunks[index], config)
-        : await fetchOpenAITTSAudio(this._chunks[index], config);
+    const bytes = await fetchChunkAudio(this._chunks[index], config);
     if (this._stopped || gen !== this._speakGen) throw new Error("aborted");
 
     const ext = extensionForConfig(config);
