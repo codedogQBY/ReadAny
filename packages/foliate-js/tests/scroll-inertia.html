@@ -1,0 +1,190 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Scroll inertia regression</title>
+<style>
+  body { margin: 0; }
+  foliate-paginator { display: block; position: fixed; top: 0; left: 0; width: 390px; height: 620px; }
+  pre { margin-left: 400px; }
+</style>
+<pre id="result">Ready</pre>
+<script type="module">
+import '../paginator.js'
+
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+const html = '<!doctype html><style>p { margin: 0; line-height: 30px }</style>'
+    + Array.from({ length: 300 }, (_, i) => `<p>Reading line ${i}</p>`).join('')
+const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
+
+const touchEmitter = doc => (type, y, time) => {
+    const touch = { screenX: 180, screenY: y }
+    const event = new Event(type, { cancelable: true, bubbles: true })
+    Object.defineProperties(event, {
+        touches: { value: type === 'touchend' ? [] : [touch] },
+        changedTouches: { value: [touch] },
+        timeStamp: { value: time },
+    })
+    doc.dispatchEvent(event)
+}
+
+// Exercises the real document touch listeners and rendered iframe, not a mock
+// scroller. Long drags and repeated swipes must never snap backwards on release.
+window.runRegression = async ({ enabled = true, distance = 900, initial = 0,
+    swipes = 1, cancel = false } = {}) => {
+    const reader = document.createElement('foliate-paginator')
+    reader.setAttribute('flow', 'scrolled')
+    reader.setAttribute('animated', '')
+    reader.toggleAttribute('scroll-inertia', enabled)
+    document.body.append(reader)
+    reader.open({ sections: [{ id: 'chapter', load: async () => url }] })
+    await reader.goTo({ index: 0 })
+    const doc = reader.getContents()[0].doc
+    await doc.fonts.ready
+    // Let initial ResizeObservers and layout-driven anchoring finish first.
+    for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame)
+    await wait(300)
+    reader.containerPosition = initial
+    const emit = touchEmitter(doc)
+    const results = []
+    for (let swipe = 0; swipe < swipes; swipe++) {
+        const t = performance.now()
+        emit('touchstart', 1000, t)
+        for (let i = 1; i <= 10; i++) emit('touchmove', 1000 - distance * i / 10, t + i * 20)
+        const released = reader.containerPosition
+        const atEdge = distance > 0 ? reader.atEnd : reader.atStart
+        const positions = [released]
+        const times = [performance.now()]
+        emit('touchend', 1000 - distance, t + 201)
+        const start = performance.now()
+        let stoppedAt
+        await new Promise(resolve => {
+            const sample = now => {
+                positions.push(reader.containerPosition)
+                times.push(now)
+                if (cancel && stoppedAt === undefined) {
+                    emit('touchstart', 500, now)
+                    stoppedAt = reader.containerPosition
+                }
+                if (now - start >= 2300) resolve()
+                else requestAnimationFrame(sample)
+            }
+            requestAnimationFrame(sample)
+        })
+        const deltas = positions.slice(1).map((x, i) => (x - positions[i]) * Math.sign(distance))
+        results.push({
+            released, final: positions.at(-1),
+            minDelta: Math.min(...deltas), maxDelta: Math.max(...deltas),
+            pass: enabled
+                ? Math.min(...deltas) >= -1
+                    && deltas.every((delta, i) => delta <= Math.abs(distance / 200)
+                        * (times[i + 1] - times[i]) + 1)
+                    && (atEdge || (positions.at(-1) - released) * Math.sign(distance) > 0)
+                    && (!cancel || positions.slice(1).every(x => x === stoppedAt))
+                : positions.every(x => x === released),
+            positions,
+        })
+    }
+    const result = { enabled, distance, initial, swipes, cancel,
+        pass: results.every(x => x.pass), results }
+    reader.destroy()
+    reader.remove()
+    document.querySelector('#result').textContent = JSON.stringify(result, null, 2)
+    return result
+}
+
+window.runSuite = async () => {
+    const results = []
+    for (const args of [
+        { distance: 900 },
+        { distance: 300, swipes: 3 },
+        { distance: -900, initial: 2400 },
+        { enabled: false },
+        { cancel: true },
+        { initial: 8100, distance: 300 },
+    ]) results.push(await window.runRegression(args))
+    return { pass: results.every(x => x.pass), results }
+}
+
+// Control only the animation clock, while keeping the actual touch handlers,
+// browser scroll clamping and iframe layout. Equal gestures must travel equally
+// at different frame rates, even when a frame is delayed.
+window.runTimingSuite = async () => {
+    const reader = document.createElement('foliate-paginator')
+    reader.setAttribute('flow', 'scrolled')
+    reader.setAttribute('scroll-inertia', '')
+    document.body.append(reader)
+    reader.open({ sections: [{ id: 'chapter', load: async () => url }] })
+    await reader.goTo({ index: 0 })
+    const doc = reader.getContents()[0].doc
+    await doc.fonts.ready
+    for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame)
+    await wait(300)
+    const emit = touchEmitter(doc)
+    const raf = window.requestAnimationFrame
+    const caf = window.cancelAnimationFrame
+    const nowDescriptor = Object.getOwnPropertyDescriptor(performance, 'now')
+    let clock = 1000, id = 0
+    const pending = new Map()
+    const results = []
+    try {
+        window.requestAnimationFrame = callback => { pending.set(++id, callback); return id }
+        window.cancelAnimationFrame = id => pending.delete(id)
+        Object.defineProperty(performance, 'now', { configurable: true, value: () => clock })
+        for (const options of [
+            { hz: 30 }, { hz: 60 }, { hz: 120 },
+            { hz: 60, stall: 180 },
+            { hz: 60, pause: 200 },
+            { hz: 60, pause: 50 },
+            { hz: 120, velocity: 0.1 },
+            { hz: 60, irregular: true },
+        ]) {
+            const { hz, stall = 0, pause = 0, velocity = 3, irregular = false } = options
+            pending.clear()
+            reader.containerPosition = 0
+            const start = clock
+            emit('touchstart', 1000, start)
+            const samples = irregular ? [20, 40, 60, 80, 100, 120, 180, 190, 200]
+                : Array.from({ length: 10 }, (_, i) => (i + 1) * 20)
+            for (const time of samples) {
+                clock = start + time
+                // Variable speed exposes the old unweighted event average.
+                const distance = irregular ? (time <= 100 ? time : 100 + (time - 100) ** 2 / 100)
+                    : velocity * time
+                emit('touchmove', 1000 - distance, clock)
+            }
+            clock = start + 200 + pause
+            const released = reader.containerPosition
+            emit('touchend', 1000 - velocity * 200, clock)
+            const releasedAt = clock
+            const positions = [released]
+            const times = [0]
+            let frame = 0
+            while (pending.size && clock - releasedAt < 3000) {
+                clock += frame++ === 2 && stall ? stall : 1000 / hz
+                const callbacks = [...pending.values()]
+                pending.clear()
+                callbacks.forEach(callback => callback(clock))
+                positions.push(reader.containerPosition)
+                times.push(clock - releasedAt)
+            }
+            const expectedVelocity = irregular ? 1 : velocity * Math.max(0, 1 - pause / 100)
+            const expectedDistance = expectedVelocity < 0.02 ? 0 : (expectedVelocity - 0.015) * 325
+            const actualDistance = reader.containerPosition - released
+            const expectedDuration = expectedVelocity < 0.02 ? 0 : 325 * Math.log(expectedVelocity / 0.015)
+            results.push({ ...options, actualDistance, expectedDistance,
+                duration: clock - releasedAt, expectedDuration,
+                pass: Math.abs(actualDistance - expectedDistance) < 1
+                    && Math.abs(clock - releasedAt - expectedDuration) <= 1000 / hz + 1
+                    && positions.every((x, i) => i === 0 || x >= positions[i - 1]),
+                positions, times })
+        }
+    } finally {
+        window.requestAnimationFrame = raf
+        window.cancelAnimationFrame = caf
+        if (nowDescriptor) Object.defineProperty(performance, 'now', nowDescriptor)
+        else delete performance.now
+        reader.destroy()
+        reader.remove()
+    }
+    return { pass: results.every(x => x.pass), results }
+}
+</script>
