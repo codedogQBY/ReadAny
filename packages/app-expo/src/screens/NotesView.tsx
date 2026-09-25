@@ -17,7 +17,7 @@ import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { HighlightWithBook } from "@readany/core/db/database";
 import { AnnotationExporter, type ExportFormat } from "@readany/core/export";
-import { sortAnnotationsByPosition } from "@readany/core/reader";
+import { pageNoteLabel, sortAnnotationsByPosition } from "@readany/core/reader";
 import type { Highlight } from "@readany/core/types";
 import { eventBus } from "@readany/core/utils/event-bus";
 /**
@@ -196,7 +196,11 @@ export function NotesView({
     const chapters: { chapter: string; items: HighlightWithBook[] }[] = [];
     const chapterMap = new Map<string, HighlightWithBook[]>();
     for (const h of currentList) {
-      const chapter = h.chapterTitle || t("notes.unknownChapter", "未知章节");
+      // 页级笔记（引用文本为空、固定版式）没有章节标题时用页码标签分组，别全落进「未知章节」
+      const chapter =
+        h.chapterTitle ||
+        (!h.text ? pageNoteLabel(h.cfi, t) : "") ||
+        t("notes.unknownChapter", "未知章节");
       const arr = chapterMap.get(chapter) || [];
       arr.push(h);
       chapterMap.set(chapter, arr);

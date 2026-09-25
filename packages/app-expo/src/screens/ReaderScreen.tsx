@@ -14,6 +14,7 @@ import {
   HeadphonesIcon,
   LanguagesIcon,
   NotebookPenIcon,
+  PlusIcon,
   SearchIcon,
   XIcon,
 } from "@/components/ui/Icon";
@@ -39,7 +40,7 @@ import { readingContextService } from "@readany/core/ai/reading-context-service"
 import { runWithDbRetry } from "@readany/core/db/write-retry";
 import { useChapterTranslation } from "@readany/core/hooks";
 import { useReadingSession } from "@readany/core/hooks/use-reading-session";
-import { createSelectionNoteMutation } from "@readany/core/reader";
+import { createSelectionNoteMutation, pageNoteLabel } from "@readany/core/reader";
 import { getPlatformService } from "@readany/core/services";
 import { getCSSFontFace, useFontStore } from "@readany/core/stores";
 import type { HighlightColor, ReadSettings, TOCItem } from "@readany/core/types";
@@ -74,6 +75,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 
 // ── Extracted modules ──
+import { PageNoteModal } from "./reader/PageNoteModal";
 import { ReaderNoteViewModal } from "./reader/ReaderNoteViewModal";
 
 const REFLOWABLE_CHARACTERS_PER_LOCATION = 1500;
@@ -224,6 +226,9 @@ export function ReaderScreen({ route, navigation }: Props) {
   const [showSettings, setShowSettings] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showNotebook, setShowNotebook] = useState(false);
+  // 页级笔记（固定版式无选中文本时的新建入口，对应桌面 NotebookPanel 的「+」）
+  const [showPageNote, setShowPageNote] = useState(false);
+  const [pageNoteContent, setPageNoteContent] = useState("");
   const [showTranslation, setShowTranslation] = useState(false);
   const [translationText, setTranslationText] = useState("");
   const [showTTS, setShowTTS] = useState(false);
@@ -1047,6 +1052,39 @@ export function ReaderScreen({ route, navigation }: Props) {
   const handleDismissSelection = useCallback(() => {
     setSelection(null);
   }, []);
+
+  // 页级笔记：锚定「当前位置」，给固定版式（PDF/CBZ）这种没法选中文本的格式用。
+  // 与桌面端 NotebookPanel 的「+」完全同语义：落库时 text 为空，页码由 CFI 反推。
+  const handleSavePageNote = useCallback(() => {
+    if (!currentCfi || !bookId) return;
+    const mutation = createSelectionNoteMutation({
+      bookId,
+      cfi: currentCfi,
+      text: "",
+      note: pageNoteContent,
+      chapterTitle: currentChapter || undefined,
+      defaultColor: readSettings.defaultHighlightColor ?? "yellow",
+    });
+    if (mutation.kind === "create") {
+      addHighlight(mutation.highlight);
+      bridge.addAnnotation({
+        value: currentCfi,
+        type: "highlight",
+        color: mutation.highlight.color,
+        note: mutation.highlight.note,
+      });
+    }
+    setPageNoteContent("");
+    setShowPageNote(false);
+  }, [
+    currentCfi,
+    bookId,
+    pageNoteContent,
+    currentChapter,
+    readSettings.defaultHighlightColor,
+    addHighlight,
+    bridge,
+  ]);
 
   useEffect(() => {
     setGoToCfiFn(() => bridge.goToCFI);
@@ -2043,9 +2081,23 @@ export function ReaderScreen({ route, navigation }: Props) {
         >
           <View style={s.sheetHeader}>
             <Text style={s.sheetTitle}>{t("reader.notebook", "笔记本")}</Text>
-            <TouchableOpacity onPress={() => setShowNotebook(false)}>
-              <XIcon size={18} color={colors.mutedForeground} />
-            </TouchableOpacity>
+            <View style={s.sheetHeaderActions}>
+              {/* 「+」= 在当前页新建页级笔记（固定版式 PDF/CBZ 无选中文本时的入口；
+                  桌面端同名按钮位于 NotebookPanel 头部同一位置） */}
+              <TouchableOpacity
+                disabled={!currentCfi}
+                style={!currentCfi ? s.sheetHeaderActionDisabled : undefined}
+                onPress={() => {
+                  setPageNoteContent("");
+                  setShowPageNote(true);
+                }}
+              >
+                <PlusIcon size={18} color={colors.foreground} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowNotebook(false)}>
+                <XIcon size={18} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
           </View>
           {highlights.length > 0 ? (
             <ScrollView showsVerticalScrollIndicator={false} style={s.sheetScroll}>
@@ -2071,9 +2123,16 @@ export function ReaderScreen({ route, navigation }: Props) {
                     ]}
                   />
                   <View style={s.highlightContent}>
-                    <Text style={s.highlightText} numberOfLines={3}>
-                      {h.text}
-                    </Text>
+                    {h.text ? (
+                      <Text style={s.highlightText} numberOfLines={3}>
+                        {h.text}
+                      </Text>
+                    ) : (
+                      /* 页级笔记（text 为空）：用「第N页笔记」这类位置标签代替空白引用 */
+                      <Text style={s.highlightLabel} numberOfLines={3}>
+                        {pageNoteLabel(h.cfi, t)}
+                      </Text>
+                    )}
                     {h.note && <Text style={s.highlightNote}>{h.note}</Text>}
                   </View>
                 </View>
@@ -2089,6 +2148,20 @@ export function ReaderScreen({ route, navigation }: Props) {
           )}
         </View>
       </Modal>
+
+      {/* ─── Page-level Note Modal（固定版式「页级笔记」新建入口） ─── */}
+      <PageNoteModal
+        visible={showPageNote}
+        cfi={currentCfi}
+        chapterTitle={currentChapter || undefined}
+        content={pageNoteContent}
+        onContentChange={setPageNoteContent}
+        onCancel={() => {
+          setShowPageNote(false);
+          setPageNoteContent("");
+        }}
+        onSave={handleSavePageNote}
+      />
 
       {/* ─── Note View Modal ─── */}
       <ReaderNoteViewModal

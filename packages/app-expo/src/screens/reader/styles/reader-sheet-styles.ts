@@ -118,9 +118,17 @@ export const makeSheetStyles = (colors: ThemeColors) =>
       paddingVertical: 8,
       borderBottomWidth: 0.5, borderBottomColor: colors.border,
     },
+    /** 笔记本弹窗头部右侧的操作区（页级笔记「+」与关闭） */
+    sheetHeaderActions: { flexDirection: "row" as const, alignItems: "center" as const, gap: 14 },
+    sheetHeaderActionDisabled: { opacity: 0.4 },
     highlightColorDot: { width: 8, height: 8, borderRadius: 4, marginTop: 4 },
     highlightContent: { flex: 1 },
     highlightText: { fontSize: fontSize.sm, color: colors.foreground, lineHeight: 18 },
+    /** 页级笔记没有引用文本，用页码标签替代（与桌面 NotebookPanel 一致） */
+    highlightLabel: {
+      fontSize: fontSize.sm, color: colors.mutedForeground,
+      fontStyle: "italic" as const, lineHeight: 18,
+    },
     highlightNote: { fontSize: fontSize.xs, color: colors.mutedForeground, marginTop: 4 },
     bookmarkItem: {
       flexDirection: "row" as const,

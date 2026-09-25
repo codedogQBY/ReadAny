@@ -33,3 +33,6 @@ export {
   compareCfiPosition,
   sortAnnotationsByPosition,
 } from "./annotation-order";
+
+// Page-level note labels (fixed-layout books) — shared by desktop & mobile
+export { pageNoteLabel, parseFakeCfiPage } from "./page-note";

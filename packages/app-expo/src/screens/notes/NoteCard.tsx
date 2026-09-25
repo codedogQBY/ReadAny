@@ -3,6 +3,7 @@ import { CheckIcon, EditIcon, Trash2Icon, XIcon } from "@/components/ui/Icon";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { useColors } from "@/styles/theme";
 import type { HighlightWithBook } from "@readany/core/db/database";
+import { pageNoteLabel } from "@readany/core/reader";
 import { HIGHLIGHT_COLOR_HEX } from "@readany/core/types";
 import type { TFunction } from "i18next";
 import { Text, TouchableOpacity, View } from "react-native";
@@ -43,9 +44,19 @@ export function NoteCard({
             { backgroundColor: HIGHLIGHT_COLOR_HEX[highlight.color] || colors.amber },
           ]}
         />
-        <Text style={s.noteQuote} numberOfLines={2}>
-          "{highlight.text}"
-        </Text>
+        <View style={s.noteQuoteWrap}>
+          {highlight.text ? (
+            <Text style={s.noteQuote} numberOfLines={2}>
+              "{highlight.text}"
+            </Text>
+          ) : (
+            /* 页级笔记（固定版式无选中文本）：用「第N页笔记」这类位置标签替代引用 */
+            <Text style={[s.noteQuote, s.noteQuoteEmpty]} numberOfLines={2}>
+              {pageNoteLabel(highlight.cfi, t)}
+            </Text>
+          )}
+          {highlight.chapterTitle && <Text style={s.noteChapter}>{highlight.chapterTitle}</Text>}
+        </View>
       </TouchableOpacity>
 
       {isEditing ? (

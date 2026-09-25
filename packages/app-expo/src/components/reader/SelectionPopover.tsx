@@ -12,6 +12,7 @@ import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import type { SelectionEvent } from "@/hooks/use-reader-bridge";
 import { radius, spacing, useColors, withOpacity } from "@/styles/theme";
 import type { ThemeColors } from "@/styles/theme";
+import { pageNoteLabel } from "@readany/core/reader";
 import { HIGHLIGHT_COLORS, HIGHLIGHT_COLOR_HEX } from "@readany/core/types";
 import type { HighlightColor } from "@readany/core/types";
 import * as Clipboard from "expo-clipboard";
@@ -296,7 +297,8 @@ export function SelectionPopover({
               </TouchableOpacity>
             </View>
             <Text style={s.noteModalPreview} numberOfLines={2}>
-              {selection.text}
+              {/* 页级笔记（固定版式无选中文本）：用「第N页笔记」这类位置标签替代空引用 */}
+              {selection.text || pageNoteLabel(selection.cfi, t)}
             </Text>
             <View style={s.editorContainer}>
               <RichTextEditor

@@ -207,6 +207,10 @@ export const makeStyles = (colors: ThemeColors) =>
     noteCardTop: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
     colorDot: { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
     noteQuote: { flex: 1, fontSize: fontSize.sm, color: colors.foreground, lineHeight: 20 },
+    noteQuoteWrap: { flex: 1 },
+    /** 页级笔记没有引用文本，这里显示「第N页笔记」这类位置标签 */
+    noteQuoteEmpty: { color: colors.mutedForeground, fontStyle: "italic" },
+    noteChapter: { fontSize: fontSize.xs, color: colors.mutedForeground, marginTop: 4 },
     noteBody: {
       marginTop: 8,
       backgroundColor: colors.muted,
@@ -274,6 +278,8 @@ export const makeStyles = (colors: ThemeColors) =>
     },
     highlightBody: { flex: 1, minWidth: 0 },
     highlightText: { fontSize: fontSize.sm, color: colors.foreground, lineHeight: 20 },
+    /** 页级笔记没有引用文本，这里显示「第N页笔记」这类位置标签 */
+    highlightLabel: { fontSize: fontSize.sm, color: colors.mutedForeground, fontStyle: "italic", lineHeight: 20 },
     highlightChapter: { fontSize: fontSize.xs, color: colors.mutedForeground, marginTop: 4 },
     highlightDeleteBtn: { padding: 6, borderRadius: radius.sm },
     exportOverlay: { flex: 1 },

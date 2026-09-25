@@ -7,7 +7,7 @@ import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { useAnnotationStore } from "@/stores";
 import { useColors } from "@/styles/theme";
-import { createSelectionNoteMutation } from "@readany/core/reader";
+import { createSelectionNoteMutation, pageNoteLabel } from "@readany/core/reader";
 import { KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
@@ -83,9 +83,16 @@ export function ReaderNoteViewModal({
           </View>
           {highlight && (
             <>
-              <Text style={s.noteViewQuote} numberOfLines={3}>
-                "{highlight.text}"
-              </Text>
+              {highlight.text ? (
+                <Text style={s.noteViewQuote} numberOfLines={3}>
+                  "{highlight.text}"
+                </Text>
+              ) : (
+                /* 页级笔记（固定版式无选中文本）：用「第N页笔记」这类位置标签替代引用 */
+                <Text style={s.noteViewQuote} numberOfLines={3}>
+                  {pageNoteLabel(highlight.cfi, t)}
+                </Text>
+              )}
               {editing ? (
                 <>
                   <View style={s.noteViewEditorContainer}>
