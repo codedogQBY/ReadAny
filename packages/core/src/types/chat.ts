@@ -131,6 +131,7 @@ export type AIProviderType =
   | "ollama"
   | "lmstudio"
   | "openrouter"
+  | "requesty"
   | "siliconflow"
   | "moonshot"
   | "zhipu"

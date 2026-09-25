@@ -41,6 +41,7 @@ function useProviderOptions(): { value: AIProviderType; label: string }[] {
     { value: "ollama", label: "Ollama" },
     { value: "lmstudio", label: "LM Studio" },
     { value: "openrouter", label: "OpenRouter" },
+    { value: "requesty", label: "Requesty" },
     { value: "siliconflow", label: "SiliconFlow" },
     { value: "moonshot", label: "Moonshot (Kimi)" },
     { value: "zhipu", label: t("settings.ai_provider_zhipu") },
