@@ -65,6 +65,8 @@ describe("AI API URL helpers", () => {
   it("respects providers that should not auto-append /v1", () => {
     expect(getDefaultBaseUrl("atlascloud")).toBe("https://api.atlascloud.ai/v1");
     expect(resolveProviderBaseUrl("atlascloud")).toBe("https://api.atlascloud.ai/v1");
+    expect(getDefaultBaseUrl("requesty")).toBe("https://router.requesty.ai/v1");
+    expect(resolveProviderBaseUrl("requesty")).toBe("https://router.requesty.ai/v1");
     expect(resolveProviderBaseUrl("anthropic", "https://api.anthropic.com")).toBe(
       "https://api.anthropic.com",
     );
@@ -78,6 +80,7 @@ describe("AI API URL helpers", () => {
       "https://api.openai.com/v1/models",
     );
     expect(buildProviderModelsUrl("atlascloud")).toBe("https://api.atlascloud.ai/v1/models");
+    expect(buildProviderModelsUrl("requesty")).toBe("https://router.requesty.ai/v1/models");
     expect(buildProviderModelsUrl("ollama", "http://localhost:11434")).toBe(
       "http://localhost:11434/api/tags",
     );
@@ -88,6 +91,11 @@ describe("AI API URL helpers", () => {
 
   it("detects Atlas Cloud endpoints", () => {
     expect(detectProviderFromUrl("https://api.atlascloud.ai/v1")).toBe("atlascloud");
+  });
+
+  it("detects Requesty endpoints", () => {
+    expect(detectProviderFromUrl("https://router.requesty.ai/v1")).toBe("requesty");
+    expect(detectProviderFromUrl("https://router.eu.requesty.ai/v1")).toBe("requesty");
   });
 
   describe("ensureUrlProtocol / scheme-less inputs", () => {
