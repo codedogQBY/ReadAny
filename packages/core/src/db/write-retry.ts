@@ -10,7 +10,13 @@ export function isRetryableDbError(error: unknown): boolean {
   return RETRYABLE_DB_ERROR_PATTERNS.some((pattern) => message.includes(pattern));
 }
 
-export async function waitForSyncToSettle(timeoutMs = 12000): Promise<void> {
+/**
+ * Wait for an in-flight sync to settle before writing. Capped low on purpose:
+ * the UI must never stall behind a long-running sync (a full first sync can
+ * run for many minutes). Genuine SQLite lock contention is handled by the
+ * retry loop in runWithDbRetry instead.
+ */
+export async function waitForSyncToSettle(timeoutMs = 1500): Promise<void> {
   try {
     const { useSyncStore } = await import("../stores/sync-store");
     const startedAt = Date.now();

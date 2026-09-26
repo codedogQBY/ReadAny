@@ -41,6 +41,14 @@ const UPLOAD_CONCURRENCY = 3;
 const DOWNLOAD_CONCURRENCY = 5;
 const MIGRATION_CONCURRENCY = 3;
 const REMOTE_CLEANUP_CONCURRENCY = 3;
+/**
+ * Chunk progress from concurrent transfers arrives far more often than the UI
+ * needs to repaint. Emitting every chunk floods the renderer main thread with
+ * store updates + React re-renders and freezes the whole app while transfers
+ * run, so per-task chunk progress is throttled to this interval (task start
+ * and completion still always emit).
+ */
+const PROGRESS_EMIT_MIN_INTERVAL_MS = 300;
 
 export interface SyncFilesOptions {
   forceUploadAll?: boolean;
@@ -317,9 +325,15 @@ async function runFileTasks(
       });
     };
 
+    let lastChunkEmitAt = 0;
+
     emitProgress();
     const result = await task.run((loaded, taskTotal) => {
-      if (taskTotal > 0) emitProgress(loaded, taskTotal);
+      if (taskTotal <= 0) return;
+      const now = Date.now();
+      if (now - lastChunkEmitAt < PROGRESS_EMIT_MIN_INTERVAL_MS) return;
+      lastChunkEmitAt = now;
+      emitProgress(loaded, taskTotal);
     });
     completed++;
     const finalTotal =
