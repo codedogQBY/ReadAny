@@ -1,6 +1,9 @@
-import { getPlatformService } from "@readany/core/services";
-import type { ITTSPlayer, TTSConfig } from "@readany/core/tts";
-import { splitIntoChunks } from "@readany/core/tts";
+import {
+  type ITTSPlayer,
+  type TTSConfig,
+  fetchDashScopeTTSAudio,
+  splitIntoChunks,
+} from "@readany/core/tts";
 import { File, Paths } from "expo-file-system";
 import { AppState, type AppStateStatus, Image, Platform } from "react-native";
 import TrackPlayer, { Event, State } from "react-native-track-player";
@@ -642,48 +645,9 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
     if (this._stopped || gen !== this._speakGen || !this._config) throw new Error("aborted");
 
     const config = this._config;
-    const platform = getPlatformService();
-
-    const response = await platform.fetch(
-      "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${config.dashscopeApiKey}`,
-        },
-        body: JSON.stringify({
-          model: "qwen3-tts-flash",
-          input: {
-            text: this._chunks[index],
-            voice: config.dashscopeVoice,
-          },
-          parameters: {
-            response_format: "mp3",
-          },
-        }),
-      },
-    );
-
-    if (!response.ok) {
-      throw new Error(`DashScope TTS failed: ${response.status}`);
-    }
-
-    const result = (await response.json()) as {
-      output?: { audio?: { data?: string } };
-    };
-    const audioData = result?.output?.audio?.data;
-    if (!audioData) {
-      throw new Error("No audio data in DashScope response");
-    }
+    const bytes = await fetchDashScopeTTSAudio(this._chunks[index], config);
 
     if (this._stopped || gen !== this._speakGen) throw new Error("aborted");
-
-    const binary = atob(audioData);
-    const bytes = new Uint8Array(binary.length);
-    for (let j = 0; j < binary.length; j++) {
-      bytes[j] = binary.charCodeAt(j);
-    }
 
     const tmpName = `tts_dashscope_${index}_${Date.now()}.mp3`;
     const tmpFile = new File(Paths.cache, tmpName);

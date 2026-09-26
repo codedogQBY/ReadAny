@@ -53,7 +53,7 @@ interface Props {
   onDismiss: () => void;
   onCopy: () => void;
   onAIChat: () => void;
-  onSpeak?: (text: string, cfi: string) => void;
+  onSpeak?: (cfi: string) => void;
   onNote?: (text: string, cfi: string) => void;
   onTranslate?: (text: string) => void;
   onRemoveHighlight?: () => void;
@@ -98,11 +98,7 @@ export function SelectionPopover({
     }
   }, [selection.cfi, hasExistingHighlight]);
 
-  const buttonCount =
-    4 +
-    (onNote ? 1 : 0) +
-    (onTranslate ? 1 : 0) +
-    (onSpeak ? 1 : 0);
+  const buttonCount = 4 + (onNote ? 1 : 0) + (onTranslate ? 1 : 0) + (onSpeak ? 1 : 0);
   const colorRowItemCount = HIGHLIGHT_COLORS.length + (canRemoveHighlight ? 2 : 0);
   const colorRowWidth = showColors
     ? HIGHLIGHT_COLORS.length * COLOR_DOT_SIZE +
@@ -157,12 +153,9 @@ export function SelectionPopover({
   }, [selection.text, onCopy]);
 
   const handleSpeak = useCallback(() => {
-    const text = selection.text.trim();
-    if (text && onSpeak) {
-      onSpeak(text, selection.cfi);
-    }
+    onSpeak?.(selection.cfi);
     onDismiss();
-  }, [selection.text, selection.cfi, onSpeak, onDismiss]);
+  }, [selection.cfi, onSpeak, onDismiss]);
 
   const handleNote = useCallback(() => {
     setShowNoteModal(true);
@@ -270,7 +263,6 @@ export function SelectionPopover({
               <Volume2Icon size={18} color={colors.foreground} />
             </TouchableOpacity>
           )}
-
         </View>
       </View>
 

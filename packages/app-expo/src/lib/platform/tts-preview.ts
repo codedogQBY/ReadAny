@@ -1,10 +1,10 @@
 import type { TTSConfig } from "@readany/core/tts";
-import { ExpoAVEdgeTTSPlayer } from "./expo-av-edge-player";
 import { ExpoSpeechTTSPlayer } from "./expo-speech-player";
 import { TrackPlayerCloudTTSPlayer } from "./track-player-cloud-tts-player";
+import { TrackPlayerEdgeTTSPlayer } from "./track-player-edge-player";
 
 const systemPreviewPlayer = new ExpoSpeechTTSPlayer();
-const edgePreviewPlayer = new ExpoAVEdgeTTSPlayer();
+const edgePreviewPlayer = new TrackPlayerEdgeTTSPlayer();
 const dashscopePreviewPlayer = new ExpoSpeechTTSPlayer();
 const cloudPreviewPlayer = new TrackPlayerCloudTTSPlayer();
 

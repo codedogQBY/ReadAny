@@ -4,6 +4,7 @@ import {
   EDGE_TTS_VOICES,
   getLocaleDisplayLabel,
   getTTSVoiceLabel,
+  findTTSLyricIndex,
   groupEdgeTTSVoices,
   type TTSConfig,
   type TTSPlayState,
@@ -39,6 +40,10 @@ interface TTSLyricSegment {
   cfi?: string | null;
 }
 
+interface TTSLyricItem extends TTSLyricSegment {
+  id: string;
+}
+
 interface TTSPageProps {
   visible: boolean;
   bookTitle: string;
@@ -54,6 +59,10 @@ interface TTSPageProps {
   continuousEnabled: boolean;
   narrationSegments?: TTSLyricSegment[];
   prevNarrationSegments?: TTSLyricSegment[];
+  /** Persisted lyric list, independent from the audio synthesis cache. */
+  lyricSegments?: TTSLyricSegment[];
+  currentSegmentCfi?: string | null;
+  currentSegmentText?: string | null;
   currentChunkIndex?: number;
   totalChunks?: number;
   onClose: () => void;
@@ -95,6 +104,9 @@ export function TTSPage({
   continuousEnabled,
   narrationSegments,
   prevNarrationSegments,
+  lyricSegments: persistedLyricSegments,
+  currentSegmentCfi,
+  currentSegmentText,
   currentChunkIndex = 0,
   totalChunks = 0,
   onClose,
@@ -157,7 +169,7 @@ export function TTSPage({
   );
   const prevCount =
     prevNarrationSegments?.filter((segment) => segment.text.trim().length > 0).length ?? 0;
-  const lyricSegments = useMemo(() => {
+  const fallbackLyricSegments = useMemo(() => {
     const keyCounts = new Map<string, number>();
     const toLyricItem = (prefix: "prev" | "curr", segment: TTSLyricSegment, index: number) => {
       const fallbackKey = segment.text.trim().slice(0, 32) || `line-${index}`;
@@ -186,8 +198,22 @@ export function TTSPage({
 
     return currentText ? [{ id: "fallback:current-text", text: currentText, cfi: null }] : [];
   }, [currentText, narrationSegments, prevNarrationSegments]);
+  const lyricSegments: TTSLyricItem[] = persistedLyricSegments?.length
+    ? persistedLyricSegments.map((segment, index) => ({
+        ...segment,
+        id: `persistent:${segment.cfi || `${segment.text}:${index}`}`,
+      }))
+    : fallbackLyricSegments;
   const safeChunkIndex = lyricSegments.length
-    ? Math.max(0, Math.min(prevCount + currentChunkIndex, lyricSegments.length - 1))
+    ? currentSegmentCfi || currentSegmentText
+      ? Math.max(
+          0,
+          findTTSLyricIndex(lyricSegments, {
+            cfi: currentSegmentCfi,
+            text: currentSegmentText,
+          }),
+        )
+      : Math.max(0, Math.min(prevCount + currentChunkIndex, lyricSegments.length - 1))
     : 0;
   const currentExcerpt = lyricSegments[safeChunkIndex]?.text || fallbackPreview.currentExcerpt;
   const nextExcerpt = lyricSegments[safeChunkIndex + 1]?.text || fallbackPreview.nextExcerpt;
@@ -215,14 +241,14 @@ export function TTSPage({
 
   const handleLyricPress = useCallback(
     (segment: { text: string; cfi?: string | null }, index: number) => {
-      const offsetFromCurrent = index - prevCount;
+      const offsetFromCurrent = persistedLyricSegments?.length ? index : index - prevCount;
       if (onJumpToLyricSegment) {
         onJumpToLyricSegment(segment, offsetFromCurrent);
         return;
       }
       onJumpToSegment?.(offsetFromCurrent);
     },
-    [onJumpToLyricSegment, onJumpToSegment, prevCount],
+    [onJumpToLyricSegment, onJumpToSegment, persistedLyricSegments, prevCount],
   );
 
   const triggerLoadMoreAbove = useCallback(() => {
