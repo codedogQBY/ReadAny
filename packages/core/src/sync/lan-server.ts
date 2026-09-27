@@ -3,7 +3,7 @@
  * Provides a local HTTP server for peer-to-peer sync.
  */
 
-import { getDB } from "../db/database";
+import { getDB, getDeviceId } from "../db/database";
 import { getPlatformService } from "../services/platform";
 import { getSyncAdapter } from "./sync-adapter";
 import { type LANQRData, createLANQRData, generatePairCode } from "./lan-backend";
@@ -32,6 +32,19 @@ class LocalFsBackend implements ISyncBackend {
 
   private async getCurrentDeviceSnapshot(): Promise<DeviceSyncPayload> {
     return collectChanges(0);
+  }
+
+  /**
+   * Device id only — deliberately does NOT build the sync payload.
+   *
+   * listDir()/exists() need the device id solely to synthesise the
+   * `device-<id>.json` path. Calling getCurrentDeviceSnapshot() for that runs
+   * collectChanges(0), i.e. a full read of every synced table plus a
+   * JSON.stringify of the whole library, on the renderer thread — for a
+   * string comparison. The device id is a metadata lookup, so read it directly.
+   */
+  private async getDeviceIdOnly(): Promise<string> {
+    return getDeviceId();
   }
 
   private async getDataDir(): Promise<string> {
@@ -163,14 +176,18 @@ class LocalFsBackend implements ISyncBackend {
 
   async listDir(path: string): Promise<RemoteFile[]> {
     if (path === LAN_SYNC_DIR) {
-      const snapshot = await this.getCurrentDeviceSnapshot();
-      const virtualPath = getLanDeviceSnapshotPath(snapshot.deviceId);
+      // Only the device id is needed here; the payload itself is not built.
+      const deviceId = await this.getDeviceIdOnly();
+      const virtualPath = getLanDeviceSnapshotPath(deviceId);
       return [
         {
-          name: `device-${snapshot.deviceId}.json`,
+          name: `device-${deviceId}.json`,
           path: virtualPath,
           size: 0,
-          lastModified: snapshot.timestamp,
+          // Virtual entry — the payload is generated per request rather than
+          // stored, so there is no meaningful mtime. Matches the books-root
+          // projection below; no LAN sync consumer reads this field.
+          lastModified: 0,
           isDirectory: false,
         },
       ];
@@ -290,8 +307,9 @@ class LocalFsBackend implements ISyncBackend {
 
   async exists(path: string): Promise<boolean> {
     if (path.startsWith(`${LAN_SYNC_DIR}/device-`) && path.endsWith(".json")) {
-      const snapshot = await this.getCurrentDeviceSnapshot();
-      return path === getLanDeviceSnapshotPath(snapshot.deviceId);
+      // Path comparison only — must not build the whole sync payload.
+      const deviceId = await this.getDeviceIdOnly();
+      return path === getLanDeviceSnapshotPath(deviceId);
     }
     const adapter = getSyncAdapter();
     const resolvedPath = await this.mapVirtualPath(path);

@@ -263,6 +263,8 @@
     "syncAutoSync": "自動同期",
     "syncAutoSyncDesc": "バックグラウンドで自動的にデータを同期",
     "syncInterval": "同期間隔",
+    "syncConcurrency": "同時転送数",
+    "syncConcurrencyDesc": "同時に転送するファイル数。弱いゲートウェイ/NAS では 1-2 に下げてください",
     "syncIntervalDesc": "自動同期が有効な場合、N分ごとに更新を確認します",
     "syncIntervalMinutes": "{{count}}分",
     "syncAllowInsecure": "安全でない接続を許可",

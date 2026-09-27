@@ -261,6 +261,8 @@
     "syncAutoSync": "Synchronisation automatique",
     "syncAutoSyncDesc": "Synchroniser automatiquement les données en arrière-plan",
     "syncInterval": "Intervalle de synchronisation",
+    "syncConcurrency": "Transferts simultanés",
+    "syncConcurrencyDesc": "Fichiers transférés à la fois. Réduisez à 1-2 pour les passerelles/NAS faibles",
     "syncIntervalDesc": "Lorsque la synchronisation auto est activée, vérifier les mises à jour toutes les N minutes",
     "syncIntervalMinutes": "{{count}} min",
     "syncAllowInsecure": "Autoriser les connexions non sécurisées",
