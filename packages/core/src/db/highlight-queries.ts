@@ -206,6 +206,11 @@ export async function updateHighlight(id: string, updates: Partial<Highlight>): 
 
 export async function deleteHighlight(id: string): Promise<void> {
   const database = await getDB();
-  await insertTombstone(database, id, "highlights");
+  const rows = await database.select<{ book_id: string | null }>(
+    "SELECT book_id FROM highlights WHERE id = ?",
+    [id],
+  );
+  const tombstoneBookId: [] | [string] = rows[0]?.book_id ? [rows[0].book_id] : [];
+  await insertTombstone(database, id, "highlights", ...tombstoneBookId);
   await database.execute("DELETE FROM highlights WHERE id = ?", [id]);
 }

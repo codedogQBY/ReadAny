@@ -126,6 +126,11 @@ export async function updateNote(id: string, updates: Partial<Note>): Promise<vo
 
 export async function deleteNote(id: string): Promise<void> {
   const database = await getDB();
-  await insertTombstone(database, id, "notes");
+  const rows = await database.select<{ book_id: string | null }>(
+    "SELECT book_id FROM notes WHERE id = ?",
+    [id],
+  );
+  const tombstoneBookId: [] | [string] = rows[0]?.book_id ? [rows[0].book_id] : [];
+  await insertTombstone(database, id, "notes", ...tombstoneBookId);
   await database.execute("DELETE FROM notes WHERE id = ?", [id]);
 }

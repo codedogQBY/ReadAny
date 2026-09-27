@@ -273,6 +273,8 @@
     "syncAutoSync": "自动同步",
     "syncAutoSyncDesc": "在后台自动同步数据",
     "syncInterval": "Sync Interval",
+    "syncConcurrency": "Concurrent transfers",
+    "syncConcurrencyDesc": "Files transferred at once. Lower to 1-2 for weak gateways/NAS",
     "syncIntervalDesc": "When auto sync is enabled, check for updates every N minutes",
     "syncIntervalMinutes": "{{count}} min",
     "syncAllowInsecure": "Allow Insecure Connection",
