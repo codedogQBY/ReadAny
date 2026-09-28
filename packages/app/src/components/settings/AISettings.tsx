@@ -45,6 +45,7 @@ function useProviderOptions(): { value: AIProviderType; label: string }[] {
     { value: "moonshot", label: "Moonshot (Kimi)" },
     { value: "zhipu", label: t("settings.ai_provider_zhipu") },
     { value: "aliyun", label: t("settings.ai_provider_aliyun") },
+    { value: "opencode", label: "OpenCode Go" },
     { value: "custom", label: t("settings.ai_provider_custom") },
   ], [t]);
 }

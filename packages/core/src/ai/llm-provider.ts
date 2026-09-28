@@ -33,6 +33,42 @@ function shouldSanitizeCustomHeaders(endpoint: AIEndpoint): boolean {
   return endpoint.provider === "custom";
 }
 
+/**
+ * OpenCode Go monitors traffic and asks clients to identify themselves with a
+ * dedicated user agent (not a generic SDK/HTTP library name) and to send a
+ * stable session id per conversation so it can optimize routing/prompt caching.
+ */
+const OPENCODE_PROVIDER_ID = "opencode";
+const READANY_CLIENT_USER_AGENT = "ReadAny/1.0";
+
+/**
+ * OpenCode Go expects the x-opencode-session header on every request, including
+ * non-conversation calls like connection tests and model listing. Fall back to a
+ * per-fetch-instance id when no conversation id was provided.
+ */
+function createOpencodeSessionId(): string {
+  return `readany-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function applyOpencodeHeaders(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  sessionId?: string,
+): { input: RequestInfo | URL; init?: RequestInit } {
+  const headers = mergeRequestHeaders(input, init) ?? new Headers();
+  headers.set("user-agent", READANY_CLIENT_USER_AGENT);
+  if (sessionId) headers.set("x-opencode-session", sessionId);
+
+  if (isRequestLike(input)) {
+    return {
+      input: new Request(input, { headers }),
+      init: init ? { ...init, headers } : undefined,
+    };
+  }
+
+  return { input, init: { ...(init ?? {}), headers } };
+}
+
 function mergeRequestHeaders(input: RequestInfo | URL, init?: RequestInit): Headers | undefined {
   const merged = new Headers();
   let hasHeaders = false;
@@ -375,9 +411,15 @@ async function patchGeminiThoughtSignatureRequest(
   };
 }
 
-export function getEndpointFetch(endpoint: AIEndpoint, model?: string): typeof globalThis.fetch {
+export function getEndpointFetch(
+  endpoint: AIEndpoint,
+  model?: string,
+  sessionId?: string,
+): typeof globalThis.fetch {
   const exactUrl = endpoint.useExactRequestUrl ? endpoint.baseUrl?.trim() : "";
   const baseFetch = (_streamingFetch ?? globalThis.fetch).bind(globalThis);
+  const opencodeSessionId =
+    endpoint.provider === OPENCODE_PROVIDER_ID ? (sessionId ?? createOpencodeSessionId()) : undefined;
 
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const finalInput = isRequestLike(input)
@@ -401,6 +443,12 @@ export function getEndpointFetch(endpoint: AIEndpoint, model?: string): typeof g
           requestInit = { ...(init ?? {}), headers: sanitizedHeaders };
         }
       }
+    }
+
+    if (endpoint.provider === OPENCODE_PROVIDER_ID) {
+      const withOpencodeHeaders = applyOpencodeHeaders(requestInput, requestInit, opencodeSessionId);
+      requestInput = withOpencodeHeaders.input;
+      requestInit = withOpencodeHeaders.init;
     }
 
     if (
@@ -542,6 +590,8 @@ export interface LLMOptions {
   maxTokens?: number;
   streaming?: boolean;
   deepThinking?: boolean;
+  /** Stable conversation/session id (sent as x-opencode-session for OpenCode Go). */
+  sessionId?: string;
 }
 
 export function resolveActiveEndpoint(config: AIConfig): {
@@ -581,6 +631,7 @@ export async function createChatModel(
     maxTokens: options.maxTokens ?? config.maxTokens,
     streaming: options.streaming,
     deepThinking: options.deepThinking,
+    sessionId: options.sessionId,
   });
 }
 
@@ -601,7 +652,7 @@ export async function createChatModelFromEndpoint(
   const temperature = options.temperature ?? 0.7;
   const maxTokens = options.maxTokens ?? 8192;
   const streaming = options.streaming ?? true;
-  const endpointFetch = getEndpointFetch(endpoint, model);
+  const endpointFetch = getEndpointFetch(endpoint, model, options.sessionId);
 
   switch (endpoint.provider) {
     case "anthropic": {

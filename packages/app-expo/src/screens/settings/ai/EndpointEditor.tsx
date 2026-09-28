@@ -36,6 +36,7 @@ const PROVIDERS: { id: AIProviderType; label: string }[] = [
   { id: "moonshot", label: "Moonshot" },
   { id: "zhipu", label: "智谱 GLM" },
   { id: "aliyun", label: "阿里云通义" },
+  { id: "opencode", label: "OpenCode Go" },
   { id: "custom", label: "Custom" },
 ];
 
