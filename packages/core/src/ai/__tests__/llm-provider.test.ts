@@ -142,6 +142,59 @@ describe("getEndpointFetch Gemini thought signatures", () => {
   });
 });
 
+describe("getEndpointFetch OpenCode Go headers", () => {
+  it("identifies the client and forwards the conversation session id", async () => {
+    let capturedHeaders: Headers | undefined;
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      capturedHeaders = input instanceof Request ? input.headers : new Headers(init?.headers);
+      return new Response("{}", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const endpoint = makeEndpoint({
+      provider: "opencode",
+      baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
+      useExactRequestUrl: false,
+    });
+    const endpointFetch = getEndpointFetch(endpoint, "some-model", "thread-123");
+    await endpointFetch(endpoint.baseUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages: [] }),
+    });
+
+    expect(capturedHeaders?.get("user-agent")).toBe("ReadAny/1.0");
+    expect(capturedHeaders?.get("x-opencode-session")).toBe("thread-123");
+  });
+
+  it("sends a fallback session id for non-conversation requests", async () => {
+    let capturedHeaders: Headers | undefined;
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      capturedHeaders = input instanceof Request ? input.headers : new Headers(init?.headers);
+      return new Response("{}", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const endpoint = makeEndpoint({
+      provider: "opencode",
+      baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
+      useExactRequestUrl: false,
+    });
+    const endpointFetch = getEndpointFetch(endpoint, "some-model");
+    await endpointFetch(endpoint.baseUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages: [] }),
+    });
+
+    expect(capturedHeaders?.get("x-opencode-session")).toMatch(/^readany-/);
+  });
+});
+
 describe("getEndpointFetch custom endpoint compatibility", () => {
   it("retries without token limit when a custom endpoint rejects max_completion_tokens over 100", async () => {
     const requestBodies: Record<string, unknown>[] = [];
