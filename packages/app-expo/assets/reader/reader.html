@@ -2093,12 +2093,50 @@ ${rules.map((rule) => `  ${rule}`).join("\n")}
         const ps = Math.round(currentParagraphSpacing * layoutScale);
 
         // When useBookFonts is enabled (default), do not force the reader
-        // font family onto every element so the book's own fonts (e.g.
-        // embedded @font-face families) render where the book specifies them.
-        const bodyStarFontOverride = currentUseBookFonts
-          ? ''
-          : `:root:not(.vrtl):not(.vltr) body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *) {
+        // font family onto html/body with !important: the book's own
+        // font-family (on html, body, or any element) must win where specified,
+        // so embedded @font-face families render. The reader font stays as a
+        // zero-specificity fallback via :where(html). Target only html (not
+        // body): body then INHERITS html's font-family, so when the book sets
+        // one on html it propagates to body text instead of body being pinned
+        // to the reader font by a direct rule. When disabled, force the reader
+        // font on html/body and every descendant.
+        //
+        // The monospace rule swaps sides with the same toggle: with book fonts
+        // honored it is zero-specificity (a book's own `pre { font-family: ... }`
+        // — its embedded code font — wins), and when overriding it needs BOTH
+        // !important AND higher specificity, because specificity still breaks
+        // ties between important author declarations: a plain `pre, code, kbd`
+        // at (0,0,1) loses to an authored `body pre { ... !important }` at
+        // (0,0,2). The guarded `:root ... body :is(...)` sits at (0,2,2).
+        // Inner code/kbd/samp INSIDE a pre get an explicit `inherit` instead:
+        // the UA stylesheet declares `code { font-family: monospace }` and a
+        // direct declaration (even a UA one) always beats inheritance, so
+        // exclusion alone would still cut `<pre><code>` off from the book's
+        // font declared on pre. The zero-specificity inherit restores the
+        // chain while any author declaration on the element still wins it.
+        // Standalone inline code keeps the monospace fallback.
+        // Vertical writing (.vrtl/.vltr) keeps its own behavior: the forced
+        // overrides carry the horizontal guard like the pre-existing rules.
+        const readerFontOverride = currentUseBookFonts
+          ? `:where(html) {
+  font-family: var(--readany-font-family);
+}
+:where(pre, :not(pre) > code, :not(pre) > kbd, :not(pre) > samp) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+:where(pre :is(code, kbd, samp)) {
+  font-family: inherit;
+}`
+          : `:root:not(.vrtl):not(.vltr),
+:root:not(.vrtl):not(.vltr) body {
   font-family: var(--readany-font-family) !important;
+}
+:root:not(.vrtl):not(.vltr) body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *) {
+  font-family: var(--readany-font-family) !important;
+}
+:root:not(.vrtl):not(.vltr) body :is(pre, code, kbd, samp) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
 }`;
 
         const baseStyles = `
@@ -2107,12 +2145,11 @@ ${rules.map((rule) => `  ${rule}`).join("\n")}
           }
           :root:not(.vrtl):not(.vltr),
           :root:not(.vrtl):not(.vltr) body {
-            font-family: var(--readany-font-family) !important;
             font-size: ${fSize}px !important;
             -webkit-text-size-adjust: none;
             text-size-adjust: none;
           }
-          ${bodyStarFontOverride}
+          ${readerFontOverride}
           :root:not(.vrtl):not(.vltr) body *:not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *):not(rt):not(rp) {
             font-size: ${fSize}px !important;
           }
@@ -2144,9 +2181,6 @@ ${rules.map((rule) => `  ${rule}`).join("\n")}
           :root:not(.vrtl):not(.vltr) h5,
           :root:not(.vrtl):not(.vltr) h6 {
             line-height: ${lh} !important;
-          }
-          pre, code, kbd, samp {
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
           }
           :root:not(.vrtl):not(.vltr) p {
             margin-top: ${ps}px !important;
