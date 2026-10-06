@@ -1,3 +1,8 @@
+import {
+    SCROLL_SAMPLE_WINDOW_MS, MIN_INERTIA_START_SPEED,
+    estimateScrollVelocity, getInertiaDuration, getInertiaDelta,
+} from './scroll-inertia.js'
+
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 
 const debounce = (f, wait, immediate) => {
@@ -2163,7 +2168,6 @@ export class Paginator extends HTMLElement {
             vx: 0, xy: 0,
             dx: 0, dy: 0,
             dt: 0,
-            scrollVelocity: 0,
             scrollSamples: [],
             startX: touch?.screenX,
             startY: touch?.screenY,
@@ -2202,11 +2206,12 @@ export class Paginator extends HTMLElement {
         state.t = e.timeStamp
 
         const delta = this.#vertical ? -dx : dy
+        // Keep a time window, including stationary samples, rather than a
+        // fixed event count whose duration changes with the input frequency.
+        state.scrollSamples.push({ delta, dt, time: e.timeStamp })
+        state.scrollSamples = state.scrollSamples.filter(sample =>
+            sample.time > e.timeStamp - SCROLL_SAMPLE_WINDOW_MS)
         if (Math.abs(delta) < 0.5) return
-
-        state.scrollVelocity = delta / dt
-        state.scrollSamples.push({ velocity: state.scrollVelocity, time: e.timeStamp })
-        if (state.scrollSamples.length > 5) state.scrollSamples.shift()
 
         e.preventDefault()
         this.#touchScrolled = true
@@ -2281,7 +2286,7 @@ export class Paginator extends HTMLElement {
             this.scrollBy(0, dy)
         }
     }
-    #onTouchEnd() {
+    #onTouchEnd(e) {
         // Remove will-change hint to free GPU resources
         // if (this.#view?.element) {
         //     this.#view.element.style.willChange = 'auto'
@@ -2290,7 +2295,7 @@ export class Paginator extends HTMLElement {
         if (!this.#touchScrolled) return
         this.#touchScrolled = false
         if (this.scrolled) {
-            if (!this.#navigationLocked) this.#startScrollInertia(this.#touchState)
+            if (!this.#navigationLocked) this.#startScrollInertia(this.#touchState, e.timeStamp)
             return
         }
         if (this.#navigationLocked) return
@@ -2318,22 +2323,17 @@ export class Paginator extends HTMLElement {
             this.#scrollInertiaFrame = null
         }
     }
-    #startScrollInertia(state) {
+    #startScrollInertia(state, releasedAt) {
         if (!this.scrolled || !this.hasAttribute('scroll-inertia') || document.hidden) return
-        const samples = state?.scrollSamples || []
-        if (!samples.length) return
-        const recent = samples.slice(-3)
-        const velocity = recent.reduce((sum, sample) => sum + sample.velocity, 0) / recent.length
-        if (!Number.isFinite(velocity) || Math.abs(velocity) < 0.02) return
+        const velocity = estimateScrollVelocity(state?.scrollSamples || [], releasedAt)
+        if (!Number.isFinite(velocity) || Math.abs(velocity) < MIN_INERTIA_START_SPEED) return
 
         this.#cancelScrollInertia()
         const token = this.#scrollInertiaToken
         const startedAt = performance.now()
-        let previousTime = startedAt
-        let currentVelocity = velocity
-        const frictionTau = 325
-        const minVelocity = 0.015
-        const maxDuration = 900
+        let previousElapsed = 0
+        let remainder = 0
+        const stopTime = getInertiaDuration(velocity)
 
         const finish = () => {
             if (token !== this.#scrollInertiaToken) return
@@ -2343,18 +2343,18 @@ export class Paginator extends HTMLElement {
         const step = now => {
             if (token !== this.#scrollInertiaToken) return
             if (document.hidden || !this.scrolled) return finish()
-            const elapsed = now - startedAt
-            const dt = Math.min(32, Math.max(1, now - previousTime))
-            previousTime = now
-            currentVelocity *= Math.exp(-dt / frictionTau)
-            if (elapsed >= maxDuration || Math.abs(currentVelocity) < minVelocity) return finish()
-
-            const delta = currentVelocity * dt
+            const elapsed = Math.min(stopTime, Math.max(previousElapsed, now - startedAt))
+            const delta = getInertiaDelta(velocity, previousElapsed, elapsed) + remainder
+            previousElapsed = elapsed
             const before = this.containerPosition
-            if (this.#vertical) this.scrollBy(0, delta)
-            else this.scrollBy(delta, 0)
-            const moved = Math.abs(this.containerPosition - before)
-            if (moved < 0.01) {
+            // Match the drag path: native scroll limits, not the stale
+            // one-page snap bounds used by paginated swipes.
+            this.containerPosition = before + delta
+            const moved = this.containerPosition - before
+            // Carry subpixel rounding forward instead of mistaking it for an
+            // edge and stopping the slow tail of the animation prematurely.
+            remainder = delta - moved
+            if (Math.abs(moved) < 0.01 && Math.abs(delta) >= 1) {
                 const forward = this.#vertical ? delta < 0 : delta > 0
                 if (Math.abs(delta) > 2) {
                     if (forward && !this.atEnd) void this.next()
@@ -2362,6 +2362,7 @@ export class Paginator extends HTMLElement {
                 }
                 return finish()
             }
+            if (elapsed >= stopTime) return finish()
             this.#scrollInertiaFrame = requestAnimationFrame(step)
         }
         this.#scrollInertiaFrame = requestAnimationFrame(step)
