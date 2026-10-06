@@ -320,9 +320,9 @@ describe("book-queries", () => {
         "book-1",
       ]);
       expect(mockExecute).toHaveBeenCalledWith("DELETE FROM books WHERE id = ?", ["book-1"]);
-      expect(coreMocks.insertTombstone).toHaveBeenCalledWith(mockDb, "hl-1", "highlights");
-      expect(coreMocks.insertTombstone).toHaveBeenCalledWith(mockDb, "note-1", "notes");
-      expect(coreMocks.insertTombstone).toHaveBeenCalledWith(mockDb, "bm-1", "bookmarks");
+      expect(coreMocks.insertTombstone).toHaveBeenCalledWith(mockDb, "hl-1", "highlights", "book-1");
+      expect(coreMocks.insertTombstone).toHaveBeenCalledWith(mockDb, "note-1", "notes", "book-1");
+      expect(coreMocks.insertTombstone).toHaveBeenCalledWith(mockDb, "bm-1", "bookmarks", "book-1");
       expect(coreMocks.insertTombstone).toHaveBeenCalledWith(mockDb, "book-1", "books");
     });
   });

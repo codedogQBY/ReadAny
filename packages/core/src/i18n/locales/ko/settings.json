@@ -266,6 +266,8 @@
     "syncAutoSync": "자동 동기화",
     "syncAutoSyncDesc": "백그라운드에서 자동으로 데이터를 동기화해요",
     "syncInterval": "동기화 간격",
+    "syncConcurrency": "동시 전송 수",
+    "syncConcurrencyDesc": "한 번에 전송되는 파일 수입니다. 약한 게이트웨이/NAS는 1-2로 낮추세요",
     "syncIntervalDesc": "자동 동기화 활성화 시, N분마다 업데이트를 확인해요",
     "syncIntervalMinutes": "{{count}}분",
     "syncAllowInsecure": "비보안 연결 허용",

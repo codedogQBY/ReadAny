@@ -50,6 +50,7 @@ export function SyncSettings() {
     forceFullSync,
     setAutoSync,
     setSyncIntervalMins,
+    setConcurrency,
     resetSync,
   } = useSyncStore();
 
@@ -77,6 +78,7 @@ export function SyncSettings() {
   const [saving, setSaving] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [syncIntervalInput, setSyncIntervalInput] = useState("30");
+  const [concurrencyInput, setConcurrencyInput] = useState("2");
 
   // LAN dialog state
   const [lanDialogOpen, setLanDialogOpen] = useState(false);
@@ -338,6 +340,13 @@ export function SyncSettings() {
     setSyncIntervalInput(String(nextValue));
     await setSyncIntervalMins(nextValue);
   }, [setSyncIntervalMins, syncIntervalInput]);
+
+  const handleConcurrencyBlur = useCallback(async () => {
+    const parsed = Number.parseInt(concurrencyInput, 10);
+    const nextValue = Number.isFinite(parsed) ? Math.max(1, Math.min(6, parsed)) : 2;
+    setConcurrencyInput(String(nextValue));
+    await setConcurrency(nextValue);
+  }, [setConcurrency, concurrencyInput]);
 
   const statusLabel = () => {
     if (isLanContext) {
@@ -872,6 +881,33 @@ export function SyncSettings() {
                     count: Number.parseInt(syncIntervalInput || "30", 10) || 30,
                   })}
                 </span>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-border/40 pt-3">
+              <div>
+                <span className="text-sm text-foreground">
+                  {t("settings.syncConcurrency")}
+                </span>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {t("settings.syncConcurrencyDesc")}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={6}
+                  step={1}
+                  value={concurrencyInput}
+                  onChange={(e) => setConcurrencyInput(e.target.value)}
+                  onBlur={() => void handleConcurrencyBlur()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  className="w-20 rounded-md border border-input bg-background px-3 py-1.5 text-right text-sm text-foreground outline-none focus:border-primary"
+                />
               </div>
             </div>
           </>
