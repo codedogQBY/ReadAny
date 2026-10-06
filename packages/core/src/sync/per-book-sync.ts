@@ -31,11 +31,10 @@
  * The shared index is a union: every writer merges what it saw before
  * writing, so a racing writer can only drop its own delta for one pass.
  *
- * Backward compatibility: intentionally none for cloud sync — devices on the
- * old engine keep using per-device snapshots among themselves; a device
- * switched to this engine starts from an empty remote layout and re-pushes
- * the full library once. LAN sync keeps the old snapshot protocol and is
- * unaffected.
+ * Cloud sync imports the old per-device snapshot layout when it finds a
+ * legacy remote index or device snapshot. The imported rows are then written
+ * into this layout during the same pass. LAN sync keeps the old snapshot
+ * protocol and is unaffected.
  */
 
 import {
@@ -47,13 +46,16 @@ import {
 type Row = Record<string, unknown>;
 import { getPlatformService } from "../services/platform";
 import {
+  applyChanges,
   getLastSyncTimestamp,
+  listRemoteDeviceFiles,
   localizeSyncedBookRecord,
   setLastSyncTimestamp,
   shouldApplyRemoteRecord,
   upsertRecord,
   withDatabaseLockRetry,
 } from "./simple-sync";
+import type { DeviceSyncPayload } from "./simple-sync";
 import type { ISyncBackend, RemoteFile } from "./sync-backend";
 import type { SyncFilesOptions } from "./sync-files";
 import type { SyncProgress } from "./sync-types";
@@ -103,6 +105,73 @@ interface SyncIndexFile {
   updatedAt: number;
   books: Record<string, BookIndexEntry>;
   threads: Record<string, ThreadIndexEntry>;
+}
+
+function isPerBookIndex(value: unknown): value is SyncIndexFile {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<SyncIndexFile>;
+  return (
+    candidate.schemaVersion === 2 &&
+    !!candidate.books &&
+    typeof candidate.books === "object" &&
+    !!candidate.threads &&
+    typeof candidate.threads === "object"
+  );
+}
+
+function isLegacyDevicePayload(value: unknown): value is DeviceSyncPayload {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<DeviceSyncPayload>;
+  return (
+    typeof candidate.deviceId === "string" &&
+    typeof candidate.timestamp === "number" &&
+    !!candidate.tables &&
+    typeof candidate.tables === "object"
+  );
+}
+
+/**
+ * Import snapshots written by the pre per-book cloud engine.
+ *
+ * This runs before using the new index. A legacy index uses the same path as
+ * the per-book index, so treating it as an empty object would silently hide
+ * all existing cloud data from a new client.
+ */
+export async function importLegacySnapshots(
+  backend: ISyncBackend,
+  onProgress: (message: string) => void,
+  forceApply: boolean,
+): Promise<{ imported: boolean; applied: number }> {
+  const remoteFiles = await listRemoteDeviceFiles(backend);
+  if (remoteFiles.length === 0) return { imported: false, applied: 0 };
+
+  let imported = false;
+  let applied = 0;
+  for (const { deviceId, path } of remoteFiles) {
+    try {
+      const payload = await backend.getJSON<unknown>(path);
+      if (!isLegacyDevicePayload(payload)) {
+        console.warn(`[PerBookSync] Skipping invalid legacy snapshot from device ${deviceId}`);
+        continue;
+      }
+
+      onProgress(`导入旧设备 ${deviceId.slice(0, 8)} 的同步数据...`);
+      const result = await applyChanges(payload, { forceApply });
+      imported = true;
+      applied += result.applied;
+      console.log(
+        `[PerBookSync] Imported legacy snapshot from ${deviceId}: ` +
+          `applied=${result.applied}, skipped=${result.skipped}`,
+      );
+    } catch (error) {
+      console.warn(
+        `[PerBookSync] Failed to import legacy snapshot from ${deviceId}:`,
+        error,
+      );
+    }
+  }
+
+  return { imported, applied };
 }
 
 interface BookSyncFile {
@@ -543,8 +612,15 @@ export async function runPerBookSync(
       }
     }
 
-    // 2. Index (pull)
-    const remoteIndex = (await backend.getJSON<SyncIndexFile>(INDEX_PATH)) ?? emptyIndex();
+    // 2. Index (pull) and legacy migration
+    const rawRemoteIndex = await backend.getJSON<unknown>(INDEX_PATH);
+    let legacyImported = false;
+    if (!isPerBookIndex(rawRemoteIndex)) {
+      const migration = await importLegacySnapshots(backend, progress, forceApply);
+      legacyImported = migration.imported;
+      changes += migration.applied;
+    }
+    const remoteIndex = isPerBookIndex(rawRemoteIndex) ? rawRemoteIndex : emptyIndex();
 
     // 3. Books — pull
     const annotationMarkers = await localAnnotationMarkers(db);
@@ -802,7 +878,9 @@ export async function runPerBookSync(
 
       // Push: day files containing messages created after our last push.
       if (!receiveOnly) {
-        const pushedAt = Number((await getMetadata(CHAT_PUSHED_AT_KEY)) ?? 0);
+        const pushedAt = legacyImported
+          ? 0
+          : Number((await getMetadata(CHAT_PUSHED_AT_KEY)) ?? 0);
         const newMessages = await db
           .select<Row>("SELECT * FROM messages WHERE created_at > ?", [pushedAt])
           .catch(() => [] as Row[]);
@@ -860,7 +938,7 @@ export async function runPerBookSync(
 
     // 8. Reading sessions — monthly shards
     progress("同步阅读统计...");
-    const lastSync = await getLastSyncTimestamp();
+    const lastSync = legacyImported ? 0 : await getLastSyncTimestamp();
     const changedSessions = await db
       .select<Row>("SELECT * FROM reading_sessions WHERE updated_at > ?", [lastSync])
       .catch(() => [] as Row[]);

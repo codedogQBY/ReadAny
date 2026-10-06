@@ -658,7 +658,7 @@ async function loadDeviceSyncIndex(backend: ISyncBackend): Promise<DeviceSyncInd
   }
 }
 
-async function listRemoteDeviceFiles(
+export async function listRemoteDeviceFiles(
   backend: ISyncBackend,
 ): Promise<{ deviceId: string; path: string }[]> {
   const deviceFilesById = new Map<string, { deviceId: string; path: string }>();
