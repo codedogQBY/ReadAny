@@ -11,6 +11,7 @@ import { WebDavImportBrowserScreen } from "@/screens/library/WebDavImportBrowser
 import AISettingsScreen from "@/screens/settings/AISettingsScreen";
 import AboutScreen from "@/screens/settings/AboutScreen";
 import AppearanceSettingsScreen from "@/screens/settings/AppearanceSettingsScreen";
+import { DictionarySettingsScreen } from "@/screens/settings/DictionarySettingsScreen";
 import FeedbackDetailScreen from "@/screens/settings/FeedbackDetailScreen";
 import FeedbackScreen from "@/screens/settings/FeedbackScreen";
 import FontSettingsScreen from "@/screens/settings/FontSettingsScreen";
@@ -40,6 +41,7 @@ export type RootStackParamList = {
   AISettings: undefined;
   TTSSettings: undefined;
   TranslationSettings: undefined;
+  DictionarySettings: undefined;
   SyncSettings: undefined;
   About: undefined;
   Feedback: undefined;
@@ -105,6 +107,7 @@ export function RootNavigator() {
             <Stack.Screen name="AISettings" component={AISettingsScreen} />
             <Stack.Screen name="TTSSettings" component={TTSSettingsScreen} />
             <Stack.Screen name="TranslationSettings" component={TranslationSettingsScreen} />
+            <Stack.Screen name="DictionarySettings" component={DictionarySettingsScreen} />
             <Stack.Screen name="SyncSettings" component={SyncSettingsScreen} />
             <Stack.Screen name="About" component={AboutScreen} />
             <Stack.Screen name="Feedback" component={FeedbackScreen} />

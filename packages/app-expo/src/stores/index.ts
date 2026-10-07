@@ -28,4 +28,7 @@ export type { UpdateState } from "./update-store";
 export { useVectorModelStore } from "./vector-model-store";
 export type { BuiltinModelStatus, BuiltinModelState, VectorModelState } from "./vector-model-store";
 
+export { useDictionaryStore } from "./dictionary-store";
+export type { DictionaryStoreState } from "./dictionary-store";
+
 export { debouncedSave, loadFromFS, flushAllWrites, withPersist } from "./persist";

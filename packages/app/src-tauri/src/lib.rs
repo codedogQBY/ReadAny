@@ -1,4 +1,5 @@
 mod db;
+mod dictionary;
 mod readany_cli;
 mod storage;
 mod sync;
@@ -32,6 +33,8 @@ pub fn run() {
             db: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
+            dictionary::dictionary_query,
+            dictionary::dictionary_download,
             sync::commands::sync_vacuum_into,
             transfer::webdav_upload_file,
             transfer::webdav_download_file,

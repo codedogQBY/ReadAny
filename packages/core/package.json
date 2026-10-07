@@ -11,6 +11,8 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./dictionary": "./src/dictionary/index.ts",
+    "./dictionary/*": "./src/dictionary/*.ts",
     "./types": "./src/types/index.ts",
     "./types/*": "./src/types/*.ts",
     "./i18n": "./src/i18n/index.ts",
