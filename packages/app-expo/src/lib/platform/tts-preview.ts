@@ -37,7 +37,9 @@ export async function previewTTSConfig(
       ? edgePreviewPlayer
       : config.engine === "dashscope"
         ? dashscopePreviewPlayer
-        : config.engine === "xiaomi" || config.engine === "openai-compatible"
+        : config.engine === "xiaomi" ||
+            config.engine === "openai-compatible" ||
+            config.engine === "voxcpm"
           ? cloudPreviewPlayer
           : systemPreviewPlayer;
   player.onStateChange = undefined;

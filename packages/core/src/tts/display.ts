@@ -81,5 +81,9 @@ export function getTTSVoiceLabel(config: TTSConfig): string {
     return config.openaiTtsVoice || config.openaiTtsModel || "OpenAI Compatible";
   }
 
+  if (config.engine === "voxcpm") {
+    return config.voxcpmVoice || config.voxcpmModel || "VoxCPM";
+  }
+
   return config.systemVoiceLabel || config.voiceName || "System Voice";
 }

@@ -15,6 +15,7 @@ import {
   buildXiaomiTTSUrl,
   buildXiaomiTTSMessages,
   fetchOpenAITTSAudio,
+  fetchVoxCPMAudio,
   isTTSAbortError,
 } from "./cloud-tts";
 import { fetchEdgeTTSAudio } from "./edge-tts";
@@ -744,7 +745,11 @@ export class XiaomiTTSPlayer extends PCMStreamingTTSPlayer {
   }
 }
 
-class BufferedAudioTTSPlayer implements ITTSPlayer {
+/**
+ * Fetch a whole audio file per chunk, decode it, and schedule the chunks
+ * gaplessly. Exported so engines that return complete files can subclass it.
+ */
+export class BufferedAudioTTSPlayer implements ITTSPlayer {
   private audioCtx: AudioContext | null = null;
   private gainNode: GainNode | null = null;
   private scheduledEnd = 0;
@@ -761,9 +766,16 @@ class BufferedAudioTTSPlayer implements ITTSPlayer {
 
   onStateChange?: (state: "playing" | "paused" | "stopped") => void;
   onChunkChange?: (index: number, total: number) => void;
+  onError?: (error: Error) => void;
   onEnd?: () => void;
 
-  constructor(private fetchAudio: (text: string, config: TTSConfig) => Promise<Uint8Array>) {}
+  constructor(
+    private fetchAudio: (
+      text: string,
+      config: TTSConfig,
+      signal?: AbortSignal,
+    ) => Promise<Uint8Array>,
+  ) {}
 
   get paused() {
     return this._paused;
@@ -786,6 +798,16 @@ class BufferedAudioTTSPlayer implements ITTSPlayer {
     this.gainNode.connect(this.audioCtx.destination);
     this.scheduledEnd = 0;
 
+    // A webview hands back a suspended AudioContext under its autoplay policy,
+    // and scheduling into one is silent: the clock never advances, so nothing
+    // plays and playback never reports finishing either. EdgeTTSPlayer already
+    // guards for this. resume() can reject if a newer run closed this context
+    // while we awaited, and the runId guard below discards that run anyway.
+    if (this.audioCtx.state === "suspended") {
+      await this.audioCtx.resume().catch(() => {});
+    }
+    if (myRun !== this.runId) return;
+
     this.checkEndTimer = setInterval(() => {
       if (!this._playing || !this.audioCtx) return;
       const current = resolveCurrentChunk(this.chunkBoundaries, this.audioCtx.currentTime);
@@ -804,7 +826,7 @@ class BufferedAudioTTSPlayer implements ITTSPlayer {
       if (!this._playing || myRun !== this.runId) return;
       this.abortController = new AbortController();
       try {
-        const bytes = await this.fetchAudio(chunks[i], config);
+        const bytes = await this.fetchAudio(chunks[i], config, this.abortController?.signal);
         if (!this._playing || myRun !== this.runId || !this.audioCtx || !this.gainNode) return;
         const audioBuffer = await this.audioCtx.decodeAudioData(bytesToArrayBuffer(bytes));
         if (!this._playing || myRun !== this.runId || !this.audioCtx || !this.gainNode) return;
@@ -820,6 +842,13 @@ class BufferedAudioTTSPlayer implements ITTSPlayer {
       } catch (err) {
         if (!this._playing || myRun !== this.runId || isTTSAbortError(err)) return;
         console.error("[Buffered TTS] chunk error:", err);
+        // Without this, a failing endpoint (an unreachable local server, a bad
+        // model id) produced no audio and then reported a normal end of
+        // playback, so the failure was invisible outside the console.
+        const error = err instanceof Error ? err : new Error(String(err));
+        this.stop();
+        this.onError?.(error);
+        return;
       }
     }
 
@@ -924,6 +953,7 @@ export class OpenAICompatibleTTSPlayer implements ITTSPlayer {
 
   onStateChange?: (state: "playing" | "paused" | "stopped") => void;
   onChunkChange?: (index: number, total: number) => void;
+  onError?: (error: Error) => void;
   onEnd?: () => void;
 
   get paused() {
@@ -937,6 +967,7 @@ export class OpenAICompatibleTTSPlayer implements ITTSPlayer {
         : this.bufferedPlayer;
     this.activePlayer.onStateChange = (state) => this.onStateChange?.(state);
     this.activePlayer.onChunkChange = (index, total) => this.onChunkChange?.(index, total);
+    this.activePlayer.onError = (error) => this.onError?.(error);
     this.activePlayer.onEnd = () => this.onEnd?.();
     return this.activePlayer.speak(text, config);
   }
@@ -952,6 +983,20 @@ export class OpenAICompatibleTTSPlayer implements ITTSPlayer {
   stop() {
     this.pcmPlayer.stop();
     this.bufferedPlayer.stop();
+  }
+}
+
+// ── VoxCPM (OpenBMB — self-hosted OpenAI-compatible endpoint) ──
+
+/**
+ * VoxCPM returns a whole WAV/MP3 per chunk, so it reuses the buffered player.
+ * `/v1/audio/speech` has no streaming shape we can consume yet; when vLLM-Omni
+ * exposes SSE audio deltas this can gain a `PCMStreamingTTSPlayer` path the way
+ * `OpenAICompatibleTTSPlayer` does.
+ */
+export class VoxCPMTTSPlayer extends BufferedAudioTTSPlayer {
+  constructor() {
+    super(fetchVoxCPMAudio);
   }
 }
 

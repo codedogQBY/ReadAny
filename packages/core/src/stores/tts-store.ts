@@ -21,6 +21,7 @@ import {
   DashScopeTTSPlayer,
   EdgeTTSPlayer,
   OpenAICompatibleTTSPlayer,
+  VoxCPMTTSPlayer,
   XiaomiTTSPlayer,
 } from "../tts/tts-players";
 import type { ITTSPlayer, TTSConfig, TTSProfile } from "../tts/types";
@@ -38,6 +39,7 @@ export interface TTSPlayerFactories {
   createDashScopeTTS: () => ITTSPlayer;
   createXiaomiTTS: () => ITTSPlayer;
   createOpenAICompatibleTTS: () => ITTSPlayer;
+  createVoxCPMTTS: () => ITTSPlayer;
 }
 
 /** Default Web-based factories */
@@ -47,6 +49,7 @@ const defaultFactories: TTSPlayerFactories = {
   createDashScopeTTS: () => new DashScopeTTSPlayer(),
   createXiaomiTTS: () => new XiaomiTTSPlayer(),
   createOpenAICompatibleTTS: () => new OpenAICompatibleTTSPlayer(),
+  createVoxCPMTTS: () => new VoxCPMTTSPlayer(),
 };
 
 let _factories: TTSPlayerFactories = defaultFactories;
@@ -70,6 +73,7 @@ export function setTTSPlayerFactories(factories: Partial<TTSPlayerFactories>): v
   _dashscopeTTS = null;
   _xiaomiTTS = null;
   _openAICompatibleTTS = null;
+  _voxcpmTTS = null;
 }
 
 /** Lazily-created singleton TTS player instances */
@@ -78,6 +82,7 @@ let _edgeTTS: ITTSPlayer | null = null;
 let _dashscopeTTS: ITTSPlayer | null = null;
 let _xiaomiTTS: ITTSPlayer | null = null;
 let _openAICompatibleTTS: ITTSPlayer | null = null;
+let _voxcpmTTS: ITTSPlayer | null = null;
 let _activeTTS: ITTSPlayer | null = null;
 let _sessionSegments: string[] = [];
 let _sessionCurrentIndex = 0;
@@ -113,6 +118,11 @@ function getOpenAICompatibleTTS(): ITTSPlayer {
     _openAICompatibleTTS = _factories.createOpenAICompatibleTTS();
   }
   return _openAICompatibleTTS;
+}
+
+function getVoxCPMTTS(): ITTSPlayer {
+  if (!_voxcpmTTS) _voxcpmTTS = _factories.createVoxCPMTTS();
+  return _voxcpmTTS;
 }
 
 function clearSleepTimerHandle(): void {
@@ -174,6 +184,15 @@ function syncProfileUpdatesFromLegacyFields(
     if (updates.openaiTtsStylePrompt !== undefined) {
       profileUpdates.stylePrompt = updates.openaiTtsStylePrompt;
     }
+  } else if (targetProvider === "voxcpm") {
+    if (updates.voxcpmBaseUrl !== undefined) profileUpdates.baseUrl = updates.voxcpmBaseUrl;
+    if (updates.voxcpmApiKey !== undefined) profileUpdates.apiKey = updates.voxcpmApiKey;
+    if (updates.voxcpmModel !== undefined) profileUpdates.model = updates.voxcpmModel;
+    if (updates.voxcpmVoice !== undefined) profileUpdates.voice = updates.voxcpmVoice;
+    if (updates.voxcpmFormat !== undefined) profileUpdates.format = updates.voxcpmFormat;
+    if (updates.voxcpmVoiceDesign !== undefined) {
+      profileUpdates.stylePrompt = updates.voxcpmVoiceDesign;
+    }
   }
 
   if (Object.keys(profileUpdates).length === 0) return updates;
@@ -197,6 +216,7 @@ function detachAndStopPlayer(player: ITTSPlayer | null): void {
   if (!player) return;
   player.onStateChange = undefined;
   player.onChunkChange = undefined;
+  player.onError = undefined;
   player.onEnd = undefined;
   try {
     player.stop();
@@ -212,6 +232,7 @@ function detachAndStopAllPlayers(): void {
   detachAndStopPlayer(_dashscopeTTS);
   detachAndStopPlayer(_xiaomiTTS);
   detachAndStopPlayer(_openAICompatibleTTS);
+  detachAndStopPlayer(_voxcpmTTS);
 }
 
 function getPlayerForConfig(config: TTSConfig): ITTSPlayer {
@@ -226,6 +247,9 @@ function getPlayerForConfig(config: TTSConfig): ITTSPlayer {
   }
   if (config.engine === "openai-compatible") {
     return getOpenAICompatibleTTS();
+  }
+  if (config.engine === "voxcpm") {
+    return getVoxCPMTTS();
   }
   return getSystemTTS();
 }
@@ -259,6 +283,13 @@ function startPlayback(
       currentChunkIndex: absoluteIndex,
       totalChunks: Math.max(_sessionSegments.length, total),
     });
+  };
+
+  player.onError = (error) => {
+    if (gen !== _sessionGeneration) return;
+    console.error("[TTSStore][player] error", error);
+    _activeTTS = null;
+    set({ playState: "stopped" });
   };
 
   player.onEnd = () => {
@@ -344,7 +375,11 @@ export const useTTSStore = create<TTSState>()(
     (set, get) => ({
       playState: "stopped",
       currentText: "",
-      config: DEFAULT_TTS_CONFIG,
+      // Normalized, not raw: DEFAULT_TTS_CONFIG carries an empty `profiles`
+      // array, and normalizeTTSConfig is what fills in the built-in voice
+      // profiles. The persist layer only runs it when a config file already
+      // exists, so a fresh install would otherwise show an empty provider list.
+      config: normalizeTTSConfig(DEFAULT_TTS_CONFIG),
       onEnd: null,
       currentChunkIndex: 0,
       totalChunks: 0,

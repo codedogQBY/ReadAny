@@ -32,6 +32,10 @@
       "openai-compatible": {
         "label": "Compatible OpenAI",
         "description": "Endpoint compatible OpenAI audio/speech ou audio de chat."
+      },
+      "voxcpm": {
+        "label": "VoxCPM",
+        "description": "VoxCPM d'OpenBMB, via votre propre serveur compatible OpenAI."
       }
     },
     "providerCategory": {
@@ -138,7 +142,12 @@
     "engineDescDashscope": "Alibaba Tongyi · Chinois optimisé",
     "engineDescSystem": "Système intégré · Gratuit",
     "player": "Lecteur TTS",
-    "listeningToBook": "Lecture audio en cours"
+    "listeningToBook": "Lecture audio en cours",
+    "voiceDesign": "Description de la voix",
+    "voiceDesignPlaceholder": "Une jeune femme, douce et chaleureuse",
+    "voiceDesignHint": "Décrivez la voix souhaitée en quelques mots. Laissez vide pour la voix par défaut du modèle.",
+    "apiKeyOptional": "Clé API (facultative)",
+    "voxcpmBaseUrlHint": "Indiquez l'adresse de votre serveur VoxCPM, par exemple vllm serve openbmb/VoxCPM2 --omni --port 8000."
   },
   "fonts": {
     "title": "Polices",

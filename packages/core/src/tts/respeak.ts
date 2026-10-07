@@ -34,6 +34,15 @@ export function shouldRespeakForSynthChange(prev: TTSConfig, next: TTSConfig): b
         next.openaiTtsStylePrompt !== prev.openaiTtsStylePrompt)
     );
   }
+  if (next.engine === "voxcpm") {
+    return (
+      next.voxcpmBaseUrl !== prev.voxcpmBaseUrl ||
+      next.voxcpmModel !== prev.voxcpmModel ||
+      next.voxcpmVoice !== prev.voxcpmVoice ||
+      next.voxcpmFormat !== prev.voxcpmFormat ||
+      next.voxcpmVoiceDesign !== prev.voxcpmVoiceDesign
+    );
+  }
   if (next.engine === "edge") {
     return (
       next.edgeVoice !== prev.edgeVoice || next.rate !== prev.rate || next.pitch !== prev.pitch

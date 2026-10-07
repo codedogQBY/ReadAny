@@ -292,3 +292,85 @@ describe("useTTSStore — re-speak on synth change (#370)", () => {
     expect(useTTSStore.getState().config.rate).toBe(1.3);
   });
 });
+
+describe("useTTSStore — VoxCPM engine dispatch", () => {
+  let voxcpmPlayer: ReturnType<typeof createMockPlayer>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    systemPlayer = createMockPlayer();
+    voxcpmPlayer = createMockPlayer();
+    setTTSPlayerFactories({
+      createSystemTTS: () => systemPlayer,
+      createVoxCPMTTS: () => voxcpmPlayer,
+    });
+    resetStore();
+    useTTSStore.getState().stop();
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("routes voxcpm playback to the VoxCPM player, not the system fallback", () => {
+    useTTSStore.getState().updateConfig({ engine: "voxcpm" });
+    useTTSStore.getState().play(["s0", "s1"]);
+
+    expect(voxcpmPlayer.speak).toHaveBeenCalledTimes(1);
+    expect(systemPlayer.speak).not.toHaveBeenCalled();
+  });
+
+  it("plays without an API key configured", () => {
+    useTTSStore.getState().updateConfig({ engine: "voxcpm", voxcpmApiKey: "" });
+    useTTSStore.getState().play(["s0"]);
+
+    const [, config] = voxcpmPlayer.speak.mock.calls[0];
+    expect((config as TTSConfig).voxcpmApiKey).toBe("");
+    expect((config as TTSConfig).engine).toBe("voxcpm");
+  });
+
+  it("stops instead of reporting a normal end when synthesis fails", () => {
+    // A VoxCPM server that is not running is the likeliest first-run state,
+    // so a failure must not look like playback finishing successfully.
+    const onEnd = vi.fn();
+    voxcpmPlayer.speak.mockImplementation(() => {
+      voxcpmPlayer.onError?.(new Error("VoxCPM TTS failed: 502"));
+    });
+
+    useTTSStore.setState({ onEnd });
+    useTTSStore.getState().updateConfig({ engine: "voxcpm" });
+    useTTSStore.getState().play(["s0", "s1"]);
+
+    expect(useTTSStore.getState().playState).toBe("stopped");
+    expect(onEnd).not.toHaveBeenCalled();
+  });
+
+  it("re-speaks from the current sentence after the voice design changes", () => {
+    useTTSStore.getState().updateConfig({ engine: "voxcpm" });
+    useTTSStore.getState().play(["s0", "s1"]);
+    expect(voxcpmPlayer.speak).toHaveBeenCalledTimes(1);
+
+    useTTSStore.getState().updateConfig({ voxcpmVoiceDesign: "a calm older man" });
+    vi.advanceTimersByTime(250);
+
+    expect(voxcpmPlayer.speak).toHaveBeenCalledTimes(2);
+    const [, config] = voxcpmPlayer.speak.mock.calls[1];
+    expect((config as TTSConfig).voxcpmVoiceDesign).toBe("a calm older man");
+  });
+});
+
+describe("useTTSStore — initial state before any persistence", () => {
+  it("exposes the built-in voice profiles on a fresh install", () => {
+    // persist.ts only runs normalizeTTSConfig when a config file already
+    // exists on disk, so an un-normalized initial state left the settings
+    // provider list empty until the user changed something.
+    const { profiles, activeProfileId } = useTTSStore.getState().config;
+
+    expect(profiles.length).toBeGreaterThan(0);
+    expect(profiles.map((p) => p.provider)).toEqual(
+      expect.arrayContaining(["edge", "system", "dashscope", "xiaomi", "openai-compatible", "voxcpm"]),
+    );
+    expect(profiles.some((p) => p.id === activeProfileId)).toBe(true);
+  });
+});
