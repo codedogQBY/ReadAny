@@ -27,6 +27,10 @@ config.resolver.blockList = [
   /node_modules\/esbuild\/.*/,
   /node_modules\/typescript\/.*/,
   /node_modules\/@biomejs\/.*/,
+  // Rust build artifacts churn constantly during tauri dev/build; Metro's
+  // Windows fallback watcher crashes (ENOENT) trying to watch them, which
+  // kills the whole bundler.
+  /[\\/]src-tauri[\\/]target[\\/].*/,
 ];
 
 // 4. Add support for TypeScript files

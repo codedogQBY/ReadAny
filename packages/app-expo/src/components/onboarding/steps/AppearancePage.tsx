@@ -2,6 +2,7 @@ import { DarkModeSvg } from "@/components/DarkModeSvg";
 import { type ThemeMode, useTheme } from "@/styles/ThemeContext";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { changeAndPersistLanguage } from "@readany/core/i18n";
 import { Coffee, Moon, Sun } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -46,7 +47,6 @@ export function AppearancePage() {
 
   const handleLangChange = async (code: string) => {
     try {
-      const { changeAndPersistLanguage } = await import("@readany/core/i18n");
       await changeAndPersistLanguage(code);
     } catch (err) {
       console.warn("[Settings] Failed to change and persist language:", err);
