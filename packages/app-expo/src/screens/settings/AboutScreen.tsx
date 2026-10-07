@@ -4,6 +4,7 @@ import { useWebviewLabel } from "@/stores/webview-info-store";
 import { getPlatformService } from "@readany/core/services";
 import { checkForUpdate } from "@readany/core/update";
 import * as Clipboard from "expo-clipboard";
+import expoPkg from "expo/package.json";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -11,6 +12,7 @@ import {
   Alert,
   Image,
   Linking,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -29,9 +31,17 @@ import {
 } from "../../styles/theme";
 import { SettingsHeader } from "./SettingsHeader";
 
+// The full expo package version, same granularity as the Tauri and React
+// Native labels: an in-SDK patch bump (54.0.33 → 54.0.35) is exactly the
+// kind of difference a bug report needs. The major IS the SDK number
+// (54 here), so no information is lost versus the "Expo SDK 54" phrasing.
+const EXPO_LABEL = `Expo ${expoPkg.version}`;
+const rnVersion = Platform.constants.reactNativeVersion;
+const REACT_NATIVE_VERSION = `${rnVersion.major}.${rnVersion.minor}.${rnVersion.patch}`;
+
 const TECH_STACK = [
-  { label: "Expo SDK 55", descKey: "about.nativeContainer" },
-  { label: "React Native", descKey: "about.uiFramework" },
+  { label: EXPO_LABEL, descKey: "about.nativeContainer" },
+  { label: `React Native ${REACT_NATIVE_VERSION}`, descKey: "about.uiFramework" },
   { label: "Foliate.js", descKey: "about.ebookRenderer" },
   { label: "SQLite", descKey: "about.localDatabase" },
 ];
