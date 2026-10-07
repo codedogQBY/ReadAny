@@ -41,10 +41,12 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 class FallbackContentService {
   private provider: FallbackContentProvider | null = null;
   private cache = new Map<string, CachedChapters>();
+  private inFlight = new Map<string, Promise<FallbackChapter[]>>();
 
   setProvider(provider: FallbackContentProvider | null): void {
     this.provider = provider;
     this.cache.clear();
+    this.inFlight.clear();
   }
 
   clear(bookId?: string): void {
@@ -65,15 +67,33 @@ class FallbackContentService {
       return cached.chapters;
     }
 
-    const chapters = await withTimeout(this.provider.getChapters(book), PROVIDER_TIMEOUT_MS);
-    this.cache.set(book.id, { chapters, cachedAt: Date.now() });
+    const pending = this.inFlight.get(book.id);
+    if (pending) return pending;
 
-    if (this.cache.size > MAX_CACHE_ENTRIES) {
-      const oldestKey = this.cache.keys().next().value;
-      if (oldestKey) this.cache.delete(oldestKey);
-    }
+    const provider = this.provider;
+    const request = withTimeout(
+      Promise.resolve().then(() => provider.getChapters(book)),
+      PROVIDER_TIMEOUT_MS,
+    )
+      .then((chapters) => {
+        if (this.provider === provider) {
+          this.cache.set(book.id, { chapters, cachedAt: Date.now() });
 
-    return chapters;
+          if (this.cache.size > MAX_CACHE_ENTRIES) {
+            const oldestKey = this.cache.keys().next().value;
+            if (oldestKey) this.cache.delete(oldestKey);
+          }
+        }
+        return chapters;
+      })
+      .finally(() => {
+        if (this.inFlight.get(book.id) === request) {
+          this.inFlight.delete(book.id);
+        }
+      });
+
+    this.inFlight.set(book.id, request);
+    return request;
   }
 }
 
