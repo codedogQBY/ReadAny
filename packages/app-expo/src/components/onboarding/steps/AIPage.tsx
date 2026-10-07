@@ -36,6 +36,7 @@ const PROVIDER_OPTIONS: { id: AIProviderType; name: string }[] = [
   { id: "ollama", name: "Ollama" },
   { id: "lmstudio", name: "LM Studio" },
   { id: "openrouter", name: "OpenRouter" },
+  { id: "requesty", name: "Requesty" },
   { id: "siliconflow", name: "SiliconFlow" },
   { id: "custom", name: "Custom" },
 ];
