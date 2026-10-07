@@ -682,6 +682,38 @@ describe("simple sync convergence", () => {
     ).toHaveProperty("books");
   });
 
+  it("force-uploads a fresh full snapshot even when incremental changes are empty", async () => {
+    const backend = new MemoryBackend();
+    const deviceA = new FakeSyncDb();
+    deviceA.syncMetadata.set("last_sync_at", "5000");
+    deviceA.insert("books", bookRow({ title: "Latest PC title", updated_at: 1000 }));
+
+    backend.jsonFiles.set("/readany/sync/device-device-a.json", {
+      deviceId: "device-a",
+      timestamp: 5900,
+      since: 0,
+      tables: {
+        books: {
+          records: [bookRow({ title: "Old remote snapshot", updated_at: 1000 })],
+          deletedIds: [],
+        },
+      },
+    });
+
+    now = 6000;
+    dbMocks.currentDeviceId = "device-a";
+    dbMocks.currentDb = deviceA;
+    const result = await runSimpleSync(backend, undefined, { forceUploadSnapshot: true });
+
+    expect(result.success).toBe(true);
+    const snapshot = backend.jsonFiles.get("/readany/sync/device-device-a.json") as {
+      timestamp: number;
+      tables: { books?: { records: Row[] } };
+    };
+    expect(snapshot.timestamp).toBe(6000);
+    expect(snapshot.tables.books?.records[0]?.title).toBe("Latest PC title");
+  });
+
   it("downloads remote snapshots using the listed path", async () => {
     class AliasPathBackend extends MemoryBackend {
       async listDir(path: string): Promise<RemoteFile[]> {
