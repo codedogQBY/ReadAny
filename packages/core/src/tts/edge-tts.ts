@@ -13,6 +13,7 @@ import {
   parseEdgeTTSMetadataBody,
   parseEdgeTTSTextFrame,
 } from "./edge-tts-metadata";
+import { buildSynthesisCacheKey, getOrCreateSynthesisAudio } from "./synthesis-cache";
 
 // ── Constants ──
 const EDGE_SPEECH_URL =
@@ -23,7 +24,6 @@ const CHROMIUM_MAJOR_VERSION = "143";
 
 const WIN_EPOCH_OFFSET = 11644473600n; // BigInt
 const S_TO_NS = 1000000000n; // BigInt
-const EDGE_TTS_AUDIO_CACHE_LIMIT = 48;
 
 // ── Voice list ──
 const EDGE_TTS_VOICE_MAP: Record<string, string[]> = {
@@ -232,28 +232,13 @@ function formatEdgeTTSError(error: unknown): string {
   return String(error);
 }
 
-const edgeTtsAudioCache = new Map<string, ArrayBuffer>();
-const edgeTtsInflightCache = new Map<string, Promise<ArrayBuffer>>();
-
 function getEdgeTTSPayloadKey(payload: EdgeTTSPayload): string {
-  return JSON.stringify([payload.voice, payload.lang, payload.rate, payload.pitch, payload.text]);
-}
-
-function cloneAudioBuffer(audioData: ArrayBuffer): ArrayBuffer {
-  return audioData.slice(0);
-}
-
-function touchEdgeTTSAudioCache(key: string, audioData: ArrayBuffer) {
-  if (edgeTtsAudioCache.has(key)) {
-    edgeTtsAudioCache.delete(key);
-  }
-  edgeTtsAudioCache.set(key, audioData);
-
-  while (edgeTtsAudioCache.size > EDGE_TTS_AUDIO_CACHE_LIMIT) {
-    const oldestKey = edgeTtsAudioCache.keys().next().value;
-    if (!oldestKey) break;
-    edgeTtsAudioCache.delete(oldestKey);
-  }
+  return buildSynthesisCacheKey("edge", payload.text, [
+    payload.voice,
+    payload.lang,
+    payload.rate,
+    payload.pitch,
+  ]);
 }
 
 /**
@@ -376,9 +361,7 @@ async function fetchEdgeTTSAudioCore(
           const responseInfo = lastResponseBody
             ? ` server response: ${lastResponseBody.slice(0, 200)}`
             : "";
-          return new Error(
-            `Edge TTS returned no audio.${responseInfo} ssml="${textPreview}"`,
-          );
+          return new Error(`Edge TTS returned no audio.${responseInfo} ssml="${textPreview}"`);
         };
 
         ws.onMessage((data) => {
@@ -486,29 +469,11 @@ async function fetchEdgeTTSAudioUncached(payload: EdgeTTSPayload): Promise<Array
 
 export async function fetchEdgeTTSAudio(payload: EdgeTTSPayload): Promise<ArrayBuffer> {
   const cacheKey = getEdgeTTSPayloadKey(payload);
-  const cachedAudio = edgeTtsAudioCache.get(cacheKey);
-  if (cachedAudio) {
-    touchEdgeTTSAudioCache(cacheKey, cachedAudio);
-    return cloneAudioBuffer(cachedAudio);
-  }
-
-  const inflight = edgeTtsInflightCache.get(cacheKey);
-  if (inflight) {
-    return cloneAudioBuffer(await inflight);
-  }
-
-  const request = fetchEdgeTTSAudioUncached(payload)
-    .then((audioData) => {
-      const cachedCopy = audioData.slice(0);
-      touchEdgeTTSAudioCache(cacheKey, cachedCopy);
-      return cachedCopy;
-    })
-    .finally(() => {
-      edgeTtsInflightCache.delete(cacheKey);
-    });
-
-  edgeTtsInflightCache.set(cacheKey, request);
-  return cloneAudioBuffer(await request);
+  const audio = await getOrCreateSynthesisAudio(cacheKey, async () => {
+    const synthesized = await fetchEdgeTTSAudioUncached(payload);
+    return new Uint8Array(synthesized.slice(0));
+  });
+  return audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength) as ArrayBuffer;
 }
 
 // ── Phase 1 spike: SSML with bookmarks + metadata-aware fetch ──

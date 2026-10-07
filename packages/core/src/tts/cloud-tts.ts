@@ -1,11 +1,16 @@
 import { getPlatformService } from "../services/platform";
+import { fetchEdgeTTSAudio } from "./edge-tts";
 import {
-  DEFAULT_XIAOMI_TTS_BASE_URL,
-  normalizeXiaomiTTSVoice,
-  type TTSConfig,
-} from "./types";
+  buildSynthesisCacheKey,
+  getCachedSynthesisAudio,
+  getOrCreateSynthesisAudio,
+} from "./synthesis-cache";
+import { DEFAULT_XIAOMI_TTS_BASE_URL, type TTSConfig, normalizeXiaomiTTSVoice } from "./types";
 
 export const CLOUD_TTS_PCM_SAMPLE_RATE = 24000;
+const DASHSCOPE_TTS_URL =
+  "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation";
+const PRELOAD_CHUNK_LIMIT = 4;
 
 export function base64ToBytes(base64: string): Uint8Array {
   const binary = atob(base64);
@@ -43,8 +48,7 @@ export function isTTSAbortError(error: unknown): boolean {
   const maybeError = error as { name?: unknown; code?: unknown; message?: unknown };
   if (maybeError.name === "AbortError") return true;
   if (maybeError.code === "ERR_CANCELED" || maybeError.code === "ABORT_ERR") return true;
-  const message =
-    typeof maybeError.message === "string" ? maybeError.message : String(error);
+  const message = typeof maybeError.message === "string" ? maybeError.message : String(error);
   return /\b(aborted?|cancel(?:ed|led))\b/iu.test(message);
 }
 
@@ -79,7 +83,54 @@ export function buildOpenAIChatTTSMessages(text: string, config: TTSConfig) {
   ];
 }
 
-export async function fetchXiaomiTTSWav(text: string, config: TTSConfig): Promise<Uint8Array> {
+function credentialCachePartition(credential: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < credential.length; index++) {
+    hash ^= credential.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${credential.length}:${(hash >>> 0).toString(16)}`;
+}
+
+function getSynthesisKey(text: string, config: TTSConfig): string | null {
+  switch (config.engine) {
+    case "edge": {
+      const voice = config.edgeVoice || "zh-CN-XiaoxiaoNeural";
+      const lang = voice.split("-").slice(0, 2).join("-");
+      return buildSynthesisCacheKey("edge", text, [voice, lang, config.rate, config.pitch]);
+    }
+    case "dashscope":
+      return buildSynthesisCacheKey("dashscope", text, [
+        "qwen3-tts-flash",
+        config.dashscopeVoice,
+        "mp3",
+        credentialCachePartition(config.dashscopeApiKey),
+      ]);
+    case "xiaomi":
+      return buildSynthesisCacheKey("xiaomi", text, [
+        config.xiaomiBaseUrl || DEFAULT_XIAOMI_TTS_BASE_URL,
+        "mimo-v2.5-tts",
+        normalizeXiaomiTTSVoice(config.xiaomiVoice),
+        config.xiaomiStylePrompt,
+        "wav",
+        credentialCachePartition(config.xiaomiApiKey),
+      ]);
+    case "openai-compatible":
+      return buildSynthesisCacheKey("openai-compatible", text, [
+        config.openaiTtsBaseUrl,
+        config.openaiTtsEndpoint,
+        config.openaiTtsModel,
+        config.openaiTtsVoice,
+        config.openaiTtsFormat,
+        config.openaiTtsStylePrompt,
+        credentialCachePartition(config.openaiTtsApiKey),
+      ]);
+    case "system":
+      return null;
+  }
+}
+
+async function fetchXiaomiTTSWavUncached(text: string, config: TTSConfig): Promise<Uint8Array> {
   if (!config.xiaomiApiKey) throw new Error("Xiaomi MiMo API key is required");
 
   const platform = getPlatformService();
@@ -111,7 +162,13 @@ export async function fetchXiaomiTTSWav(text: string, config: TTSConfig): Promis
   return base64ToBytes(audioData);
 }
 
-export async function fetchOpenAITTSAudio(text: string, config: TTSConfig): Promise<Uint8Array> {
+export function fetchXiaomiTTSWav(text: string, config: TTSConfig): Promise<Uint8Array> {
+  const key = getSynthesisKey(text, { ...config, engine: "xiaomi" });
+  if (!key) throw new Error("Unable to cache Xiaomi MiMo TTS audio");
+  return getOrCreateSynthesisAudio(key, () => fetchXiaomiTTSWavUncached(text, config));
+}
+
+async function fetchOpenAITTSAudioUncached(text: string, config: TTSConfig): Promise<Uint8Array> {
   if (!config.openaiTtsApiKey) throw new Error("OpenAI-compatible TTS API key is required");
 
   const platform = getPlatformService();
@@ -157,4 +214,100 @@ export async function fetchOpenAITTSAudio(text: string, config: TTSConfig): Prom
   }
 
   return new Uint8Array(await response.arrayBuffer());
+}
+
+export function fetchOpenAITTSAudio(text: string, config: TTSConfig): Promise<Uint8Array> {
+  const key = getSynthesisKey(text, { ...config, engine: "openai-compatible" });
+  if (!key) throw new Error("Unable to cache OpenAI-compatible TTS audio");
+  return getOrCreateSynthesisAudio(key, () => fetchOpenAITTSAudioUncached(text, config));
+}
+
+async function fetchDashScopeTTSAudioUncached(
+  text: string,
+  config: TTSConfig,
+): Promise<Uint8Array> {
+  if (!config.dashscopeApiKey) throw new Error("DashScope API key is required");
+
+  const response = await getPlatformService().fetch(DASHSCOPE_TTS_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.dashscopeApiKey}`,
+    },
+    body: JSON.stringify({
+      model: "qwen3-tts-flash",
+      input: { text, voice: config.dashscopeVoice },
+      parameters: { response_format: "mp3" },
+    }),
+  });
+
+  if (!response.ok) throw await buildTTSHttpError("DashScope TTS", response);
+  const result = (await response.json()) as {
+    output?: { audio?: { data?: string } };
+  };
+  const audioData = result.output?.audio?.data;
+  if (!audioData) throw new Error("No audio data in DashScope response");
+  return base64ToBytes(audioData);
+}
+
+export function fetchDashScopeTTSAudio(text: string, config: TTSConfig): Promise<Uint8Array> {
+  const key = getSynthesisKey(text, { ...config, engine: "dashscope" });
+  if (!key) throw new Error("Unable to cache DashScope TTS audio");
+  return getOrCreateSynthesisAudio(key, () => fetchDashScopeTTSAudioUncached(text, config));
+}
+
+export function getPreloadedTTSAudio(text: string, config: TTSConfig): Promise<Uint8Array> | null {
+  const key = getSynthesisKey(text, config);
+  return key ? getCachedSynthesisAudio(key) : null;
+}
+
+async function synthesizeTTSAudio(text: string, config: TTSConfig): Promise<void> {
+  switch (config.engine) {
+    case "edge": {
+      const voice = config.edgeVoice || "zh-CN-XiaoxiaoNeural";
+      await fetchEdgeTTSAudio({
+        text,
+        voice,
+        lang: voice.split("-").slice(0, 2).join("-"),
+        rate: config.rate,
+        pitch: config.pitch,
+      });
+      return;
+    }
+    case "dashscope":
+      await fetchDashScopeTTSAudio(text, config);
+      return;
+    case "xiaomi":
+      await fetchXiaomiTTSWav(text, config);
+      return;
+    case "openai-compatible":
+      await fetchOpenAITTSAudio(text, config);
+      return;
+    case "system":
+      return;
+  }
+}
+
+export async function preloadTTSChunks(
+  segments: string[],
+  config: TTSConfig,
+  limit = PRELOAD_CHUNK_LIMIT,
+): Promise<void> {
+  const candidates = segments
+    .map((text) => text.trim())
+    .filter(Boolean)
+    .slice(0, limit);
+  await Promise.all(
+    candidates.map(async (text) => {
+      try {
+        await synthesizeTTSAudio(text, config);
+      } catch (error) {
+        console.warn("[TTS] preload failed", {
+          engine: config.engine,
+          text: text.slice(0, 160),
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }),
+  );
 }

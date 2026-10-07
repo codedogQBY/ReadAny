@@ -67,7 +67,7 @@
     "apiKeyPlaceholder": "输入 DashScope API 密钥",
     "apiKeyHint": "从阿里百炼平台获取 API 密钥，使用 qwen3-tts-flash 模型",
     "getApiKey": "获取 API Key",
-    "speakSelection": "朗读选中文本",
+    "speakSelection": "从选中位置开始朗读",
     "loading": "加载中",
     "playing": "正在朗读",
     "paused": "已暂停",

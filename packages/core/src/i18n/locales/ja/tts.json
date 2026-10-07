@@ -64,7 +64,7 @@
     "apiKeyPlaceholder": "DashScope APIキーを入力",
     "apiKeyHint": "Alibaba CloudからAPIキーを取得し、qwen3-tts-flashモデルを使用",
     "getApiKey": "APIキーを取得",
-    "speakSelection": "選択テキストを読み上げ",
+    "speakSelection": "選択位置から読み上げ",
     "loading": "読み込み中",
     "playing": "読み上げ中",
     "paused": "一時停止",

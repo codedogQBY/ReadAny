@@ -64,7 +64,7 @@
     "apiKeyPlaceholder": "Entrer la clé API DashScope",
     "apiKeyHint": "Obtenez la clé API depuis Alibaba Cloud, utilisez le modèle qwen3-tts-flash",
     "getApiKey": "Obtenir la clé API",
-    "speakSelection": "Lire la sélection",
+    "speakSelection": "Lire à partir de la sélection",
     "loading": "Chargement",
     "playing": "Lecture en cours",
     "paused": "En pause",

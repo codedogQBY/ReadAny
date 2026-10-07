@@ -67,7 +67,7 @@
     "apiKeyPlaceholder": "Enter DashScope API Key",
     "apiKeyHint": "Get API key from Alibaba Cloud, use qwen3-tts-flash model",
     "getApiKey": "Get API Key",
-    "speakSelection": "Speak Selection",
+    "speakSelection": "Read from Selection",
     "loading": "Loading",
     "playing": "Reading",
     "paused": "Paused",

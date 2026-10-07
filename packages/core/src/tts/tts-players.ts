@@ -12,15 +12,36 @@ import {
   base64ToBytes,
   buildOpenAIChatTTSMessages,
   buildTTSHttpError,
-  buildXiaomiTTSUrl,
   buildXiaomiTTSMessages,
+  buildXiaomiTTSUrl,
   fetchOpenAITTSAudio,
+  getPreloadedTTSAudio,
   isTTSAbortError,
 } from "./cloud-tts";
 import { fetchEdgeTTSAudio } from "./edge-tts";
 import { type ChunkBoundary, resolveCurrentChunk } from "./playback-cursor";
 import { splitIntoChunks } from "./text-utils";
-import { normalizeXiaomiTTSVoice, type ITTSPlayer, type TTSConfig } from "./types";
+import { type ITTSPlayer, type TTSConfig, normalizeXiaomiTTSVoice } from "./types";
+
+function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
+function scheduleAudioBuffer(
+  context: AudioContext,
+  destination: AudioNode,
+  audioBuffer: AudioBuffer,
+  scheduledEnd: number,
+): { startAt: number; endAt: number } {
+  const source = context.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(destination);
+  const startAt = Math.max(context.currentTime, scheduledEnd);
+  source.start(startAt);
+  return { startAt, endAt: startAt + audioBuffer.duration };
+}
 
 // ── Browser SpeechSynthesis ──
 
@@ -242,6 +263,29 @@ export class DashScopeTTSPlayer implements ITTSPlayer {
     const platform = getPlatformService();
     this.abortController = new AbortController();
     this.pendingBytes = [];
+
+    const preloaded = getPreloadedTTSAudio(text, config);
+    if (preloaded && this.audioCtx && this.gainNode) {
+      try {
+        const bytes = await preloaded;
+        const audioBuffer = await this.audioCtx.decodeAudioData(bytesToArrayBuffer(bytes));
+        if (!this._playing || myRun !== this.runId || !this.audioCtx || !this.gainNode) return;
+        const scheduled = scheduleAudioBuffer(
+          this.audioCtx,
+          this.gainNode,
+          audioBuffer,
+          this.scheduledEnd,
+        );
+        this.scheduledEnd = scheduled.endAt;
+        this.hasAudioData = true;
+        this.chunkBoundaries.push({ index: this.currentStreamIndex, startAt: scheduled.startAt });
+        this.boundaryRecorded = true;
+        if (isFirst) this.onStateChange?.("playing");
+        return;
+      } catch (error) {
+        console.warn("[DashScope TTS] preloaded audio unavailable, using stream", error);
+      }
+    }
 
     const response = await platform.fetch(
       "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
@@ -529,20 +573,16 @@ abstract class PCMStreamingTTSPlayer implements ITTSPlayer {
       this.abortController = new AbortController();
       let firstAudioReceived = false;
       try {
-        await this.streamChunkAudio(
-          chunks[i],
-          config,
-          this.abortController.signal,
-          (bytes) => {
-            if (!this._playing || myRun !== this.runId || !this.audioCtx) return;
-            this.pendingBytes.push(bytes);
-            if (!firstAudioReceived) {
-              firstAudioReceived = true;
-              if (i === 0) this.onStateChange?.("playing");
-            }
-            this.scheduleFlush();
-          },
-        );
+        if (await this.schedulePreloadedChunk(chunks[i], config, i, myRun)) continue;
+        await this.streamChunkAudio(chunks[i], config, this.abortController.signal, (bytes) => {
+          if (!this._playing || myRun !== this.runId || !this.audioCtx) return;
+          this.pendingBytes.push(bytes);
+          if (!firstAudioReceived) {
+            firstAudioReceived = true;
+            if (i === 0) this.onStateChange?.("playing");
+          }
+          this.scheduleFlush();
+        });
       } catch (err) {
         if (!this._playing || myRun !== this.runId || isTTSAbortError(err)) return;
         console.error(`[${this.engineName} TTS] chunk error:`, err);
@@ -555,6 +595,37 @@ abstract class PCMStreamingTTSPlayer implements ITTSPlayer {
 
     if (myRun !== this.runId) return;
     this.allChunksDone = true;
+  }
+
+  private async schedulePreloadedChunk(
+    text: string,
+    config: TTSConfig,
+    index: number,
+    myRun: number,
+  ): Promise<boolean> {
+    const preloaded = getPreloadedTTSAudio(text, config);
+    if (!preloaded || !this.audioCtx || !this.gainNode) return false;
+
+    try {
+      const bytes = await preloaded;
+      const audioBuffer = await this.audioCtx.decodeAudioData(bytesToArrayBuffer(bytes));
+      if (!this._playing || myRun !== this.runId || !this.audioCtx || !this.gainNode) return true;
+      const scheduled = scheduleAudioBuffer(
+        this.audioCtx,
+        this.gainNode,
+        audioBuffer,
+        this.scheduledEnd,
+      );
+      this.scheduledEnd = scheduled.endAt;
+      this.hasAudioData = true;
+      this.chunkBoundaries.push({ index, startAt: scheduled.startAt });
+      this.boundaryRecorded = true;
+      if (index === 0) this.onStateChange?.("playing");
+      return true;
+    } catch (error) {
+      console.warn(`[${this.engineName} TTS] preloaded audio unavailable, using stream`, error);
+      return false;
+    }
   }
 
   private scheduleFlush() {
@@ -703,12 +774,6 @@ async function readChatAudioSSE(
   }
 }
 
-function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  const copy = new Uint8Array(bytes.byteLength);
-  copy.set(bytes);
-  return copy.buffer;
-}
-
 export class XiaomiTTSPlayer extends PCMStreamingTTSPlayer {
   protected engineName = "Xiaomi MiMo";
 
@@ -808,14 +873,15 @@ class BufferedAudioTTSPlayer implements ITTSPlayer {
         if (!this._playing || myRun !== this.runId || !this.audioCtx || !this.gainNode) return;
         const audioBuffer = await this.audioCtx.decodeAudioData(bytesToArrayBuffer(bytes));
         if (!this._playing || myRun !== this.runId || !this.audioCtx || !this.gainNode) return;
-        const source = this.audioCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(this.gainNode);
-        const startAt = Math.max(this.audioCtx.currentTime, this.scheduledEnd);
-        source.start(startAt);
-        this.scheduledEnd = startAt + audioBuffer.duration;
+        const scheduled = scheduleAudioBuffer(
+          this.audioCtx,
+          this.gainNode,
+          audioBuffer,
+          this.scheduledEnd,
+        );
+        this.scheduledEnd = scheduled.endAt;
         this.hasAudioData = true;
-        this.chunkBoundaries.push({ index: i, startAt });
+        this.chunkBoundaries.push({ index: i, startAt: scheduled.startAt });
         if (i === 0) this.onStateChange?.("playing");
       } catch (err) {
         if (!this._playing || myRun !== this.runId || isTTSAbortError(err)) return;
