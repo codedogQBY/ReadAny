@@ -15,6 +15,33 @@ struct WebViewInfo {
     version: String,
 }
 
+#[cfg(target_os = "macos")]
+fn query_webview_version() -> Result<String, String> {
+    use objc2::ClassType;
+    use objc2_foundation::{ns_string, NSBundle, NSString};
+    use objc2_web_kit::WKWebView;
+
+    let bundle = unsafe { NSBundle::bundleForClass(WKWebView::class()) };
+    let raw_version = bundle
+        .objectForInfoDictionaryKey(ns_string!("CFBundleVersion"))
+        .ok_or_else(|| "WebKit framework has no CFBundleVersion".to_string())?;
+    let version = raw_version
+        .downcast::<NSString>()
+        .map_err(|_| "WebKit CFBundleVersion is not a string".to_string())?
+        .to_string();
+
+    if version.trim().is_empty() {
+        return Err("WebKit framework returned an empty CFBundleVersion".to_string());
+    }
+
+    Ok(version)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn query_webview_version() -> Result<String, String> {
+    tauri::webview_version().map_err(|error| error.to_string())
+}
+
 /// The WebView engine label + real build number for Settings → About and the
 /// feedback device info. The User-Agent is reduced to a stub on Windows
 /// WebView2 (UA Reduction) and carries frozen fallback tokens for the WebKit
@@ -28,14 +55,14 @@ fn get_webview_version() -> Option<WebViewInfo> {
         "linux" => "WebKitGTK",
         _ => return None,
     };
-    let version = match tauri::webview_version() {
+    let version = match query_webview_version() {
         Ok(v) => v.trim().to_string(),
         // A genuine desktop query failure must stay distinguishable from an
         // unsupported platform: the frontend only logs on invoke rejection,
         // so a resolved None with no trace would silently degrade to the
         // UA-reduced version.
         Err(e) => {
-            eprintln!("[webview-info] webview_version() failed: {e}");
+            eprintln!("[webview-info] webview version query failed: {e}");
             return None;
         }
     };
@@ -47,6 +74,15 @@ fn get_webview_version() -> Option<WebViewInfo> {
         engine: engine.to_string(),
         version,
     })
+}
+
+#[cfg(all(test, target_os = "macos"))]
+#[test]
+fn macos_webview_version_reads_the_wkwebview_framework_build() {
+    let info = get_webview_version().expect("WebKit framework version should be available");
+
+    assert_eq!(info.engine, "WebKit");
+    assert!(!info.version.trim().is_empty());
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
