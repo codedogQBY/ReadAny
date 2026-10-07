@@ -25,7 +25,8 @@
       "generateNotes": "產生學習筆記",
       "summarizeChapter": "總結這一章",
       "explainConcepts": "解釋關鍵概念",
-      "analyzeAuthor": "分析作者的論點"
+      "analyzeAuthor": "分析作者的論點",
+      "reviewChapterNotes": "點評我對本章的筆記"
     },
     "aiAssistant": "AI 閱讀助手",
     "aiAssistantDesc": "分析內容、回答問題，幫助你更好地理解書籍。",

@@ -25,7 +25,8 @@
       "generateNotes": "学習ノートを生成",
       "summarizeChapter": "この章を要約",
       "explainConcepts": "主要な概念を説明",
-      "analyzeAuthor": "著者の主張を分析"
+      "analyzeAuthor": "著者の主張を分析",
+      "reviewChapterNotes": "この章のメモをレビュー"
     },
     "aiAssistant": "AI読書アシスタント",
     "aiAssistantDesc": "コンテンツを分析し、質問に答え、本の理解を深めるお手伝いをします。",
