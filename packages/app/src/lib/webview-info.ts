@@ -5,12 +5,12 @@
  * adds the Tauri-runtime check and the runtime version query.
  *
  * Inside the Tauri runtime, BOTH the engine label and the version come from
- * the runtime query (`tauri::webview_version()` + an OS→engine mapping):
- * the User-Agent is reduced to a stub on Windows WebView2 (UA Reduction) and
- * carries frozen fallback tokens for the WebKit engines, so the runtime is
- * the only reliable source on every desktop platform. The UA parse is the
- * fallback path — plain `vite` dev in a browser or a failed command — where
- * the version is reduced on WebView2 and frozen on WebKit.
+ * the platform-native query (`get_webview_version`): the User-Agent is
+ * reduced to a stub on Windows WebView2 (UA Reduction) and carries frozen
+ * fallback tokens for the WebKit engines, so the runtime is the only reliable
+ * source on every desktop platform. The UA parse is the fallback path — plain
+ * `vite` dev in a browser or a failed command — where the version is reduced
+ * on WebView2 and frozen on WebKit.
  *
  * Version floors differ per engine (e.g. :has() needs WebView2 ≥ 105 /
  * WebKitGTK ≥ 2.36), which is exactly why the exact build matters. Detection

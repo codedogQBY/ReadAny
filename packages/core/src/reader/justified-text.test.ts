@@ -69,6 +69,8 @@ interface FakeCapabilities {
   layerSupported?: boolean;
   /** CSS.supports() answers (defaults to modern engine: everything true). */
   supports?: (condition: string) => boolean;
+  /** Simulate querySelectorAll rejecting selectors that contain :has(). */
+  failHasQuery?: boolean;
 }
 
 class FakeDoc {
@@ -78,7 +80,9 @@ class FakeDoc {
   constructor(
     readonly containers: FakeContainer[],
     readonly capabilities: FakeCapabilities = {},
-  ) {}
+  ) {
+    this.failHasQuery = capabilities.failHasQuery ?? false;
+  }
 
   get defaultView() {
     const self = this;

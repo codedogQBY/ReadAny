@@ -1,6 +1,6 @@
 {
   "name": "@readany/app-expo",
-  "version": "1.3.6",
+  "version": "1.3.7",
   "private": true,
   "main": "index.js",
   "expo": {
