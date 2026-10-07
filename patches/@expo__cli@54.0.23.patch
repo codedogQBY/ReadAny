@@ -1,0 +1,32 @@
+diff --git a/build/src/utils/filePath.js b/build/src/utils/filePath.js
+index 68eed166a8061d9a2488a454aeaa13487416d53b..6ff1ae8b6a1a37c722aa0e71182d2835a5eca9a6 100644
+--- a/build/src/utils/filePath.js
++++ b/build/src/utils/filePath.js
+@@ -23,6 +23,13 @@ function _fs() {
+     };
+     return data;
+ }
++function _path() {
++    const data = /*#__PURE__*/ _interop_require_default(require("path"));
++    _path = function() {
++        return data;
++    };
++    return data;
++}
+ function _interop_require_default(obj) {
+     return obj && obj.__esModule ? obj : {
+         default: obj
+@@ -30,6 +37,13 @@ function _interop_require_default(obj) {
+ }
+ const REGEXP_REPLACE_SLASHES = /\\/g;
+ function resolveRealEntryFilePath(projectRoot, entryFile) {
++    // A relative --entry-file is relative to the project root (not the server
++    // root). Resolve it to an absolute path first so Metro gets a correct
++    // mainModuleName in pnpm monorepos on Windows. Mirrors the fix in
++    // expo/expo#44414 (SDK 55), not backported to SDK 54.
++    if (!_path().default.isAbsolute(entryFile)) {
++        entryFile = _path().default.resolve(process.cwd(), projectRoot, entryFile);
++    }
+     if (projectRoot.startsWith('/private/var') && entryFile.startsWith('/var')) {
+         return _fs().default.realpathSync(entryFile);
+     }
