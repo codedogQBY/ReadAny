@@ -28,6 +28,11 @@
       "explainConcepts": "Explain the key concepts",
       "analyzeAuthor": "Analyze the author's argument"
     },
+    "errors": {
+      "inputTooLong": "That message is too long. Please send it in smaller parts.",
+      "chapterLookupFailed": "I couldn't reliably identify that chapter. Please give me a more specific chapter title.",
+      "retrievalLimitReached": "I couldn't complete that retrieval reliably. Please try a more specific question or retry."
+    },
     "aiAssistant": "AI Reading Assistant",
     "aiAssistantDesc": "Analyze content, answer questions, and help you understand your books better.",
     "deepThinking": "Deep Thinking",

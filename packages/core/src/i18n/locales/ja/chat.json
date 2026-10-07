@@ -27,6 +27,11 @@
       "explainConcepts": "主要な概念を説明",
       "analyzeAuthor": "著者の主張を分析"
     },
+    "errors": {
+      "inputTooLong": "メッセージが長すぎます。いくつかに分けて送信してください。",
+      "chapterLookupFailed": "章を正確に特定できませんでした。より具体的な章タイトルを入力してください。",
+      "retrievalLimitReached": "検索を正常に完了できませんでした。より具体的な質問にするか、もう一度お試しください。"
+    },
     "aiAssistant": "AI読書アシスタント",
     "aiAssistantDesc": "コンテンツを分析し、質問に答え、本の理解を深めるお手伝いをします。",
     "deepThinking": "深い思考",
