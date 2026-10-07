@@ -155,7 +155,8 @@ import {
   SCREEN_WIDTH,
 } from "./reader/reader-constants";
 import { BatteryIcon, ListIcon, SettingsIcon } from "./reader/reader-icons";
-import { makeStyles, noteTooltipMdStyles } from "./reader/reader-styles";
+import { createNoteTooltipTheme } from "./reader/note-tooltip-theme";
+import { makeStyles } from "./reader/reader-styles";
 import { useReaderBookmark } from "./reader/useReaderBookmark";
 import { useReaderSearch } from "./reader/useReaderSearch";
 import { useReaderSystemInfo } from "./reader/useReaderSystemInfo";
@@ -208,6 +209,7 @@ export function ReaderScreen({ route, navigation }: Props) {
   const colors = useColors();
   const { mode: themeMode } = useTheme();
   const s = makeStyles(colors);
+  const noteTooltipTheme = createNoteTooltipTheme(colors);
   const { bookId, cfi, highlight: shouldHighlight, openTTS } = route.params;
   const { t, i18n } = useTranslation();
   const isWideLayout = SCREEN_WIDTH >= 768;
@@ -1729,7 +1731,7 @@ export function ReaderScreen({ route, navigation }: Props) {
             <View style={s.noteTooltipContent}>
               <MarkdownRenderer
                 content={adjustedNoteTooltip.note || ""}
-                styleOverrides={noteTooltipMdStyles}
+                styleOverrides={noteTooltipTheme.markdown}
               />
             </View>
           </Pressable>
