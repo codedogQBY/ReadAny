@@ -3,6 +3,8 @@ import type { Book } from "@readany/core/types";
 import * as FileSystem from "expo-file-system/legacy";
 import { queueBook as queueAutoVectorize } from "./auto-vectorize-service";
 
+export const MOBILE_AUTO_VECTORIZE_MAX_BYTES = 32 * 1024 * 1024;
+
 const MIME_TYPES: Record<string, string> = {
   epub: "application/epub+zip",
   pdf: "application/pdf",
@@ -14,18 +16,6 @@ const MIME_TYPES: Record<string, string> = {
 export function getMobileVectorizeMimeType(format: string | undefined): string | null {
   const normalized = String(format || "").toLowerCase();
   return MIME_TYPES[normalized] ?? null;
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  const chunkSize = 0x8000;
-  let binary = "";
-
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-
-  return btoa(binary);
 }
 
 export async function resolveMobileBookPath(filePath: string): Promise<string> {
@@ -49,12 +39,15 @@ export async function getMobileBookFileSize(filePath: string): Promise<number | 
   return typeof info.size === "number" ? info.size : null;
 }
 
-export async function inspectMobileBookForVectorize(book: Book): Promise<{
+export async function inspectMobileBookForVectorize(
+  book: Book,
+  options?: { maxBytes?: number },
+): Promise<{
   absPath: string;
   mimeType: string | null;
   size: number | null;
   canVectorize: boolean;
-  reason?: "unsupported-format" | "missing-file";
+  reason?: "unsupported-format" | "missing-file" | "file-too-large";
 }> {
   const absPath = await resolveMobileBookPath(book.filePath);
   const mimeType = getMobileVectorizeMimeType(book.format);
@@ -66,13 +59,17 @@ export async function inspectMobileBookForVectorize(book: Book): Promise<{
   if (size == null) {
     return { absPath, mimeType, size, canVectorize: false, reason: "missing-file" };
   }
+  if (options?.maxBytes != null && size > options.maxBytes) {
+    return { absPath, mimeType, size, canVectorize: false, reason: "file-too-large" };
+  }
 
   return { absPath, mimeType, size, canVectorize: true };
 }
 
 export async function queueBookForAutoVectorize(book: Book): Promise<boolean> {
-  const platform = getPlatformService();
-  const info = await inspectMobileBookForVectorize(book);
+  const info = await inspectMobileBookForVectorize(book, {
+    maxBytes: MOBILE_AUTO_VECTORIZE_MAX_BYTES,
+  });
   if (!info.canVectorize || !info.mimeType) {
     console.warn(
       `[AutoVectorize] Skip mobile book: ${book.meta.title} (${info.reason}, size=${info.size ?? "unknown"}, format=${book.format})`,
@@ -80,7 +77,13 @@ export async function queueBookForAutoVectorize(book: Book): Promise<boolean> {
     return false;
   }
 
-  const bytes = await platform.readFile(info.absPath);
-  queueAutoVectorize(book, bytesToBase64(bytes), info.mimeType);
+  queueAutoVectorize(
+    book,
+    () =>
+      FileSystem.readAsStringAsync(info.absPath, {
+        encoding: FileSystem.EncodingType.Base64,
+      }),
+    info.mimeType,
+  );
   return true;
 }
