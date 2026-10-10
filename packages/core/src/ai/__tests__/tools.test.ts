@@ -873,6 +873,76 @@ describe("getAnnotations tool", () => {
     expect(result.highlights[0].text).toBe("Important text");
     expect(result.notes).toHaveLength(1);
     expect(result.notes[0].title).toBe("Note 1");
+    expect(result.pagination).toEqual({
+      highlights: { total: 1, returned: 1, offset: 0, limit: 20, hasMore: false },
+      notes: { total: 1, returned: 1, offset: 0, limit: 20, hasMore: false },
+    });
+  });
+
+  it("filters current-chapter annotations before applying the limit", async () => {
+    vi.mocked(getHighlights).mockResolvedValue([
+      ...Array.from({ length: 20 }, (_, index) => ({
+        text: `Early ${index}`,
+        chapterTitle: "Chapter 1",
+        color: "yellow",
+      })),
+      {
+        text: "Current note",
+        note: "Visible",
+        chapterTitle: "Spending Time Apart",
+        color: "green",
+      },
+    ] as any);
+    vi.mocked(getNotes).mockResolvedValue([]);
+
+    const tools = getAvailableTools({ bookId: "book-1", isVectorized: true, enabledSkills: [] });
+    const tool = findTool(tools, "getAnnotations");
+    const result = (await tool.execute({
+      type: "highlights",
+      chapterTitle: " spending time apart ",
+    })) as any;
+
+    expect(result.highlights).toEqual([
+      expect.objectContaining({ text: "Current note", note: "Visible" }),
+    ]);
+    expect(result.pagination.highlights).toMatchObject({
+      total: 1,
+      returned: 1,
+      hasMore: false,
+    });
+  });
+
+  it("returns later book positions first for recent chapter requests", async () => {
+    vi.mocked(getHighlights).mockResolvedValue(
+      Array.from({ length: 25 }, (_, index) => ({
+        text: `Position ${index + 1}`,
+        chapterTitle: `Chapter ${index + 1}`,
+        color: "yellow",
+      })) as any,
+    );
+    vi.mocked(getNotes).mockResolvedValue([]);
+
+    const tools = getAvailableTools({ bookId: "book-1", isVectorized: true, enabledSkills: [] });
+    const tool = findTool(tools, "getAnnotations");
+    const result = (await tool.execute({
+      type: "highlights",
+      order: "reverse_book",
+      offset: 0,
+      limit: 3,
+    })) as any;
+
+    expect(result.highlights.map((item: any) => item.text)).toEqual([
+      "Position 25",
+      "Position 24",
+      "Position 23",
+    ]);
+    expect(result.pagination.highlights).toEqual({
+      total: 25,
+      returned: 3,
+      offset: 0,
+      limit: 3,
+      hasMore: true,
+    });
   });
 
   it("should return only highlights when type is 'highlights'", async () => {
