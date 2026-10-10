@@ -66,6 +66,7 @@
     "deleteGroupConfirm": "このグループを削除しますか？書籍は削除されません。"
   },
   "tabs": {
+    "close": "タブを閉じる",
     "library": "ライブラリ",
     "ai": "AI",
     "notes": "ノート",

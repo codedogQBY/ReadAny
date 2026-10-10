@@ -1,4 +1,5 @@
 mod db;
+mod pointer_caps;
 mod readany_cli;
 mod storage;
 mod sync;
@@ -87,6 +88,9 @@ fn macos_webview_version_reads_the_wkwebview_framework_build() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Must happen before the first WebView2 environment is created.
+    pointer_caps::apply_webview_pointer_capabilities();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {

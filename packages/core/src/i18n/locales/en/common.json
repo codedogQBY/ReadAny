@@ -66,6 +66,7 @@
     "deleteGroupConfirm": "Delete this group? Books will not be deleted."
   },
   "tabs": {
+    "close": "Close tab",
     "library": "Library",
     "ai": "AI",
     "notes": "Notes",

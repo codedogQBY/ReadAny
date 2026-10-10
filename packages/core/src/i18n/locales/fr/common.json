@@ -66,6 +66,7 @@
     "deleteGroupConfirm": "Supprimer ce groupe ? Les livres ne seront pas supprimés."
   },
   "tabs": {
+    "close": "Fermer l'onglet",
     "library": "Bibliothèque",
     "ai": "IA",
     "notes": "Notes",
