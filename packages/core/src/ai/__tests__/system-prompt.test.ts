@@ -133,4 +133,19 @@ describe("buildSystemPrompt citations", () => {
     expect(prompt).not.toContain("addCitation");
     expect(prompt).not.toContain("mindmap");
   });
+
+  it("does not inject Chinese failure copy into English chapter requests", () => {
+    const prompt = buildSystemPrompt({
+      book: makeBook(),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: true,
+      userLanguage: "en",
+      questionCategory: "specific_chapter_request",
+      allowedToolNames: ["resolveChapterReference", "ragToc", "ragContext"],
+    });
+
+    expect(prompt).not.toContain("未能可靠定位章节");
+    expect(prompt).toContain("in the user's language");
+  });
 });

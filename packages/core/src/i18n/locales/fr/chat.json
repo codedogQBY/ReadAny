@@ -27,6 +27,11 @@
       "explainConcepts": "Expliquer les concepts clés",
       "analyzeAuthor": "Analyser l'argumentation de l'auteur"
     },
+    "errors": {
+      "inputTooLong": "Ce message est trop long. Veuillez l'envoyer en plusieurs parties.",
+      "chapterLookupFailed": "Je n'ai pas pu identifier ce chapitre avec certitude. Veuillez fournir un titre de chapitre plus précis.",
+      "retrievalLimitReached": "Je n'ai pas pu terminer cette recherche de manière fiable. Posez une question plus précise ou réessayez."
+    },
     "aiAssistant": "Assistant de lecture IA",
     "aiAssistantDesc": "Analysez le contenu, répondez aux questions et comprenez mieux vos livres.",
     "deepThinking": "Réflexion approfondie",

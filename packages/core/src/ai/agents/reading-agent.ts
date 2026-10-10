@@ -1,8 +1,8 @@
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
-import i18n from "i18next";
 import { z } from "zod";
+import i18n from "../../i18n";
 import { estimateTokens } from "../../rag/chunker";
 /**
  * Reading Agent — AI-powered reading assistant using LangGraph ReAct agent
@@ -57,7 +57,19 @@ const TOOL_TIMEOUT_MS_BY_NAME: Record<string, number> = {
   mindmap: 10_000,
 };
 const MAX_USER_INPUT_TOKENS = 8_000;
-const USER_INPUT_TOO_LONG_MESSAGE = "内容过长，请分段提问。";
+const AGENT_ERROR_DEFAULTS = {
+  inputTooLong: "That message is too long. Please send it in smaller parts.",
+  chapterLookupFailed:
+    "I couldn't reliably identify that chapter. Please give me a more specific chapter title.",
+  retrievalLimitReached:
+    "I couldn't complete that retrieval reliably. Please try a more specific question or retry.",
+} as const;
+
+type AgentErrorKey = keyof typeof AGENT_ERROR_DEFAULTS;
+
+function getAgentErrorMessage(key: AgentErrorKey): string {
+  return i18n.t(`chat.errors.${key}`, { defaultValue: AGENT_ERROR_DEFAULTS[key] });
+}
 
 const OUTPUT_LIMIT_FINISH_REASONS = new Set([
   "length",
@@ -517,7 +529,7 @@ function buildChapterReferenceLimitResult(
     detectedChapterNumber: undefined,
     attemptLimitReached: true,
     attemptedQueries,
-    notice: "未能可靠定位章节，请补充更准确的章节名",
+    notice: getAgentErrorMessage("chapterLookupFailed"),
     reason:
       "Chapter lookup attempt limit reached. Stop chapter search in this turn and ask the user for a more accurate chapter title.",
   };
@@ -853,7 +865,7 @@ export async function* streamReadingAgent(
 
     // Reject oversized input before creating a model or making an API request.
     if (estimateTokens(userInput.normalize("NFKC").trim()) > MAX_USER_INPUT_TOKENS) {
-      yield { type: "token", content: USER_INPUT_TOO_LONG_MESSAGE };
+      yield { type: "token", content: getAgentErrorMessage("inputTooLong") };
       return;
     }
 
@@ -1410,13 +1422,14 @@ export async function* streamReadingAgent(
       }
       yield {
         type: "token",
-        content: "未能可靠定位章节，请补充更准确的章节名",
+        content: String(limitResult.notice),
       };
       return;
     }
     if (isRecursionError) {
+      const retrievalLimitMessage = getAgentErrorMessage("retrievalLimitReached");
       const noticeResult = {
-        notice: "本轮检索步骤过多，没有稳定完成。请换个更具体的问法，或直接重试一次。",
+        notice: retrievalLimitMessage,
         reason: errorMessage,
       };
       const uniquePendingNames = Array.from(new Set(pendingToolCallNames));
@@ -1425,7 +1438,7 @@ export async function* streamReadingAgent(
       }
       yield {
         type: "token",
-        content: "本轮检索步骤过多，没有稳定完成。请换个更具体的问法，或直接重试一次。",
+        content: retrievalLimitMessage,
       };
       return;
     }

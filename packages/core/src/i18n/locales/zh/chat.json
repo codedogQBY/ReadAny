@@ -28,6 +28,11 @@
       "explainConcepts": "解释关键概念",
       "analyzeAuthor": "分析作者的论点"
     },
+    "errors": {
+      "inputTooLong": "内容过长，请分段提问。",
+      "chapterLookupFailed": "未能可靠定位章节，请补充更准确的章节名。",
+      "retrievalLimitReached": "本轮检索未能稳定完成，请换个更具体的问法或重试一次。"
+    },
     "aiAssistant": "AI 阅读助手",
     "aiAssistantDesc": "分析内容、回答问题，帮助你更好地理解书籍。",
     "deepThinking": "深度思考",
