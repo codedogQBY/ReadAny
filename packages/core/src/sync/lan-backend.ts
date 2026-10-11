@@ -91,6 +91,38 @@ export class LANBackend implements ISyncBackend {
     return new Uint8Array(buffer);
   }
 
+  /**
+   * Stream a file straight to disk with the platform's native downloader.
+   *
+   * The buffered fallback (get()) asks React Native's XHR for an `arraybuffer`
+   * response, and the native networking module base64-encodes the whole body in
+   * a single String allocation before handing it to JS. A 46 MB book therefore
+   * needs a ~61 MB temporary String inside Android's default 256 MB heap growth
+   * limit, which aborts the process with OutOfMemoryError (issue #829). Native
+   * streaming keeps peak memory flat no matter how large the book is — same
+   * approach as WebDavClient.getFileToPath, which is why WebDAV sync survives
+   * large books while LAN sync did not.
+   */
+  async getFileToPath(
+    path: string,
+    localFilePath: string,
+    onProgress?: (loaded: number, total: number) => void,
+  ): Promise<void> {
+    const platform = getPlatformService();
+    if (!platform.downloadFile) {
+      throw new Error("Platform does not support direct file download");
+    }
+
+    const url = `${this.serverUrl}/file${path}`;
+    console.log(`[LAN] GET ${path} (file download)`);
+    const startTime = Date.now();
+    await platform.downloadFile(url, localFilePath, {
+      headers: { "X-Pair-Code": this.pairCode },
+      onProgress,
+    });
+    console.log(`[LAN] GET ${path} completed in ${Date.now() - startTime}ms`);
+  }
+
   async getJSON<T>(path: string): Promise<T | null> {
     try {
       const data = await this.get(path);
