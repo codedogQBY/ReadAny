@@ -281,11 +281,52 @@
       }, delay == null ? 100 : delay);
     }
 
+    /**
+     * Isolate the first section of a fixed-layout book as a standalone page.
+     *
+     * foliate-js maps sections onto spreads in #buildSpreads(). With
+     * rendition.spread = "auto" and no per-section pageSpread, page 1 and page 2
+     * land in the SAME spread (the first section defaults into the "right" slot,
+     * then page 2 fills the leftover "left" slot). The result is a two-pages-
+     * side-by-side spread, so the cover is laid out at half width.
+     *
+     * Only `pageSpread = "center"` gives the page a spread of its own.
+     * "left"/"right" merely move which slot it occupies and still pair it with a
+     * neighbour. Verified by running foliate-js #buildSpreads directly:
+     *   no marking      -> {"right":p0}                      (shared, half width)
+     *   "left"          -> {"left":p0, "right":p1}           (shared, half width)
+     *   "center"        -> {"center":p0}                     (isolated, full width)
+     *
+     * Takes the book explicitly and derives fixed-layout from its rendition:
+     * this must run BEFORE view.open(), and open() is what assigns
+     * view.book / view.isFixedLayout. Reading those here would always see
+     * undefined and silently skip the fix.
+     *
+     * The first spine item is treated as a standalone page for every
+     * fixed-layout book: page 1 of a PDF/CBZ is the cover by convention, and its
+     * section id is a numeric index ("0"), so filename sniffing would miss it.
+     * An EPUB that explicitly declares a spread is left untouched.
+     */
+    function markFixedLayoutCover(book) {
+      if (!book) return;
+      if (book.rendition?.layout !== 'pre-paginated') return;
+      const sections = book.sections;
+      if (!sections || !sections.length) return;
+      const first = sections[0];
+      if (!first || first.pageSpread) return;
+      first.pageSpread = 'center';
+    }
+
+
     function applyFixedLayoutRendererSettings(renderer, paginatedLayout) {
       if (!renderer) return;
       const layout = paginatedLayout === 'single' ? 'single' : 'double';
       const spreadMode = layout === 'single' ? 'none' : 'auto';
-      const zoomMode = layout === 'single' ? 'fit-width' : 'fit-page';
+      // 与桌面端口径一致（FoliateViewer 的 applyFixedLayoutSettings）：单页也用 fit-page。
+      // fit-width 是「按宽度铺满」——横屏/宽容器里竖版页会超出可视区被裁掉（必须滚动才能看全，
+      // 滚到边界还会触发越界翻页）；fit-page = min(宽比, 高比) 永不裁切，页相对更宽时自动
+      // 等于 fit-width（照样铺满宽度）。
+      const zoomMode = 'fit-page';
 
       renderer.setAttribute('spread', spreadMode);
       renderer.setAttribute('zoom', zoomMode);
@@ -325,7 +366,17 @@
       if (!renderer || !view) return;
 
       if (view.isFixedLayout) {
+        // Fixed layout (PDF/CBZ) supports the same view-mode switch as
+        // reflowable books: `flow="scrolled"` puts foliate-fxl into continuous
+        // scroll mode, removing the attribute restores paginated flipping.
+        // Returning early here used to make the scroll toggle a no-op on
+        // mobile for every fixed-layout book.
         renderer.removeAttribute('no-continuous-scroll');
+        if (currentViewMode === 'scroll') {
+          renderer.setAttribute('flow', 'scrolled');
+        } else {
+          renderer.removeAttribute('flow');
+        }
         return;
       }
 
@@ -1727,6 +1778,10 @@
         view = el;
         currentSectionUsesVerticalWriting = false;
 
+        // Must run before el.open(): foliate-js computes the spread layout from
+        // `pageSpread` exactly once, inside open() -> renderer.open().
+        markFixedLayoutCover(book);
+
         await el.open(book);
 
         if (book.sections) {
@@ -1854,6 +1909,14 @@
         if (view.isFixedLayout) {
           applyFixedLayoutRendererSettings(renderer, currentPaginatedLayout);
         }
+        // Apply the view mode before returning. This early return used to skip
+        // the shared `if (settings.viewMode)` block further down, so for PDFs
+        // the scroll/paginated toggle never reached the renderer at all — the
+        // setting appeared to do nothing.
+        if (settings.viewMode) {
+          currentViewMode = settings.viewMode;
+        }
+        applyRendererFlowMode(renderer);
         return;
       }
 

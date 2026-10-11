@@ -63,7 +63,7 @@
     "relaunching": "Redémarrage...",
     "reading_title": "Lecture",
     "reading_desc": "Personnalisez votre expérience de lecture",
-    "readingNotice": "Les paramètres de police et de mise en page s'appliquent uniquement aux EPUB et autres formats reflowables, pas aux PDF.",
+    "readingNotice": "Les paramètres de police et de mise en page s'appliquent aux EPUB et autres formats reflowables. Les PDF et autres livres à mise en page fixe ne prennent en charge que le basculement entre lecture paginée et défilante.",
     "fontSize": "Taille de police : {{size}}px",
     "lineHeight": "Interligne : {{height}}",
     "fontTheme": "Thème de police",

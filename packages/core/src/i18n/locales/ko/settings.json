@@ -63,7 +63,7 @@
     "relaunching": "재시작 중...",
     "reading_title": "읽기",
     "reading_desc": "독서 경험을 맞춤 설정하세요",
-    "readingNotice": "글꼴 및 레이아웃 설정은 EPUB 등 리플로우 형식에만 적용되며, PDF에는 적용되지 않아요.",
+    "readingNotice": "글꼴 및 레이아웃 설정은 EPUB 등 리플로우 형식에 적용돼요. PDF 등 고정 레이아웃 도서는 페이지 넘김과 스크롤 전환만 지원해요.",
     "fontSize": "글꼴 크기: {{size}}px",
     "lineHeight": "줄 간격: {{height}}",
     "fontTheme": "글꼴 테마",

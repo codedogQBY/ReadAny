@@ -118,6 +118,89 @@ function getThemeColors(theme: AppTheme) {
   return THEME_COLORS[theme];
 }
 
+/** Relative luminance of a hex/rgb()/rgba() color; null when unparsable. */
+function parseCssColor(input: string): [number, number, number] | null {
+  const s = input.trim().toLowerCase();
+  let m = s.match(/^#([0-9a-f]{3})$/);
+  if (m)
+    return [
+      Number.parseInt(m[1][0] + m[1][0], 16),
+      Number.parseInt(m[1][1] + m[1][1], 16),
+      Number.parseInt(m[1][2] + m[1][2], 16),
+    ];
+  m = s.match(/^#([0-9a-f]{6})(?:[0-9a-f]{2})?$/);
+  if (m) {
+    const n = Number.parseInt(m[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  m = s.match(/^rgba?\((\d+)[\s,]+(\d+)[\s,]+(\d+)/);
+  if (m) return [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (s === "white") return [255, 255, 255];
+  return null;
+}
+
+function isLightColor(color: string): boolean {
+  const rgb = parseCssColor(color);
+  if (!rgb) return false;
+  // Same threshold Readest uses: > 0.85 ≈ white-ish surface in dark mode.
+  return (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255 > 0.85;
+}
+
+// Original background colors captured before a dark-mode rewrite, keyed by
+// the CSSStyleRule or element that was touched, so switching back to a light
+// theme can restore exactly what the book declared.
+const ORIGINAL_BOOK_BG = new WeakMap<object, string>();
+
+/**
+ * Dark mode: books often hard-code light surfaces (white figure boxes, paper
+ * panels) that glare against the dark theme. Rewrite every light background
+ * color the book declares — inline styles and its <style> sheets via CSSOM,
+ * so all color syntaxes are handled — to the theme background. Background
+ * images are preserved (only the color longhand is touched). On a light
+ * theme, previously rewritten colors are restored to the book's originals.
+ */
+function rewriteBookBackgrounds(doc: Document, theme: AppTheme) {
+  const dark = theme === "dark";
+  const bgColor = getThemeColors(theme).bg;
+  const apply = (style: CSSStyleDeclaration, host: object) => {
+    const current = style.backgroundColor;
+    if (dark) {
+      if (!isLightColor(current)) return;
+      if (!ORIGINAL_BOOK_BG.has(host)) ORIGINAL_BOOK_BG.set(host, current);
+      style.backgroundColor = bgColor;
+    } else {
+      const original = ORIGINAL_BOOK_BG.get(host);
+      if (original === undefined) return;
+      style.backgroundColor = original;
+      ORIGINAL_BOOK_BG.delete(host);
+    }
+  };
+  const visit = (rules: CSSRuleList) => {
+    for (const rule of Array.from(rules)) {
+      const style = (rule as CSSStyleRule).style;
+      if (style) {
+        apply(style, rule);
+      } else {
+        const nested = (rule as CSSRule & { cssRules?: CSSRuleList }).cssRules;
+        if (nested) visit(nested);
+      }
+    }
+  };
+  for (const sheet of Array.from(doc.styleSheets)) {
+    let rules: CSSRuleList;
+    try {
+      rules = sheet.cssRules;
+    } catch {
+      continue; // cross-origin sheet — not ours to read
+    }
+    visit(rules);
+  }
+  if (!doc.body) return;
+  for (const el of Array.from(doc.body.querySelectorAll<HTMLElement>("[style]"))) {
+    apply(el.style, el);
+  }
+}
+
 /** Per-theme CSS filter applied to PDF pages (fixed layout) in dark/sepia mode. */
 const PDF_THEME_FILTERS: Partial<Record<AppTheme, string>> = {
   dark: "invert(0.93)",
@@ -2056,7 +2139,13 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         getDirection(detail.doc);
 
         // Apply theme styles to loaded document
-        applyDocumentStyles(detail.doc, viewSettings, isFixedLayout, appTheme);
+        applyDocumentStyles(
+          detail.doc,
+          viewSettings,
+          isFixedLayout,
+          appTheme,
+          viewRef.current?.book?.metadata?.language,
+        );
 
         // Register iframe event handlers for this section
         registerIframeEventHandlers(bookKey, detail.doc);
@@ -3007,6 +3096,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       }
       applyRendererStyles(view, viewSettings, false, appTheme);
     }, [
+      viewReady,
       viewSettings.fontSize,
       viewSettings.lineHeight,
       viewSettings.fontTheme,
@@ -3044,6 +3134,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       if (!view?.renderer) return;
       applyRendererSettings(view, viewSettings, isFixedLayout, appTheme);
     }, [
+      viewReady,
       viewSettings.viewMode,
       viewSettings.paginatedLayout,
       viewSettings.fixedLayoutZoom,
@@ -3185,19 +3276,23 @@ function applyDocumentStyles(
   settings: ViewSettings,
   isFixedLayout: boolean,
   theme: AppTheme,
+  bookLanguage?: string | string[],
 ) {
   if (isFixedLayout) {
     // PDF/CBZ: don't inject styles that would break layout
     return;
   }
 
+  // Section-level lang is the most precise signal; book metadata is the fallback.
+  const language = getDocLanguage(doc) ?? bookLanguage;
   normalizeBrOnlyParagraphs(doc);
   syncRemoteFontStylesInDocument(doc, settings.customFontCssUrls);
   // Unify justify state: tag vertical/fixed roots, unpin (clean undo), then
   // pin author-aligned <br> blocks BEFORE the override stylesheet (which
   // carries the justify fallback) so getComputedStyle sees the book's own CSS.
   syncJustifyForDoc(doc, settings.justifyBodyText !== false);
-  syncReaderOverrideStylesInDocument(doc, getRendererStyles(settings, theme));
+  syncReaderOverrideStylesInDocument(doc, getRendererStyles(settings, theme, language));
+  if (theme === "dark") rewriteBookBackgrounds(doc, theme);
 }
 
 function syncReaderOverrideStylesInDocument(doc: Document, css: string) {
@@ -3373,15 +3468,19 @@ function applyRendererSettings(
   if (isFixedLayout) {
     const isSinglePage = (settings.paginatedLayout ?? "double") === "single";
     const spreadMode = isSinglePage ? "none" : "auto";
-    // Fixed layout: single-page mode should scale to the page width so image-only
-    // EPUBs do not look "shrunk inside a spread". Double-page mode still uses
-    // fit-page to keep both pages fully visible inside the viewport.
-    renderer.setAttribute("zoom", isSinglePage ? "fit-width" : "fit-page");
+    // Fixed layout：两种模式都用 fit-page（= min(容器宽/页宽, 容器高/页高)，永不裁切）。
+    // 这里曾经单页用 fit-width，本意是「图片版 EPUB 别被缩在两页跨页里显得小」；但 fit-width
+    // 的语义是「按宽度铺满」：横屏窗口里竖版 PDF 页必然超高 → 页被裁掉，必须上下滚动才能看全，
+    // 而滚动到边界又会被越界翻页（scrollFixedLayoutPage 返回 false → handleWheel → next/prev），
+    // 观感很差。而 fit-page 在「页比视口相对更宽」时会自动等于 fit-width（照样铺满宽度），
+    // 所以原来那条「显得小」的顾虑在单页模式下并不成立。
+    renderer.setAttribute("zoom", "fit-page");
     renderer.setAttribute("zoom-factor", String(settings.fixedLayoutZoom ?? 1));
     if (view.book?.rendition) {
       view.book.rendition.spread = spreadMode;
     }
     renderer.setAttribute("spread", spreadMode);
+    applyFixedLayoutFlow(view, settings);
   } else {
     // Reflowable: columns, sizes, margins.
     // Foliate's `gap` is a percentage that drives BOTH the outer spacing
@@ -3420,6 +3519,23 @@ function applyRendererSettings(
   applyRendererStyles(view, settings, isFixedLayout, theme);
 }
 
+/**
+ * Fixed-layout (PDF/CBZ) flow: fixed layout is not limited to paginated
+ * flipping. Setting `flow="scrolled"` hands the pages to the foliate-fxl
+ * renderer's continuous scroll mode (one page after another, loaded lazily),
+ * and removing it restores paginated flipping. The renderer keeps the reader's
+ * page across the switch.
+ */
+function applyFixedLayoutFlow(view: FoliateView, settings: ViewSettings) {
+  const renderer = view.renderer;
+  if (!renderer) return;
+  if (settings.viewMode === "scroll") {
+    renderer.setAttribute("flow", "scrolled");
+  } else {
+    renderer.removeAttribute("flow");
+  }
+}
+
 function applyReflowLayoutSettings(view: FoliateView, settings: ViewSettings) {
   const renderer = view.renderer;
   if (!renderer) return;
@@ -3450,7 +3566,23 @@ function applyReflowLayoutSettings(view: FoliateView, settings: ViewSettings) {
 }
 
 /** Generate CSS string for renderer styles */
-function getRendererStyles(settings: ViewSettings, theme: AppTheme): string {
+/** CJK language detection for typography defaults (widows/orphans conventions) */
+function isCJKLanguage(lang?: string | string[]): boolean {
+  if (!lang) return false;
+  const langs = Array.isArray(lang) ? lang : [lang];
+  return langs.some((l) => /^(zh|ja|ko)\b/i.test(String(l).trim()));
+}
+
+function getDocLanguage(doc: Document): string | undefined {
+  const html = doc.documentElement;
+  return html?.getAttribute("xml:lang") || html?.getAttribute("lang") || undefined;
+}
+
+function getRendererStyles(
+  settings: ViewSettings,
+  theme: AppTheme,
+  bookLanguage?: string | string[],
+): string {
   const colors = getThemeColors(theme);
   const bgColor = colors.bg;
   const fgColor = colors.fg;
@@ -3459,19 +3591,32 @@ function getRendererStyles(settings: ViewSettings, theme: AppTheme): string {
   // Get font theme
   const fontTheme = getFontTheme(settings.fontTheme);
 
-  // Custom font takes precedence over font theme
+  // CJK convention (zh/ja/ko) allows single lines to carry over a page break,
+  // so widows/orphans default to 1 instead of the Western 2.
+  const cjk = isCJKLanguage(bookLanguage);
+
+  // Font themes hold single family names; the fallback chain is built here.
+  // Latin family goes first so a CJK font never captures Latin glyphs, then
+  // the theme's CJK family, then named CJK fallbacks — without them, books
+  // without font CSS (TXT imports, minimal EPUBs) degrade to the browser's
+  // generic Han font regardless of the chosen theme.
+  const quoteName = (name: string) => `'${name.replace(/['"]/g, "").trim()}'`;
+  const cjkFallbacks = (
+    fontTheme.id === "system"
+      ? ["PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC"]
+      : ["Source Han Serif SC", "Noto Serif SC", "Songti SC", "SimSun"]
+  ).map(quoteName);
   const fontFamily = settings.customFontFamily
     ? JSON.stringify(settings.customFontFamily)
-    : `'${fontTheme.cjk}', '${fontTheme.serif}', serif`;
+    : [quoteName(fontTheme.serif), quoteName(fontTheme.cjk), ...cjkFallbacks, "serif"].join(", ");
 
   // paragraphSpacing is stored as px tuned at the default 16px font size.
-  // Scale it with the actual font size so paragraph gaps stay proportional
-  // at the new 12-64 fontSize range — without this, 16px spacing looks
-  // cramped at fontSize 64. BASELINE matches defaultReadSettings.fontSize
-  // in core/stores/settings-store.ts.
+  // Emit it in em so paragraph gaps track the element's font size across the
+  // 12-64 fontSize range without any fontSize-ratio math. BASELINE matches
+  // defaultReadSettings.fontSize in core/stores/settings-store.ts.
   const BASELINE_FONT_SIZE = 16;
-  const layoutScale = settings.fontSize / BASELINE_FONT_SIZE;
-  const scaledParagraphSpacing = Math.round(settings.paragraphSpacing * layoutScale);
+  const paragraphSpacingEm =
+    Math.round((settings.paragraphSpacing / BASELINE_FONT_SIZE) * 100) / 100;
 
   // When useBookFonts is enabled (default), do not force the reader font onto
   // html/body with !important: the book's own font-family (on html, body, or
@@ -3520,33 +3665,54 @@ html body :is(pre, code, kbd, samp) {
 html {
   --theme-bg-color: ${bgColor};
   --readany-font-family: ${fontFamily};
-  --serif-font: "${fontTheme.serif}";
-  --sans-serif-font: "${fontTheme.sansSerif}";
-  --cjk-font: "${fontTheme.cjk}";
+  --serif-font: ${quoteName(fontTheme.serif)};
+  --sans-serif-font: ${quoteName(fontTheme.sansSerif)};
+  --cjk-font: ${quoteName(fontTheme.cjk)};
 }
 
 html, body {
   background-color: ${bgColor} !important;
   color: ${fgColor} !important;
   font-size: ${settings.fontSize}px !important;
+  line-height: ${settings.lineHeight} !important;
   -webkit-text-size-adjust: none;
   text-size-adjust: none;
+  orphans: ${cjk ? 1 : 2};
+  widows: ${cjk ? 1 : 2};
 }
 
 ${readerFontOverride}
-body :not(#__readany_font_size_override):not(svg):not(svg *):not(math):not(math *):not(pre):not(pre *):not(code):not(code *):not(kbd):not(kbd *):not(samp):not(samp *):not(rt):not(rp) {
-  font-size: ${settings.fontSize}px !important;
+
+/* Typography defaults are zero-specificity: they only fill gaps the publisher
+   left, and any author rule (element, class or inline) beats them. Do NOT
+   raise these to element selectors with !important — that flattens publisher
+   heading scales and CJK margin:0 + text-indent layouts. */
+:where(p, li, blockquote, dd, div) {
+  line-height: ${settings.lineHeight};
 }
 
-/* Line height for text blocks */
-p, div, blockquote, dd, li, span {
-  line-height: ${settings.lineHeight} !important;
+:where(p, li, blockquote, dd) {
+  -webkit-hyphens: auto;
+  hyphens: auto;
+  -webkit-hyphenate-limit-before: 3;
+  -webkit-hyphenate-limit-after: 2;
+  -webkit-hyphenate-limit-lines: 2;
+  hyphenate-limit-chars: 6 3 2;
 }
 
-/* Paragraph spacing */
-p {
-  margin-top: ${scaledParagraphSpacing}px !important;
-  margin-bottom: ${scaledParagraphSpacing}px !important;
+:where(p) {
+  margin-top: ${paragraphSpacingEm}em;
+  margin-bottom: ${paragraphSpacingEm}em;
+}
+${
+  cjk
+    ? `:lang(zh), :lang(ja), :lang(ko) {
+  orphans: 1;
+  widows: 1;
+}
+`
+    : ""
+}
 }
 
 /* Links */
@@ -3626,7 +3792,7 @@ function applyRendererStyles(
     fontSize: settings.fontSize,
     lineHeight: settings.lineHeight,
   });
-  const styles = getRendererStyles(settings, theme);
+  const styles = getRendererStyles(settings, theme, view.book?.metadata?.language);
   // Always unpin first (restores the book's own cascade when justify is
   // disabled), then re-pin author-aligned <br>-containing blocks.
   for (const content of getRendererContents(view)) {
@@ -3635,6 +3801,12 @@ function applyRendererStyles(
   }
   renderer.setStyles(styles);
   syncReaderOverrideStyles(view, styles);
+  // Re-walk loaded sections so a theme switch rewrites (dark) or restores
+  // (light) the book's own light background declarations.
+  for (const content of getRendererContents(view)) {
+    const doc = content?.doc as Document | undefined;
+    if (doc) rewriteBookBackgrounds(doc, theme);
+  }
 }
 
 /**

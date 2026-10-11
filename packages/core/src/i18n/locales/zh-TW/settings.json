@@ -63,7 +63,7 @@
     "relaunching": "正在重新啟動...",
     "reading_title": "閱讀設定",
     "reading_desc": "自訂你的閱讀體驗",
-    "readingNotice": "字型和排版設定僅適用於 EPUB 等流式排版格式，PDF 不支援。",
+    "readingNotice": "字型和排版設定僅適用於 EPUB 等流式排版格式。PDF 等固定版式書籍僅支援翻頁與捲動閱讀模式的切換。",
     "fontSize": "字型大小：{{size}}px",
     "lineHeight": "行高：{{height}}",
     "fontTheme": "字型主題",

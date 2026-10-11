@@ -233,7 +233,18 @@ async function markImageOnlyEpubAsFixedLayout(book: BookDoc): Promise<void> {
   const sections = (book.sections ?? []).filter((section) => section.linear !== "no");
   if (sections.length < 4) return;
 
-  const samples = sections.slice(0, 10);
+  // Sample evenly across the WHOLE book, not just the opening. Text novels
+  // often front-load artwork (cover, plate sections), which a first-N window
+  // mistakes for a comic — e.g. a 500-section novel whose first 10 sampled
+  // sections are all illustrations. A real image-only EPUB is ~100% image
+  // pages at every position.
+  const sampleCount = Math.min(sections.length, 24);
+  const stride = sections.length / sampleCount;
+  const samples: typeof sections = [];
+  for (let i = 0; i < sampleCount; i++) {
+    samples.push(sections[Math.min(sections.length - 1, Math.floor(i * stride))]);
+  }
+
   let inspected = 0;
   let imageOnlyPages = 0;
 
@@ -249,7 +260,10 @@ async function markImageOnlyEpubAsFixedLayout(book: BookDoc): Promise<void> {
     }
   }
 
-  if (inspected < 4 || imageOnlyPages / inspected < 0.75) return;
+  // Near-total image coverage required, plus an absolute floor when the book
+  // is larger than the sample: short front-matter runs must never qualify.
+  if (inspected < 4 || imageOnlyPages / inspected < 0.95) return;
+  if (imageOnlyPages < 8 && inspected < sections.length) return;
 
   book.rendition ??= {};
   book.rendition.layout = "pre-paginated";

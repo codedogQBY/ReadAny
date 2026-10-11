@@ -63,7 +63,7 @@
     "relaunching": "再起動中...",
     "reading_title": "読書",
     "reading_desc": "読書体験をカスタマイズ",
-    "readingNotice": "フォントとレイアウト設定はEPUBなどのリフロー形式にのみ適用されます。PDFには適用されません。",
+    "readingNotice": "フォントとレイアウト設定はEPUBなどのリフロー形式に適用されます。PDFなどの固定レイアウトの本は、ページめくりとスクロールの切り替えのみ対応します。",
     "fontSize": "文字サイズ: {{size}}px",
     "lineHeight": "行間: {{height}}",
     "fontTheme": "フォントテーマ",

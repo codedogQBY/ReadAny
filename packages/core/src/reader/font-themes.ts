@@ -3,6 +3,9 @@
  */
 import type { FontTheme } from "../types";
 
+// Values must be SINGLE family names: getRendererStyles builds the full
+// fallback chain and quotes each name — a multi-family string here would be
+// wrapped in one pair of quotes and match nothing.
 export const FONT_THEMES: FontTheme[] = [
   {
     id: "system",
@@ -16,9 +19,9 @@ export const FONT_THEMES: FontTheme[] = [
     id: "literata",
     name: "文学书卷",
     nameEn: "Literata",
-    serif: "Literata, Georgia, serif",
-    sansSerif: "Literata, Georgia, serif",
-    cjk: "'Noto Serif SC', 'Source Han Serif SC', serif",
+    serif: "Literata",
+    sansSerif: "Literata",
+    cjk: "Noto Serif SC",
   },
 ];
 

@@ -63,7 +63,7 @@
     "relaunching": "Reiniciando...",
     "reading_title": "Lectura",
     "reading_desc": "Personaliza tu experiencia de lectura",
-    "readingNotice": "Los ajustes de fuente y diseño solo aplican a EPUB y otros formatos de flujo, no a PDF.",
+    "readingNotice": "Los ajustes de fuente y diseño aplican a EPUB y otros formatos de flujo. Los PDF y otros libros de diseño fijo solo admiten alternar entre lectura paginada y con desplazamiento.",
     "fontSize": "Tamaño de fuente: {{size}}px",
     "lineHeight": "Altura de línea: {{height}}",
     "fontTheme": "Tema de fuente",
