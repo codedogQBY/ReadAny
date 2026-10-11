@@ -1747,13 +1747,14 @@ ${rules.map((rule) => `  ${rule}`).join("\n")}
           refreshUserAnnotations(100);
           // Auto-inject ruby annotations if enabled
           if (_rubyMode && (_rubyWordDict || _rubyCharDict)) {
-            try { doInjectRubyAnnotations(doc, _rubyMode); } catch(e) {}
+            try { rubyScheduleInjection(doc, _rubyMode); } catch(e) {}
           }
         });
 
         var snippetTimer = null;
         el.addEventListener('relocate', (e) => {
           markLoaded();
+          rubyNoteUserActivity(); // 翻页/滚动优先，注音队列让路
           hideFootnoteTip();
           const detail = e.detail;
           const previousSectionIndex = currentSectionIndex;
@@ -1798,6 +1799,8 @@ ${rules.map((rule) => `  ${rule}`).join("\n")}
           });
           if (currentSectionIndex !== previousSectionIndex) {
             refreshUserAnnotations(120);
+            // 预加载过的章节变成主章节时不会再收到 load 事件，注音要在这里补
+            rubyEnsureForCurrentDoc();
           }
           // Extract text after page render settles
           if (snippetTimer) clearTimeout(snippetTimer);
@@ -4992,6 +4995,8 @@ html, body {
     var CJK_RE = /[一-鿿㐀-䶿豈-﫿]/;
     var RUBY_STYLE_ID = 'readany-ruby-style';
     var RUBY_PROCESSED_ATTR = 'data-ruby-processed';
+    // 记在 document 对象上的"这一章已按某模式注完"标记，避免章节切换时反复全量扫节点
+    var RUBY_DONE_ATTR = '__readanyRubyDone';
 
     function rubyAnnotateChinese(text) {
       if ((!_rubyWordDict && !_rubyCharDict) || !text) return [{ char: text, reading: '', needsRuby: false }];
@@ -5076,19 +5081,102 @@ html, body {
       return result;
     }
 
-    function doInjectRubyAnnotations(doc, mode) {
-      if (!mode || !doc) return 0;
-      if (!_rubyWordDict && !_rubyCharDict) return 0;
-      rubyInjectStyles(doc);
+    // ─── Ruby injection scheduler ───
+    // 一次给整章加注音会在主线程上卡住一整段（排版代价 ≈ 线性于注音字符数），
+    // 所以拆成小片：每片只注音一小段、之间让出一帧，视口内的内容优先，
+    // 用户翻页/滚动时先让路。最终 DOM 与"一次性注入"完全相同。
+    var RUBY_SLICE_CHARS = 400;             // 每片最多注音多少字（≈半页，控制单次排版量）
+    var RUBY_SLICE_NODES = 30;              // 每片最多处理多少个文本节点（兜底）
+    var RUBY_SLICE_GAP_MS = 16;             // 片与片之间让出一帧
+    var RUBY_QUIET_AFTER_RELOCATE_MS = 160; // 用户翻页/滚动后先安静一会儿
+    var rubyJobs = [];
+    var rubyTickTimer = null;
+    var rubyLastActivityAt = 0;
+
+    function rubyNowMs() {
+      return (typeof performance !== 'undefined' && performance.now)
+        ? performance.now() : Date.now();
+    }
+
+    // 用户正在翻页/滚动：记一笔，注入先让路，别和阅读操作抢主线程
+    function rubyNoteUserActivity() {
+      rubyLastActivityAt = rubyNowMs();
+    }
+
+    function rubyCancelJobs() {
+      for (var i = 0; i < rubyJobs.length; i++) rubyJobs[i].cancelled = true;
+      rubyJobs.length = 0;
+    }
+
+    // 对"所有已加载的章节"执行 fn。注音是逐章存在 DOM 里的，foliate 又会同时
+    // 挂着前后章，只处理当前章会留下半章旧注音（换模式尤其明显）
+    function rubyForEachLoadedDoc(fn) {
+      var seen = [];
+      try {
+        if (view && view.renderer && view.renderer.getContents) {
+          var contents = view.renderer.getContents();
+          for (var i = 0; i < contents.length; i++) {
+            var d = contents[i] && contents[i].doc;
+            if (!d || seen.indexOf(d) >= 0) continue;
+            seen.push(d);
+            try { fn(d); } catch (e) {}
+          }
+        }
+      } catch (e) {}
+      return seen;
+    }
+
+    // 按章节号精确取文档；取不到说明这一章的 view 还没挂上，返回 null 让调用方重试
+    function rubyDocForIndex(index) {
+      try {
+        if (view && view.renderer && view.renderer.getContents) {
+          var contents = view.renderer.getContents();
+          for (var i = 0; i < contents.length; i++) {
+            if (contents[i] && contents[i].doc && contents[i].index === index) return contents[i].doc;
+          }
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    // 当前正在显示的文档（优先按当前章节号匹配，避免挑到预加载的前后章）
+    function rubyCurrentDoc() {
+      var exact = rubyDocForIndex(currentSectionIndex);
+      if (exact) return exact;
+      try {
+        if (view && view.renderer && view.renderer.getContents) {
+          var contents = view.renderer.getContents();
+          if (contents && contents.length) {
+            for (var j = 0; j < contents.length; j++) {
+              if (contents[j] && contents[j].doc) return contents[j].doc;
+            }
+          }
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    // 收集待注音文本节点：视口内的优先，再按"下一屏、其余"往后排，
+    // 这样用户当前看的那一屏最先出注音，后面的内容也不会漏。
+    function rubyCollectTextNodes(doc) {
       var blocks = doc.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote, dd, dt, figcaption, div');
-      var count = 0;
+      var near = [];
+      var mid = [];
+      var far = [];
+      var vh = (doc.defaultView && doc.defaultView.innerHeight) || 0;
       for (var bi = 0; bi < blocks.length; bi++) {
         var block = blocks[bi];
-        if (!block.textContent || !block.textContent.trim()) continue;
+        var blockText = block.textContent;
+        if (!blockText || !blockText.trim()) continue;
         if (rubyShouldSkip(block)) continue;
-        if (block.querySelector && block.querySelector('[' + RUBY_PROCESSED_ATTR + ']')) continue;
-        if (!CJK_RE.test(block.textContent)) continue;
-
+        if (!CJK_RE.test(blockText)) continue;
+        var bucket = near;
+        if (vh > 0) {
+          var rect = block.getBoundingClientRect(); // 只读：注入前量一次，之后不再量
+          if (rect.bottom > 0 && rect.top < vh) bucket = near;
+          else if (rect.top >= vh && rect.top < vh * 3) bucket = mid;
+          else bucket = far;
+        }
         var walker = doc.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
           acceptNode: function(node) {
             if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_SKIP;
@@ -5099,41 +5187,134 @@ html, body {
             return NodeFilter.FILTER_ACCEPT;
           }
         });
-        var textNodes = [];
         var tn = walker.nextNode();
-        while (tn) { textNodes.push(tn); tn = walker.nextNode(); }
+        while (tn) { bucket.push(tn); tn = walker.nextNode(); }
+      }
+      return near.concat(mid, far);
+    }
 
-        for (var ti = 0; ti < textNodes.length; ti++) {
-          var node = textNodes[ti];
-          var text = node.nodeValue || '';
-          if (!text.trim() || !CJK_RE.test(text)) continue;
-          var tokens = rubyAnnotateChinese(text);
-          var span = doc.createElement('span');
-          span.setAttribute(RUBY_PROCESSED_ATTR, 'true');
-          span.className = 'readany-ruby-container';
-          for (var tki = 0; tki < tokens.length; tki++) {
-            var token = tokens[tki];
-            if (token.needsRuby && token.reading) {
-              var ruby = doc.createElement('ruby');
-              ruby.className = 'readany-ruby';
-              ruby.textContent = token.char;
-              var rt = doc.createElement('rt');
-              rt.textContent = token.reading;
-              ruby.appendChild(rt);
-              span.appendChild(ruby);
-            } else {
-              span.appendChild(doc.createTextNode(token.char));
-            }
-          }
-          if (node.parentNode) node.parentNode.replaceChild(span, node);
-          count++;
+    // 给一个文本节点加注音；返回其中字符数，用于控制每片的工作量
+    function rubyAnnotateTextNode(doc, node) {
+      var text = node.nodeValue || '';
+      if (!text.trim() || !CJK_RE.test(text)) return 0;
+      var tokens = rubyAnnotateChinese(text);
+      var span = doc.createElement('span');
+      span.setAttribute(RUBY_PROCESSED_ATTR, 'true');
+      span.className = 'readany-ruby-container';
+      for (var tki = 0; tki < tokens.length; tki++) {
+        var token = tokens[tki];
+        if (token.needsRuby && token.reading) {
+          var ruby = doc.createElement('ruby');
+          ruby.className = 'readany-ruby';
+          ruby.textContent = token.char;
+          var rt = doc.createElement('rt');
+          rt.textContent = token.reading;
+          ruby.appendChild(rt);
+          span.appendChild(ruby);
+        } else {
+          span.appendChild(doc.createTextNode(token.char));
         }
       }
-      return count;
+      if (node.parentNode) node.parentNode.replaceChild(span, node);
+      return text.length;
+    }
+
+    // 入口：排一个"整章注音"任务（可重复调用，同一文档同一模式不会重复排队）
+    function rubyScheduleInjection(doc, mode) {
+      if (!mode || !doc) return 0;
+      if (!_rubyWordDict && !_rubyCharDict) return 0;
+      // 这一章已经按当前模式注完音了：直接跳过，省掉一次全量节点扫描
+      if (doc[RUBY_DONE_ATTR] === mode) return 0;
+      rubyInjectStyles(doc);
+      for (var i = 0; i < rubyJobs.length; i++) {
+        if (rubyJobs[i].doc === doc && rubyJobs[i].mode === mode && !rubyJobs[i].cancelled) return 0;
+      }
+      var nodes = [];
+      try { nodes = rubyCollectTextNodes(doc); } catch (e) { nodes = []; }
+      if (!nodes.length) return 0;
+      rubyJobs.push({ doc: doc, mode: mode, nodes: nodes, cursor: 0, cancelled: false });
+      rubyScheduleTick(0);
+      return nodes.length;
+    }
+
+    // 补一次"当前章节"的注音。章节切换时要用它兜底：
+    // foliate 会预加载前后章，等这一章真的轮到时它直接复用已加载的 view
+    // （paginator 只改 primaryIndex、不派发 load），所以只挂在 load 上会漏掉
+    // "开启注音那一刻还没排到队"的章节。
+    // 入队按文档去重、注完的章节带完成标记，重复调用几乎没有代价。
+    function rubyEnsureForCurrentDoc(attempt) {
+      if (!_rubyMode || (!_rubyWordDict && !_rubyCharDict)) return;
+      var tries = attempt || 0;
+      // 先严格按章节号找：宁可重试，也不要把注音排到别的章节上
+      var doc = rubyDocForIndex(currentSectionIndex);
+      if (!doc && tries >= 5) doc = rubyCurrentDoc();
+      if (!doc) {
+        // 视图可能还没挂上，隔一拍再试，最多几次
+        if (tries < 5) {
+          setTimeout(function() {
+            try { rubyEnsureForCurrentDoc(tries + 1); } catch (e) {}
+          }, 120);
+        }
+        return;
+      }
+      try { rubyScheduleInjection(doc, _rubyMode); } catch (e) {}
+    }
+
+    function rubyScheduleTick(delay) {
+      if (rubyTickTimer !== null) return;
+      rubyTickTimer = setTimeout(rubyTick, delay);
+    }
+
+    function rubyTick() {
+      rubyTickTimer = null;
+      rubyRunSlice();
+    }
+
+    function rubyRunSlice() {
+      var i;
+      // 丢掉失效任务（文档被回收 / 已被取消）
+      for (i = rubyJobs.length - 1; i >= 0; i--) {
+        var stale = rubyJobs[i].cancelled || !rubyJobs[i].doc || !rubyJobs[i].doc.documentElement;
+        if (stale) rubyJobs.splice(i, 1);
+      }
+      if (!rubyJobs.length) return;
+
+      // 用户刚翻页/滚动过：先让阅读操作跑完再继续
+      if (rubyNowMs() - rubyLastActivityAt < RUBY_QUIET_AFTER_RELOCATE_MS) {
+        rubyScheduleTick(RUBY_QUIET_AFTER_RELOCATE_MS);
+        return;
+      }
+
+      // 当前显示的章节优先，预加载的前后章排后面
+      var currentDoc = rubyCurrentDoc();
+      var job = null;
+      for (i = 0; i < rubyJobs.length; i++) {
+        var isPrimary = currentDoc ? rubyJobs[i].doc === currentDoc : i === 0;
+        if (!job || isPrimary) job = rubyJobs[i];
+      }
+
+      var chars = 0;
+      var done = 0;
+      while (job.cursor < job.nodes.length) {
+        var node = job.nodes[job.cursor++];
+        if (!node || !node.parentNode || !node.nodeValue) continue;
+        var parent = node.parentElement;
+        if (parent && rubyShouldSkip(parent)) continue;
+        try { chars += rubyAnnotateTextNode(job.doc, node); } catch (e) {}
+        done++;
+        if (chars >= RUBY_SLICE_CHARS || done >= RUBY_SLICE_NODES) break;
+      }
+      if (job.cursor >= job.nodes.length) {
+        job.doc[RUBY_DONE_ATTR] = job.mode;
+        var at = rubyJobs.indexOf(job);
+        if (at >= 0) rubyJobs.splice(at, 1);
+      }
+      if (rubyJobs.length) rubyScheduleTick(RUBY_SLICE_GAP_MS);
     }
 
     function doRemoveRubyAnnotations(doc) {
       if (!doc) return;
+      try { delete doc[RUBY_DONE_ATTR]; } catch (e) { doc[RUBY_DONE_ATTR] = null; }
       var style = doc.getElementById(RUBY_STYLE_ID);
       if (style) style.remove();
       var processed = doc.querySelectorAll('[' + RUBY_PROCESSED_ATTR + ']');
@@ -5150,6 +5331,10 @@ html, body {
       try {
         _rubyWordDict = wordDictJson ? (typeof wordDictJson === 'string' ? JSON.parse(wordDictJson) : wordDictJson) : null;
         _rubyCharDict = charDictJson ? (typeof charDictJson === 'string' ? JSON.parse(charDictJson) : charDictJson) : null;
+        // 词典可能比章节晚到：到了就把当前章节补上
+        if (_rubyMode && (_rubyWordDict || _rubyCharDict)) {
+          rubyEnsureForCurrentDoc();
+        }
         return true;
       } catch(e) {
         console.error('[Ruby] Failed to parse dicts:', e);
@@ -5159,13 +5344,15 @@ html, body {
 
     // Called from RN to inject ruby on current page
     window.injectRuby = function(mode) {
-      _rubyMode = mode || null;
-      if (!_rubyMode) { window.removeRuby(); return; }
-      var doc = null;
-      if (view && view.renderer && view.renderer.getContents) {
-        var contents = view.renderer.getContents();
-        if (contents && contents.length && contents[0] && contents[0].doc) doc = contents[0].doc;
+      var nextMode = mode || null;
+      if (nextMode !== _rubyMode) {
+        // 模式变了：停掉在排队的任务，并清掉旧模式的注音，免得半章拼音半章注音
+        rubyCancelJobs();
+        if (_rubyMode) rubyForEachLoadedDoc(doRemoveRubyAnnotations);
       }
+      _rubyMode = nextMode;
+      if (!_rubyMode) { window.removeRuby(); return; }
+      var doc = rubyCurrentDoc();
       if (!doc) {
         var iframes = document.querySelectorAll('iframe');
         for (var fi = 0; fi < iframes.length; fi++) {
@@ -5175,27 +5362,25 @@ html, body {
           } catch(e) {}
         }
       }
-      if (doc) doInjectRubyAnnotations(doc, _rubyMode);
+      if (doc) rubyScheduleInjection(doc, _rubyMode);
+      // 视图还没挂上时也排一次重试，别等到用户翻页才发现这一章没注上
+      rubyEnsureForCurrentDoc();
     };
 
     // Called from RN to remove ruby
     window.removeRuby = function() {
       _rubyMode = null;
-      var doc = null;
-      if (view && view.renderer && view.renderer.getContents) {
-        var contents = view.renderer.getContents();
-        if (contents && contents.length && contents[0] && contents[0].doc) doc = contents[0].doc;
+      rubyCancelJobs(); // 还没注音完的章节也要停下
+      // 每一章都要清：foliate 同时挂着前后章，只清当前章会留下已经注好的旧标记
+      if (rubyForEachLoadedDoc(doRemoveRubyAnnotations).length) return;
+      // 兜底：renderer 还没准备好时直接翻 iframe
+      var iframes = document.querySelectorAll('iframe');
+      for (var fi = 0; fi < iframes.length; fi++) {
+        try {
+          var iframeDoc = iframes[fi].contentDocument || (iframes[fi].contentWindow && iframes[fi].contentWindow.document);
+          if (iframeDoc && iframeDoc.body) doRemoveRubyAnnotations(iframeDoc);
+        } catch(e) {}
       }
-      if (!doc) {
-        var iframes = document.querySelectorAll('iframe');
-        for (var fi = 0; fi < iframes.length; fi++) {
-          try {
-            var iframeDoc = iframes[fi].contentDocument || (iframes[fi].contentWindow && iframes[fi].contentWindow.document);
-            if (iframeDoc && iframeDoc.body) { doc = iframeDoc; break; }
-          } catch(e) {}
-        }
-      }
-      if (doc) doRemoveRubyAnnotations(doc);
     };
   </script>
 
