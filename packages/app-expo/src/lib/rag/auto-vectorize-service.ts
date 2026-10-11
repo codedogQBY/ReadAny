@@ -1,21 +1,26 @@
 import type { ChapterData } from "@readany/core/rag";
 import type { Book } from "@readany/core/types";
 
-export type AutoVectorizeCallback = (bookId: string, progress: { status: string; progress: number }) => void;
+export type AutoVectorizeCallback = (
+  bookId: string,
+  progress: { status: string; progress: number },
+) => void;
 
 interface ExtractorRef {
   extractChapters: (base64BookData: string, mimeType?: string) => Promise<ChapterData[]>;
 }
 
+export type AutoVectorizeDataLoader = () => Promise<string>;
+
 interface QueueItem {
   book: Book;
-  base64Data: string;
+  loadBase64Data: AutoVectorizeDataLoader;
   mimeType: string;
 }
 
 let extractorRef: ExtractorRef | null = null;
 let callback: AutoVectorizeCallback | null = null;
-let queue: QueueItem[] = [];
+const queue: QueueItem[] = [];
 let processing = false;
 
 export function setExtractorRef(ref: ExtractorRef | null) {
@@ -34,8 +39,12 @@ export function getQueueLength() {
   return queue.length;
 }
 
-export async function queueBook(book: Book, base64Data: string, mimeType: string) {
-  queue.push({ book, base64Data, mimeType });
+export async function queueBook(
+  book: Book,
+  loadBase64Data: AutoVectorizeDataLoader,
+  mimeType: string,
+) {
+  queue.push({ book, loadBase64Data, mimeType });
   if (!processing) {
     processQueue();
   }
@@ -51,7 +60,7 @@ async function processQueue() {
     const item = queue.shift();
     if (!item) break;
 
-    const { book, base64Data, mimeType } = item;
+    const { book, loadBase64Data, mimeType } = item;
 
     try {
       callback?.(book.id, { status: "extracting", progress: 0 });
@@ -61,6 +70,7 @@ async function processQueue() {
         continue;
       }
 
+      const base64Data = await loadBase64Data();
       const chapters = await extractorRef.extractChapters(base64Data, mimeType);
       if (!chapters || chapters.length === 0) {
         console.warn(`[AutoVectorize] No chapters for ${book.meta.title}`);
