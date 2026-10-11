@@ -537,7 +537,13 @@ export function shouldApplyRemoteRecord(
   return (remoteDeletedAt ?? 0) > (localDeletedAt ?? 0);
 }
 
-async function rememberRemoteTombstone(
+/**
+ * Record a tombstone that a peer told us about, without ever moving the local
+ * deletion time backwards: a peer that deleted the same row earlier must not
+ * weaken a deletion we made later (the deletion timestamp is what makes a
+ * delete win over an older row).
+ */
+export async function rememberRemoteTombstone(
   db: Awaited<ReturnType<typeof getDB>>,
   tableName: string,
   id: string,

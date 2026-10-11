@@ -64,6 +64,36 @@ export async function getAllHighlights(limit = 50): Promise<Highlight[]> {
   }));
 }
 
+function mapHighlightWithBook(r: {
+  id: string;
+  book_id: string;
+  cfi: string;
+  text: string;
+  color: string;
+  note: string | null;
+  chapter_title: string | null;
+  created_at: number;
+  updated_at: number;
+  book_title: string;
+  book_author: string;
+  book_cover_url: string | null;
+}): HighlightWithBook {
+  return {
+    id: r.id,
+    bookId: r.book_id,
+    cfi: r.cfi,
+    text: r.text,
+    color: r.color as Highlight["color"],
+    note: r.note || undefined,
+    chapterTitle: r.chapter_title || undefined,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    bookTitle: r.book_title || "",
+    bookAuthor: r.book_author || "",
+    bookCoverUrl: r.book_cover_url || undefined,
+  };
+}
+
 /** Get all highlights with book info (JOIN query) */
 export async function getAllHighlightsWithBooks(limit = 500): Promise<HighlightWithBook[]> {
   const database = await getDB();
@@ -90,20 +120,7 @@ export async function getAllHighlightsWithBooks(limit = 500): Promise<HighlightW
     LIMIT ?`,
     [limit],
   );
-  return rows.map((r) => ({
-    id: r.id,
-    bookId: r.book_id,
-    cfi: r.cfi,
-    text: r.text,
-    color: r.color as Highlight["color"],
-    note: r.note || undefined,
-    chapterTitle: r.chapter_title || undefined,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-    bookTitle: r.book_title || "",
-    bookAuthor: r.book_author || "",
-    bookCoverUrl: r.book_cover_url || undefined,
-  }));
+  return rows.map(mapHighlightWithBook);
 }
 
 /** Get highlight statistics */

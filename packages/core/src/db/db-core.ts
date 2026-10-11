@@ -124,6 +124,79 @@ export async function cleanupOrphanedSyncRows(databaseArg?: IDatabase): Promise<
   }
 }
 
+/**
+ * One-time purge of the phantom rows older builds left behind when a page-level
+ * note was deleted. Deleting such a note only cleared `note`, so the row stayed:
+ * with no note AND no selected text it disappeared from 笔记 and reappeared under
+ * 高亮 (and the global stats counted it as a highlight). The notes UIs now delete
+ * those rows outright (see `isPageLevelNote`); this removes what older versions
+ * produced.
+ *
+ * Deliberately narrow: no note, no selected text, and a POINT anchor (foliate
+ * range CFIs carry a `,`), which is the exact shape the page-note entry created —
+ * a text-less frame highlight in a scanned PDF keeps its range anchor and is left
+ * alone. Tombstones are written before each delete, so the purge travels to the
+ * peers instead of being undone by the next sync pull. Runs once per database.
+ */
+export async function purgeOrphanPageNoteRows(databaseArg?: IDatabase): Promise<number> {
+  const database = databaseArg ?? (await getDB());
+
+  try {
+    const done = await database.select<{ value: string }>(
+      "SELECT value FROM sync_metadata WHERE key = 'orphan_page_note_purge_done'",
+    );
+    if (done[0]?.value === "1") return 0;
+  } catch {
+    return 0; // sync_metadata missing on older schemas — nothing to purge safely
+  }
+
+  let rows: Array<{ id: string; book_id: string | null }> = [];
+  try {
+    rows = await database.select<{ id: string; book_id: string | null }>(
+      `SELECT id, book_id FROM highlights
+        WHERE (note IS NULL OR TRIM(note) = '')
+          AND (text IS NULL OR TRIM(text) = '')
+          AND cfi IS NOT NULL AND cfi NOT LIKE '%,%'`,
+    );
+  } catch {
+    return 0;
+  }
+
+  let deleted = 0;
+  for (const row of rows) {
+    await insertTombstone(database, row.id, "highlights", row.book_id ?? undefined);
+    // insertTombstone swallows write failures (old schemas), so verify the
+    // tombstone landed: deleting without one would let the next sync pull the row
+    // straight back from a peer.
+    const tombstoned = await database
+      .select<{ id: string }>(
+        "SELECT id FROM sync_tombstones WHERE id = ? AND table_name = 'highlights'",
+        [row.id],
+      )
+      .catch(() => [] as Array<{ id: string }>);
+    if (tombstoned.length === 0) continue;
+    await database.execute("DELETE FROM highlights WHERE id = ?", [row.id]);
+    deleted += 1;
+  }
+
+  try {
+    await database.execute(
+      "INSERT OR REPLACE INTO sync_metadata (key, value) VALUES ('orphan_page_note_purge_done', '1')",
+    );
+  } catch {
+    // Non-fatal: worst case the (idempotent) purge runs again next launch.
+  }
+
+  if (deleted > 0) {
+    console.log(`[DB] purgeOrphanPageNoteRows: removed ${deleted} empty page-note row(s)`);
+  } else if (rows.length > 0) {
+    console.warn(
+      `[DB] purgeOrphanPageNoteRows: found ${rows.length} empty page-note row(s) but no tombstone could be written — left in place`,
+    );
+  }
+  return deleted;
+}
+
 export async function getDB(): Promise<IDatabase> {
   if (db) return db;
 
@@ -722,6 +795,11 @@ export async function initDatabase(): Promise<void> {
       if (platform.isDesktop) {
         await cleanupOrphanedSyncRows(database);
       }
+
+      // Both platforms: drop the phantom rows older builds left behind when a
+      // page-level note was deleted (see purgeOrphanPageNoteRows). Idempotent and
+      // self-gated, so it is safe on every launch.
+      await purgeOrphanPageNoteRows(database);
 
       // Any book left in "downloading" state must have been interrupted
       // (app killed / OS suspended mid-download). Reset to "remote" so the

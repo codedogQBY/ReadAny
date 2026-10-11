@@ -1,5 +1,20 @@
-import { describe, expect, it } from "vitest";
-import { parseJSON, serializeEmbedding, deserializeEmbedding } from "../db-core";
+import { describe, expect, it, vi } from "vitest";
+
+const platformMocks = vi.hoisted(() => ({
+  kvGetItem: vi.fn(async () => "device-test"),
+  kvSetItem: vi.fn(async () => undefined),
+}));
+
+vi.mock("../../services/platform", () => ({
+  getPlatformService: () => platformMocks,
+}));
+
+const {
+  parseJSON,
+  serializeEmbedding,
+  deserializeEmbedding,
+  purgeOrphanPageNoteRows,
+} = await import("../db-core");
 
 describe("parseJSON", () => {
   it("parses valid JSON string", () => {
@@ -79,5 +94,92 @@ describe("serializeEmbedding / deserializeEmbedding", () => {
     for (let i = 0; i < 10; i++) {
       expect(deserialized![i]).toBeCloseTo(original[i], 5);
     }
+  });
+});
+
+function makeFakeDb(
+  options: {
+    pendingRows?: Array<{ id: string; book_id: string | null }>;
+    purgeAlreadyDone?: boolean;
+    tombstoneWritable?: boolean;
+  } = {},
+) {
+  const { pendingRows = [], purgeAlreadyDone = false, tombstoneWritable = true } = options;
+  const executed: Array<{ sql: string; params?: unknown[] }> = [];
+  const selected: string[] = [];
+
+  const db = {
+    execute: vi.fn(async (sql: string, params?: unknown[]) => {
+      executed.push({ sql, params });
+    }),
+    select: vi.fn(async (sql: string, params?: unknown[]) => {
+      selected.push(sql);
+      if (sql.includes("orphan_page_note_purge_done")) {
+        return purgeAlreadyDone ? [{ value: "1" }] : [];
+      }
+      if (sql.includes("FROM sync_tombstones")) {
+        return tombstoneWritable ? [{ id: params?.[0] as string }] : [];
+      }
+      if (sql.includes("FROM highlights")) return pendingRows;
+      return [];
+    }),
+    close: vi.fn(),
+  };
+
+  return { db, executed, selected };
+}
+
+describe("purgeOrphanPageNoteRows", () => {
+  it("deletes empty page-note rows and writes a tombstone so the deletion syncs", async () => {
+    const { db, executed } = makeFakeDb({
+      pendingRows: [{ id: "hl-orphan", book_id: "book-1" }],
+    });
+
+    const removed = await purgeOrphanPageNoteRows(db as never);
+
+    expect(removed).toBe(1);
+    expect(executed.map((entry) => entry.sql)).toEqual([
+      "INSERT OR REPLACE INTO sync_tombstones (id, table_name, deleted_at, device_id, book_id) VALUES (?, ?, ?, ?, ?)",
+      "DELETE FROM highlights WHERE id = ?",
+      "INSERT OR REPLACE INTO sync_metadata (key, value) VALUES ('orphan_page_note_purge_done', '1')",
+    ]);
+    expect(executed[0]?.params?.slice(0, 2)).toEqual(["hl-orphan", "highlights"]);
+    expect(executed[1]?.params).toEqual(["hl-orphan"]);
+  });
+
+  it("keeps the row when no tombstone could be written", async () => {
+    // Without a tombstone the next sync pull would restore the row, so the purge
+    // must leave it alone rather than delete something that comes straight back.
+    const { db, executed } = makeFakeDb({
+      pendingRows: [{ id: "hl-orphan", book_id: "book-1" }],
+      tombstoneWritable: false,
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      expect(await purgeOrphanPageNoteRows(db as never)).toBe(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
+
+    expect(executed.some((entry) => entry.sql.startsWith("DELETE FROM highlights"))).toBe(false);
+  });
+
+  it("is a no-op once it has run", async () => {
+    const { db, executed } = makeFakeDb({ purgeAlreadyDone: true });
+    expect(await purgeOrphanPageNoteRows(db as never)).toBe(0);
+    expect(executed).toEqual([]);
+  });
+
+  it("only selects rows with no note, no selected text, and a point anchor", async () => {
+    const { db, selected } = makeFakeDb();
+    await purgeOrphanPageNoteRows(db as never);
+
+    const query = selected.find((sql) => sql.includes("FROM highlights")) ?? "";
+    expect(query).toContain("TRIM(note) = ''");
+    expect(query).toContain("TRIM(text) = ''");
+    // A foliate range CFI carries a comma; text-less frame highlights in scanned
+    // PDFs keep theirs and must survive.
+    expect(query).toContain("cfi NOT LIKE '%,%'");
   });
 });

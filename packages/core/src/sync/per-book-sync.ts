@@ -50,6 +50,7 @@ import {
   getLastSyncTimestamp,
   listRemoteDeviceFiles,
   localizeSyncedBookRecord,
+  rememberRemoteTombstone,
   setLastSyncTimestamp,
   shouldApplyRemoteRecord,
   upsertRecord,
@@ -283,24 +284,54 @@ function mergeDeletedMap(
   return merged;
 }
 
-/** Batched annotation markers for every book that has any annotation. */
+/**
+ * Change markers for every book that has annotations.
+ *
+ * A marker is the max of the live rows' `updated_at` AND the active tombstones'
+ * `deleted_at`. Counting tombstones is what makes a *deletion* visible to the
+ * change detection: a delete leaves no live row behind, so an updated_at-only
+ * marker would not move, the per-book file (whose `deleted` map carries the
+ * tombstones) would never be re-uploaded, and the deleting device would see the
+ * remote as newer and pull its own stale rows back.
+ *
+ * `withPendingDeletions` additionally reports which books still carry an active
+ * tombstone, so the push gate can force those files up even when every numeric
+ * marker is already satisfied (a peer's later push may have carried the index
+ * past our tombstone).
+ */
 async function localAnnotationMarkers(
   db: Awaited<ReturnType<typeof getDB>>,
-): Promise<Map<string, number>> {
-  const markers = new Map<string, number>();
+): Promise<{ byBook: Map<string, number>; withPendingDeletions: Set<string> }> {
+  const byBook = new Map<string, number>();
+  const withPendingDeletions = new Set<string>();
   for (const table of ANNOTATION_TABLES) {
     try {
       const rows = await db.select<{ book_id: string; max_ts: number }>(
         `SELECT book_id, MAX(updated_at) AS max_ts FROM ${table} GROUP BY book_id`,
       );
       for (const row of rows) {
-        markers.set(row.book_id, Math.max(markers.get(row.book_id) ?? 0, row.max_ts));
+        byBook.set(row.book_id, Math.max(byBook.get(row.book_id) ?? 0, row.max_ts));
       }
     } catch {
       // Table may not exist on very old schemas.
     }
+    try {
+      const rows = await db.select<{ book_id: string; max_ts: number }>(
+        `SELECT t.book_id AS book_id, MAX(t.deleted_at) AS max_ts
+         FROM sync_tombstones t
+         WHERE t.table_name = '${table}' AND t.book_id IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM ${table} WHERE id = t.id)
+         GROUP BY t.book_id`,
+      );
+      for (const row of rows) {
+        byBook.set(row.book_id, Math.max(byBook.get(row.book_id) ?? 0, row.max_ts));
+        withPendingDeletions.add(row.book_id);
+      }
+    } catch {
+      // Tombstone table may not exist on older schemas.
+    }
   }
-  return markers;
+  return { byBook, withPendingDeletions };
 }
 
 /**
@@ -361,6 +392,26 @@ async function tableRows(db: Awaited<ReturnType<typeof getDB>>, tableName: strin
   }
 }
 
+/**
+ * Whether the remote per-book file already carries every one of our active
+ * tombstones (same id, same or newer timestamp). Used by the push gate to avoid
+ * re-uploading a file whose deletions have already travelled.
+ */
+async function remoteHasOurDeletions(
+  readFile: () => Promise<BookSyncFile | null>,
+  localDeletions: Partial<Record<AnnotationTable, DeletedMap>>,
+): Promise<boolean> {
+  const remote = await readFile();
+  if (!remote?.deleted) return false;
+  for (const [table, map] of Object.entries(localDeletions)) {
+    for (const [id, deletedAt] of Object.entries(map ?? {})) {
+      const remoteDeletedAt = remote.deleted[table as AnnotationTable]?.[id];
+      if (remoteDeletedAt === undefined || remoteDeletedAt < deletedAt) return false;
+    }
+  }
+  return true;
+}
+
 /** Apply a tombstone map: delete local rows the remote already deleted. */
 async function applyTombstoneMap(
   db: Awaited<ReturnType<typeof getDB>>,
@@ -371,29 +422,43 @@ async function applyTombstoneMap(
   deviceId: string,
 ): Promise<number> {
   let applied = 0;
+  // Diagnostics: report the verdict of each deletion we were told about, capped so
+  // a big map cannot flood the log. "absent locally, not recorded" is the case
+  // where a peer's deletion never reaches our own tombstone table — the local
+  // marker then stays below the peer's and the book is re-pulled every sync.
+  let reported = 0;
+  const report = (lineId: string, message: string) => {
+    if (reported < 12) {
+      reported++;
+      console.log(`[PerBookSync] tombstone ${tableName}/${lineId}: ${message}`);
+    }
+  };
   for (const [id, deletedAt] of Object.entries(deleted ?? {})) {
     try {
       const rows = await db.select<{ updated_at: number }>(
         `SELECT updated_at FROM ${tableName} WHERE id = ?`,
         [id],
       );
-      if (rows.length === 0) continue;
+      if (rows.length === 0) {
+        // The peer deleted a row this device never had. Remember it anyway: our own
+        // marker has to reach the peer's `deleted_at`, otherwise the book is
+        // re-pulled on every sync (the marker can never catch up), and the deletion
+        // is not carried on to other peers either.
+        await rememberRemoteTombstone(db, tableName, id, deletedAt, deviceId, bookId);
+        report(id, `absent locally, tombstone recorded (deleted_at=${deletedAt})`);
+        continue;
+      }
       const localTs = rows[0]?.updated_at ?? 0;
       if (!forceApply && deletedAt < localTs) {
         // Local row was edited after the remote deletion — keep it; it will
         // re-sync as a resurrection.
+        report(id, `skipped, local ${localTs} >= remote ${deletedAt}`);
         continue;
       }
       await db.execute(`DELETE FROM ${tableName} WHERE id = ?`, [id]);
       applied++;
-      try {
-        await db.execute(
-          "INSERT OR REPLACE INTO sync_tombstones (id, table_name, deleted_at, device_id, book_id) VALUES (?, ?, ?, ?, ?)",
-          [id, tableName, deletedAt, deviceId, bookId ?? null],
-        );
-      } catch {
-        // Tombstone table may not exist on older schemas.
-      }
+      await rememberRemoteTombstone(db, tableName, id, deletedAt, deviceId, bookId);
+      report(id, `deleted locally (localTs=${localTs}, deleted_at=${deletedAt})`);
     } catch (error) {
       console.warn(`[PerBookSync] Failed to apply deletion ${tableName}/${id}:`, error);
     }
@@ -442,6 +507,44 @@ async function loadLocalBookState(
   };
 }
 
+/**
+ * Drop rows that the merged tombstone map declares deleted (same rule the pull
+ * side applies: a row only survives when it is strictly newer than the
+ * tombstone). Keeps an uploaded file self-consistent — no row shipped together
+ * with a deletion that is newer than it.
+ */
+function dropDeletedRows(
+  rows: Row[],
+  deleted: DeletedMap | undefined,
+  tsKey = "updated_at",
+): Row[] {
+  if (!deleted) return rows;
+  return rows.filter((row) => {
+    const deletedAt = deleted[String(row.id)];
+    return deletedAt === undefined || deletedAt < Number(row[tsKey] ?? 0);
+  });
+}
+
+/**
+ * The newest marker a remote file itself proves it contains: the newest row
+ * timestamp and the newest tombstone timestamp across the annotation tables, plus
+ * the book row. The index entry advertises the same two numbers as seen by the
+ * pushing device, so `file < index` means the file is missing data the index
+ * claims exists (stale read, lost write, or a peer that never uploaded).
+ */
+function bookFileMarkers(file: BookSyncFile): { b: number; a: number } {
+  let a = 0;
+  for (const table of ANNOTATION_TABLES) {
+    for (const row of (file[table] ?? []) as Row[]) {
+      a = Math.max(a, Number(row.updated_at ?? 0));
+    }
+    for (const deletedAt of Object.values(file.deleted?.[table] ?? {})) {
+      a = Math.max(a, Number(deletedAt));
+    }
+  }
+  return { b: Number(file.book?.updated_at ?? 0), a };
+}
+
 function buildBookFile(
   local: LocalBookState,
   remote: BookSyncFile | null,
@@ -456,9 +559,15 @@ function buildBookFile(
     schemaVersion: 1,
     bookId: local.book.id as string,
     book: mergeItemRows([local.book], remote?.book ? [remote.book] : undefined, "updated_at")[0],
-    highlights: mergeItemRows(local.highlights, remote?.highlights, "updated_at"),
-    notes: mergeItemRows(local.notes, remote?.notes, "updated_at"),
-    bookmarks: mergeItemRows(local.bookmarks, remote?.bookmarks, "updated_at"),
+    highlights: dropDeletedRows(
+      mergeItemRows(local.highlights, remote?.highlights, "updated_at"),
+      deleted.highlights,
+    ),
+    notes: dropDeletedRows(mergeItemRows(local.notes, remote?.notes, "updated_at"), deleted.notes),
+    bookmarks: dropDeletedRows(
+      mergeItemRows(local.bookmarks, remote?.bookmarks, "updated_at"),
+      deleted.bookmarks,
+    ),
     deleted,
     writerDeviceId: deviceId,
     updatedAt: Date.now(),
@@ -488,17 +597,43 @@ async function applyBookFile(
         }
       : undefined;
 
+    // Diagnostics: one line per book describing what this apply actually wrote,
+    // so a "pulled but nothing changed" loop can be read straight off the log.
+    let bookRowVerdict: "applied" | "rejected" | "absent" = "absent";
     if (forceApply || shouldApplyRemoteRecord(bookRow, "updated_at", localState)) {
       const localized = Number(bookRow.deleted_at ?? 0)
         ? bookRow
         : localizeSyncedBookRecord(bookRow);
       await upsertRecord(db, "books", localized, "id");
       applied++;
+      bookRowVerdict = "applied";
+    } else {
+      bookRowVerdict = "rejected";
     }
 
+    // Local deletions are authoritative for rows the remote still ships at an
+    // older timestamp (the engine's rule: last writer wins, `deleted_at` breaks
+    // ties). Without this, pulling a stale file that still contains a row we
+    // already deleted re-creates the row — and the tombstone then stops being
+    // "active", so the deletion is silently lost. Skipped under forceApply,
+    // which means "the remote is the truth" (restore / forced download).
+    const localDeletions = forceApply ? {} : await bookAnnotationTombstones(db, file.bookId);
+
+    const tableSummaries: string[] = [];
+    let tombstonesApplied = 0;
     for (const table of ANNOTATION_TABLES) {
       const items = (file[table] ?? []) as Row[];
+      const deletedLocally = localDeletions[table];
+      let tableApplied = 0;
+      let tableRejected = 0;
+      let tableLocalTombstone = 0;
+      let tableOrphaned = 0;
       for (const item of items) {
+        const localDeletedAt = deletedLocally?.[String(item.id)];
+        if (localDeletedAt !== undefined && localDeletedAt >= Number(item.updated_at ?? 0)) {
+          tableLocalTombstone++;
+          continue;
+        }
         const itemRows = await db.select<{ updated_at: number }>(
           `SELECT updated_at FROM ${table} WHERE id = ?`,
           [String(item.id)],
@@ -510,8 +645,10 @@ async function applyBookFile(
           try {
             await upsertRecord(db, table, item, "id");
             applied++;
+            tableApplied++;
           } catch (error) {
             if (isForeignKeyConstraintError(error)) {
+              tableOrphaned++;
               console.warn(
                 `[PerBookSync] Skipping orphaned ${table}/${String(item.id)}: ${String(error)}`,
               );
@@ -519,10 +656,12 @@ async function applyBookFile(
               throw error;
             }
           }
+        } else {
+          tableRejected++;
         }
       }
 
-      applied += await applyTombstoneMap(
+      const tableTombstones = await applyTombstoneMap(
         db,
         table,
         file.deleted?.[table],
@@ -530,7 +669,19 @@ async function applyBookFile(
         forceApply,
         deviceId,
       );
+      applied += tableTombstones;
+      tombstonesApplied += tableTombstones;
+      tableSummaries.push(
+        `${table}=${tableApplied}/${items.length}` +
+          `(older=${tableRejected},localTombstone=${tableLocalTombstone},orphaned=${tableOrphaned})`,
+      );
     }
+
+    console.log(
+      `[PerBookSync] apply ${file.bookId}: bookRow=${bookRowVerdict}` +
+        `(remote=${Number(bookRow.updated_at ?? 0)},local=${localState?.timestamp ?? 0},localRow=${local ? "yes" : "no"})` +
+        ` ${tableSummaries.join(" ")} tombstones=${tombstonesApplied}`,
+    );
   }, "apply book file");
   return applied;
 }
@@ -623,11 +774,27 @@ export async function runPerBookSync(
     const remoteIndex = isPerBookIndex(rawRemoteIndex) ? rawRemoteIndex : emptyIndex();
 
     // 3. Books — pull
-    const annotationMarkers = await localAnnotationMarkers(db);
+    const annotationMarkers = (await localAnnotationMarkers(db)).byBook;
     const bookRows = await tableRows(db, "books");
     const localBooksById = new Map<string, Row>();
     for (const row of bookRows) localBooksById.set(String(row.id), row);
 
+    // Books whose remote file turned out to be behind the index while this device
+    // still holds newer data — the push phase must re-upload them (see the pull loop).
+    const repairBooks = new Set<string>();
+    // One remote read per book per run: the push phase asks for the same file
+    // twice for books with pending deletions (deletion check + repair check), which
+    // are both real network reads now that responses are forced uncacheable. The
+    // entry is dropped whenever we upload the file ourselves.
+    const bookFileReads = new Map<string, BookSyncFile | null>();
+    const readBookFile = async (bookId: string): Promise<BookSyncFile | null> => {
+      if (bookFileReads.has(bookId)) return bookFileReads.get(bookId) ?? null;
+      const file = await backend
+        .getJSON<BookSyncFile>(`${BOOKS_DIR}/${bookId}.json`)
+        .catch(() => null);
+      bookFileReads.set(bookId, file);
+      return file;
+    };
     progress("拉取书籍数据...");
     let pullFailures = 0;
     for (const [bookId, entry] of Object.entries(remoteIndex.books ?? {})) {
@@ -650,15 +817,23 @@ export async function runPerBookSync(
         continue;
       }
 
-      const remoteMax = Math.max(entry.b ?? 0, entry.a ?? 0);
-      const localMax = Math.max(localB, localA);
-      if (!localRow && remoteMax === 0) continue;
-      if (localRow && remoteMax <= localMax && !forceApply) {
-        console.log(`[PerBookSync] book ${bookId} in sync (remote=${remoteMax}, local=${localMax})`);
+      // Compare the book row and the annotations SEPARATELY. `books.updated_at`
+      // is bumped by purely local actions — opening a book stamps
+      // `last_opened_at` through updateBook — so a device that merely opened the
+      // book has a book row newer than the index's `b` while its annotations may
+      // still be far behind `a`. Folding both into one max let that device report
+      // "in sync" and skip the pull forever, freezing its annotations.
+      const remoteBookNewer = (entry.b ?? 0) > localB;
+      const remoteAnnotationsNewer = (entry.a ?? 0) > localA;
+      if (!localRow && !remoteBookNewer && !remoteAnnotationsNewer) continue;
+      if (localRow && !remoteBookNewer && !remoteAnnotationsNewer && !forceApply) {
+        console.log(
+          `[PerBookSync] book ${bookId} in sync (book remote=${entry.b ?? 0} local=${localB}, annotations remote=${entry.a ?? 0} local=${localA})`,
+        );
         continue;
       }
       console.log(
-        `[PerBookSync] book ${bookId} pull (remote=${remoteMax}, local=${localMax}, localRow=${Boolean(localRow)})`,
+        `[PerBookSync] book ${bookId} pull (book ${entry.b ?? 0}/${localB}, annotations ${entry.a ?? 0}/${localA}, localRow=${Boolean(localRow)})`,
       );
 
       try {
@@ -667,8 +842,37 @@ export async function runPerBookSync(
           console.warn(`[PerBookSync] Missing/invalid book file for ${bookId}; skipping`);
           continue;
         }
+        // Diagnostics: what the remote file actually holds. A file whose book row
+        // is older than the index entry means the remote served a stale body.
+        const deletedCounts = (file.deleted ?? {}) as Record<string, DeletedMap>;
+        console.log(
+          `[PerBookSync] file ${bookId}: schema=${file.schemaVersion}` +
+            ` rows(h=${(file.highlights ?? []).length},n=${(file.notes ?? []).length},b=${(file.bookmarks ?? []).length})` +
+            ` deleted(h=${Object.keys(deletedCounts.highlights ?? {}).length},n=${Object.keys(deletedCounts.notes ?? {}).length},b=${Object.keys(deletedCounts.bookmarks ?? {}).length})` +
+            ` book.updated_at=${Number(file.book?.updated_at ?? 0)} writer=${String(file.writerDeviceId ?? "?")}` +
+            ` index(b=${entry.b ?? 0},a=${entry.a ?? 0})`,
+        );
         progress(`应用书籍 ${String(file.book?.title ?? bookId).slice(0, 24)}...`);
         changes += await applyBookFile(db, file, forceApply, deviceId);
+
+        // A file that is behind its own index advertises data the file does not
+        // contain: the remote copy was lost (a peer read a stale body and merged it
+        // back, an upload failed, or a cache served an old version). Nothing repairs
+        // that on its own — the device owning the newer markers sees "the index
+        // already has my markers" and skips its push. So if THIS device holds data
+        // newer than the file, force a re-upload of this book.
+        const fileMarkers = bookFileMarkers(file);
+        const indexAhead = (entry.b ?? 0) > fileMarkers.b || (entry.a ?? 0) > fileMarkers.a;
+        if (indexAhead) {
+          const weAreAhead = localB > fileMarkers.b || localA > fileMarkers.a;
+          const ownerNote = weAreAhead
+            ? "this device has newer data and will re-upload to repair it"
+            : "nothing newer locally, waiting for the device holding those markers";
+          console.warn(
+            `[PerBookSync] book ${bookId} remote file is behind the index (index b=${entry.b ?? 0}/a=${entry.a ?? 0} vs file b=${fileMarkers.b}/a=${fileMarkers.a}); ${ownerNote}`,
+          );
+          if (weAreAhead) repairBooks.add(bookId);
+        }
         await sleep(0);
       } catch (error) {
         pullFailures++;
@@ -678,7 +882,8 @@ export async function runPerBookSync(
 
     // 4. Books — push (read-merge-write)
     console.log("[PBT] phase4 books-push receiveOnly=", receiveOnly);
-    const refreshedMarkers = await localAnnotationMarkers(db);
+    const refreshed = await localAnnotationMarkers(db);
+    const refreshedMarkers = refreshed.byBook;
     const pendingIndexBooks: Record<string, BookIndexEntry> = {};
     if (!receiveOnly) {
       progress("上传书籍数据...");
@@ -690,25 +895,72 @@ export async function runPerBookSync(
         const entry = remoteIndex.books?.[bookId];
         const markerB = Number(row.updated_at ?? 0);
         const markerA = refreshedMarkers.get(bookId) ?? 0;
-        const unchangedLocally =
+        const markersSatisfied =
           entry !== undefined &&
           markerB <= (entry.b ?? 0) &&
           markerA <= (entry.a ?? 0) &&
           entry.d === undefined;
-        if (unchangedLocally && !forceApply) {
+        // Markers satisfied does not mean "nothing to upload": a book with local
+        // deletions can be marker-satisfied when a peer's later push moved the
+        // index past our tombstone timestamp, and those deletions still have to
+        // reach the peers. The extra remote read happens only for books that are
+        // otherwise in sync and still carry an active tombstone.
+        const repairPushBase = repairBooks.has(bookId);
+        const unchangedLocally =
+          markersSatisfied &&
+          (!refreshed.withPendingDeletions.has(bookId) ||
+            (await remoteHasOurDeletions(
+              () => readBookFile(bookId),
+              await bookAnnotationTombstones(db, bookId),
+            )));
+        let repairPush = repairPushBase;
+
+        // Self-heal for "the index advertises data the file does not contain", the
+        // state left behind when a peer read a stale body and merged it back (or a
+        // cache/proxy served an old version): the device that owns the newest
+        // markers sees the index already carrying them and skips its push, so
+        // nothing would ever repair the file. Verify before skipping — but only for
+        // books where this device owns annotations (a handful per library), so the
+        // extra read stays cheap. The pull loop reports the same condition when the
+        // index is newer than the file.
+        if (unchangedLocally && !forceApply && !repairPush && markerA > 0 && (entry?.a ?? 0) === markerA) {
+          const remoteFile = await readBookFile(bookId);
+          // A failed read proves nothing about the file — skip the check instead of
+          // treating "unknown" as "empty".
+          if (remoteFile) {
+            const fileMarkers = bookFileMarkers(remoteFile);
+            if (fileMarkers.a < markerA || fileMarkers.b < markerB) {
+              repairPush = true;
+              console.warn(
+                `[PerBookSync] book ${bookId} remote file is behind the index it advertises (index b=${markerB}/a=${markerA} vs file b=${fileMarkers.b}/a=${fileMarkers.a}); re-uploading this device's data to repair it`,
+              );
+            }
+          }
+        }
+
+        if (unchangedLocally && !forceApply && !repairPush) {
           console.log(`[PerBookSync] book ${bookId} push skipped (in sync)`);
           continue;
         }
         console.log(
-          `[PerBookSync] book ${bookId} push (localB=${markerB}, localA=${markerA}, remote=${JSON.stringify(entry)})`,
+          repairPush
+            ? `[PerBookSync] book ${bookId} push (repair: remote file was behind the index) (localB=${markerB}, localA=${markerA}, remote=${JSON.stringify(entry)})`
+            : `[PerBookSync] book ${bookId} push (localB=${markerB}, localA=${markerA}, remote=${JSON.stringify(entry)})`,
         );
 
         const local = await loadLocalBookState(db, bookId, refreshedMarkers);
         if (!local) continue;
         try {
-          const remoteFile = await backend.getJSON<BookSyncFile>(`${BOOKS_DIR}/${bookId}.json`);
+          // Reuse this run's read when it succeeded; otherwise fetch for real and
+          // let a failure abort the push. Writing a file built without the peer's
+          // rows would delete the peer's data, so this read must not be replaced by
+          // a "null on failure" cache hit.
+          const remoteFile =
+            bookFileReads.get(bookId) ??
+            (await backend.getJSON<BookSyncFile>(`${BOOKS_DIR}/${bookId}.json`));
           const file = buildBookFile(local, remoteFile, deviceId);
           await backend.putJSON(`${BOOKS_DIR}/${bookId}.json`, file);
+          bookFileReads.delete(bookId);
           pendingIndexBooks[bookId] = mergeIndexEntry(entry, {
           b: markerB,
           a: markerA,
@@ -815,6 +1067,11 @@ export async function runPerBookSync(
         ? JSON.parse(mergedDaysRaw)
         : {};
 
+      // Messages we deleted locally (active tombstones). Used twice: to refuse
+      // re-creating a message a day file still carries, and to announce our
+      // deletions to the peers (see the push phase below).
+      const localMessageDeletions = await tableTombstones(db, "messages");
+
       // Pull: every remote day file that is past our cursor, or whose file
       // changed under the cursor (offline devices write old days).
       const dayEntries = await backend
@@ -854,6 +1111,15 @@ export async function runPerBookSync(
                 [String(message.id)],
               );
               if (rows.length === 0) {
+                // A day file written before our deletion still lists the row —
+                // never resurrect something we deleted locally.
+                const localDeletedAt = localMessageDeletions[String(message.id)];
+                if (
+                  localDeletedAt !== undefined &&
+                  localDeletedAt >= Number(message.created_at ?? 0)
+                ) {
+                  continue;
+                }
                 try {
                   await upsertRecord(db, "messages", message, "id");
                   changes++;
@@ -876,7 +1142,8 @@ export async function runPerBookSync(
         await sleep(0);
       }
 
-      // Push: day files containing messages created after our last push.
+      // Push: day files containing messages created after our last push, plus
+      // the day files that have to announce a local deletion.
       if (!receiveOnly) {
         const pushedAt = legacyImported
           ? 0
@@ -891,21 +1158,40 @@ export async function runPerBookSync(
           list.push(message);
           byDay.set(day, list);
         }
-        for (const [day, localMessages] of byDay) {
+
+        // A message tombstone carries no day of its own, so it is announced in
+        // the day file of the moment it was deleted; the peer then refuses to
+        // re-create that id from whichever day file still lists it.
+        const deletionByDay = new Map<string, DeletedMap>();
+        for (const [id, deletedAt] of Object.entries(localMessageDeletions)) {
+          const day = dayKeyOf(deletedAt);
+          const map = deletionByDay.get(day) ?? {};
+          map[id] = deletedAt;
+          deletionByDay.set(day, map);
+        }
+
+        const pushDays = new Set<string>([...byDay.keys(), ...deletionByDay.keys()]);
+        for (const day of pushDays) {
+          const localMessages = byDay.get(day) ?? [];
           const remote = await backend.getJSON<ChatDayFile>(`${CHAT_DIR}/${day}.json`);
+          const deleted = mergeDeletedMap(remote?.deleted, deletionByDay.get(day));
           const file: ChatDayFile = {
             schemaVersion: 1,
             date: day,
-            messages: mergeItemRows(localMessages, remote?.messages, "created_at"),
-            deleted: remote?.deleted,
+            messages: dropDeletedRows(
+              mergeItemRows(localMessages, remote?.messages, "created_at"),
+              deleted,
+              "created_at",
+            ),
+            deleted: deleted && Object.keys(deleted).length > 0 ? deleted : undefined,
             updatedAt: Date.now(),
           };
           await backend.putJSON(`${CHAT_DIR}/${day}.json`, file);
           mergedDayVersions[day] = file.updatedAt;
-          changes += localMessages.length;
+          changes += localMessages.length + Object.keys(deletionByDay.get(day) ?? {}).length;
           await sleep(0);
         }
-        if (byDay.size > 0) {
+        if (pushDays.size > 0) {
           await setMetadata(CHAT_MERGED_DAYS_KEY, JSON.stringify(mergedDayVersions));
         }
         await setMetadata(CHAT_PUSHED_AT_KEY, String(Date.now()));
@@ -914,19 +1200,64 @@ export async function runPerBookSync(
 
     // 7. Profile files — one uniform single-table file per table
     console.log("[PBT] phase7 profile receiveOnly=", receiveOnly);
-    if (!receiveOnly) {
+    {
       progress("同步标签与技能...");
       const profileTables = ["tags", "book_tags", "book_groups", "skills"];
       for (const table of profileTables) {
         const path = `${PROFILE_DIR}/${table}.json`;
         const remote = await backend.getJSON<ProfileSyncFile>(path);
+
+        // Pull: apply the peer's rows (last writer wins) and its deletions, so a
+        // tag / group / skill created or deleted on another device lands here
+        // too. Rows whose parent is missing locally (book_tags pointing at a book
+        // or tag this device does not have) are skipped instead of failing.
+        if (remote) {
+          await withDatabaseLockRetry(
+            async () => {
+              await ensureNoTransaction();
+              for (const row of remote.rows ?? []) {
+                const existing = await db
+                  .select<{ updated_at: number }>(
+                    `SELECT updated_at FROM ${table} WHERE id = ?`,
+                    [String(row.id)],
+                  )
+                  .catch(() => [] as { updated_at: number }[]);
+                const state = existing[0]
+                  ? { timestamp: Number(existing[0].updated_at ?? 0), deletedAt: null }
+                  : undefined;
+                if (!forceApply && !shouldApplyRemoteRecord(row, "updated_at", state)) continue;
+                try {
+                  await upsertRecord(db, table, row, "id");
+                  changes++;
+                } catch (error) {
+                  if (!isForeignKeyConstraintError(error)) throw error;
+                }
+              }
+              changes += await applyTombstoneMap(
+                db,
+                table,
+                remote.deleted,
+                undefined,
+                forceApply,
+                deviceId,
+              );
+            },
+            `apply ${table} profile file`,
+          );
+        }
+
+        if (receiveOnly) continue;
+
+        // Push: read-merge-write. Rows the merged tombstone map declares deleted
+        // are dropped from the file — otherwise a peer that still has the row
+        // keeps shipping it back and the deletion never converges.
         const localRows = await tableRows(db, table);
         const rows = mergeItemRows(localRows, remote?.rows, "updated_at");
         const localDeleted = await tableTombstones(db, table);
         const deleted = mergeDeletedMap(remote?.deleted, localDeleted);
         const file: ProfileSyncFile = {
           schemaVersion: 1,
-          rows,
+          rows: dropDeletedRows(rows, deleted),
           deleted: deleted && Object.keys(deleted).length > 0 ? deleted : undefined,
           updatedAt: Date.now(),
         };
