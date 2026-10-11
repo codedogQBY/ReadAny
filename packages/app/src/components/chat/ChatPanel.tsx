@@ -246,6 +246,7 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
     t("chat.suggestions.summarizeChapter"),
     t("chat.suggestions.explainConcepts"),
     t("chat.suggestions.analyzeAuthor"),
+    t("chat.suggestions.reviewChapterNotes"),
   ];
 
   return (

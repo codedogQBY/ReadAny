@@ -25,7 +25,8 @@
       "generateNotes": "학습 노트 생성",
       "summarizeChapter": "이 챕터 요약",
       "explainConcepts": "핵심 개념 설명",
-      "analyzeAuthor": "저자의 논점 분석"
+      "analyzeAuthor": "저자의 논점 분석",
+      "reviewChapterNotes": "이 챕터에 대한 내 노트 검토"
     },
     "aiAssistant": "AI 독서 어시스턴트",
     "aiAssistantDesc": "내용을 분석하고, 질문에 답하며, 책을 더 잘 이해하도록 도와줘요.",

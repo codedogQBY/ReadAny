@@ -576,6 +576,42 @@ describe("streamReadingAgent tool registration", () => {
     expect(fourth.attemptedQueries).toEqual(["张三疯那一章讲了什么", "张三疯", "张三疯"]);
   });
 
+  it.each(["Review my notes for this chapter", "点评我对本章的笔记"])(
+    "keeps note access for the chapter review suggestion: %s",
+    async (prompt) => {
+      let capturedTools: Array<{ name: string }> = [];
+      createReactAgentMock.mockImplementation((config) => {
+        capturedTools = config.tools;
+        return {
+          streamEvents: vi.fn(() => ({
+            [Symbol.asyncIterator]: async function* () {
+              // no-op stream
+            },
+          })),
+        };
+      });
+
+      for await (const event of streamReadingAgent(
+        {
+          aiConfig: makeAIConfig(),
+          book: null,
+          bookId: "book-1",
+          semanticContext: null,
+          enabledSkills: [],
+          isVectorized: true,
+          getAvailableTools,
+        },
+        prompt,
+      )) {
+        void event;
+      }
+
+      const toolNames = capturedTools.map((tool) => tool.name);
+      expect(toolNames).toContain("getAnnotations");
+      expect(toolNames).toContain("getCurrentChapter");
+    },
+  );
+
   it("keeps RAG fallback available for current-page questions on indexed books", async () => {
     let capturedTools: any[] = [];
     createReactAgentMock.mockImplementation((config) => {
