@@ -1,3 +1,4 @@
+import { Progress } from "@/components/ui/progress";
 /**
  * ChapterTranslationMenu — dropdown menu attached to the toolbar Languages button.
  *
@@ -22,8 +23,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { ChapterTranslationState } from "@readany/core/hooks";
 import { useSettingsStore } from "@/stores/settings-store";
+import type { ChapterTranslationState } from "@readany/core/hooks";
 import type { TranslationTargetLang } from "@readany/core/types/translation";
 import { TRANSLATOR_LANGS } from "@readany/core/types/translation";
 import { Check, Eye, EyeOff, Languages, Loader2, Trash2, X } from "lucide-react";
@@ -126,12 +127,14 @@ export function ChapterTranslationMenu({
                     })}
                   </span>
                 </div>
-                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                  <div
-                    className="h-full bg-primary rounded-full transition-all duration-300"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
+                <Progress
+                  className="h-1.5"
+                  value={pct}
+                  aria-label={t("translation.translatingProgress", {
+                    count: Math.round(translatedChars / 100),
+                    total: Math.round(totalChars / 100),
+                  })}
+                />
               </div>
               <DropdownMenuSeparator />
               <DropdownMenuItem

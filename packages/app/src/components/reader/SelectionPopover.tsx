@@ -1,7 +1,9 @@
+import { prepareDictionarySelection } from "@readany/core/dictionary";
 import type { HighlightColor } from "@readany/core/types";
 import { HIGHLIGHT_COLORS, HIGHLIGHT_COLOR_HEX } from "@readany/core/types";
 import { cn } from "@readany/core/utils";
 import {
+  BookOpen,
   Check,
   Copy,
   Headphones,
@@ -29,6 +31,7 @@ interface SelectionPopoverProps {
   onNote: () => void;
   onCopy: () => void;
   onTranslate: () => void;
+  onDefine?: () => void;
   onAskAI: () => void;
   onSpeak: () => void;
   onClose: () => void;
@@ -38,7 +41,7 @@ const POPOVER_MARGIN = 8;
 
 export function SelectionPopover({
   position,
-  selectedText: _selectedText,
+  selectedText,
   annotated = false,
   currentColor,
   defaultColor = "yellow",
@@ -48,6 +51,7 @@ export function SelectionPopover({
   onNote,
   onCopy,
   onTranslate,
+  onDefine,
   onAskAI,
   onSpeak,
   onClose,
@@ -90,6 +94,9 @@ export function SelectionPopover({
     },
     { icon: NotebookPen, label: t("reader.note"), onClick: onNote, disabled: isPdf },
     { icon: Copy, label: t("common.copy"), onClick: onCopy },
+    ...(onDefine && prepareDictionarySelection(selectedText).ok
+      ? [{ icon: BookOpen, label: t("dictionary.define"), onClick: onDefine }]
+      : []),
     { icon: Languages, label: t("reader.translate"), onClick: onTranslate },
     { icon: Sparkles, label: t("reader.askAI"), onClick: onAskAI },
     { icon: Headphones, label: t("tts.speakSelection"), onClick: onSpeak },
@@ -180,6 +187,7 @@ export function SelectionPopover({
                   "text-muted-foreground hover:bg-destructive/10 hover:text-destructive",
               )}
               title={btn.label}
+              aria-label={btn.label}
               onClick={btn.disabled ? undefined : btn.onClick}
               disabled={btn.disabled}
             >

@@ -1,6 +1,7 @@
 import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
 import { BookmarkRibbon } from "@/components/reader/BookmarkRibbon";
 import { ChapterTranslationSheet } from "@/components/reader/ChapterTranslationSheet";
+import { DefinitionSheet } from "@/components/reader/DefinitionSheet";
 import { ReadingProgressSlider } from "@/components/reader/ReadingProgressSlider";
 import { SelectionPopover } from "@/components/reader/SelectionPopover";
 import { TTSPage } from "@/components/reader/TTSPage";
@@ -226,6 +227,8 @@ export function ReaderScreen({ route, navigation }: Props) {
   const [showNotebook, setShowNotebook] = useState(false);
   const [showTranslation, setShowTranslation] = useState(false);
   const [translationText, setTranslationText] = useState("");
+  const [definitionText, setDefinitionText] = useState("");
+  const [showDefinition, setShowDefinition] = useState(false);
   const [showTTS, setShowTTS] = useState(false);
   const [showChapterTranslation, setShowChapterTranslation] = useState(false);
   const [isReimporting, setIsReimporting] = useState(false);
@@ -1607,6 +1610,11 @@ export function ReaderScreen({ route, navigation }: Props) {
           onCopy={() => {
             setSelection(null);
           }}
+          onDefine={() => {
+            setDefinitionText(selectionPopoverSelection.text);
+            setShowDefinition(true);
+            setSelection(null);
+          }}
           onSpeak={(text, cfi) => {
             tts.startSelectionTTS(text, cfi);
             setSelection(null);
@@ -2134,6 +2142,20 @@ export function ReaderScreen({ route, navigation }: Props) {
           }}
         />
       )}
+
+      <DefinitionSheet
+        visible={showDefinition}
+        text={definitionText}
+        onClose={() => {
+          setShowDefinition(false);
+          setDefinitionText("");
+        }}
+        onManageDictionaries={() => {
+          setShowDefinition(false);
+          setDefinitionText("");
+          navigation.navigate("DictionarySettings" as never);
+        }}
+      />
 
       {/* ─── Chapter Translation Sheet ─── */}
       <ChapterTranslationSheet

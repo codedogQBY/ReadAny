@@ -78,6 +78,7 @@ type ProfileMenuRoute = Extract<
   | "AISettings"
   | "TTSSettings"
   | "TranslationSettings"
+  | "DictionarySettings"
   | "Skills"
   | "VectorModelSettings"
   | "Feedback"
@@ -463,6 +464,11 @@ export function ProfileScreen() {
             icon: LanguagesIcon,
             label: t("settings.translationTab", "翻译"),
             route: "TranslationSettings" as const,
+          },
+          {
+            icon: BookOpenIcon,
+            label: t("dictionary.dictionaries", "Dictionaries"),
+            route: "DictionarySettings" as const,
           },
           { icon: PuzzleIcon, label: t("skills.title", "技能"), route: "Skills" as const },
           {

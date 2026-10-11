@@ -21,6 +21,7 @@
     "fs:allow-write",
     "fs:allow-exists",
     "fs:allow-mkdir",
+    "fs:allow-stat",
     "fs:allow-read-file",
     "fs:allow-read-text-file",
     "fs:allow-write-file",
