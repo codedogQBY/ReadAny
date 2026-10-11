@@ -23,6 +23,13 @@ export interface FetchOptions extends RequestInit {
   allowInsecure?: boolean;
   /** Optional request timeout in milliseconds */
   timeoutMs?: number;
+  /**
+   * Optional idle timeout in milliseconds. Platforms that report upload or
+   * download progress reset this timer on every progress event, so a
+   * slow-but-alive transfer keeps running while a stalled one is aborted.
+   * Ignored by platforms without progress events.
+   */
+  idleTimeoutMs?: number;
   /** Preferred response type for platforms that support native request tuning */
   responseType?: "text" | "arraybuffer";
   /** Download progress callback — receives loaded bytes and total (0 if unknown) */

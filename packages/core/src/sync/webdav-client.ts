@@ -32,8 +32,71 @@ export function sanitizeWebDavRemoteRoot(remoteRoot: string): string {
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+/**
+ * Floor for a transfer (PUT/GET) budget. Kept at the historical 5 minutes so
+ * small payloads (sync JSONs, covers) behave exactly as before.
+ *
+ * WHY the budget is no longer flat (2026-09-26 incident): a hard 5-minute cap
+ * aborted large book transfers mid-body. The server received a truncated PUT
+ * and answered 500 (`write staging: unexpected EOF` on pfm), the client saw a
+ * failed upload and retried — 3 books, 16 attempts, every one cut at ~5 min,
+ * forever. Budgets now scale with the payload size (see {@link transferBudgetMs})
+ * and an idle guard aborts transfers that stop making progress.
+ */
 const TRANSFER_TIMEOUT_MS = 300_000;
+/** Worst-case throughput we are willing to wait out before calling a transfer
+ * dead. Mirrors the native (Rust) budget in `src-tauri/src/transfer.rs`. */
+const TRANSFER_MIN_RATE_BYTES_PER_SEC = 32 * 1024;
+/** Hard ceiling so a pathological size never yields an unbounded wait. */
+const TRANSFER_MAX_TIMEOUT_MS = 3 * 60 * 60 * 1000;
+/**
+ * Idle guard for transfers: abort when no bytes move for this long. Platforms
+ * that expose upload/download progress reset it on every progress event, so a
+ * slow-but-alive transfer is never killed while a stalled one fails fast.
+ * Matches the native `read_timeout` (see `src-tauri/src/transfer.rs`).
+ */
+const TRANSFER_IDLE_TIMEOUT_MS = 120_000;
+/**
+ * Size hint for buffered (in-memory) downloads: the platform adapter rejects
+ * buffered transfers above its own limit (16 MiB on mobile), so budgeting the
+ * GET path for that ceiling covers every payload this path can carry.
+ */
+const BUFFERED_TRANSFER_HINT_BYTES = 16 * 1024 * 1024;
 const DIRECTORY_PROBE_TIMEOUT_MS = 5_000;
+
+/**
+ * Total request budget for a transfer carrying `payloadBytes`.
+ *
+ * A flat timeout cannot serve both a 2 KB sync JSON and a 200 MiB book: the
+ * former wants a short leash, the latter needs `floor + bytes / worstCaseRate`.
+ * Exported for tests.
+ */
+export function transferBudgetMs(payloadBytes?: number): number {
+  if (!payloadBytes || payloadBytes <= 0) return TRANSFER_TIMEOUT_MS;
+  // Whole seconds, integer division — same formula as the native budget
+  // (`transfer_budget` in src-tauri/src/transfer.rs) so both layers agree.
+  const neededSec = Math.floor(payloadBytes / TRANSFER_MIN_RATE_BYTES_PER_SEC);
+  return Math.min(TRANSFER_MAX_TIMEOUT_MS, TRANSFER_TIMEOUT_MS + neededSec * 1000);
+}
+
+/** Byte length of a buffered request body (string bodies are UTF-8 encoded). */
+export function bodyByteLength(body?: string | Uint8Array | ArrayBuffer): number {
+  if (body == null) return 0;
+  if (typeof body === "string") return Buffer.byteLength(body, "utf8");
+  return body.byteLength;
+}
+
+/**
+ * Append a unique query parameter so any URL-keyed cache in the request path
+ * (reverse proxy / CDN) cannot match a previous entry. WebDAV servers ignore
+ * unknown query parameters — pfm's router matches on the path only. Exported for
+ * tests.
+ */
+export function cacheBustedUrl(url: string): string {
+  const separator = url.includes("?") ? "&" : "?";
+  const nonce = Math.random().toString(36).slice(2, 10);
+  return `${url}${separator}_=${Date.now().toString(36)}${nonce}`;
+}
 
 /**
  * Retry policy for transient HTTP failures (401-after-auth, 429, 5xx).
@@ -44,6 +107,16 @@ const DIRECTORY_PROBE_TIMEOUT_MS = 5_000;
  */
 const RETRY_MAX_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 500;
+/**
+ * A network failure inside this window is almost always a stale pooled
+ * connection — the server (or a proxy/tunnel in between) closed a keep-alive
+ * socket and the client reused it, which fails in milliseconds without ever
+ * reaching the server. Those are safe and cheap to retry: the retry opens a fresh
+ * connection. Failures that burned more time are either timeouts or transfers
+ * that died mid-body, where a blind retry costs another full attempt, so they are
+ * reported as-is.
+ */
+const NETWORK_RETRY_MAX_ELAPSED_MS = 2_000;
 
 type WebDavErrorKind =
   | "auth"
@@ -174,7 +247,8 @@ function createRequestWebDavError(
   const err = error as { name?: string; message?: string; cause?: { code?: string } };
   const lowerMessage = err.message?.toLowerCase() ?? "";
   const connectionMessage = i18n.t("settings.syncWebdavNetworkError", {
-    defaultValue: "无法连接到 WebDAV 服务器，请检查网络、地址、端口或证书配置。",
+    defaultValue:
+      "无法连接到 WebDAV 服务器（网络中断或配置/证书问题）。单次中断会自动重试；若反复失败，请检查网络、地址、端口或证书配置。",
   });
 
   if (
@@ -275,10 +349,26 @@ export class WebDavClient {
     this.allowInsecure = allowInsecure ?? false;
   }
 
-  private getTimeout(method: string, explicitTimeoutMs?: number): number {
+  private getTimeout(method: string, explicitTimeoutMs?: number, payloadBytes?: number): number {
     if (explicitTimeoutMs !== undefined) return explicitTimeoutMs;
     const isTransferOperation = method === "PUT" || method === "GET";
-    return isTransferOperation ? TRANSFER_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
+    if (!isTransferOperation) return DEFAULT_TIMEOUT_MS;
+    // PUT knows its body size, so the budget scales with it. GET only learns the
+    // size from the response headers, so budget for the largest payload this
+    // buffered path can carry — either way the transfer is no longer capped at a
+    // flat 5 minutes (see TRANSFER_TIMEOUT_MS).
+    return method === "GET"
+      ? transferBudgetMs(BUFFERED_TRANSFER_HINT_BYTES)
+      : transferBudgetMs(payloadBytes);
+  }
+
+  /**
+   * Idle guard for transfers: platforms with progress events abort the request
+   * when nothing moves for this long, so a stalled transfer fails fast instead
+   * of consuming the whole size-aware budget.
+   */
+  private getIdleTimeout(method: string): number | undefined {
+    return method === "PUT" || method === "GET" ? TRANSFER_IDLE_TIMEOUT_MS : undefined;
   }
 
   private buildUrl(path: string): string {
@@ -326,13 +416,29 @@ export class WebDavClient {
     if (options.contentType) {
       headers["Content-Type"] = options.contentType;
     }
-    const effectiveTimeoutMs = this.getTimeout(method, options.timeoutMs);
-    return await platform.fetch(url, {
+    // Never let any HTTP layer cache a WebDAV read, and never let it answer from a
+    // cached entry without going to the server. pfm's WebDAV responses carry
+    // `Last-Modified` (the file's *creation* time, which an overwrite does not
+    // change) and no `Cache-Control`, so Android's React Native/OkHttp disk cache
+    // treated a days-old entry as heuristically fresh and returned a stale book
+    // file. The engine then merged that stale body and PUT it back, silently
+    // dropping the peer's rows. `no-store` makes the request uncacheable on both
+    // read and write, and the cache-busting query below defeats URL-keyed caches
+    // (proxy/CDN) that ignore request headers.
+    headers["Cache-Control"] = options.headers?.["Cache-Control"] ?? "no-store";
+    headers.Pragma = options.headers?.Pragma ?? "no-cache";
+    const effectiveTimeoutMs = this.getTimeout(
+      method,
+      options.timeoutMs,
+      bodyByteLength(options.body),
+    );
+    return await platform.fetch(method === "GET" || method === "HEAD" ? cacheBustedUrl(url) : url, {
       method,
       headers,
       body: options.body as BodyInit | undefined,
       allowInsecure: this.allowInsecure,
       timeoutMs: effectiveTimeoutMs,
+      idleTimeoutMs: this.getIdleTimeout(method),
       responseType: options.responseType,
     });
   }
@@ -381,12 +487,31 @@ export class WebDavClient {
           error,
           method,
           this.buildUrl(path),
-          this.getTimeout(method, options.timeoutMs),
+          this.getTimeout(method, options.timeoutMs, bodyByteLength(options.body)),
         );
         console.error(
           `[WebDAV] ${method} ${logPath} failed (${webDavError.kind}) after ${elapsed}ms:`,
           error,
         );
+
+        // Retry a FAST network failure: that is the stale-keep-alive signature
+        // (status 0 / "connection abort" in milliseconds) and the retry lands on a
+        // new connection. Timeouts stay non-retryable — they already consumed the
+        // size-aware budget. Every method this client issues is idempotent and its
+        // body is buffered, so re-sending is safe.
+        if (
+          attempt < RETRY_MAX_ATTEMPTS &&
+          webDavError.kind === "network" &&
+          elapsed < NETWORK_RETRY_MAX_ELAPSED_MS
+        ) {
+          const delay = RETRY_BASE_DELAY_MS * 2 ** attempt;
+          console.warn(
+            `[WebDAV] ${method} ${logPath} failed fast (network) after ${elapsed}ms, retrying in ${delay}ms (attempt ${attempt + 1}/${RETRY_MAX_ATTEMPTS})`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+
         throw webDavError;
       }
     }
@@ -619,7 +744,10 @@ export class WebDavClient {
         method: "GET",
         headers: { Authorization: this.authHeader },
         allowInsecure: this.allowInsecure,
-        timeoutMs: TRANSFER_TIMEOUT_MS,
+        // Buffered download: budget for the largest payload this path can carry
+        // and abort if the stream stalls (see TRANSFER_TIMEOUT_MS).
+        timeoutMs: transferBudgetMs(BUFFERED_TRANSFER_HINT_BYTES),
+        idleTimeoutMs: TRANSFER_IDLE_TIMEOUT_MS,
         responseType: "arraybuffer",
         onDownloadProgress: onProgress,
       });

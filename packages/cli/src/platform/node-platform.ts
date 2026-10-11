@@ -154,7 +154,20 @@ export class NodePlatformService implements IPlatformService {
   }
 
   async fetch(url: string, options?: FetchOptions): Promise<Response> {
-    return globalThis.fetch(url, options);
+    // ReadAny-specific options are not part of RequestInit: strip them so the
+    // CLI only ever hands Node's fetch a real request. Transfer tuning
+    // (timeoutMs / idleTimeoutMs) is not implemented here — the size-aware
+    // budget exists to keep long transfers alive on the desktop/mobile clients
+    // (see packages/core/src/sync/webdav-client.ts).
+    const {
+      allowInsecure: _allowInsecure,
+      timeoutMs: _timeoutMs,
+      idleTimeoutMs: _idleTimeoutMs,
+      responseType: _responseType,
+      onDownloadProgress: _onDownloadProgress,
+      ...fetchOptions
+    } = options ?? {};
+    return globalThis.fetch(url, fetchOptions);
   }
 
   async createWebSocket(_url: string, _options?: WebSocketOptions): Promise<IWebSocket> {

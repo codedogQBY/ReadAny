@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { type FetchOptions, type IPlatformService, setPlatformService } from "../services/platform";
-import { WebDavClient, sanitizeWebDavRemoteRoot } from "./webdav-client";
+import { WebDavClient, cacheBustedUrl, sanitizeWebDavRemoteRoot, transferBudgetMs } from "./webdav-client";
+
+/** Drop the cache-busting nonce so URL assertions stay exact. */
+const stripCacheBust = (url: string): string => url.replace(/[?&]_=[^&]*/, "");
 
 function installFetchStub(
   handler: (url: string, options?: FetchOptions) => Response | Promise<Response>,
@@ -95,19 +98,83 @@ describe("WebDavClient PROPFIND parsing", () => {
     });
 
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // The fast network failure is retried (stale-keep-alive protection), so run the
+    // backoff on fake timers to keep this test instant.
+    vi.useFakeTimers();
     try {
       const client = new WebDavClient("https://dav.example.com/dav", "alice", "secret");
-      await client.ensureDirectory("/readany");
+      const pending = client.ensureDirectory("/readany");
+      await vi.advanceTimersByTimeAsync(10_000);
+      await pending;
     } finally {
+      vi.useRealTimers();
       warnSpy.mockRestore();
     }
 
-    expect(calls.map((call) => call.method)).toEqual(["PROPFIND", "MKCOL", "PROPFIND"]);
-    expect(calls.map((call) => call.url)).toEqual([
-      "https://dav.example.com/dav/readany/",
-      "https://dav.example.com/dav/readany/",
-      "https://dav.example.com/dav/readany/",
-    ]);
+    // Shape, not exact counts: MKCOL may be attempted several times, and the
+    // directory is re-checked afterwards so the caller can treat the mkdir as done.
+    const methods = calls.map((call) => call.method);
+    expect(methods[0]).toBe("PROPFIND");
+    expect(methods.filter((method) => method === "MKCOL").length).toBeGreaterThan(0);
+    expect(methods[methods.length - 1]).toBe("PROPFIND");
+    expect(new Set(calls.map((call) => call.url))).toEqual(
+      new Set(["https://dav.example.com/dav/readany/"]),
+    );
+  });
+
+  it("retries a fast network failure once the backoff elapses", async () => {
+    let attempts = 0;
+    installFetchStub(() => {
+      attempts++;
+      if (attempts === 1) {
+        // Stale pooled connection: the request dies in milliseconds.
+        throw new Error("XHR request failed with status 0");
+      }
+      return new Response("{}", { status: 200 });
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    vi.useFakeTimers();
+    try {
+      const client = new WebDavClient("https://dav.example.com/dav", "alice", "secret");
+      const pending = client.get("/readany/sync/index.json");
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await pending).toBeInstanceOf(Uint8Array);
+    } finally {
+      vi.useRealTimers();
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+
+    expect(attempts).toBe(2);
+  });
+
+  it("does not retry a slow network failure", async () => {
+    // Only FAST failures look like a dead keep-alive socket; a transfer that burned
+    // real time is reported as-is (a retry would cost another full attempt).
+    let attempts = 0;
+    installFetchStub(async () => {
+      attempts++;
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
+      throw new Error("Software caused connection abort");
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    vi.useFakeTimers();
+    try {
+      const client = new WebDavClient("https://dav.example.com/dav", "alice", "secret");
+      const settled = client.get("/readany/sync/index.json").catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await settled).toBeInstanceOf(Error);
+    } finally {
+      vi.useRealTimers();
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+
+    expect(attempts).toBe(1);
   });
 
   it("treats MKCOL auth failure as success when the parent listing shows the directory", async () => {
@@ -194,13 +261,40 @@ describe("WebDavClient PROPFIND parsing", () => {
       .split("/")
       .map((segment) => encodeURIComponent(segment))
       .join("/");
-    expect(calls[0]?.url).toBe(`https://dav.example.com/dav${expectedPath}`);
-    expect(Object.keys(calls[0]?.headers ?? {})).toEqual(["Authorization"]);
+    // GETs carry a cache-busting nonce (see cacheBustedUrl) — strip it so the
+    // path/encoding assertion stays exact.
+    expect(stripCacheBust(calls[0]?.url ?? "")).toBe(`https://dav.example.com/dav${expectedPath}`);
+    expect(Object.keys(calls[0]?.headers ?? {})).toEqual(["Authorization", "Cache-Control", "Pragma"]);
     expect(
       Object.values(calls[0]?.headers ?? {}).every((value) =>
         Array.from(value).every((char) => char.charCodeAt(0) <= 0x7f),
       ),
     ).toBe(true);
+  });
+
+  it("marks reads uncacheable so no HTTP layer can serve a stale sync payload", async () => {
+    const calls: Array<{ url: string; headers: Record<string, string> }> = [];
+    installFetchStub((url, options) => {
+      calls.push({ url, headers: (options?.headers ?? {}) as Record<string, string> });
+      return new Response("{}", { status: 200 });
+    });
+
+    const client = new WebDavClient("https://dav.example.com/dav", "alice", "secret");
+    await client.get("/readany/sync/books/book-1.json");
+
+    expect(calls[0]?.headers["Cache-Control"]).toBe("no-store");
+    expect(calls[0]?.headers.Pragma).toBe("no-cache");
+    expect(calls[0]?.url).toMatch(/\?_=[a-z0-9]+$/);
+  });
+});
+
+describe("cacheBustedUrl", () => {
+  it("appends a unique nonce and preserves an existing query", () => {
+    const first = cacheBustedUrl("https://host/p.json");
+    const second = cacheBustedUrl("https://host/p.json");
+    expect(first).toMatch(/^https:\/\/host\/p\.json\?_=/);
+    expect(second).not.toBe(first);
+    expect(cacheBustedUrl("https://host/p.json?x=1")).toMatch(/^https:\/\/host\/p\.json\?x=1&_=/);
   });
 });
 
@@ -326,5 +420,66 @@ describe("sanitizeWebDavRemoteRoot", () => {
 
   it("trims unsafe path noise without lowercasing user folders", () => {
     expect(sanitizeWebDavRemoteRoot(" /\u0000ReadAny//Sync/ ")).toBe("ReadAny/Sync");
+  });
+});
+
+/**
+ * Regression for the 2026-09-26 incident: a flat 5-minute transfer budget cut
+ * large book uploads off mid-body. The server (pfm) received a truncated PUT,
+ * answered 500 (`write staging: unexpected EOF`), and sync retried the same
+ * books forever — 3 books, 16 attempts, every one cut at ~5 minutes while
+ * smaller books finished in seconds.
+ */
+describe("WebDAV transfer budgets", () => {
+  afterEach(() => {
+    setPlatformService(null as unknown as IPlatformService);
+  });
+
+  function captureFetchCalls(): Array<{ url: string; options?: FetchOptions }> {
+    const calls: Array<{ url: string; options?: FetchOptions }> = [];
+    installFetchStub((url, options) => {
+      calls.push({ url, options });
+      // 204 is a null-body status: the Response constructor rejects a body here.
+      return new Response(null, { status: 204 });
+    });
+    return calls;
+  }
+
+  it("keeps the 5-minute floor for small payloads", async () => {
+    const calls = captureFetchCalls();
+    const client = new WebDavClient("https://dav.example.com/dav/readany", "alice", "secret");
+
+    await client.putJSON("/sync/index.json", { ok: true });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].options?.timeoutMs).toBe(300_000);
+  });
+
+  it("scales the PUT budget with the payload size", async () => {
+    const calls = captureFetchCalls();
+    const client = new WebDavClient("https://dav.example.com/dav/readany", "alice", "secret");
+
+    // 8 MiB at the worst-case rate (32 KiB/s) needs 256s on top of the floor.
+    await client.put("/data/books/big.epub", new Uint8Array(8 * 1024 * 1024));
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].options?.timeoutMs).toBe(300_000 + 256_000);
+  });
+
+  it("asks platforms to abort a stalled transfer via the idle guard", async () => {
+    const calls = captureFetchCalls();
+    const client = new WebDavClient("https://dav.example.com/dav/readany", "alice", "secret");
+
+    await client.put("/sync/index.json", "{}", "application/json");
+
+    expect(calls[0].options?.idleTimeoutMs).toBe(120_000);
+  });
+
+  it("clamps the budget: floor for unknown sizes, ceiling for absurd ones", () => {
+    expect(transferBudgetMs(undefined)).toBe(300_000);
+    expect(transferBudgetMs(0)).toBe(300_000);
+    // The mobile buffered-transfer cap (16 MiB) is the largest GET payload.
+    expect(transferBudgetMs(16 * 1024 * 1024)).toBe(300_000 + 512_000);
+    expect(transferBudgetMs(Number.MAX_SAFE_INTEGER)).toBe(3 * 60 * 60 * 1000);
   });
 });

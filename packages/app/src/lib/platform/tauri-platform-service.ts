@@ -191,6 +191,10 @@ export class TauriPlatformService implements IPlatformService {
     const {
       allowInsecure,
       timeoutMs: _timeoutMs,
+      // No upload/download progress events from plugin-http, so an idle guard
+      // cannot be implemented here; the size-aware budget in `timeoutMs` carries
+      // the transfer instead. Destructured so it never reaches the plugin.
+      idleTimeoutMs: _idleTimeoutMs,
       responseType: _responseType,
       onDownloadProgress: _onDownloadProgress,
       ...fetchOptions

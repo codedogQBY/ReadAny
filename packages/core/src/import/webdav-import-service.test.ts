@@ -135,7 +135,10 @@ describe("WebDavImportService request paths (issue #174)", () => {
 
     expect(
       requests.some(
-        (r) => r.method === "GET" && r.url === "http://host:5005/home/Books/novel.epub",
+        (r) =>
+          r.method === "GET" &&
+          // GETs carry a cache-busting nonce (see cacheBustedUrl)
+          r.url.replace(/[?&]_=[^&]*/, "") === "http://host:5005/home/Books/novel.epub",
       ),
     ).toBe(true);
   });

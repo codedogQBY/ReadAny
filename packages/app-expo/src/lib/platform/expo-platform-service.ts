@@ -283,8 +283,14 @@ export class ExpoPlatformService implements IPlatformService {
   // ---- Network ----
 
   async fetch(url: string, options?: FetchOptions): Promise<Response> {
-    const { allowInsecure, timeoutMs, responseType, onDownloadProgress, ...fetchOptions } =
-      options ?? {};
+    const {
+      allowInsecure,
+      timeoutMs,
+      idleTimeoutMs,
+      responseType,
+      onDownloadProgress,
+      ...fetchOptions
+    } = options ?? {};
     const effectiveUrl = allowInsecure ? url.replace(/^https:\/\//i, "http://") : url;
     const method = fetchOptions?.method?.toUpperCase() || "GET";
 
@@ -298,6 +304,7 @@ export class ExpoPlatformService implements IPlatformService {
       resolvedResponseType,
       effectiveTimeoutMs,
       onDownloadProgress,
+      idleTimeoutMs,
     );
   }
 
@@ -358,6 +365,7 @@ export class ExpoPlatformService implements IPlatformService {
     responseType: XMLHttpRequestResponseType = "arraybuffer",
     timeoutMs = 120000,
     onDownloadProgress?: (loaded: number, total: number) => void,
+    idleTimeoutMs?: number,
   ): Promise<Response> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -365,17 +373,60 @@ export class ExpoPlatformService implements IPlatformService {
       let settled = false;
       let didTimeout = false;
       let didNetworkError = false;
+      let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const clearIdleTimer = () => {
+        if (idleTimer !== null) {
+          clearTimeout(idleTimer);
+          idleTimer = null;
+        }
+      };
+
+      // Idle guard (`idleTimeoutMs`): abort when no bytes move for that long.
+      // Every upload/download progress event resets it, so a slow-but-alive
+      // transfer keeps running while a stalled one fails fast instead of burning
+      // the whole (size-aware) total budget.
+      let sawProgress = false;
+      const touchIdleTimer = () => {
+        if (!idleTimeoutMs || idleTimeoutMs <= 0 || !sawProgress) return;
+        clearIdleTimer();
+        idleTimer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          clearIdleTimer();
+          try {
+            xhr.abort();
+          } catch {
+            // abort() may throw when the request already finished; the rejection
+            // below is what the caller must see either way.
+          }
+          reject(
+            new Error(
+              `XHR request timeout: transfer stalled (no progress for ${idleTimeoutMs}ms): ${method} ${url}`,
+            ),
+          );
+        }, idleTimeoutMs);
+      };
+
+      // The guard only arms once bytes have actually moved. A request shape that
+      // never reports progress would otherwise be aborted at the idle deadline
+      // instead of being governed by the total budget — the desktop path's
+      // reqwest read timeout taught exactly that lesson.
+      const noteProgress = () => {
+        sawProgress = true;
+        touchIdleTimer();
+      };
 
       xhr.open(method, url, true);
       xhr.responseType = responseType;
       xhr.timeout = timeoutMs;
 
-      // Download progress tracking
-      if (onDownloadProgress) {
-        xhr.onprogress = (event) => {
-          onDownloadProgress(event.loaded, event.lengthComputable ? event.total : 0);
-        };
-      }
+      // Progress tracking — also feeds the idle guard.
+      xhr.upload.onprogress = () => noteProgress();
+      xhr.onprogress = (event) => {
+        noteProgress();
+        onDownloadProgress?.(event.loaded, event.lengthComputable ? event.total : 0);
+      };
 
       // Set headers
       if (options?.headers) {
@@ -387,6 +438,7 @@ export class ExpoPlatformService implements IPlatformService {
 
       const finalizeResponse = () => {
         if (settled || xhr.readyState !== XMLHttpRequest.DONE) return;
+        clearIdleTimer();
 
         if (xhr.status === 0) {
           settled = true;
@@ -470,6 +522,7 @@ export class ExpoPlatformService implements IPlatformService {
         if (settled) return;
         didNetworkError = true;
         settled = true;
+        clearIdleTimer();
         reject(new Error(`XHR request failed: ${method} ${url}`));
       };
 
@@ -477,10 +530,11 @@ export class ExpoPlatformService implements IPlatformService {
         if (settled) return;
         didTimeout = true;
         settled = true;
+        clearIdleTimer();
         reject(new Error(`XHR request timeout (${timeoutMs}ms): ${method} ${url}`));
       };
 
-      // Send request
+      // Send request (the idle guard arms on the first progress event).
       if (options?.body) {
         if (typeof options.body === "string") {
           xhr.send(options.body);
