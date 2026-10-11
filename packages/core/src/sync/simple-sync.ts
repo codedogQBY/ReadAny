@@ -45,12 +45,15 @@ export interface SimpleSyncOptions {
 /** Tables included in sync, with their primary key and timestamp column */
 const SYNC_TABLES: SyncTableConfig[] = [
   { name: "book_groups", pk: "id", timestampCol: "updated_at" },
-  // is_vectorized and vectorize_progress are local-only (chunks live in readany_local.db)
+  // is_vectorized / vectorize_progress / sync_status are local-only:
+  //  - chunks live in readany_local.db (vector index state)
+  //  - sync_status says whether *this* device holds the book file, so it must not
+  //    travel (a peer would otherwise overwrite our own download state)
   {
     name: "books",
     pk: "id",
     timestampCol: "updated_at",
-    excludeColumns: ["is_vectorized", "vectorize_progress"],
+    excludeColumns: ["is_vectorized", "vectorize_progress", "sync_status"],
   },
   { name: "highlights", pk: "id", timestampCol: "updated_at" },
   { name: "notes", pk: "id", timestampCol: "updated_at" },
@@ -350,12 +353,18 @@ export async function applyChanges(
             skipped++;
           } else {
             try {
-              await upsertRecord(
-                db,
-                tableName,
-                preserveLocalCustomBookCover(safeRecord, localState),
-                pk,
-              );
+              let recordToApply = preserveLocalCustomBookCover(safeRecord, localState);
+              if (tableName === "books") {
+                // `sync_status` is device-local: it says whether *this* device has
+                // the book file. Drop the peer's value and only default a brand-new
+                // row to "remote" (we have no file for it yet) — existing rows keep
+                // whatever the local file sync phase decided.
+                const { sync_status: _peerSyncStatus, ...withoutPeerStatus } = recordToApply;
+                recordToApply = existingRecords.has(String(pkValue))
+                  ? withoutPeerStatus
+                  : { ...withoutPeerStatus, sync_status: "remote" };
+              }
+              await upsertRecord(db, tableName, recordToApply, pk);
               applied++;
               existingRecords.set(String(pkValue), {
                 timestamp: remoteTs,
@@ -468,6 +477,10 @@ export async function upsertRecord(
 
 export function localizeSyncedBookRecord(record: Record<string, unknown>): Record<string, unknown> {
   const id = record.id;
+  // `sync_status` is deliberately left alone: it describes *this* device's own
+  // copy (downloaded or not), and callers decide what it becomes — see the books
+  // branch in applyChangeset (legacy path) and applyBookFile (per-book path).
+  // A peer's value must never overwrite the local one.
   const filePath = canonicalBookFilePath(id, record.file_path, record.format);
   if (!filePath) return record;
 
@@ -475,7 +488,6 @@ export function localizeSyncedBookRecord(record: Record<string, unknown>): Recor
     ...record,
     file_path: filePath,
     cover_url: canonicalBookCoverPath(id, record.cover_url),
-    sync_status: "remote",
   };
 }
 

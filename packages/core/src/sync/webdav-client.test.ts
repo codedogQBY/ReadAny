@@ -69,6 +69,43 @@ describe("WebDavClient PROPFIND parsing", () => {
     ]);
   });
 
+  it("keeps parsing children when the server returns hrefs without the mount prefix", async () => {
+    // pfm mounts WebDAV with http.StripPrefix("/dav", …) and builds hrefs from the
+    // path it sees internally, so a request for /dav/webvav/... comes back with
+    // hrefs under /webvav/.... With a strict prefix check every entry was dropped,
+    // the listing looked empty, and the file sync re-uploaded the whole library.
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+      <d:multistatus xmlns:d="DAV:">
+        <d:response>
+          <d:href>/webvav/readany/data/books/</d:href>
+          <d:propstat><d:prop><d:resourcetype><d:collection /></d:resourcetype></d:prop></d:propstat>
+        </d:response>
+        <d:response>
+          <d:href>/webvav/readany/data/books/Test%20Book-book-1/</d:href>
+          <d:propstat><d:prop><d:resourcetype><d:collection /></d:resourcetype></d:prop></d:propstat>
+        </d:response>
+        <d:response>
+          <d:href>/webvav/readany/data/books/Second%20Book-book-2/</d:href>
+          <d:propstat><d:prop><d:resourcetype><d:collection /></d:resourcetype></d:prop></d:propstat>
+        </d:response>
+        <d:response>
+          <d:href>/webvav/readany/data/books/Test%20Book-book-1/Test%20Book.epub</d:href>
+          <d:propstat><d:prop><d:resourcetype/><d:getcontentlength>5</d:getcontentlength></d:prop></d:propstat>
+        </d:response>
+      </d:multistatus>`;
+
+    installFetchStub(() => new Response(xml, { status: 207 }));
+
+    const client = new WebDavClient("https://dav.example.com/dav/webvav", "alice", "secret");
+    const resources = await client.propfind("/readany/data/books");
+
+    expect(resources.map((resource) => ({ name: resource.name, isCollection: resource.isCollection })))
+      .toEqual([
+        { name: "Test Book-book-1", isCollection: true },
+        { name: "Second Book-book-2", isCollection: true },
+      ]);
+  });
+
   it("skips MKCOL when ensureDirectory sees the directory already exists", async () => {
     const calls: { method: string; url: string }[] = [];
     installFetchStub((url, options) => {

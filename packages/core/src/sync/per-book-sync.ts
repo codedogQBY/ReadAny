@@ -79,7 +79,18 @@ const CHAT_PULLED_DAY_KEY = "perbook:chat-pulled-day";
 const CHAT_MERGED_DAYS_KEY = "perbook:chat-merged-days";
 const CHAT_PUSHED_AT_KEY = "perbook:chat-pushed-at";
 
-const BOOK_LOCAL_EXCLUDED_COLUMNS = ["is_vectorized", "vectorize_progress"];
+/**
+ * Columns that describe *this* device's own copy of a book and therefore must
+ * never travel between devices:
+ *  - `is_vectorized` / `vectorize_progress`: local vector-index state.
+ *  - `sync_status`: whether this device has the book file downloaded. Syncing it
+ *    meant a device that owned the file pushed "local" (peers then claimed to
+ *    have it) and a device that had never downloaded it pushed "remote" (stamping
+ *    "not downloaded" onto the device that did have the file). Each device now
+ *    keeps its own value and derives it from its own filesystem during the file
+ *    sync phase.
+ */
+const BOOK_LOCAL_EXCLUDED_COLUMNS = ["is_vectorized", "vectorize_progress", "sync_status"];
 const ANNOTATION_TABLES = ["highlights", "notes", "bookmarks"] as const;
 type AnnotationTable = (typeof ANNOTATION_TABLES)[number];
 type DeletedMap = Record<string, number>;
@@ -492,7 +503,12 @@ async function applyBookFile(
       const localized = Number(bookRow.deleted_at ?? 0)
         ? bookRow
         : localizeSyncedBookRecord(bookRow);
-      await upsertRecord(db, "books", localized, "id");
+      // Keep this device's own download state. `localizeSyncedBookRecord` drops any
+      // peer-supplied value, so a row new to this device starts as "remote" (it has
+      // no local file yet) and an existing row keeps whatever the local file sync
+      // phase decided.
+      const withLocalStatus = { ...localized, sync_status: local?.sync_status ?? "remote" };
+      await upsertRecord(db, "books", withLocalStatus, "id");
       applied++;
     }
 

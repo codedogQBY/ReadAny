@@ -106,6 +106,174 @@ describe("sync-files", () => {
       );
     });
 
+    it("matches book folders by name when the server does not report them as collections", async () => {
+      // pfm (emersion/go-webdav in front of an object store) answered the books
+      // root PROPFIND without <collection/> for folders. Treating those entries as
+      // plain files made every book look absent from the remote, so each sync
+      // re-uploaded the whole local library (72 MB per round in production).
+      mockSelect.mockResolvedValue([
+        {
+          id: "book-1",
+          file_path: "books/book-1.epub",
+          file_hash: "h1",
+          cover_url: null,
+          title: "Test Book",
+        },
+        {
+          id: "book-2",
+          file_path: "books/book-2.epub",
+          file_hash: "h2",
+          cover_url: null,
+          title: "Second Book",
+        },
+      ]);
+      mockAdapter.fileExists.mockImplementation(async (path: string) =>
+        path === "/appdata/books/book-1.epub",
+      );
+
+      const remoteBookDirs: RemoteFile[] = [
+        {
+          name: "Test Book-book-1",
+          path: `${REMOTE_BOOKS_ROOT}/Test Book-book-1`,
+          size: 0,
+          lastModified: 0,
+          isDirectory: false, // ← the server did not mark it as a collection
+        },
+        {
+          name: "Second Book-book-2",
+          path: `${REMOTE_BOOKS_ROOT}/Second Book-book-2`,
+          size: 0,
+          lastModified: 0,
+          isDirectory: false,
+        },
+      ];
+      const folderContents = new Map<string, RemoteFile[]>([
+        [
+          `${REMOTE_BOOKS_ROOT}/Test Book-book-1`,
+          [
+            {
+              name: "Test Book.epub",
+              path: `${REMOTE_BOOKS_ROOT}/Test Book-book-1/Test Book.epub`,
+              size: 100,
+              lastModified: 1000,
+              isDirectory: false,
+            },
+          ],
+        ],
+        [
+          `${REMOTE_BOOKS_ROOT}/Second Book-book-2`,
+          [
+            {
+              name: "Second Book.epub",
+              path: `${REMOTE_BOOKS_ROOT}/Second Book-book-2/Second Book.epub`,
+              size: 200,
+              lastModified: 2000,
+              isDirectory: false,
+            },
+          ],
+        ],
+      ]);
+
+      const backend = createMockBackend({
+        getJSON: vi.fn().mockResolvedValue(null),
+        listDir: vi.fn().mockImplementation(async (path: string) => {
+          if (path === REMOTE_BOOKS_ROOT) return remoteBookDirs;
+          return folderContents.get(path) ?? [];
+        }),
+      });
+
+      const result = await syncFiles(backend, undefined, { downloadRemoteBooks: true });
+
+      // book-1 is already on the remote → must NOT be uploaded again
+      expect(backend.put).not.toHaveBeenCalled();
+      expect(result.filesUploaded).toBe(0);
+      // book-2 is only on the remote → must be downloaded
+      expect(result.filesDownloaded).toBe(1);
+      expect(backend.get).toHaveBeenCalledWith(
+        `${REMOTE_BOOKS_ROOT}/Second Book-book-2/Second Book.epub`,
+      );
+    });
+
+    it("keeps using the manifest when an entry has no coverPath", async () => {
+      // A single entry without coverPath used to invalidate the whole manifest,
+      // which dropped every sync into the directory scan — and on a scanned
+      // listing the cover metadata is unknown, so custom covers were re-uploaded
+      // forever.
+      mockSelect.mockResolvedValue([
+        {
+          id: "book-1",
+          file_path: "books/book-1.epub",
+          file_hash: "h1",
+          cover_url: "covers/book-1.jpg",
+          title: "Test Book",
+        },
+      ]);
+      mockAdapter.fileExists.mockResolvedValue(false); // no local cover file
+
+      const backend = createMockBackend({
+        getJSON: vi.fn().mockResolvedValue({
+          version: 1,
+          generatedAt: 1000,
+          books: {
+            "book-1": {
+              folderName: "Test Book-book-1",
+              filePath: `${REMOTE_BOOKS_ROOT}/Test Book-book-1/Test Book.epub`,
+            },
+          },
+        }),
+      });
+
+      const result = await syncFiles(backend);
+
+      expect(backend.listDir).not.toHaveBeenCalled();
+      expect(result.filesUploaded).toBe(0);
+      expect(result.filesDownloaded).toBe(0);
+    });
+
+    it("does not re-upload the library when the remote folder listing comes back empty", async () => {
+      // A broken/mis-parsed books-root listing must not read as "nothing is on the
+      // remote yet" while the manifest says otherwise: that re-uploaded every
+      // locally present book and cover. Treat the state as unknown and skip.
+      mockSelect.mockResolvedValue([
+        {
+          id: "book-1",
+          file_path: "books/book-1.epub",
+          file_hash: "h1",
+          cover_url: null,
+          title: "Test Book",
+        },
+        {
+          id: "book-2",
+          file_path: "books/book-2.epub",
+          file_hash: "h2",
+          cover_url: null,
+          title: "Second Book",
+        },
+      ]);
+      mockAdapter.fileExists.mockImplementation(async (path: string) =>
+        path === "/appdata/books/book-1.epub",
+      );
+
+      const backend = createMockBackend({
+        getJSON: vi.fn().mockResolvedValue({
+          version: 1,
+          generatedAt: 1000,
+          books: {
+            "book-1": {
+              folderName: "Test Book-book-1",
+              filePath: `${REMOTE_BOOKS_ROOT}/Test Book-book-1/Test Book.epub`,
+            },
+          },
+        }),
+        listDir: vi.fn().mockResolvedValue([]), // listing lost everything
+      });
+
+      const result = await syncFiles(backend, undefined, { downloadRemoteBooks: true });
+
+      expect(backend.put).not.toHaveBeenCalled();
+      expect(result.filesUploaded).toBe(0);
+    });
+
     it("uses direct file upload when the backend supports it", async () => {
       mockSelect.mockResolvedValue([
         {

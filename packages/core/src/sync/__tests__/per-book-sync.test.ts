@@ -377,6 +377,80 @@ describe("runPerBookSync (per-book cloud engine)", () => {
     });
   });
 
+  it("never lets a peer overwrite this device's sync_status", async () => {
+    // book-1 is downloaded here; book-2 exists only in the cloud.
+    db.insert("books", {
+      id: "book-1",
+      title: "Book",
+      file_path: "books/book-1.epub",
+      format: "epub",
+      updated_at: T1,
+      sync_status: "local",
+    });
+
+    const backend = new FakeBackend({
+      "/readany/sync/index.json": {
+        schemaVersion: 2,
+        updatedAt: T2,
+        books: { "book-1": { b: T2 }, "book-2": { b: T2 } },
+        threads: {},
+      },
+      "/readany/sync/books/book-1.json": {
+        schemaVersion: 1,
+        bookId: "book-1",
+        // The peer does not have the file, so it claims "remote".
+        book: { id: "book-1", title: "Book", updated_at: T2, sync_status: "remote" },
+        highlights: [],
+        notes: [],
+        bookmarks: [],
+        writerDeviceId: "device-b",
+        updatedAt: T2,
+      },
+      "/readany/sync/books/book-2.json": {
+        schemaVersion: 1,
+        bookId: "book-2",
+        // The peer does have the file, so it claims "local".
+        book: { id: "book-2", title: "Cloud Only", updated_at: T2, sync_status: "local" },
+        highlights: [],
+        notes: [],
+        bookmarks: [],
+        writerDeviceId: "device-b",
+        updatedAt: T2,
+      },
+    });
+
+    const result = await runPerBookSync(backend);
+
+    expect(result.success).toBe(true);
+    // We have the file → stays "local" even though the peer says otherwise.
+    expect(db.table("books").get("book-1")?.sync_status).toBe("local");
+    // We have no file for it → "remote", even though the peer says "local".
+    expect(db.table("books").get("book-2")?.sync_status).toBe("remote");
+  });
+
+  it("never pushes this device's sync_status to the remote", async () => {
+    db.insert("books", {
+      id: "book-1",
+      title: "Book",
+      file_path: "books/book-1.epub",
+      format: "epub",
+      updated_at: T3,
+      sync_status: "local",
+    });
+
+    const backend = new FakeBackend({
+      "/readany/sync/index.json": { schemaVersion: 2, updatedAt: T2, books: {}, threads: {} },
+    });
+
+    const result = await runPerBookSync(backend);
+
+    expect(result.success).toBe(true);
+    const pushed = backend.files.get("/readany/sync/books/book-1.json") as { book: Row };
+    expect(pushed).toBeTruthy();
+    // Download state is device-local; it must never travel.
+    expect(pushed.book).not.toHaveProperty("sync_status");
+  });
+
   it("skips books whose markers already match the remote index", async () => {
     seedBook(db, "book-1", T2);
     const backend = new FakeBackend({

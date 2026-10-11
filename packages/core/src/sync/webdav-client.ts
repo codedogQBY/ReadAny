@@ -903,9 +903,26 @@ function normalizeWebDavPath(path: string): string {
 function isDirectChildPath(basePath: string, hrefPath: string): boolean {
   if (hrefPath === basePath) return false;
   const prefix = basePath === "/" ? "/" : `${basePath}/`;
-  if (!hrefPath.startsWith(prefix)) return false;
-  const relative = hrefPath.slice(prefix.length).replace(/\/+$/, "");
-  return relative.length > 0 && !relative.includes("/");
+  const isChildOf = (candidate: string): boolean => {
+    const relative = candidate.slice(prefix.length).replace(/\/+$/, "");
+    return relative.length > 0 && !relative.includes("/");
+  };
+  if (hrefPath.startsWith(prefix)) return isChildOf(hrefPath);
+
+  // Some servers build the href from the path *they* see internally instead of
+  // from the request URI: pfm mounts WebDAV with `http.StripPrefix("/dav", …)`,
+  // so a request for /dav/webvav/readany/data/books/ comes back with hrefs like
+  // /webvav/readany/data/books/<name>. With a strict prefix check every entry was
+  // dropped, the listing looked empty, and the file sync read that as "nothing is
+  // on the remote" — then re-uploaded the entire local library (72 MB per sync in
+  // production). Accept an entry whose href ends with `basePath/<one segment>`.
+  if (basePath === "/") return false;
+  const baseWithSlash = `${basePath}/`;
+  const baseIndex = hrefPath.lastIndexOf(baseWithSlash);
+  if (baseIndex < 0) return false;
+  const relative = hrefPath.slice(baseIndex).replace(/\/+$/, "");
+  const childName = relative.slice(baseWithSlash.length);
+  return childName.length > 0 && !childName.includes("/");
 }
 
 /** Extract text content of an XML tag (case-insensitive, supports arbitrary namespace prefix) */

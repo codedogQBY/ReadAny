@@ -551,6 +551,32 @@ describe("simple sync convergence", () => {
     expect(target.get("books", "book-1")?.sync_status).toBe("remote");
   });
 
+  it("keeps this device's own sync_status when a peer record arrives", async () => {
+    const target = new FakeSyncDb();
+    // This device already has the book file.
+    target.insert("books", bookRow({ sync_status: "local", updated_at: 1000 }));
+    dbMocks.currentDb = target;
+    dbMocks.currentDeviceId = "device-local";
+
+    const result = await applyChanges({
+      deviceId: "device-remote",
+      timestamp: now,
+      since: 0,
+      tables: {
+        books: {
+          // The peer does NOT have the file, so it reports "remote".
+          records: [bookRow({ updated_at: 2000, sync_status: "remote" })],
+          deletedIds: [],
+        },
+      },
+    });
+
+    expect(result).toEqual({ applied: 1, skipped: 0 });
+    // A peer's download state must never overwrite the local one, otherwise a
+    // device that owns the file is told it does not have it (and vice versa).
+    expect(target.get("books", "book-1")?.sync_status).toBe("local");
+  });
+
   it("keeps a newer local record when an older remote tombstone arrives", async () => {
     const target = new FakeSyncDb();
     target.insert("books", bookRow({ updated_at: 2500 }));

@@ -503,6 +503,20 @@ export async function syncFiles(
     await parallelLimit(migrationTasks, migrationConcurrency);
   }
 
+  // A scan that finds no book folder at all while the file manifest records
+  // books means the remote listing failed or was mis-parsed. Treat the remote
+  // state as *unknown* for this round instead of concluding "nothing has been
+  // uploaded yet" — the latter re-uploads the whole local library. (A genuinely
+  // empty remote has no manifest either, so first-time syncs still upload.)
+  const manifestBookCount = Object.keys(listings.manifest?.books ?? {}).length;
+  const remoteBookStateUnknown =
+    listings.source === "scan" && listings.bookDirByBookId.size === 0 && manifestBookCount > 0;
+  if (remoteBookStateUnknown) {
+    console.warn(
+      `[Sync] Remote book folders could not be listed (0 found, but the file manifest records ${manifestBookCount} book(s)). Skipping file uploads for this round instead of re-uploading the local library; check the WebDAV server's PROPFIND response for the books root (or use "Upload to cloud" to force a full re-upload).`,
+    );
+  }
+
   // --- Phase 2: build upload/download task lists based on post-migration state ---
   const uploadTasks: FileTask[] = [];
   const downloadTasks: FileTask[] = [];
@@ -524,7 +538,11 @@ export async function syncFiles(
         }
       }
 
-      if (!disableUploads && localExists && (forceUploadAll || !remoteExists)) {
+      if (
+        !disableUploads &&
+        localExists &&
+        (forceUploadAll || (!remoteBookStateUnknown && !remoteExists))
+      ) {
         const task = buildUploadFileTask(backend, info);
         const sizeBytes = localSizeMap.get(info.localFilePath) ?? null;
         uploadTasks.push({
@@ -609,7 +627,11 @@ export async function syncFiles(
         );
       }
 
-      if (!disableUploads && localExists && (forceUploadAll || !remoteExists || coverChanged)) {
+      if (
+        !disableUploads &&
+        localExists &&
+        (forceUploadAll || (!remoteBookStateUnknown && (!remoteExists || coverChanged)))
+      ) {
         const task = buildUploadCoverTask(backend, info);
         const sizeBytes = localSize;
         uploadTasks.push({
@@ -736,7 +758,30 @@ async function loadRemoteListings(
     }
   }
 
-  const allDirNames = bookDirs.filter((e) => e.isDirectory).map((e) => e.name);
+  // Book folders are named `{sanitized-title}-{uuid}`. Match them by that shape
+  // in addition to the `<collection/>` flag: some WebDAV servers (and backends
+  // that project an object store) do not mark folders as collections in their
+  // PROPFIND responses. Depending on the flag alone made every book folder look
+  // like a plain file, i.e. "the remote has nothing" — which re-uploaded the
+  // entire local library on every single sync.
+  const looksLikeBookFolderName = (name: string): boolean => {
+    if (parseBookFolderName(name) !== null) return true;
+    for (const id of currentBookIds) {
+      if (id && name.endsWith(`-${id}`)) return true;
+    }
+    return false;
+  };
+  const nameShapedFolders = bookDirs.filter(
+    (e) => !e.isDirectory && looksLikeBookFolderName(e.name),
+  );
+  if (nameShapedFolders.length > 0) {
+    console.warn(
+      `[Sync] ${nameShapedFolders.length} remote book folder(s) were not reported as collections (no <collection/> in the PROPFIND response); matched them by their -{uuid} suffix instead. This server's WebDAV PROPFIND response is non-standard.`,
+    );
+  }
+  const allDirNames = bookDirs
+    .filter((e) => e.isDirectory || looksLikeBookFolderName(e.name))
+    .map((e) => e.name);
 
   // Match folders to known book ids by `endsWith(-{id})`. This works for any id format,
   // including non-UUID ids that may appear during development or in tests.
@@ -821,15 +866,19 @@ function canUseRemoteFileManifest(
   for (const info of bookInfos) {
     const entry = manifest.books[info.book.id];
     const localFileExists = localExistsMap.get(info.localFilePath) ?? false;
-    const localCoverExists = localExistsMap.get(info.localCoverPath) ?? false;
+    // Only a book this device actually has to *fetch* can invalidate the
+    // manifest, and only when the manifest has no entry for it at all.
+    //
+    // A missing `filePath`/`coverPath` on an existing entry must NOT invalidate
+    // the whole manifest: it just means "not recorded on the remote", which the
+    // per-book logic already handles (upload when a local copy exists, skip
+    // otherwise). Rejecting the manifest for that pushed every sync into the
+    // directory-scan fallback — one book whose cover had never been uploaded was
+    // enough to make a device re-upload its whole local library on every sync.
     const needsRemoteBook =
-      info.hasFile &&
-      (options.forceDownloadAll || (options.downloadRemoteBooks && !localFileExists));
-    const needsRemoteCover = info.hasCover && (options.forceDownloadAll || !localCoverExists);
+      info.hasFile && !localFileExists && (options.forceDownloadAll || options.downloadRemoteBooks);
 
-    if (!entry && (needsRemoteBook || needsRemoteCover)) return false;
-    if (entry && needsRemoteBook && !entry.filePath) return false;
-    if (entry && needsRemoteCover && !entry.coverPath) return false;
+    if (needsRemoteBook && !entry) return false;
   }
   return true;
 }
@@ -981,7 +1030,7 @@ async function migrateBookRemoteState(
   let fileSize = listings.fileSizeByBookId.get(book.id);
   let coverSize = listings.coverSizeByBookId.get(book.id);
   const coverHash = listings.coverHashByBookId.get(book.id);
-  const coverSourcePath = listings.coverSourcePathByBookId.get(book.id);
+  let coverSourcePath = listings.coverSourcePathByBookId.get(book.id);
 
   if (existingFolderName) {
     if (existingFolderName !== info.expectedFolderName) {
@@ -1052,12 +1101,32 @@ async function migrateBookRemoteState(
         if (f.isDirectory) continue;
         if (expectedFileName && f.name === expectedFileName) {
           fileAtNew = true;
-          if (isPositiveFiniteNumber(f.size)) fileSize = f.size;
+          if (isPositiveFiniteNumber(f.size)) {
+            fileSize = f.size;
+            listings.fileSizeByBookId.set(book.id, f.size);
+          }
         }
         if (expectedCoverName && f.name === expectedCoverName) {
           coverAtNew = true;
-          if (isPositiveFiniteNumber(f.size)) coverSize = f.size;
+          if (isPositiveFiniteNumber(f.size)) {
+            coverSize = f.size;
+            listings.coverSizeByBookId.set(book.id, f.size);
+          }
+          // The cover name this device computes *is* the cover it last synced,
+          // so its recorded source path is unchanged. Leaving it unknown made
+          // `coverSourceChanged` true for every custom cover on a scanned
+          // listing, i.e. every custom cover was re-uploaded on every sync.
+          coverSourcePath = info.book.cover_url;
         }
+      }
+      // Publish the sizes/source we just learned so they land in the manifest
+      // written at the end of this run (the scanned path used to leave these
+      // maps empty, so a scan-only device never recorded them).
+      if (isPositiveFiniteNumber(coverSize)) {
+        listings.coverSizeByBookId.set(book.id, coverSize);
+      }
+      if (isNonEmptyString(coverSourcePath)) {
+        listings.coverSourcePathByBookId.set(book.id, coverSourcePath);
       }
     }
   }
