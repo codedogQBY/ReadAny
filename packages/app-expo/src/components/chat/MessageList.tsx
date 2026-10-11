@@ -25,6 +25,7 @@ import {
 } from "react-native";
 import { PartRenderer } from "./PartRenderer";
 import { StreamingIndicator } from "./StreamingIndicator";
+import { createScrollToBottomController } from "./scroll-to-bottom-controller";
 
 interface MessageListProps {
   messages: MessageV2[];
@@ -60,9 +61,30 @@ export function MessageList({
   const s = makeStyles(colors);
   const flatListRef = useRef<FlatList>(null);
   const isAtBottomRef = useRef(true);
+  const latestBottomDistanceRef = useRef(0);
   const [showScrollDown, setShowScrollDown] = useState(false);
+  const scrollToBottomControllerRef = useRef<
+    ReturnType<typeof createScrollToBottomController> | undefined
+  >(undefined);
+  if (!scrollToBottomControllerRef.current) {
+    scrollToBottomControllerRef.current = createScrollToBottomController({
+      scrollToEnd: () => flatListRef.current?.scrollToEnd({ animated: false }),
+      bottomThreshold: BOTTOM_THRESHOLD,
+      maxAttempts: 60,
+      onExhausted: () => {
+        const nearBottom = latestBottomDistanceRef.current < BOTTOM_THRESHOLD;
+        isAtBottomRef.current = nearBottom;
+        setShowScrollDown(!nearBottom);
+      },
+    });
+  }
+  const scrollToBottomController = scrollToBottomControllerRef.current;
 
   const lastMsg = messages[messages.length - 1];
+
+  useEffect(() => {
+    return () => scrollToBottomController.cancel();
+  }, [scrollToBottomController]);
 
   // Auto-scroll when new messages arrive or parts update
   useEffect(() => {
@@ -114,19 +136,27 @@ export function MessageList({
     };
   }, [messages.length]);
 
-  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    const nearBottom =
-      contentSize.height - contentOffset.y - layoutMeasurement.height < BOTTOM_THRESHOLD;
-    isAtBottomRef.current = nearBottom;
-    setShowScrollDown(!nearBottom);
-  }, []);
+  const handleScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+      const distance = contentSize.height - contentOffset.y - layoutMeasurement.height;
+      const nearBottom = distance < BOTTOM_THRESHOLD;
+      latestBottomDistanceRef.current = distance;
+      scrollToBottomController.observeDistance(distance);
+      isAtBottomRef.current = nearBottom;
+      setShowScrollDown(!nearBottom && !scrollToBottomController.isPending());
+    },
+    [scrollToBottomController],
+  );
 
   const handleScrollToBottom = useCallback(() => {
-    isAtBottomRef.current = true;
     setShowScrollDown(false);
-    flatListRef.current?.scrollToEnd({ animated: true });
-  }, []);
+    scrollToBottomController.request();
+  }, [scrollToBottomController]);
+
+  const handleContentSizeChange = useCallback(() => {
+    scrollToBottomController.contentSizeChanged();
+  }, [scrollToBottomController]);
 
   const [selectModalText, setSelectModalText] = useState<string | null>(null);
   const handleBubbleLongPress = useCallback((text: string) => {
@@ -169,6 +199,7 @@ export function MessageList({
         renderItem={renderMessage}
         contentContainerStyle={s.listContent}
         onScroll={handleScroll}
+        onContentSizeChange={handleContentSizeChange}
         onScrollBeginDrag={Keyboard.dismiss}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
