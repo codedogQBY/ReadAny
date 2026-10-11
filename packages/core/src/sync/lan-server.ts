@@ -19,6 +19,28 @@ import { collectChanges, type DeviceSyncPayload } from "./simple-sync";
 
 const LAN_SYNC_DIR = "/readany/sync";
 
+/**
+ * Could another device actually dial this address?
+ *
+ * Rejects the unspecified address (`0.0.0.0`), loopback, link-local and
+ * multicast/reserved ranges. Auto-detection hands back junk often enough to
+ * matter: expo-network documents `0.0.0.0` as "the IP address could not be
+ * retrieved" and its Android backend reads WifiManager.connectionInfo, so a
+ * phone that is not on Wi-Fi — sharing its connection over USB tethering, say —
+ * always lands there. Treating that as an address tells the peer to connect to
+ * something unroutable, so it has to fail loudly instead.
+ */
+export function isDialableLanAddress(ip: string | null | undefined): ip is string {
+  if (!ip) return false;
+  const octets = ip.split(".");
+  if (octets.length !== 4) return false;
+  if (!octets.every((o) => /^\d{1,3}$/.test(o) && Number(o) <= 255)) return false;
+  const [first, second] = octets.map(Number);
+  if (first === 0 || first === 127) return false; // unspecified / loopback
+  if (first === 169 && second === 254) return false; // link-local
+  return first < 224; // multicast / reserved and up
+}
+
 function getLanDeviceSnapshotPath(deviceId: string): string {
   return `${LAN_SYNC_DIR}/device-${deviceId}.json`;
 }
@@ -408,7 +430,10 @@ export class LANServer {
       if (!localIp) {
         localIp = await this.getLocalIP();
       }
-      if (!localIp) {
+      // Never advertise an address a peer cannot dial — see isDialableLanAddress.
+      // Raising the plain "could not determine" error also puts the UI on its
+      // existing manual-IP path, where the user can type the real address.
+      if (!isDialableLanAddress(localIp)) {
         throw new Error("Could not determine local IP address");
       }
 
