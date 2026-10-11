@@ -232,6 +232,7 @@ export function ReaderScreen({ route, navigation }: Props) {
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [progress, setProgress] = useState(0);
   const [currentChapter, setCurrentChapter] = useState("");
+  const [currentTocHref, setCurrentTocHref] = useState("");
   const [currentPage, setCurrentPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [toc, setToc] = useState<TOCItem[]>([]);
@@ -441,6 +442,7 @@ export function ReaderScreen({ route, navigation }: Props) {
   useEffect(() => {
     sessionProgressRef.current = null;
     totalBookCharactersRef.current = null;
+    setCurrentTocHref("");
     suppressProgressTracking(INITIAL_PROGRESS_RESTORE_GUARD_MS);
   }, [bookId]);
   const chapterTranslation = useChapterTranslation({
@@ -734,6 +736,7 @@ export function ReaderScreen({ route, navigation }: Props) {
         sessionProgressRef.current = { mode: "page", current: detail.section.current };
       }
       if (detail.tocItem?.label) setCurrentChapter(detail.tocItem.label);
+      if (detail.tocItem?.href) setCurrentTocHref(detail.tocItem.href);
       if (detail.cfi) {
         if (lastCfiRef.current && detail.cfi !== lastCfiRef.current) {
           const fractionDiff = Math.abs((detail.fraction ?? 0) - progress);
@@ -1992,6 +1995,7 @@ export function ReaderScreen({ route, navigation }: Props) {
         toc={toc}
         bookmarks={bookBookmarks}
         currentChapter={currentChapter}
+        currentHref={currentTocHref}
         onClose={() => setShowTOC(false)}
         onTabChange={setTocActiveTab}
         onSelectTocItem={goToTocItem}
