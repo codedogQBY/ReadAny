@@ -530,7 +530,7 @@ export function BookChatScreen({ route, navigation }: Props) {
 
           <KeyboardAvoidingView
             style={s.content}
-            behavior="height"
+            behavior="padding"
             enabled={Platform.OS === "android"}
             keyboardVerticalOffset={insets.top}
           >
