@@ -743,6 +743,10 @@ export class ExpoPlatformService implements IPlatformService {
 
   async getLocalIP(): Promise<string> {
     try {
+      // Android reads WifiManager.connectionInfo, so this is the Wi-Fi address
+      // and comes back as the documented "could not retrieve" sentinel 0.0.0.0
+      // whenever Wi-Fi is off — e.g. a phone sharing its connection over USB
+      // tethering. LANServer rejects unusable addresses before publishing one.
       const ip = await Network.getIpAddressAsync();
       return ip ?? "";
     } catch {
@@ -811,17 +815,38 @@ export class ExpoPlatformService implements IPlatformService {
                   resHead += `${k}: ${v}\r\n`;
                 }
               }
+              // Self-delimiting beats close-delimited: the peer can then tell a
+              // short read apart from a complete one instead of parsing half a
+              // JSON body as if it were the whole thing.
+              const alreadyLength = Object.keys(response.headers ?? {}).some(
+                (k) => k.toLowerCase() === "content-length",
+              );
+              if (response.body && !alreadyLength) {
+                resHead += `Content-Length: ${response.body.length}\r\n`;
+              }
               resHead += "Connection: close\r\n\r\n";
 
-              socket.write(resHead);
-              if (response.body) {
-                socket.write(BufferMod.from(response.body));
-              }
-              socket.end();
+              // Hand the whole response to end(data) in ONE call. It writes and
+              // only closes the socket from that write's completion callback —
+              // the write itself is queued onto a native thread pool, so an
+              // end() issued right after a separate body write wins the race and
+              // tears the socket down first, dropping the body ("Attempted to
+              // write to closed socket" in logcat). That truncated every small
+              // response to just its head, which is what made /ping and the
+              // remote-device listing unusable.
+              const head = BufferMod.from(resHead, "utf8");
+              socket.end(
+                response.body ? BufferMod.concat([head, BufferMod.from(response.body)]) : head,
+              );
             } catch (err) {
               console.error("TCP Sync handler Error:", err);
-              socket.write("HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n");
-              socket.end();
+              try {
+                socket.end(
+                  "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                );
+              } catch {
+                // Peer already hung up — there is nothing left to answer on.
+              }
             }
           }
         });
