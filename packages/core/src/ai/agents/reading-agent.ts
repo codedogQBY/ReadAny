@@ -592,6 +592,8 @@ export interface ReadingAgentOptions {
   }) => ToolDefinition[];
   /** Abort signal for immediate cancellation */
   signal?: AbortSignal;
+  /** Stable conversation/session id, forwarded to the provider (e.g. OpenCode Go routing). */
+  sessionId?: string;
   /** Maximum time a single tool may run before returning an error result. */
   toolTimeoutMs?: number;
 }
@@ -818,6 +820,7 @@ export async function* streamReadingAgent(
     memorySummary,
     getAvailableTools,
     signal,
+    sessionId,
     toolTimeoutMs = DEFAULT_TOOL_TIMEOUT_MS,
   } = options;
 
@@ -863,6 +866,7 @@ export async function* streamReadingAgent(
       maxTokens: aiConfig.maxTokens,
       streaming: true,
       deepThinking,
+      sessionId,
     });
 
     // Check abort after async operation

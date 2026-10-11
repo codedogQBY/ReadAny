@@ -113,6 +113,7 @@ export class StreamingChat {
           memorySummary: options.thread.memorySummary,
           getAvailableTools: options.getAvailableTools,
           signal,
+          sessionId: options.thread.id,
         },
         userInput,
         history,
