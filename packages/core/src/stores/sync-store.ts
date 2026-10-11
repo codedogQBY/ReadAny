@@ -622,6 +622,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
             }
           : uploadOnly
             ? {
+                forceUploadSnapshot: true,
                 fileSyncOptions: {
                   forceUploadAll: true,
                   concurrency: configConcurrency,
@@ -845,6 +846,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
                     disableRemoteDeletes: true,
                     concurrency: configConcurrency,
                   },
+            ...(direction === "upload" ? { forceUploadSnapshot: true } : {}),
           },
         );
 
