@@ -1,12 +1,21 @@
-import { extractBookMetadata } from "@/lib/book/metadata-extractor";
+import {
+  createRangeReadableFile,
+  extractBookMetadataFromFile,
+} from "@/lib/book/metadata-extractor";
 import { getPlatformService } from "@readany/core/services";
 import type { Book } from "@readany/core/types";
 import type { ExtractedBookMetadata } from "@readany/core/utils";
+import type { ExtractedMeta } from "./metadata-extractor";
 
-const MOBILE_DETAILS_METADATA_MAX_BYTES = 32 * 1024 * 1024;
+export type MobileExtractedBookMetadata = ExtractedBookMetadata &
+  Pick<ExtractedMeta, "coverBytes" | "coverMimeType">;
 
-export async function extractLocalBookMetadata(book: Book): Promise<ExtractedBookMetadata | null> {
-  if (book.syncStatus === "remote" || book.format !== "epub" || !book.filePath) return null;
+export async function extractLocalBookMetadata(
+  book: Book,
+): Promise<MobileExtractedBookMetadata | null> {
+  if (book.syncStatus === "remote" || !isRepairableFormat(book.format) || !book.filePath) {
+    return null;
+  }
 
   try {
     const platform = getPlatformService();
@@ -15,19 +24,19 @@ export async function extractLocalBookMetadata(book: Book): Promise<ExtractedBoo
       ? await platform.joinPath(appData, book.filePath)
       : book.filePath;
     const fileSize = await getMobileFileSize(filePath);
-    if (fileSize > MOBILE_DETAILS_METADATA_MAX_BYTES) {
-      console.warn(
-        `[BookMetadata] Skip details metadata for large EPUB: ${book.meta.title} (${fileSize} bytes)`,
-      );
-      return null;
-    }
+    if (fileSize == null) return null;
 
-    const fileName = book.filePath.split("/").pop() || `${book.id}.epub`;
-    return extractBookMetadata(await platform.readFile(filePath), book.format, fileName);
+    const fileName = book.filePath.split(/[\\/]/).pop() || `${book.id}.${book.format}`;
+    const rangeReadable = await createRangeReadableFile(filePath, fileSize);
+    return extractBookMetadataFromFile(rangeReadable, book.format, fileName);
   } catch (error) {
     console.warn("[BookMetadata] Failed to extract local metadata:", error);
     return null;
   }
+}
+
+function isRepairableFormat(format: Book["format"]): boolean {
+  return format === "epub" || format === "mobi" || format === "azw" || format === "azw3";
 }
 
 function isRelativeAppPath(path: string): boolean {
@@ -39,8 +48,8 @@ function isRelativeAppPath(path: string): boolean {
   );
 }
 
-async function getMobileFileSize(path: string): Promise<number> {
+async function getMobileFileSize(path: string): Promise<number | null> {
   const LegacyFileSystem = await import("expo-file-system/legacy");
   const info = await LegacyFileSystem.getInfoAsync(path);
-  return info.exists && !info.isDirectory ? (info.size ?? 0) : 0;
+  return info.exists && !info.isDirectory ? (info.size ?? 0) : null;
 }

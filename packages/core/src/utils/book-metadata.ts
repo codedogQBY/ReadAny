@@ -20,12 +20,62 @@ export interface BookMetadataFormValues {
 export interface ExtractedBookMetadata {
   title?: string;
   author?: string;
+  coverUrl?: string;
   publisher?: string;
   language?: string;
   isbn?: string;
   publishDate?: string;
   description?: string;
   subjects?: string[];
+}
+
+export function mergeBookMetadataSources(
+  ...sources: Array<Partial<BookMeta> | ExtractedBookMetadata | null | undefined>
+): Partial<BookMeta> {
+  const [saved, ...fillSources] = sources;
+  const result: Partial<BookMeta> = saved ? { ...saved } : {};
+  const publicationKeys: Array<keyof ExtractedBookMetadata> = [
+    "title",
+    "author",
+    "coverUrl",
+    "publisher",
+    "language",
+    "isbn",
+    "publishDate",
+    "description",
+    "subjects",
+  ];
+
+  for (const key of publicationKeys) {
+    const value = result[key];
+    const populated = Array.isArray(value)
+      ? value.some((item) => typeof item === "string" && item.trim())
+      : typeof value === "string" && Boolean(value.trim());
+    if (!populated) delete result[key];
+  }
+
+  const text = (key: keyof BookMeta, value: unknown) => {
+    if (result[key] != null || typeof value !== "string") return;
+    const trimmed = value.trim();
+    if (trimmed) Object.assign(result, { [key]: trimmed });
+  };
+
+  for (const source of fillSources) {
+    if (!source) continue;
+    text("title", source.title);
+    text("author", source.author);
+    text("publisher", source.publisher);
+    if (result.language == null) text("language", normalizeBookLanguage(source.language));
+    if (result.isbn == null) text("isbn", normalizeIsbn(source.isbn));
+    if (result.publishDate == null) text("publishDate", normalizePublishDate(source.publishDate));
+    text("description", source.description);
+    text("coverUrl", "coverUrl" in source ? source.coverUrl : undefined);
+    if (result.subjects == null) {
+      const subjects = normalizeSubjects(source.subjects);
+      if (subjects.length) result.subjects = subjects;
+    }
+  }
+  return result;
 }
 
 export function createBookMetadataFormValues(book: Book): BookMetadataFormValues {
@@ -48,13 +98,13 @@ export function createBookMetadataFormValues(book: Book): BookMetadataFormValues
 
 export function hasMissingBookMetadataAutoFillTargets(values: BookMetadataFormValues): boolean {
   return (
+    !values.coverUrl.trim() ||
     !values.publisher.trim() ||
     !values.language.trim() ||
     !values.isbn.trim() ||
     !values.publishDate.trim() ||
     !values.description.trim() ||
-    !values.subjectsText.trim() ||
-    !values.tagsText.trim()
+    !values.subjectsText.trim()
   );
 }
 
@@ -78,6 +128,7 @@ export function mergeMissingBookMetadataValues(
 
   fillText("title", extracted.title);
   fillText("author", extracted.author);
+  fillText("coverUrl", extracted.coverUrl);
   fillText("publisher", extracted.publisher);
   fillText("language", normalizeBookLanguage(extracted.language));
   fillText("isbn", normalizeIsbn(extracted.isbn));
@@ -91,13 +142,22 @@ export function mergeMissingBookMetadataValues(
       next.subjectsText = subjectsText;
       changed = true;
     }
-    if (!next.tagsText.trim()) {
-      next.tagsText = subjectsText;
-      changed = true;
-    }
   }
 
   return changed ? next : null;
+}
+
+export function applyBookMetadataFormUpdate(
+  valuesRef: { current: BookMetadataFormValues | null },
+  setValues: (values: BookMetadataFormValues) => void,
+  update: BookMetadataFormValues | ((current: BookMetadataFormValues) => BookMetadataFormValues),
+): BookMetadataFormValues | null {
+  const current = valuesRef.current;
+  if (!current && typeof update === "function") return null;
+  const next = typeof update === "function" ? update(current as BookMetadataFormValues) : update;
+  valuesRef.current = next;
+  setValues(next);
+  return next;
 }
 
 export function splitEditableList(value: string): string[] {
@@ -137,23 +197,57 @@ function normalizeBookLanguage(value: unknown): string {
   return normalized;
 }
 
-function normalizeIsbn(value: unknown): string {
+export function normalizeIsbn(value: unknown): string {
   if (typeof value !== "string") return "";
-  const match = value.match(/(?:97[89][-\s]?)?(?:\d[-\s]?){9,12}[\dXx]/);
-  return (match?.[0] ?? value).replace(/\s+/g, "").trim();
+  const candidates = value.matchAll(
+    /(?:^|[^\dXx])((?:97[89](?:[-\s]*\d){10}|(?:\d[-\s]*){9}[\dXx]))(?![\dXx])/g,
+  );
+  for (const match of candidates) {
+    const candidate = match[1];
+    const compact = candidate.replace(/[-\s]/g, "").toUpperCase();
+    if (isValidIsbn10(compact) || isValidIsbn13(compact)) return compact;
+  }
+  return "";
+}
+
+function isValidIsbn10(value: string): boolean {
+  if (!/^\d{9}[\dX]$/.test(value)) return false;
+  const sum = Array.from(value).reduce((total, char, index) => {
+    const digit = char === "X" ? 10 : Number(char);
+    return total + digit * (10 - index);
+  }, 0);
+  return sum % 11 === 0;
+}
+
+function isValidIsbn13(value: string): boolean {
+  if (!/^97[89]\d{10}$/.test(value)) return false;
+  const sum = Array.from(value).reduce(
+    (total, char, index) => total + Number(char) * (index % 2 === 0 ? 1 : 3),
+    0,
+  );
+  return sum % 10 === 0;
 }
 
 function normalizePublishDate(value: unknown): string {
   if (typeof value !== "string") return "";
   const trimmed = value.trim();
-  const match = trimmed.match(/^(\d{4})(?:[-/.](\d{1,2})(?:[-/.](\d{1,2}))?)?/);
+  const match = trimmed.match(/^(\d{4})(?:([-/.])(\d{1,2})(?:\2(\d{1,2}))?)?$/);
   if (!match) return "";
   const year = match[1];
-  const month = match[2] ? match[2].padStart(2, "0") : "";
-  const day = match[3] ? match[3].padStart(2, "0") : "";
-  if (day && month) return `${year}-${month}-${day}`;
-  if (month) return `${year}-${month}`;
-  return year;
+  if (!match[3]) return year;
+
+  const month = Number(match[3]);
+  if (month < 1 || month > 12) return "";
+  const normalizedMonth = match[3].padStart(2, "0");
+  if (!match[4]) return `${year}-${normalizedMonth}`;
+
+  const numericYear = Number(year);
+  const isLeapYear = numericYear % 4 === 0 && (numericYear % 100 !== 0 || numericYear % 400 === 0);
+  const daysInMonth = [31, isLeapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const day = Number(match[4]);
+  if (day < 1 || day > daysInMonth[month - 1]) return "";
+
+  return `${year}-${normalizedMonth}-${match[4].padStart(2, "0")}`;
 }
 
 function normalizeSubjects(values: unknown): string[] {
