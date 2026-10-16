@@ -178,10 +178,12 @@ export default function App() {
           ttsStore.getState().stop();
         });
         TrackPlayer.addEventListener(TrackEvent.RemoteNext, () => {
-          const { jumpToChunk, currentChunkIndex, totalChunks } = ttsStore.getState();
+          const { jumpToChunk, currentChunkIndex, onEnd, totalChunks } = ttsStore.getState();
           const nextIndex = currentChunkIndex + 1;
           if (nextIndex < totalChunks) {
             jumpToChunk(nextIndex);
+          } else {
+            onEnd?.();
           }
         });
         TrackPlayer.addEventListener(TrackEvent.RemotePrevious, () => {

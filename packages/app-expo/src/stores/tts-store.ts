@@ -4,6 +4,7 @@ import {
   type TTSConfig,
   type TTSProfile,
   VOICE_RESPEAK_DEBOUNCE_MS,
+  hasSpeakableText,
   isActivePlay,
   normalizeTTSConfig,
   shouldRespeakForSynthChange,
@@ -14,9 +15,9 @@ import TrackPlayer from "react-native-track-player";
 import { create } from "zustand";
 import { ExpoSpeechTTSPlayer } from "../lib/platform/expo-speech-player";
 import { canUseSystemTtsSynthesis } from "../lib/platform/system-tts-synthesis";
+import { TrackPlayerCloudTTSPlayer } from "../lib/platform/track-player-cloud-tts-player";
 import { TrackPlayerDashScopeTTSPlayer } from "../lib/platform/track-player-dashscope-player";
 import { TrackPlayerEdgeTTSPlayer } from "../lib/platform/track-player-edge-player";
-import { TrackPlayerCloudTTSPlayer } from "../lib/platform/track-player-cloud-tts-player";
 import { TrackPlayerSystemTTSPlayer } from "../lib/platform/track-player-system-player";
 import { withPersist } from "./persist";
 
@@ -137,11 +138,11 @@ function detachAndStopAllPlayers(): void {
 
 function normalizeSegments(text: string | string[]): string[] {
   if (Array.isArray(text)) {
-    return text.map((segment) => segment.trim()).filter(Boolean);
+    return text.map((segment) => segment.trim()).filter(hasSpeakableText);
   }
   return splitNarrationText(text)
     .map((segment) => segment.trim())
-    .filter(Boolean);
+    .filter(hasSpeakableText);
 }
 
 function previewSessionSegments(segments: string[], limit = 8) {
@@ -176,7 +177,8 @@ function syncProfileUpdatesFromLegacyFields(
   } else if (targetProvider === "openai-compatible") {
     if (updates.openaiTtsBaseUrl !== undefined) profileUpdates.baseUrl = updates.openaiTtsBaseUrl;
     if (updates.openaiTtsApiKey !== undefined) profileUpdates.apiKey = updates.openaiTtsApiKey;
-    if (updates.openaiTtsEndpoint !== undefined) profileUpdates.endpoint = updates.openaiTtsEndpoint;
+    if (updates.openaiTtsEndpoint !== undefined)
+      profileUpdates.endpoint = updates.openaiTtsEndpoint;
     if (updates.openaiTtsModel !== undefined) profileUpdates.model = updates.openaiTtsModel;
     if (updates.openaiTtsVoice !== undefined) profileUpdates.voice = updates.openaiTtsVoice;
     if (updates.openaiTtsFormat !== undefined) profileUpdates.format = updates.openaiTtsFormat;

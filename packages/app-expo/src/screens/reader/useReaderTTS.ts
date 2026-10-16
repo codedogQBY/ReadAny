@@ -431,8 +431,23 @@ export function useReaderTTS({
         ? ttsSegmentsRef.current[localIndex] || null
         : null;
 
+    if (indexSegment?.cfi) return indexSegment.cfi;
+
+    const currentText = normalizeTTSDebugText(state.currentSegmentText);
+    const textMatchedSegment = currentText
+      ? [
+          ...ttsPrevPageSegmentsRef.current,
+          ...ttsSegmentsRef.current,
+          ...ttsFutureSegmentsRef.current,
+        ].find((segment) => normalizeTTSDebugText(segment.text) === currentText)
+      : null;
+
     return (
-      indexSegment?.cfi || state.currentLocationCfi || resolvedTTSSegmentCfi || currentCfi || null
+      textMatchedSegment?.cfi ||
+      state.currentLocationCfi ||
+      resolvedTTSSegmentCfi ||
+      currentCfi ||
+      null
     );
   }, [bookId, currentCfi, resolvedTTSSegmentCfi]);
 

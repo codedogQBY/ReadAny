@@ -29,10 +29,12 @@ export async function PlaybackService() {
   });
 
   TrackPlayer.addEventListener(Event.RemoteNext, () => {
-    const { currentChunkIndex, jumpToChunk, totalChunks } = useTTSStore.getState();
+    const { currentChunkIndex, jumpToChunk, onEnd, totalChunks } = useTTSStore.getState();
     const nextIndex = currentChunkIndex + 1;
     if (nextIndex < totalChunks) {
       jumpToChunk(nextIndex);
+    } else {
+      onEnd?.();
     }
   });
 

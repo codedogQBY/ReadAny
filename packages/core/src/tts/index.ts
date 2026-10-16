@@ -33,6 +33,7 @@ export {
 export {
   cleanText,
   countChars,
+  hasSpeakableText,
   isTTSFootnoteMarker,
   shouldSkipTTSNode,
   splitIntoChunks,
