@@ -15,6 +15,9 @@ vi.mock("../lib/platform/system-tts-synthesis", () => ({
   canUseSystemTtsSynthesis: () => true,
 }));
 vi.mock("../lib/platform/expo-speech-player", () => ({ ExpoSpeechTTSPlayer: class {} }));
+vi.mock("../lib/platform/native-system-tts-player", () => ({
+  NativeSystemTTSPlayer: class {},
+}));
 vi.mock("../lib/platform/track-player-system-player", () => ({
   TrackPlayerSystemTTSPlayer: class {},
 }));
@@ -52,13 +55,16 @@ function createPlayer(): MockPlayer {
 describe("Expo TTS provider failures", () => {
   let systemPlayer: MockPlayer;
   let dashscopePlayer: MockPlayer;
+  let edgePlayer: MockPlayer;
 
   beforeEach(() => {
     systemPlayer = createPlayer();
     dashscopePlayer = createPlayer();
+    edgePlayer = createPlayer();
     setTTSPlayerFactories({
       createSystemTTS: () => systemPlayer,
       createDashScopeTTS: () => dashscopePlayer,
+      createEdgeTTS: () => edgePlayer,
     });
     useTTSStore.setState({
       config: DEFAULT_TTS_CONFIG,
@@ -90,5 +96,13 @@ describe("Expo TTS provider failures", () => {
 
     expect(onEnd).not.toHaveBeenCalled();
     expect(useTTSStore.getState().playState).toBe("stopped");
+  });
+
+  it("omits punctuation-only chunks before starting mobile playback", () => {
+    useTTSStore.getState().updateConfig({ engine: "edge", edgeVoice: "zh-CN-YunjianNeural" });
+
+    useTTSStore.getState().play(["……", "许七安说。", "。"]);
+
+    expect(edgePlayer.speak).toHaveBeenCalledWith(["许七安说。"], expect.anything());
   });
 });

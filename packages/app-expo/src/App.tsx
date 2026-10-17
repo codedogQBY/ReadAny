@@ -25,8 +25,8 @@ if (typeof navigator !== "undefined" && !navigator.userAgent) {
 import { DarkTheme, DefaultTheme, NavigationContainer } from "@react-navigation/native";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { LogBox, Platform, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AppState, LogBox, Platform, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -43,12 +43,9 @@ import i18n from "@readany/core/i18n";
 import { setPlatformService } from "@readany/core/services";
 import { setSyncAdapter } from "@readany/core/sync";
 import { Audio } from "expo-av";
+import Constants from "expo-constants";
 import { I18nextProvider } from "react-i18next";
-import TrackPlayer, {
-  AppKilledPlaybackBehavior,
-  Event as TrackEvent,
-  Capability,
-} from "react-native-track-player";
+import TrackPlayer, { AppKilledPlaybackBehavior, Capability } from "react-native-track-player";
 
 import { FloatingTTSBubble } from "@/components/tts/FloatingTTSBubble";
 import { UpdateDialog } from "@/components/update/UpdateDialog";
@@ -80,6 +77,9 @@ const feedbackWorkerUrl =
   process.env.EXPO_PUBLIC_FEEDBACK_WORKER_URL?.trim() || FEEDBACK_WORKER_FALLBACK;
 setFeedbackWorkerUrl(feedbackWorkerUrl);
 
+const isNativeSystemTtsLab =
+  Platform.OS === "android" && Constants.expoConfig?.extra?.appVariant === "ttslab";
+
 // Keep the native splash screen visible while we bootstrap
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -87,8 +87,36 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [splashDone, setSplashDone] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [foregroundRetryTick, setForegroundRetryTick] = useState(0);
+  const bootErrorRef = useRef<string | null>(null);
+  const readyRef = useRef(false);
+  const bootstrapAttemptedRef = useRef(false);
+  const bootstrapRetryRequestedRef = useRef(false);
 
   useEffect(() => {
+    bootErrorRef.current = bootError;
+    readyRef.current = ready;
+  }, [bootError, ready]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active" || readyRef.current || !bootErrorRef.current) return;
+      bootstrapRetryRequestedRef.current = true;
+      setForegroundRetryTick((tick) => tick + 1);
+    });
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    void foregroundRetryTick;
+    if (bootstrapAttemptedRef.current && !bootstrapRetryRequestedRef.current) return;
+    bootstrapAttemptedRef.current = true;
+    bootstrapRetryRequestedRef.current = false;
+    if (bootErrorRef.current) {
+      console.log("[App] bootstrap retry in foreground");
+      setBootError(null);
+    }
+
     let unsubscribeRagSearch: (() => void) | undefined;
 
     async function bootstrap() {
@@ -129,68 +157,48 @@ export default function App() {
           shouldDuckAndroid: true,
         });
 
-        console.log("[App] bootstrap: init react-native-track-player");
-        // setupPlayer can only be called once per native process. On Android,
-        // a Configuration Change (e.g. Huawei tablet small-screen → fullscreen)
-        // restarts the Activity and re-runs this bootstrap, but the native
-        // singleton is still alive — so setupPlayer() throws
-        // "The player has already been initialized via setupPlayer".
-        // Treat that specific error as success so bootstrap can continue.
-        try {
-          await TrackPlayer.setupPlayer();
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          if (!/already been initialized/i.test(msg)) throw e;
-          console.log("[App] TrackPlayer already initialized — reusing existing native instance");
+        if (isNativeSystemTtsLab) {
+          console.log("[App] bootstrap: native system TTS owns the media session");
+        } else {
+          console.log("[App] bootstrap: init react-native-track-player");
+          // setupPlayer can only be called once per native process. On Android,
+          // a Configuration Change (e.g. Huawei tablet small-screen → fullscreen)
+          // restarts the Activity and re-runs this bootstrap, but the native
+          // singleton is still alive — so setupPlayer() throws
+          // "The player has already been initialized via setupPlayer".
+          // Treat that specific error as success so bootstrap can continue.
+          try {
+            await TrackPlayer.setupPlayer();
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            if (!/already been initialized/i.test(msg)) throw e;
+            console.log("[App] TrackPlayer already initialized — reusing existing native instance");
+          }
+          await TrackPlayer.updateOptions({
+            android: {
+              appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
+              alwaysPauseOnInterruption: false,
+            },
+            stoppingAppPausesPlayback: false,
+            capabilities: [
+              Capability.Play,
+              Capability.Pause,
+              Capability.Stop,
+              Capability.SkipToNext,
+              Capability.SkipToPrevious,
+              Capability.SeekTo,
+            ],
+            compactCapabilities: [Capability.Play, Capability.Pause],
+            notificationCapabilities: [
+              Capability.Play,
+              Capability.Pause,
+              Capability.Stop,
+              Capability.SkipToNext,
+              Capability.SkipToPrevious,
+              Capability.SeekTo,
+            ],
+          });
         }
-        await TrackPlayer.updateOptions({
-          android: {
-            appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
-            alwaysPauseOnInterruption: false,
-          },
-          stoppingAppPausesPlayback: false,
-          capabilities: [
-            Capability.Play,
-            Capability.Pause,
-            Capability.Stop,
-            Capability.SkipToNext,
-            Capability.SkipToPrevious,
-          ],
-          compactCapabilities: [Capability.Play, Capability.Pause],
-          notificationCapabilities: [
-            Capability.Play,
-            Capability.Pause,
-            Capability.Stop,
-            Capability.SkipToNext,
-            Capability.SkipToPrevious,
-          ],
-        });
-
-        // Remote event → TTS store bridge
-        const { useTTSStore: ttsStore } = await import("@/stores/tts-store");
-        TrackPlayer.addEventListener(TrackEvent.RemotePlay, () => {
-          ttsStore.getState().resume();
-        });
-        TrackPlayer.addEventListener(TrackEvent.RemotePause, () => {
-          ttsStore.getState().pause();
-        });
-        TrackPlayer.addEventListener(TrackEvent.RemoteStop, () => {
-          ttsStore.getState().stop();
-        });
-        TrackPlayer.addEventListener(TrackEvent.RemoteNext, () => {
-          const { jumpToChunk, currentChunkIndex, totalChunks } = ttsStore.getState();
-          const nextIndex = currentChunkIndex + 1;
-          if (nextIndex < totalChunks) {
-            jumpToChunk(nextIndex);
-          }
-        });
-        TrackPlayer.addEventListener(TrackEvent.RemotePrevious, () => {
-          const { jumpToChunk, currentChunkIndex } = ttsStore.getState();
-          const prevIndex = currentChunkIndex - 1;
-          if (prevIndex >= 0) {
-            jumpToChunk(prevIndex);
-          }
-        });
 
         console.log("[App] bootstrap: done");
         setReady(true);
@@ -204,7 +212,7 @@ export default function App() {
     }
     bootstrap();
     return () => unsubscribeRagSearch?.();
-  }, []);
+  }, [foregroundRetryTick]);
 
   const handleSplashFinish = useCallback(() => {
     setSplashDone(true);

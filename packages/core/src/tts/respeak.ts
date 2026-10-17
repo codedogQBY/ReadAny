@@ -39,5 +39,10 @@ export function shouldRespeakForSynthChange(prev: TTSConfig, next: TTSConfig): b
       next.edgeVoice !== prev.edgeVoice || next.rate !== prev.rate || next.pitch !== prev.pitch
     );
   }
+  if (next.engine === "system") {
+    // Native system playback applies rate/pitch to MediaPlayer immediately.
+    // Only a voice/language change needs synthesis to restart.
+    return next.voiceName !== prev.voiceName;
+  }
   return false;
 }

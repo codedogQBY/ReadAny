@@ -1,5 +1,6 @@
 import { EDGE_TTS_VOICES } from "./edge-tts";
-import { DASHSCOPE_VOICES, XIAOMI_TTS_VOICES, type TTSConfig } from "./types";
+import { hasSpeakableText } from "./text-utils";
+import { DASHSCOPE_VOICES, type TTSConfig, XIAOMI_TTS_VOICES } from "./types";
 
 const MAX_EXCERPT_LENGTH = 96;
 const MAX_PREVIEW_LENGTH = 72;
@@ -26,7 +27,7 @@ export function splitNarrationText(text: string): string[] {
   const sentenceLikeParts = normalized
     .split(/(?<=[。！？!?；;…])|(?<=\.)\s+/u)
     .map((part) => part.trim())
-    .filter(Boolean);
+    .filter((part) => hasSpeakableText(part));
 
   if (sentenceLikeParts.length > 1) {
     return sentenceLikeParts;
@@ -35,13 +36,13 @@ export function splitNarrationText(text: string): string[] {
   const commaParts = normalized
     .split(/(?<=[，,、])/u)
     .map((part) => part.trim())
-    .filter(Boolean);
+    .filter((part) => hasSpeakableText(part));
 
   if (commaParts.length > 1) {
     return commaParts;
   }
 
-  return chunkText(normalized, MAX_EXCERPT_LENGTH);
+  return chunkText(normalized, MAX_EXCERPT_LENGTH).filter(hasSpeakableText);
 }
 
 export function buildNarrationPreview(text: string): {

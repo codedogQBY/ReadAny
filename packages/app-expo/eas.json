@@ -40,6 +40,19 @@
         "EXPO_NO_METRO_WORKSPACE_ROOT": "1"
       }
     },
+    "ttslab": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease -PreactNativeArchitectures=arm64-v8a"
+      },
+      "node": "20.18.0",
+      "env": {
+        "APP_VARIANT": "ttslab",
+        "EXPO_NO_METRO_WORKSPACE_ROOT": "1",
+        "EXPO_PUBLIC_READANY_LANGUAGE": "zh"
+      }
+    },
     "production": {
       "autoIncrement": true,
       "android": {

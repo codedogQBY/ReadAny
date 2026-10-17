@@ -204,8 +204,7 @@ export function normalizeTTSEngine(engine: LegacyTTSEngine | string | null | und
 
 export function getTTSProviderDefinition(provider: TTSProviderType): TTSProviderDefinition {
   return (
-    TTS_PROVIDER_DEFINITIONS.find((item) => item.id === provider) ??
-    TTS_PROVIDER_DEFINITIONS[0]
+    TTS_PROVIDER_DEFINITIONS.find((item) => item.id === provider) ?? TTS_PROVIDER_DEFINITIONS[0]
   );
 }
 
@@ -282,10 +281,7 @@ function normalizeProfiles(config: Partial<TTSConfig>): TTSProfile[] {
         ? { ...profile, voice: normalizeXiaomiTTSVoice(profile.voice) }
         : profile;
     const fallback = merged.get(profile.id);
-    merged.set(
-      profile.id,
-      fallback ? { ...fallback, ...normalizedProfile } : normalizedProfile,
-    );
+    merged.set(profile.id, fallback ? { ...fallback, ...normalizedProfile } : normalizedProfile);
   }
   return Array.from(merged.values()).filter((profile) => {
     if (defaultIds.has(profile.id)) return true;
@@ -339,7 +335,7 @@ export function normalizeTTSConfig(config: PersistedTTSConfig | null | undefined
     ...DEFAULT_TTS_CONFIG,
     ...config,
     engine: normalizedEngine,
-    activeProfileId: hasExplicitProfileId ? config.activeProfileId! : "",
+    activeProfileId: hasExplicitProfileId ? (config.activeProfileId ?? "") : "",
     voiceName: config?.voiceName ?? DEFAULT_TTS_CONFIG.voiceName,
     systemVoiceLabel: config?.systemVoiceLabel ?? DEFAULT_TTS_CONFIG.systemVoiceLabel,
     rate: typeof config?.rate === "number" ? config.rate : DEFAULT_TTS_CONFIG.rate,
@@ -349,9 +345,7 @@ export function normalizeTTSConfig(config: PersistedTTSConfig | null | undefined
     dashscopeVoice: config?.dashscopeVoice ?? DEFAULT_TTS_CONFIG.dashscopeVoice,
     xiaomiApiKey: config?.xiaomiApiKey ?? DEFAULT_TTS_CONFIG.xiaomiApiKey,
     xiaomiBaseUrl: config?.xiaomiBaseUrl ?? DEFAULT_TTS_CONFIG.xiaomiBaseUrl,
-    xiaomiVoice: normalizeXiaomiTTSVoice(
-      config?.xiaomiVoice ?? DEFAULT_TTS_CONFIG.xiaomiVoice,
-    ),
+    xiaomiVoice: normalizeXiaomiTTSVoice(config?.xiaomiVoice ?? DEFAULT_TTS_CONFIG.xiaomiVoice),
     xiaomiStylePrompt: config?.xiaomiStylePrompt ?? DEFAULT_TTS_CONFIG.xiaomiStylePrompt,
     openaiTtsBaseUrl: config?.openaiTtsBaseUrl ?? DEFAULT_TTS_CONFIG.openaiTtsBaseUrl,
     openaiTtsApiKey: config?.openaiTtsApiKey ?? DEFAULT_TTS_CONFIG.openaiTtsApiKey,
@@ -359,8 +353,7 @@ export function normalizeTTSConfig(config: PersistedTTSConfig | null | undefined
     openaiTtsModel: config?.openaiTtsModel ?? DEFAULT_TTS_CONFIG.openaiTtsModel,
     openaiTtsVoice: config?.openaiTtsVoice ?? DEFAULT_TTS_CONFIG.openaiTtsVoice,
     openaiTtsFormat: config?.openaiTtsFormat ?? DEFAULT_TTS_CONFIG.openaiTtsFormat,
-    openaiTtsStylePrompt:
-      config?.openaiTtsStylePrompt ?? DEFAULT_TTS_CONFIG.openaiTtsStylePrompt,
+    openaiTtsStylePrompt: config?.openaiTtsStylePrompt ?? DEFAULT_TTS_CONFIG.openaiTtsStylePrompt,
     profiles: normalizeProfiles(profileSource),
   };
 
@@ -397,7 +390,16 @@ export const DASHSCOPE_VOICES = [
  */
 export interface ITTSPlayer {
   speak(text: string | string[], config: TTSConfig): void | Promise<void>;
-  append?(text: string | string[]): void | Promise<void>;
+  speakFrom?(text: string | string[], startIndex: number, config: TTSConfig): void | Promise<void>;
+  append?(text: string | string[]): unknown;
+  seekToChunk?(index: number): Promise<boolean>;
+  setMetadata?(title: string, artist: string, album: string, artwork?: string): void;
+  setConfig?(config: TTSConfig): void;
+  setChapterProgressBounds?(
+    prefixCharacters: number,
+    totalCharacters: number,
+    virtualProgress?: { positionSeconds: number; durationSeconds: number },
+  ): void;
   pause(): void;
   resume(): void;
   stop(): void;
@@ -406,6 +408,10 @@ export interface ITTSPlayer {
 
   onStateChange?: (state: "playing" | "paused" | "stopped") => void;
   onChunkChange?: (index: number, total: number) => void;
+  onVirtualProgress?: (positionSeconds: number, durationSeconds: number) => void;
+  onRemoteNext?: () => void;
+  onRemotePrevious?: () => void;
+  onRemoteSeek?: (positionSeconds: number, durationSeconds: number) => void;
   /** Called when playback cannot continue. Must not be followed by onEnd. */
   onError?: (error: Error) => void;
   /** Called when all chunks finish playing naturally (not by stop()) */

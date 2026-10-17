@@ -4,6 +4,7 @@ import {
   type TTSConfig,
   type TTSProfile,
   VOICE_RESPEAK_DEBOUNCE_MS,
+  hasSpeakableText,
   isActivePlay,
   normalizeTTSConfig,
   shouldRespeakForSynthChange,
@@ -13,10 +14,14 @@ import { Platform } from "react-native";
 import TrackPlayer from "react-native-track-player";
 import { create } from "zustand";
 import { ExpoSpeechTTSPlayer } from "../lib/platform/expo-speech-player";
-import { canUseSystemTtsSynthesis } from "../lib/platform/system-tts-synthesis";
+import { NativeSystemTTSPlayer } from "../lib/platform/native-system-tts-player";
+import {
+  canUseSystemTtsDirectPlayback,
+  canUseSystemTtsSynthesis,
+} from "../lib/platform/system-tts-synthesis";
+import { TrackPlayerCloudTTSPlayer } from "../lib/platform/track-player-cloud-tts-player";
 import { TrackPlayerDashScopeTTSPlayer } from "../lib/platform/track-player-dashscope-player";
 import { TrackPlayerEdgeTTSPlayer } from "../lib/platform/track-player-edge-player";
-import { TrackPlayerCloudTTSPlayer } from "../lib/platform/track-player-cloud-tts-player";
 import { TrackPlayerSystemTTSPlayer } from "../lib/platform/track-player-system-player";
 import { withPersist } from "./persist";
 
@@ -36,6 +41,7 @@ const defaultFactories: TTSPlayerFactories = {
       if (!canUseSystemTtsSynthesis()) {
         console.warn("[TTS] System TTS synthesis module unavailable; native rebuild required");
       }
+      if (canUseSystemTtsDirectPlayback()) return new NativeSystemTTSPlayer();
       return new TrackPlayerSystemTTSPlayer();
     }
     return new ExpoSpeechTTSPlayer();
@@ -56,6 +62,7 @@ let _activeTTS: ITTSPlayer | null = null;
 
 let _sessionSegments: string[] = [];
 let _sessionCurrentIndex = 0;
+let _sessionStartIndex = 0;
 let _sessionGeneration = 0;
 let _sleepTimerHandle: ReturnType<typeof setTimeout> | null = null;
 
@@ -117,6 +124,10 @@ function detachAndStopPlayer(player: ITTSPlayer | null): void {
   if (!player) return;
   player.onStateChange = undefined;
   player.onChunkChange = undefined;
+  player.onVirtualProgress = undefined;
+  player.onRemoteNext = undefined;
+  player.onRemotePrevious = undefined;
+  player.onRemoteSeek = undefined;
   player.onError = undefined;
   player.onEnd = undefined;
   try {
@@ -137,11 +148,11 @@ function detachAndStopAllPlayers(): void {
 
 function normalizeSegments(text: string | string[]): string[] {
   if (Array.isArray(text)) {
-    return text.map((segment) => segment.trim()).filter(Boolean);
+    return text.map((segment) => segment.trim()).filter(hasSpeakableText);
   }
   return splitNarrationText(text)
     .map((segment) => segment.trim())
-    .filter(Boolean);
+    .filter(hasSpeakableText);
 }
 
 function previewSessionSegments(segments: string[], limit = 8) {
@@ -176,7 +187,8 @@ function syncProfileUpdatesFromLegacyFields(
   } else if (targetProvider === "openai-compatible") {
     if (updates.openaiTtsBaseUrl !== undefined) profileUpdates.baseUrl = updates.openaiTtsBaseUrl;
     if (updates.openaiTtsApiKey !== undefined) profileUpdates.apiKey = updates.openaiTtsApiKey;
-    if (updates.openaiTtsEndpoint !== undefined) profileUpdates.endpoint = updates.openaiTtsEndpoint;
+    if (updates.openaiTtsEndpoint !== undefined)
+      profileUpdates.endpoint = updates.openaiTtsEndpoint;
     if (updates.openaiTtsModel !== undefined) profileUpdates.model = updates.openaiTtsModel;
     if (updates.openaiTtsVoice !== undefined) profileUpdates.voice = updates.openaiTtsVoice;
     if (updates.openaiTtsFormat !== undefined) profileUpdates.format = updates.openaiTtsFormat;
@@ -231,6 +243,8 @@ function startPlayback(
   const gen = _sessionGeneration;
   let isStarting = true;
   _activeTTS = player;
+  _sessionStartIndex = Math.max(0, Math.min(startIndex, _sessionSegments.length));
+  let lastVirtualDuration = 0;
 
   // Set artwork getter for RNTP players
   if (
@@ -241,6 +255,27 @@ function startPlayback(
       () => get().currentArtwork || undefined,
     );
   }
+
+  if (typeof player.setMetadata === "function") {
+    const state = get();
+    player.setMetadata(
+      state.currentBookTitle || state.currentChapterTitle || "ReadAny",
+      state.currentChapterTitle || state.currentBookTitle || "ReadAny",
+      state.currentBookTitle || "ReadAny",
+      state.currentArtwork || undefined,
+    );
+  }
+
+  player.onRemoteNext = () => {
+    const state = get();
+    (state.onNext || state.onEnd)?.();
+  };
+  player.onRemotePrevious = () => {
+    get().onPrevious?.();
+  };
+  player.onRemoteSeek = (positionSeconds, durationSeconds) => {
+    get().onSeek?.(positionSeconds, durationSeconds);
+  };
 
   // Set title getter for RNTP players — chapter name shown on lock screen
   // / control center / notification, with fallback to book title.
@@ -291,6 +326,15 @@ function startPlayback(
     });
   };
 
+  player.onVirtualProgress = (positionSeconds, durationSeconds) => {
+    if (gen !== _sessionGeneration) return;
+    // MediaSession extrapolates the moving position from playback speed. Pushing
+    // every poll into React would make MIUI media UIs redraw excessively.
+    if (Math.abs(durationSeconds - lastVirtualDuration) < 0.5) return;
+    lastVirtualDuration = durationSeconds;
+    set({ virtualPosition: positionSeconds, virtualDuration: durationSeconds });
+  };
+
   player.onError = (error) => {
     if (gen !== _sessionGeneration) return;
     console.error("[TTSStore][player] error", error);
@@ -322,7 +366,10 @@ function startPlayback(
 
   let playback: void | Promise<void>;
   try {
-    playback = player.speak(segments, config);
+    playback =
+      typeof player.speakFrom === "function"
+        ? player.speakFrom(_sessionSegments, startIndex, config)
+        : player.speak(segments, config);
   } catch (error) {
     isStarting = false;
     if (gen !== _sessionGeneration) return;
@@ -346,6 +393,9 @@ export interface TTSState {
   currentSegmentText: string;
   config: TTSConfig;
   onEnd: (() => void) | null;
+  onPrevious: (() => void) | null;
+  onNext: (() => void) | null;
+  onSeek: ((positionSeconds: number, durationSeconds: number) => void) | null;
   currentBookTitle: string;
   currentChapterTitle: string;
   currentBookId: string;
@@ -353,10 +403,13 @@ export interface TTSState {
   currentLocationCfi: string;
   currentChunkIndex: number;
   totalChunks: number;
+  virtualPosition: number;
+  virtualDuration: number;
   sleepTimerEndsAt: number | null;
   sleepTimerDurationMinutes: number | null;
 
   play: (text: string | string[]) => void;
+  playFrom: (text: string | string[], startIndex: number) => void;
   append: (text: string | string[]) => boolean;
   pause: () => void;
   resume: () => void;
@@ -365,10 +418,20 @@ export interface TTSState {
   updateConfig: (updates: Partial<TTSConfig>) => void;
   setPlayState: (state: TTSPlayState) => void;
   setOnEnd: (cb: (() => void) | null) => void;
+  setNavigationCallbacks: (onPrevious: (() => void) | null, onNext: (() => void) | null) => void;
+  setSeekCallback: (
+    cb: ((positionSeconds: number, durationSeconds: number) => void) | null,
+  ) => void;
+  setChapterProgressBounds: (
+    prefixCharacters: number,
+    totalCharacters: number,
+    virtualProgress?: { positionSeconds: number; durationSeconds: number },
+  ) => void;
   setCurrentBook: (title: string, chapter: string, bookId?: string, artwork?: string) => void;
   setCurrentLocation: (cfi?: string | null) => void;
   setChunkProgress: (index: number, total: number) => void;
-  jumpToChunk: (index: number) => void;
+  jumpToChunk: (index: number) => void | Promise<void>;
+  seekWithinQueue: (index: number) => Promise<boolean>;
   setSleepTimer: (minutes: number) => void;
   clearSleepTimer: () => void;
 }
@@ -382,6 +445,9 @@ export const useTTSStore = create<TTSState>()(
       currentSegmentText: "",
       config: DEFAULT_TTS_CONFIG,
       onEnd: null,
+      onPrevious: null,
+      onNext: null,
+      onSeek: null,
       currentBookTitle: "",
       currentChapterTitle: "",
       currentBookId: "",
@@ -389,6 +455,8 @@ export const useTTSStore = create<TTSState>()(
       currentLocationCfi: "",
       currentChunkIndex: 0,
       totalChunks: 0,
+      virtualPosition: 0,
+      virtualDuration: 0,
       sleepTimerEndsAt: null,
       sleepTimerDurationMinutes: null,
 
@@ -428,6 +496,33 @@ export const useTTSStore = create<TTSState>()(
         startPlayback(segments, config, 0, set, get);
       },
 
+      playFrom: (text: string | string[], startIndex: number) => {
+        clearRespeakTimer();
+        const segments = normalizeSegments(text);
+        const joinedText = segments.join(" ").trim();
+        if (!joinedText) return;
+
+        const normalizedStartIndex = Math.max(
+          0,
+          Math.min(startIndex, Math.max(0, segments.length - 1)),
+        );
+        const config = normalizeTTSConfig(get().config);
+        detachAndStopAllPlayers();
+        _sessionGeneration += 1;
+        _sessionSegments = segments;
+        _sessionCurrentIndex = normalizedStartIndex;
+
+        set({
+          playState: "loading",
+          currentText: joinedText,
+          currentSegmentText: segments[normalizedStartIndex] || "",
+          currentChunkIndex: normalizedStartIndex,
+          totalChunks: segments.length,
+        });
+
+        startPlayback(segments.slice(normalizedStartIndex), config, normalizedStartIndex, set, get);
+      },
+
       append: (text: string | string[]) => {
         const segments = normalizeSegments(text);
         const joinedText = segments.join(" ").trim();
@@ -437,7 +532,8 @@ export const useTTSStore = create<TTSState>()(
 
         const previousSegments = _sessionSegments;
         try {
-          _activeTTS.append(segments);
+          const appendResult = _activeTTS.append(segments);
+          if (appendResult === false) return false;
           _sessionSegments = [..._sessionSegments, ...segments];
           console.log("[TTSStore] append called", {
             appended: segments.length,
@@ -474,6 +570,7 @@ export const useTTSStore = create<TTSState>()(
       resume: () => {
         console.log("[TTSStore] resume called");
         if (get().playState === "paused" && _activeTTS) {
+          _activeTTS.setConfig?.(normalizeTTSConfig(get().config));
           _activeTTS.resume();
           set({ playState: "playing" });
           return;
@@ -519,8 +616,13 @@ export const useTTSStore = create<TTSState>()(
           currentText: "",
           currentSegmentText: "",
           onEnd: null,
+          onPrevious: null,
+          onNext: null,
+          onSeek: null,
           currentChunkIndex: 0,
           totalChunks: 0,
+          virtualPosition: 0,
+          virtualDuration: 0,
           currentBookTitle: "",
           currentChapterTitle: "",
           currentBookId: "",
@@ -549,6 +651,7 @@ export const useTTSStore = create<TTSState>()(
         const normalizedUpdates = syncProfileUpdatesFromLegacyFields(previousConfig, updates);
         const nextConfig = normalizeTTSConfig({ ...previousConfig, ...normalizedUpdates });
         set({ config: nextConfig });
+        _activeTTS?.setConfig?.(nextConfig);
 
         if (
           shouldRespeakForSynthChange(previousConfig, nextConfig) &&
@@ -567,6 +670,14 @@ export const useTTSStore = create<TTSState>()(
       setOnEnd: (cb) => {
         console.log("[TTSStore] setOnEnd", { hasCallback: !!cb });
         set({ onEnd: cb });
+      },
+
+      setNavigationCallbacks: (onPrevious, onNext) => set({ onPrevious, onNext }),
+
+      setSeekCallback: (onSeek) => set({ onSeek }),
+
+      setChapterProgressBounds: (prefixCharacters, totalCharacters, virtualProgress) => {
+        _activeTTS?.setChapterProgressBounds?.(prefixCharacters, totalCharacters, virtualProgress);
       },
 
       setCurrentBook: (title, chapter, bookId, artwork) => {
@@ -600,9 +711,15 @@ export const useTTSStore = create<TTSState>()(
           currentSegmentText: _sessionSegments[index] || "",
         }),
 
-      jumpToChunk: (index: number) => {
+      jumpToChunk: async (index: number) => {
         clearRespeakTimer();
         if (index < 0 || index >= _sessionSegments.length) return;
+
+        const localIndex = index - _sessionStartIndex;
+        if (localIndex >= 0 && _activeTTS?.seekToChunk) {
+          const seeked = await get().seekWithinQueue(localIndex);
+          if (seeked) return;
+        }
 
         const config = normalizeTTSConfig(get().config);
         const remainingSegments = _sessionSegments.slice(index);
@@ -629,6 +746,23 @@ export const useTTSStore = create<TTSState>()(
         });
 
         startPlayback(remainingSegments, config, index, set, get);
+      },
+
+      seekWithinQueue: async (index: number) => {
+        if (!_activeTTS?.seekToChunk) return false;
+        if (index < 0 || index >= _sessionSegments.length - _sessionStartIndex) return false;
+
+        const seeked = await _activeTTS.seekToChunk(index);
+        if (!seeked) return false;
+
+        const absoluteIndex = _sessionStartIndex + index;
+        _sessionCurrentIndex = absoluteIndex;
+        set({
+          currentSegmentText: _sessionSegments[absoluteIndex] || "",
+          currentChunkIndex: absoluteIndex,
+          totalChunks: _sessionSegments.length,
+        });
+        return true;
       },
 
       setSleepTimer: (minutes: number) => {

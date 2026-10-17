@@ -25,8 +25,8 @@ const TTS_SKIPPED_ELEMENT_SELECTOR = [
   'a[href^="#footnote"]',
   'a[href*="footnote"]',
   'a[href*="note"]',
-  'a.noteref',
-  'a.footnote',
+  "a.noteref",
+  "a.footnote",
   ".noteref",
   ".footnote",
   ".footnote-ref",
@@ -40,6 +40,11 @@ export function isTTSFootnoteMarker(text: string): boolean {
   return FOOTNOTE_MARKER_ONLY_PATTERN.test(text);
 }
 
+/** Return true when text contains a letter or digit that can produce speech. */
+export function hasSpeakableText(text: string): boolean {
+  return /[\p{L}\p{N}]/u.test(text);
+}
+
 /** Return true when an element should not contribute text to TTS. */
 export function shouldSkipTTSNode(element: Element | null | undefined): boolean {
   if (!element) return false;
@@ -48,10 +53,7 @@ export function shouldSkipTTSNode(element: Element | null | undefined): boolean 
 
 /** Clean text for TTS: remove footnote references and extra whitespace. */
 export function cleanText(text: string): string {
-  return text
-    .replace(FOOTNOTE_MARKER_PATTERN, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return text.replace(FOOTNOTE_MARKER_PATTERN, "").replace(/\s+/g, " ").trim();
 }
 
 /** Count characters (CJK = 2 units, others = 1) */
@@ -66,7 +68,7 @@ export function countChars(text: string): number {
 /** Split text into chunks at sentence boundaries */
 export function splitIntoChunks(text: string, maxChars = 500): string[] {
   const cleaned = cleanText(text);
-  if (countChars(cleaned) <= maxChars) return [cleaned];
+  if (hasSpeakableText(cleaned) && countChars(cleaned) <= maxChars) return [cleaned];
 
   const sentences = cleaned.split(/(?<=[。！？.!?\n])\s*/);
   const chunks: string[] = [];
@@ -80,6 +82,6 @@ export function splitIntoChunks(text: string, maxChars = 500): string[] {
       current += sentence;
     }
   }
-  if (current.trim()) chunks.push(current.trim());
-  return chunks;
+  if (hasSpeakableText(current)) chunks.push(current.trim());
+  return chunks.filter(hasSpeakableText);
 }

@@ -1,10 +1,13 @@
 import SystemTtsSynthesis, {
+  canUseSystemTtsDirectPlayback,
   isSystemTtsSynthesisAvailable,
 } from "../../../modules/system-tts-synthesis";
 
 export function canUseSystemTtsSynthesis(): boolean {
   return isSystemTtsSynthesisAvailable();
 }
+
+export { canUseSystemTtsDirectPlayback };
 
 export async function synthesizeSystemTtsToFile(
   text: string,

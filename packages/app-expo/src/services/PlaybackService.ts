@@ -5,10 +5,9 @@
  * Without this registration, some Android devices crash when TrackPlayer
  * attempts to start its ForegroundService.
  *
- * Remote events (play/pause/stop/next/prev) are handled here and forwarded
- * to the TTS store, duplicating the handlers in App.tsx bootstrap for safety.
- * The App.tsx handlers remain as a fallback for cases where the service
- * handler hasn't loaded yet.
+ * Remote events (play/pause/stop/next/prev) are handled here and forwarded to
+ * the TTS store. Keep these listeners only in the playback service; registering
+ * them in App.tsx as well makes every media button run twice.
  */
 import TrackPlayer, { Event } from "react-native-track-player";
 import { useTTSStore } from "../stores/tts-store";
@@ -29,22 +28,29 @@ export async function PlaybackService() {
   });
 
   TrackPlayer.addEventListener(Event.RemoteNext, () => {
-    const { currentChunkIndex, jumpToChunk, totalChunks } = useTTSStore.getState();
-    const nextIndex = currentChunkIndex + 1;
-    if (nextIndex < totalChunks) {
-      jumpToChunk(nextIndex);
-    }
+    const { onEnd, onNext } = useTTSStore.getState();
+    console.log("[PlaybackService] RemoteNext", {
+      hasNextCallback: !!onNext,
+      hasEndCallback: !!onEnd,
+    });
+    (onNext || onEnd)?.();
   });
 
   TrackPlayer.addEventListener(Event.RemotePrevious, () => {
-    const { currentChunkIndex, jumpToChunk } = useTTSStore.getState();
-    const prevIndex = currentChunkIndex - 1;
-    if (prevIndex >= 0) {
-      jumpToChunk(prevIndex);
-    }
+    const { onPrevious } = useTTSStore.getState();
+    console.log("[PlaybackService] RemotePrevious", {
+      hasPreviousCallback: !!onPrevious,
+    });
+    useTTSStore.getState().onPrevious?.();
   });
 
   TrackPlayer.addEventListener(Event.RemoteSeek, (event) => {
-    TrackPlayer.seekTo(event.position);
+    const { onSeek, virtualDuration } = useTTSStore.getState();
+    console.log("[PlaybackService] RemoteSeek", {
+      position: event.position,
+      virtualDuration,
+      hasSeekCallback: !!onSeek,
+    });
+    onSeek?.(event.position, virtualDuration);
   });
 }

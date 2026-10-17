@@ -8,7 +8,8 @@
 import type { TTSPlayerFactories } from "@readany/core/stores";
 import { Platform } from "react-native";
 import { ExpoSpeechTTSPlayer } from "./expo-speech-player";
-import { canUseSystemTtsSynthesis } from "./system-tts-synthesis";
+import { NativeSystemTTSPlayer } from "./native-system-tts-player";
+import { canUseSystemTtsDirectPlayback, canUseSystemTtsSynthesis } from "./system-tts-synthesis";
 import { TrackPlayerCloudTTSPlayer } from "./track-player-cloud-tts-player";
 import { TrackPlayerDashScopeTTSPlayer } from "./track-player-dashscope-player";
 import { TrackPlayerEdgeTTSPlayer } from "./track-player-edge-player";
@@ -20,6 +21,7 @@ export const rnTTSPlayerFactories: TTSPlayerFactories = {
       if (!canUseSystemTtsSynthesis()) {
         console.warn("[TTS] System TTS synthesis module unavailable; native rebuild required");
       }
+      if (canUseSystemTtsDirectPlayback()) return new NativeSystemTTSPlayer();
       return new TrackPlayerSystemTTSPlayer();
     }
     return new ExpoSpeechTTSPlayer();

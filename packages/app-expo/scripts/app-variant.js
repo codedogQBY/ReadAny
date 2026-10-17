@@ -13,6 +13,13 @@ const APP_VARIANTS = {
     androidPackage: "com.readany.app.preview",
     scheme: "readany-preview",
   },
+  ttslab: {
+    key: "ttslab",
+    name: "ReadAny TTS Lab",
+    bundleIdentifier: "com.readany.app.ttslab",
+    androidPackage: "com.readany.app.ttslab",
+    scheme: "readany-ttslab",
+  },
   production: {
     key: "production",
     name: "ReadAny",
@@ -31,6 +38,8 @@ const VARIANT_ALIASES = {
   preview: "preview",
   staging: "preview",
   test: "preview",
+  ttslab: "ttslab",
+  "tts-lab": "ttslab",
   prod: "production",
   production: "production",
   release: "production",

@@ -1,7 +1,7 @@
 import type { ITTSPlayer, TTSConfig } from "@readany/core/tts";
 import { splitIntoChunks } from "@readany/core/tts";
 import { File } from "expo-file-system";
-import { Image } from "react-native";
+import { Image, NativeModules } from "react-native";
 import TrackPlayer, { Event, State } from "react-native-track-player";
 
 import { synthesizeSystemTtsToFile } from "./system-tts-synthesis";
@@ -21,6 +21,7 @@ const DEFAULT_ARTWORK = (() => {
 export class TrackPlayerSystemTTSPlayer implements ITTSPlayer {
   onStateChange?: (state: "playing" | "paused" | "stopped") => void;
   onChunkChange?: (index: number, total: number) => void;
+  onVirtualProgress?: (positionSeconds: number, durationSeconds: number) => void;
   onEnd?: () => void;
 
   private _stopped = false;
@@ -39,6 +40,9 @@ export class TrackPlayerSystemTTSPlayer implements ITTSPlayer {
   private _currentTitle = "";
   private _queuedCount = 0;
   private _synthesisComplete = false;
+  private _chapterPrefixCharacters: number | null = null;
+  private _chapterTotalCharacters: number | null = null;
+  private _secondsPerCharacterEstimate: number | null = null;
 
   setArtworkGetter(getter: () => string | undefined): void {
     this._getArtwork = getter;
@@ -46,6 +50,27 @@ export class TrackPlayerSystemTTSPlayer implements ITTSPlayer {
 
   setTitleGetter(getter: () => string | undefined): void {
     this._getTitle = getter;
+  }
+
+  setChapterProgressBounds(
+    prefixCharacters: number,
+    totalCharacters: number,
+    virtualProgress?: { positionSeconds: number; durationSeconds: number },
+  ): void {
+    this._chapterPrefixCharacters = Math.max(0, prefixCharacters);
+    this._chapterTotalCharacters = Math.max(this._chapterPrefixCharacters, totalCharacters);
+    if (!virtualProgress || virtualProgress.durationSeconds <= 0) return;
+
+    // Anchor the chapter coordinate system to the duration exposed to Android.
+    // Otherwise the next poll re-estimates progress from one sentence's speed
+    // and makes a seek appear to jump back to the beginning.
+    this._secondsPerCharacterEstimate =
+      virtualProgress.durationSeconds / Math.max(1, this._chapterTotalCharacters);
+    NativeModules.TrackPlayerModule.setVirtualProgress(
+      virtualProgress.positionSeconds,
+      virtualProgress.durationSeconds,
+    ).catch(() => {});
+    this.onVirtualProgress?.(virtualProgress.positionSeconds, virtualProgress.durationSeconds);
   }
 
   async speak(text: string | string[], config: TTSConfig): Promise<void> {
@@ -66,6 +91,9 @@ export class TrackPlayerSystemTTSPlayer implements ITTSPlayer {
     this._currentTitle = this._getTitle?.() || "";
     this._queuedCount = 0;
     this._synthesisComplete = false;
+    this._chapterPrefixCharacters = null;
+    this._chapterTotalCharacters = null;
+    this._secondsPerCharacterEstimate = null;
 
     if (this._chunks.length === 0) {
       this.onStateChange?.("stopped");
@@ -75,6 +103,7 @@ export class TrackPlayerSystemTTSPlayer implements ITTSPlayer {
 
     await TrackPlayer.reset();
     this._subscribeToEvents(gen);
+    await NativeModules.TrackPlayerModule.setRate(config.rate, config.pitch);
     this.onStateChange?.("playing");
 
     const initialBufferCount = Math.min(INITIAL_BUFFER_CHUNKS, this._chunks.length);
@@ -105,6 +134,40 @@ export class TrackPlayerSystemTTSPlayer implements ITTSPlayer {
     this._playStarted = true;
     this._startProgressPolling(this._speakGen);
     this.onStateChange?.("playing");
+  }
+
+  async seekToChunk(index: number): Promise<boolean> {
+    if (this._stopped || index < 0 || index >= this._chunks.length) return false;
+
+    try {
+      const queue = await TrackPlayer.getQueue();
+      console.log("[TTS] Seek within native queue", {
+        index,
+        queueLength: queue.length,
+        expectedTrackId: trackIdForChunkIndex(index),
+        actualTrackId: queue[index]?.id,
+      });
+      if (queue[index]?.id !== trackIdForChunkIndex(index)) return false;
+
+      const wasPaused = this._paused;
+      await TrackPlayer.skip(index);
+      await TrackPlayer.seekTo(0);
+      if (wasPaused) {
+        await TrackPlayer.pause();
+      } else {
+        await TrackPlayer.play();
+      }
+
+      this._currentIndex = index;
+      this._lastNotifiedIndex = -1;
+      this._notifyChunkChange(index);
+      this.onStateChange?.(wasPaused ? "paused" : "playing");
+      console.log("[TTS] Seek within native queue committed", { index });
+      return true;
+    } catch (error) {
+      console.warn("[TTS] TrackPlayer seek within queue failed:", error);
+      return false;
+    }
   }
 
   stop(): void {
@@ -248,6 +311,43 @@ export class TrackPlayerSystemTTSPlayer implements ITTSPlayer {
     this.onChunkChange?.(index, this._chunks.length);
   }
 
+  private _updateVirtualProgress(
+    index: number,
+    positionSeconds: number,
+    durationSeconds: number,
+  ): void {
+    if (index < 0 || index >= this._chunks.length || durationSeconds <= 0) return;
+
+    const currentCharacters = Math.max(1, this._chunks[index].trim().length);
+    const queuePreviousCharacters = this._chunks
+      .slice(0, index)
+      .reduce((sum, chunk) => sum + Math.max(1, chunk.trim().length), 0);
+    const queueCharacters = this._chunks.reduce(
+      (sum, chunk) => sum + Math.max(1, chunk.trim().length),
+      0,
+    );
+    const chapterPrefixCharacters = this._chapterPrefixCharacters ?? 0;
+    const previousCharacters = chapterPrefixCharacters + queuePreviousCharacters;
+    const totalCharacters =
+      this._chapterTotalCharacters ?? chapterPrefixCharacters + queueCharacters;
+    const fractionInChunk = Math.max(0, Math.min(1, positionSeconds / durationSeconds));
+    const observedSecondsPerCharacter = durationSeconds / currentCharacters;
+    this._secondsPerCharacterEstimate =
+      this._secondsPerCharacterEstimate === null
+        ? observedSecondsPerCharacter
+        : this._secondsPerCharacterEstimate * 0.8 + observedSecondsPerCharacter * 0.2;
+    const secondsPerCharacter = this._secondsPerCharacterEstimate;
+    const virtualPosition =
+      Math.min(totalCharacters, previousCharacters + currentCharacters * fractionInChunk) *
+      secondsPerCharacter;
+    const virtualDuration = Math.max(virtualPosition, totalCharacters * secondsPerCharacter);
+
+    NativeModules.TrackPlayerModule.setVirtualProgress(virtualPosition, virtualDuration).catch(
+      () => {},
+    );
+    this.onVirtualProgress?.(virtualPosition, virtualDuration);
+  }
+
   private _startProgressPolling(gen: number): void {
     this._stopProgressPolling();
     this._progressPollTimer = setInterval(() => {
@@ -268,13 +368,17 @@ export class TrackPlayerSystemTTSPlayer implements ITTSPlayer {
     }
     if (this._paused) return;
 
-    const [activeTrack, playbackState] = await Promise.all([
+    const [activeTrack, playbackState, progress] = await Promise.all([
       TrackPlayer.getActiveTrack().catch(() => null),
       TrackPlayer.getPlaybackState().catch(() => null),
+      TrackPlayer.getProgress().catch(() => null),
     ]);
     if (gen !== this._speakGen || this._stopped) return;
     const chunkIndex = chunkIndexFromTrackId(activeTrack?.id);
     if (chunkIndex != null) this._notifyChunkChange(chunkIndex);
+    if (chunkIndex != null && progress?.duration) {
+      this._updateVirtualProgress(chunkIndex, progress.position, progress.duration);
+    }
     if (playbackState?.state === State.Ended || playbackState?.state === State.Stopped) {
       this._handlePlaybackEnded(gen);
     }

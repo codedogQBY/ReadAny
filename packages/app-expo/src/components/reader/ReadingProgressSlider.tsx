@@ -4,7 +4,7 @@
  * Uses pageX (absolute screen coordinates) for reliable tracking on iOS.
  * Debounces seek at 100ms, with cooldown to prevent snap-back.
  */
-import React, { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Animated, PanResponder, StyleSheet, Text, View } from "react-native";
 
 interface Props {
@@ -16,6 +16,8 @@ interface Props {
   onDragStart?: () => void;
   /** Called when user releases the slider */
   onDragEnd?: () => void;
+  /** Whether to seek while dragging. Reading navigation keeps the default; TTS seeks on release only. */
+  seekWhileDragging?: boolean;
   /** Primary/accent color */
   accentColor?: string;
   /** Track background color */
@@ -31,6 +33,7 @@ export function ReadingProgressSlider({
   onSeek,
   onDragStart,
   onDragEnd,
+  seekWhileDragging = true,
   accentColor = "#3b82f6",
   trackColor = "rgba(255,255,255,0.15)",
   textColor = "rgba(255,255,255,0.7)",
@@ -50,6 +53,8 @@ export function ReadingProgressSlider({
   onDragStartRef.current = onDragStart;
   const onDragEndRef = useRef(onDragEnd);
   onDragEndRef.current = onDragEnd;
+  const seekWhileDraggingRef = useRef(seekWhileDragging);
+  seekWhileDraggingRef.current = seekWhileDragging;
 
   // Use local progress while dragging/cooldown, otherwise external progress
   const displayProgress = localProgress != null ? localProgress : progress;
@@ -81,17 +86,21 @@ export function ReadingProgressSlider({
         Animated.spring(thumbScale, { toValue: 1.5, useNativeDriver: true, friction: 8 }).start();
         // Debounced seek for the initial tap
         if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => {
-          onSeekRef.current(fraction);
-        }, 100);
+        if (seekWhileDraggingRef.current) {
+          debounceRef.current = setTimeout(() => {
+            onSeekRef.current(fraction);
+          }, 100);
+        }
       },
       onPanResponderMove: (evt) => {
         const fraction = fractionFromPageX(evt.nativeEvent.pageX);
         setLocalProgress(fraction);
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => {
-          onSeekRef.current(fraction);
-        }, 100);
+        if (seekWhileDraggingRef.current) {
+          if (debounceRef.current) clearTimeout(debounceRef.current);
+          debounceRef.current = setTimeout(() => {
+            onSeekRef.current(fraction);
+          }, 100);
+        }
       },
       onPanResponderRelease: (evt) => {
         const fraction = fractionFromPageX(evt.nativeEvent.pageX);
@@ -135,7 +144,10 @@ export function ReadingProgressSlider({
       >
         <View style={[styles.track, { backgroundColor: trackColor }]}>
           <View
-            style={[styles.fill, { backgroundColor: accentColor, width: `${displayProgress * 100}%` }]}
+            style={[
+              styles.fill,
+              { backgroundColor: accentColor, width: `${displayProgress * 100}%` },
+            ]}
           />
         </View>
         <Animated.View

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { cleanText, isTTSFootnoteMarker } from "./text-utils";
+import { splitNarrationText } from "./display";
+import { cleanText, hasSpeakableText, isTTSFootnoteMarker } from "./text-utils";
 
 describe("TTS text utils", () => {
   it("removes numeric footnote markers from narration text", () => {
@@ -19,5 +20,12 @@ describe("TTS text utils", () => {
     expect(isTTSFootnoteMarker("［23］")).toBe(true);
     expect(isTTSFootnoteMarker("（四）")).toBe(true);
     expect(isTTSFootnoteMarker("正文[十二]")).toBe(false);
+  });
+
+  it("does not emit narration chunks containing only punctuation", () => {
+    expect(hasSpeakableText("……")).toBe(false);
+    expect(hasSpeakableText("。！？")).toBe(false);
+    expect(hasSpeakableText("许七安……")).toBe(true);
+    expect(splitNarrationText("许七安说。……下一句。")).toEqual(["许七安说。", "下一句。"]);
   });
 });
