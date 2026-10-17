@@ -1,5 +1,18 @@
+diff --git a/android/proguard-rules.txt b/android/proguard-rules.txt
+index 1b5bf6f9bba6b898e686c141e23e8048cb8332ec..5b10f0d8a3d399df9c9f080924da3117f76aa851 100644
+--- a/android/proguard-rules.txt
++++ b/android/proguard-rules.txt
+@@ -1,3 +1,8 @@
+ 
+ # Ignore "not found" errors for libraries
+ -dontwarn com.google.android.exoplayer2.**
++
++# MusicService applies rate and pitch through this field.
++-keepclassmembers class com.doublesymmetry.kotlinaudio.players.BaseAudioPlayer {
++    private com.google.android.exoplayer2.ExoPlayer exoPlayer;
++}
 diff --git a/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt b/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
-index b2409a09939164c49c0f7a16bb6d3284e8eab8fb..25de00bdec142464d4d6e1ae4e7488d3f3bb817f 100644
+index b2409a09939164c49c0f7a16bb6d3284e8eab8fb..63863fe63fe6b7f075dad454def886eb8f8c0df3 100644
 --- a/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
 +++ b/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
 @@ -251,7 +251,8 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
@@ -162,7 +175,7 @@ index b2409a09939164c49c0f7a16bb6d3284e8eab8fb..25de00bdec142464d4d6e1ae4e7488d3
          if (verifyServiceBoundOrReject(callback)) return@launch
  
          musicService.stop()
-@@ -431,135 +455,169 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+@@ -431,135 +455,179 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
  
          callback.resolve(null)
      }
@@ -257,11 +270,22 @@ index b2409a09939164c49c0f7a16bb6d3284e8eab8fb..25de00bdec142464d4d6e1ae4e7488d3
  
      @ReactMethod
 -    fun setRate(rate: Float, callback: Promise) = scope.launch {
-+    fun setRate(rate: Float, callback: Promise) {
++    fun setRate(rate: Float, pitch: Float, callback: Promise) {
++        scope.launch {
++        if (verifyServiceBoundOrReject(callback)) return@launch
++
++        musicService.setRate(rate, pitch)
++        callback.resolve(null)
++    }
++    }
++
++    @ReactMethod
++    fun setPitch(pitch: Float, callback: Promise) {
 +        scope.launch {
          if (verifyServiceBoundOrReject(callback)) return@launch
  
-         musicService.setRate(rate)
+-        musicService.setRate(rate)
++        musicService.setPitch(pitch)
          callback.resolve(null)
      }
 +    }
@@ -350,7 +374,7 @@ index b2409a09939164c49c0f7a16bb6d3284e8eab8fb..25de00bdec142464d4d6e1ae4e7488d3
          if (verifyServiceBoundOrReject(callback)) return@launch
  
          try {
-@@ -570,49 +628,61 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+@@ -570,49 +638,61 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
              rejectWithException(callback, exception)
          }
      }
@@ -419,7 +443,7 @@ index b2409a09939164c49c0f7a16bb6d3284e8eab8fb..25de00bdec142464d4d6e1ae4e7488d3
          if (verifyServiceBoundOrReject(callback)) return@launch
          var bundle = Bundle()
          bundle.putDouble("duration", musicService.getDurationInSeconds());
-@@ -620,10 +690,13 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+@@ -620,10 +700,13 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
          bundle.putDouble("buffered", musicService.getBufferedPositionInSeconds());
          callback.resolve(Arguments.fromBundle(bundle))
      }
@@ -434,3 +458,128 @@ index b2409a09939164c49c0f7a16bb6d3284e8eab8fb..25de00bdec142464d4d6e1ae4e7488d3
      }
 +    }
  }
+diff --git a/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt b/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
+index afa6b0f335714de0cc8741d5bbdd51b4e04bb3bb..e2b8632b6ed61e22920b2570c595bf88cd760e0d 100644
+--- a/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
++++ b/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
+@@ -33,6 +33,8 @@ import com.facebook.react.HeadlessJsTaskService
+ import com.facebook.react.bridge.Arguments
+ import com.facebook.react.jstasks.HeadlessJsTaskConfig
+ import com.facebook.react.modules.core.DeviceEventManagerModule
++import com.google.android.exoplayer2.ExoPlayer
++import com.google.android.exoplayer2.PlaybackParameters
+ import com.google.android.exoplayer2.ui.R as ExoPlayerR
+ import kotlinx.coroutines.*
+ import kotlinx.coroutines.flow.flow
+@@ -60,6 +62,7 @@ class MusicService : HeadlessJsTaskService() {
+ 
+     private var appKilledPlaybackBehavior = AppKilledPlaybackBehavior.CONTINUE_PLAYBACK
+     private var stopForegroundGracePeriod: Int = DEFAULT_STOP_FOREGROUND_GRACE_PERIOD
++    private var playbackPitch = 1.0f
+ 
+     val tracks: List<Track>
+         get() = player.items.map { (it as TrackAudioItem).track }
+@@ -387,8 +390,31 @@ class MusicService : HeadlessJsTaskService() {
+     fun getRate(): Float = player.playbackSpeed
+ 
+     @MainThread
+-    fun setRate(value: Float) {
++    fun setRate(value: Float, pitch: Float = playbackPitch) {
++        playbackPitch = pitch
+         player.playbackSpeed = value
++        applyPlaybackPitch(value, pitch)
++    }
++
++    @MainThread
++    fun setPitch(value: Float) {
++        playbackPitch = value
++        applyPlaybackPitch(player.playbackSpeed, value)
++    }
++
++    @MainThread
++    private fun applyPlaybackPitch(speed: Float, pitch: Float) {
++        try {
++            val field = QueuedAudioPlayer::class.java.superclass.getDeclaredField("exoPlayer")
++            field.isAccessible = true
++            val exoPlayer = field.get(player) as ExoPlayer
++            exoPlayer.playbackParameters = PlaybackParameters(speed, pitch)
++            Timber.i("Applied playback parameters: speed=$speed pitch=$pitch")
++        } catch (error: Exception) {
++            Timber.w(error, "Failed to apply playback pitch: speed=$speed pitch=$pitch")
++            // KotlinAudio only exposes speed; keep its default pitch behavior
++            // if its private ExoPlayer field changes in a future release.
++        }
+     }
+ 
+     @MainThread
+@@ -741,7 +767,7 @@ class MusicService : HeadlessJsTaskService() {
+ 
+     @MainThread
+     private fun emit(event: String, data: Bundle? = null) {
+-        reactNativeHost.reactInstanceManager.currentReactContext
++        reactContext
+             ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+             ?.emit(event, data?.let { Arguments.fromBundle(it) })
+     }
+@@ -751,7 +777,7 @@ class MusicService : HeadlessJsTaskService() {
+         val payload = Arguments.createArray()
+         data.forEach { payload.pushMap(Arguments.fromBundle(it)) }
+ 
+-        reactNativeHost.reactInstanceManager.currentReactContext
++        reactContext
+             ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+             ?.emit(event, payload)
+     }
+diff --git a/lib/src/trackPlayer.d.ts b/lib/src/trackPlayer.d.ts
+index 8a6d0a92f3e4c204ae1281fad4225998f8e1eb74..598d4924760739c86586093c9dc92e6461838190 100644
+--- a/lib/src/trackPlayer.d.ts
++++ b/lib/src/trackPlayer.d.ts
+@@ -170,7 +170,11 @@ export declare function setVolume(level: number): Promise<void>;
+  * @param rate The playback rate to change to, where 0.5 would be half speed,
+  * 1 would be regular speed, 2 would be double speed etc.
+  */
+-export declare function setRate(rate: number): Promise<void>;
++export declare function setRate(rate: number, pitch?: number): Promise<void>;
++/**
++ * Sets the playback pitch while preserving the current playback rate.
++ */
++export declare function setPitch(pitch: number): Promise<void>;
+ /**
+  * Sets the queue.
+  *
+diff --git a/lib/src/trackPlayer.js b/lib/src/trackPlayer.js
+index 191e5dea7ce96f145d0a2ea16d9d925136ce4454..21ce2c4a14abbace5049faa9f9381bc89ac1ac14 100644
+--- a/lib/src/trackPlayer.js
++++ b/lib/src/trackPlayer.js
+@@ -244,8 +244,14 @@ export async function setVolume(level) {
+  * @param rate The playback rate to change to, where 0.5 would be half speed,
+  * 1 would be regular speed, 2 would be double speed etc.
+  */
+-export async function setRate(rate) {
+-    return TrackPlayer.setRate(rate);
++export async function setRate(rate, pitch = 1) {
++    return TrackPlayer.setRate(rate, pitch);
++}
++/**
++ * Sets the playback pitch while preserving the current playback rate.
++ */
++export async function setPitch(pitch) {
++    return TrackPlayer.setPitch(pitch);
+ }
+ /**
+  * Sets the queue.
+diff --git a/src/trackPlayer.ts b/src/trackPlayer.ts
+index 6f6d7234979f31e4a2fdab0fdecb891f200c0892..1ee034e05d9f96c5ddb6083c6f983f9be160451a 100644
+--- a/src/trackPlayer.ts
++++ b/src/trackPlayer.ts
+@@ -362,8 +362,8 @@ export async function setVolume(level: number): Promise<void> {
+  * @param rate The playback rate to change to, where 0.5 would be half speed,
+  * 1 would be regular speed, 2 would be double speed etc.
+  */
+-export async function setRate(rate: number): Promise<void> {
+-  return TrackPlayer.setRate(rate);
++export async function setRate(rate: number, pitch = 1): Promise<void> {
++  return TrackPlayer.setRate(rate, pitch);
+ }
+ 
+ /**

@@ -2166,6 +2166,9 @@ export function ReaderScreen({ route, navigation }: Props) {
         currentSegmentText={tts.currentTTSSegment?.text || null}
         currentChunkIndex={tts.localTTSChunkIndex}
         totalChunks={tts.ttsDisplaySegments.length}
+        chapterProgress={tts.ttsChapterProgress}
+        chapterSentenceIndex={tts.currentTTSChapterIndex}
+        chapterSentenceTotal={tts.ttsChapterSegments.length}
         onClose={() => setShowTTS(false)}
         onReturnToReading={tts.handleTTSReturnToReading}
         onReplay={tts.handleTTSReplay}
@@ -2181,6 +2184,7 @@ export function ReaderScreen({ route, navigation }: Props) {
         onUpdateConfig={tts.handleUpdateTTSConfig}
         onPrevChapter={toc.length > 0 ? tts.handleTTSPrevChapter : undefined}
         onNextChapter={toc.length > 0 ? tts.handleTTSNextChapter : undefined}
+        onSeekChapterProgress={tts.handleSeekTTSChapterProgress}
       />
     </View>
   );

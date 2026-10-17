@@ -100,34 +100,123 @@ import es_profile from "./locales/es/profile.json";
 import es_misc from "./locales/es/misc.json";
 
 // --- Merge modules per language ---
-const en = { ...en_common, ...en_library, ...en_reader, ...en_chat, ...en_notes, ...en_settings, ...en_translation, ...en_tts, ...en_stats, ...en_onboarding, ...en_profile, ...en_misc };
-const zh = { ...zh_common, ...zh_library, ...zh_reader, ...zh_chat, ...zh_notes, ...zh_settings, ...zh_translation, ...zh_tts, ...zh_stats, ...zh_onboarding, ...zh_profile, ...zh_misc };
-const zhTW = { ...zhTW_common, ...zhTW_library, ...zhTW_reader, ...zhTW_chat, ...zhTW_notes, ...zhTW_settings, ...zhTW_translation, ...zhTW_tts, ...zhTW_stats, ...zhTW_onboarding, ...zhTW_profile, ...zhTW_misc };
-const ja = { ...ja_common, ...ja_library, ...ja_reader, ...ja_chat, ...ja_notes, ...ja_settings, ...ja_translation, ...ja_tts, ...ja_stats, ...ja_onboarding, ...ja_profile, ...ja_misc };
-const ko = { ...ko_common, ...ko_library, ...ko_reader, ...ko_chat, ...ko_notes, ...ko_settings, ...ko_translation, ...ko_tts, ...ko_stats, ...ko_onboarding, ...ko_profile, ...ko_misc };
-const fr = { ...fr_common, ...fr_library, ...fr_reader, ...fr_chat, ...fr_notes, ...fr_settings, ...fr_translation, ...fr_tts, ...fr_stats, ...fr_onboarding, ...fr_profile, ...fr_misc };
-const es = { ...es_common, ...es_library, ...es_reader, ...es_chat, ...es_notes, ...es_settings, ...es_translation, ...es_tts, ...es_stats, ...es_onboarding, ...es_profile, ...es_misc };
+const en = {
+  ...en_common,
+  ...en_library,
+  ...en_reader,
+  ...en_chat,
+  ...en_notes,
+  ...en_settings,
+  ...en_translation,
+  ...en_tts,
+  ...en_stats,
+  ...en_onboarding,
+  ...en_profile,
+  ...en_misc,
+};
+const zh = {
+  ...zh_common,
+  ...zh_library,
+  ...zh_reader,
+  ...zh_chat,
+  ...zh_notes,
+  ...zh_settings,
+  ...zh_translation,
+  ...zh_tts,
+  ...zh_stats,
+  ...zh_onboarding,
+  ...zh_profile,
+  ...zh_misc,
+};
+const zhTW = {
+  ...zhTW_common,
+  ...zhTW_library,
+  ...zhTW_reader,
+  ...zhTW_chat,
+  ...zhTW_notes,
+  ...zhTW_settings,
+  ...zhTW_translation,
+  ...zhTW_tts,
+  ...zhTW_stats,
+  ...zhTW_onboarding,
+  ...zhTW_profile,
+  ...zhTW_misc,
+};
+const ja = {
+  ...ja_common,
+  ...ja_library,
+  ...ja_reader,
+  ...ja_chat,
+  ...ja_notes,
+  ...ja_settings,
+  ...ja_translation,
+  ...ja_tts,
+  ...ja_stats,
+  ...ja_onboarding,
+  ...ja_profile,
+  ...ja_misc,
+};
+const ko = {
+  ...ko_common,
+  ...ko_library,
+  ...ko_reader,
+  ...ko_chat,
+  ...ko_notes,
+  ...ko_settings,
+  ...ko_translation,
+  ...ko_tts,
+  ...ko_stats,
+  ...ko_onboarding,
+  ...ko_profile,
+  ...ko_misc,
+};
+const fr = {
+  ...fr_common,
+  ...fr_library,
+  ...fr_reader,
+  ...fr_chat,
+  ...fr_notes,
+  ...fr_settings,
+  ...fr_translation,
+  ...fr_tts,
+  ...fr_stats,
+  ...fr_onboarding,
+  ...fr_profile,
+  ...fr_misc,
+};
+const es = {
+  ...es_common,
+  ...es_library,
+  ...es_reader,
+  ...es_chat,
+  ...es_notes,
+  ...es_settings,
+  ...es_translation,
+  ...es_tts,
+  ...es_stats,
+  ...es_onboarding,
+  ...es_profile,
+  ...es_misc,
+};
 
 // Initialize with default "en". Each platform should call
 // `initI18nLanguage()` after setPlatformService() to restore the saved lang.
-export const i18nReady = i18n
-  .use(initReactI18next)
-  .init({
-    resources: {
-      en: { translation: en },
-      zh: { translation: zh },
-      "zh-TW": { translation: zhTW },
-      ja: { translation: ja },
-      ko: { translation: ko },
-      fr: { translation: fr },
-      es: { translation: es },
-    },
-    lng: "en",
-    fallbackLng: "en",
-    interpolation: {
-      escapeValue: false,
-    },
-  });
+export const i18nReady = i18n.use(initReactI18next).init({
+  resources: {
+    en: { translation: en },
+    zh: { translation: zh },
+    "zh-TW": { translation: zhTW },
+    ja: { translation: ja },
+    ko: { translation: ko },
+    fr: { translation: fr },
+    es: { translation: es },
+  },
+  lng: "en",
+  fallbackLng: "en",
+  interpolation: {
+    escapeValue: false,
+  },
+});
 
 /**
  * Restore saved language from platform KV storage.
@@ -139,7 +228,8 @@ export async function initI18nLanguage(): Promise<void> {
     const platform = getPlatformService();
 
     // 1. Check if user has already chosen a language
-    const savedLang = await platform.kvGetItem("readany-lang");
+    const savedLang =
+      process.env.EXPO_PUBLIC_READANY_LANGUAGE ?? (await platform.kvGetItem("readany-lang"));
 
     if (savedLang && savedLang !== i18n.language) {
       try {
@@ -156,13 +246,20 @@ export async function initI18nLanguage(): Promise<void> {
         const systemLocale = await platform.getLocale();
         if (systemLocale) {
           const lc = systemLocale.toLowerCase();
-          const lang = lc.startsWith("zh-tw") || lc.startsWith("zh-hk") || lc.startsWith("zh-hant") ? "zh-TW"
-            : lc.startsWith("zh") ? "zh"
-            : lc.startsWith("ja") ? "ja"
-            : lc.startsWith("ko") ? "ko"
-            : lc.startsWith("fr") ? "fr"
-            : lc.startsWith("es") ? "es"
-            : "en";
+          const lang =
+            lc.startsWith("zh-tw") || lc.startsWith("zh-hk") || lc.startsWith("zh-hant")
+              ? "zh-TW"
+              : lc.startsWith("zh")
+                ? "zh"
+                : lc.startsWith("ja")
+                  ? "ja"
+                  : lc.startsWith("ko")
+                    ? "ko"
+                    : lc.startsWith("fr")
+                      ? "fr"
+                      : lc.startsWith("es")
+                        ? "es"
+                        : "en";
           if (lang !== i18n.language) {
             await i18n.changeLanguage(lang);
             await platform.kvSetItem("readany-lang", lang);

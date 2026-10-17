@@ -72,11 +72,20 @@ describe("shouldRespeakForSynthChange", () => {
     expect(shouldRespeakForSynthChange(cfg(base), cfg(base))).toBe(false);
   });
 
-  it("system engine → false", () => {
+  it("system: voice change → true", () => {
     expect(
       shouldRespeakForSynthChange(
         cfg({ engine: "system", voiceName: "a" }),
         cfg({ engine: "system", voiceName: "b" }),
+      ),
+    ).toBe(true);
+  });
+
+  it("system: rate/pitch change → false", () => {
+    expect(
+      shouldRespeakForSynthChange(
+        cfg({ engine: "system", voiceName: "a", rate: 1.0, pitch: 1.0 }),
+        cfg({ engine: "system", voiceName: "a", rate: 2.0, pitch: 0.7 }),
       ),
     ).toBe(false);
   });

@@ -107,6 +107,7 @@
     "keepInSync": "朗读会跟随当前阅读位置继续。",
     "rateCompact": "语速 {{rate}}x",
     "pageProgress": "第 {{current}} / {{total}} 页",
+    "sentenceProgress": "本章句 {{current}} / {{total}}",
     "readingProgress": "阅读进度 {{progress}}%",
     "nextPreview": "下一段预览",
     "currentPageOnly": "会继续朗读当前页剩余内容。",

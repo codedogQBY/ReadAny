@@ -1,3 +1,4 @@
+import { TTSSleepTimerSheet } from "@/components/tts/TTSSleepTimerSheet";
 import {
   ChevronDownIcon,
   ClockIcon,
@@ -11,11 +12,12 @@ import {
   SkipForwardIcon,
   SquareIcon,
 } from "@/components/ui/Icon";
-import { useColors, radius } from "@/styles/theme";
+import { useTTSStore } from "@/stores";
+import { radius, useColors, withOpacity } from "@/styles/theme";
 import {
-  buildNarrationPreview,
   type TTSConfig,
   type TTSPlayState,
+  buildNarrationPreview,
   getTTSVoiceLabel,
 } from "@readany/core/tts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -31,11 +33,10 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ReadingProgressSlider } from "./ReadingProgressSlider";
 import { BookCoverImage } from "./tts/BookCoverImage";
-import { makeStyles, SH } from "./tts/tts-page-styles";
 import { VoicePickerModal } from "./tts/VoicePickerModal";
-import { TTSSleepTimerSheet } from "@/components/tts/TTSSleepTimerSheet";
-import { useTTSStore } from "@/stores";
+import { SH, makeStyles } from "./tts/tts-page-styles";
 
 // ── Local constants ───────────────────────────────────────────────────────────
 const THUMB_W = 48;
@@ -63,6 +64,9 @@ interface TTSPageProps {
   currentSegmentText?: string | null;
   currentChunkIndex?: number;
   totalChunks?: number;
+  chapterProgress?: number;
+  chapterSentenceIndex?: number;
+  chapterSentenceTotal?: number;
   onClose: () => void;
   onReturnToReading?: () => void | Promise<void>;
   onReplay: () => void | Promise<void>;
@@ -86,6 +90,7 @@ interface TTSPageProps {
   onUpdateConfig?: (updates: Partial<TTSConfig>) => void;
   onPrevChapter?: () => void | Promise<void>;
   onNextChapter?: () => void | Promise<void>;
+  onSeekChapterProgress?: (fraction: number) => void;
 }
 
 function clampPct(p: number) {
@@ -112,6 +117,9 @@ export function TTSPage({
   currentSegmentText,
   currentChunkIndex = 0,
   totalChunks = 0,
+  chapterProgress,
+  chapterSentenceIndex = 0,
+  chapterSentenceTotal = 0,
   onClose,
   onReturnToReading,
   onReplay,
@@ -127,6 +135,7 @@ export function TTSPage({
   onUpdateConfig,
   onPrevChapter,
   onNextChapter,
+  onSeekChapterProgress,
 }: TTSPageProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -193,11 +202,6 @@ export function TTSPage({
     }
     return currentText ? [{ id: "fallback:current-text", text: currentText, cfi: null }] : [];
   }, [currentText, narrationSegments, prevNarrationSegments]);
-  const lyricSegmentIdsKey = useMemo(
-    () => lyricSegments.map((segment) => segment.id).join("|"),
-    [lyricSegments],
-  );
-
   // Prefer the actual spoken segment CFI so lyric centering doesn't reset when
   // the visible/current arrays are sliced or rebuilt around the current sentence.
   const safeChunkIndex = useMemo(() => {
@@ -256,6 +260,8 @@ export function TTSPage({
     [lyricAreaHeight],
   );
   const currentExcerpt = lyricSegments[safeChunkIndex]?.text || fallbackPreview.currentExcerpt;
+  const resolvedChapterProgress =
+    lyricSegments.length > 1 ? safeChunkIndex / (lyricSegments.length - 1) : readingProgress;
   const centerLyricIndex = useCallback(
     (index: number, animated = true) => {
       const id = lyricSegments[index]?.id;
@@ -399,7 +405,7 @@ export function TTSPage({
     pendingCenterRef.current = null;
     loadMoreAboveArmedRef.current = true;
     loadMoreBelowArmedRef.current = true;
-  }, [lyricSegmentIdsKey]);
+  }, [lyricSegments]);
 
   useEffect(() => {
     if (!visible || lyricSegments.length <= 1) return;
@@ -424,9 +430,8 @@ export function TTSPage({
         centerLyricIndex(targetIndex, true);
       }, 80);
       return () => clearTimeout(timer);
-    } else {
-      pendingCenterRef.current = targetIndex;
     }
+    pendingCenterRef.current = targetIndex;
   }, [
     centerLyricIndex,
     currentChunkIndex,
@@ -497,6 +502,32 @@ export function TTSPage({
     [onJumpToLyricSegment, onJumpToSegment, prevCount],
   );
 
+  const handleSeekChapterProgress = useCallback(
+    (fraction: number) => {
+      if (onSeekChapterProgress) {
+        onSeekChapterProgress(fraction);
+        return;
+      }
+      if (lyricSegments.length === 0) return;
+      const totalCharacters = lyricSegments.reduce(
+        (sum, segment) => sum + Math.max(1, segment.text.trim().length),
+        0,
+      );
+      const targetCharacters = Math.max(0, Math.min(1, fraction)) * totalCharacters;
+      let accumulated = 0;
+      let targetIndex = lyricSegments.length - 1;
+      for (let index = 0; index < lyricSegments.length; index += 1) {
+        accumulated += Math.max(1, lyricSegments[index].text.trim().length);
+        if (accumulated >= targetCharacters) {
+          targetIndex = index;
+          break;
+        }
+      }
+      handleLyricPress(lyricSegments[targetIndex], targetIndex);
+    },
+    [handleLyricPress, lyricSegments, onSeekChapterProgress],
+  );
+
   const triggerLoadMoreAbove = useCallback(() => {
     if (!onLoadMoreAbove || loadMoreAboveLockRef.current) return;
     loadMoreAboveLockRef.current = true;
@@ -547,13 +578,25 @@ export function TTSPage({
 
   const progressBarJSX = (
     <View style={s.progress}>
-      <View style={s.progressTrack}>
-        <View style={[s.progressFill, { width: `${pct}%` as unknown as number }]} />
-      </View>
+      <ReadingProgressSlider
+        progress={chapterProgress ?? resolvedChapterProgress}
+        onSeek={handleSeekChapterProgress}
+        seekWhileDragging={false}
+        accentColor={colors.primary}
+        trackColor={withOpacity(colors.border, 0.45)}
+        textColor={colors.mutedForeground}
+      />
       <View style={s.progressRow}>
         <Text style={s.progressTxt}>{pageLabel}</Text>
         <Text style={s.progressTxt}>
-          {totalChunks > 0 ? `${currentChunkIndex + 1} / ${totalChunks}` : `${pct}%`}
+          {chapterSentenceTotal > 0
+            ? t("tts.sentenceProgress", {
+                current: Math.min(chapterSentenceIndex + 1, chapterSentenceTotal),
+                total: chapterSentenceTotal,
+              })
+            : totalChunks > 0
+              ? `${currentChunkIndex + 1} / ${totalChunks}`
+              : `${pct}%`}
         </Text>
       </View>
     </View>
@@ -561,30 +604,26 @@ export function TTSPage({
 
   const controlsJSX = (
     <View style={s.controls}>
-      {/* Prev segment */}
+      {/* Previous chapter */}
       <View style={s.controlItem}>
         <Pressable
           style={({ pressed }) => [
             s.ctrlBtnSm,
             pressed && { opacity: 0.5 },
-            safeChunkIndex <= 0 && s.ctrlBtnDisabled,
+            !onPrevChapter && s.ctrlBtnDisabled,
           ]}
-          onPress={() => {
-            if (safeChunkIndex > 0) {
-              handleLyricPress(lyricSegments[safeChunkIndex - 1], safeChunkIndex - 1);
-            }
-          }}
+          onPress={onPrevChapter}
           hitSlop={12}
-          disabled={safeChunkIndex <= 0}
-          accessibilityLabel={t("tts.prevSentence")}
+          disabled={!onPrevChapter}
+          accessibilityLabel={t("tts.prevChapter")}
         >
           <SkipBackIcon
             size={18}
-            color={safeChunkIndex > 0 ? colors.foreground : colors.mutedForeground}
+            color={onPrevChapter ? colors.foreground : colors.mutedForeground}
           />
         </Pressable>
         <Text style={s.controlLabel} numberOfLines={1}>
-          {t("tts.prevSentenceShort")}
+          {t("tts.prevChapter")}
         </Text>
       </View>
 
@@ -636,32 +675,26 @@ export function TTSPage({
         </Text>
       </View>
 
-      {/* Next segment */}
+      {/* Next chapter */}
       <View style={s.controlItem}>
         <Pressable
           style={({ pressed }) => [
             s.ctrlBtnSm,
             pressed && { opacity: 0.5 },
-            safeChunkIndex >= lyricSegments.length - 1 && s.ctrlBtnDisabled,
+            !onNextChapter && s.ctrlBtnDisabled,
           ]}
-          onPress={() => {
-            if (safeChunkIndex < lyricSegments.length - 1) {
-              handleLyricPress(lyricSegments[safeChunkIndex + 1], safeChunkIndex + 1);
-            }
-          }}
+          onPress={onNextChapter}
           hitSlop={12}
-          disabled={safeChunkIndex >= lyricSegments.length - 1}
-          accessibilityLabel={t("tts.nextSentence")}
+          disabled={!onNextChapter}
+          accessibilityLabel={t("tts.nextChapter")}
         >
           <SkipForwardIcon
             size={18}
-            color={
-              safeChunkIndex < lyricSegments.length - 1 ? colors.foreground : colors.mutedForeground
-            }
+            color={onNextChapter ? colors.foreground : colors.mutedForeground}
           />
         </Pressable>
         <Text style={s.controlLabel} numberOfLines={1}>
-          {t("tts.nextSentenceShort")}
+          {t("tts.nextChapter")}
         </Text>
       </View>
     </View>

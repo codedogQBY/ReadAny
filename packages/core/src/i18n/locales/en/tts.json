@@ -107,6 +107,7 @@
     "keepInSync": "Narration stays aligned with your current reading position.",
     "rateCompact": "Rate {{rate}}x",
     "pageProgress": "Page {{current}} / {{total}}",
+    "sentenceProgress": "Sentence {{current}} / {{total}} in chapter",
     "readingProgress": "Reading progress {{progress}}%",
     "nextPreview": "Up next",
     "currentPageOnly": "Will continue with the rest of the current page.",

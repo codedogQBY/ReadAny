@@ -15,6 +15,9 @@ vi.mock("../lib/platform/system-tts-synthesis", () => ({
   canUseSystemTtsSynthesis: () => true,
 }));
 vi.mock("../lib/platform/expo-speech-player", () => ({ ExpoSpeechTTSPlayer: class {} }));
+vi.mock("../lib/platform/native-system-tts-player", () => ({
+  NativeSystemTTSPlayer: class {},
+}));
 vi.mock("../lib/platform/track-player-system-player", () => ({
   TrackPlayerSystemTTSPlayer: class {},
 }));
