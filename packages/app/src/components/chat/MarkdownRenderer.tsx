@@ -650,7 +650,15 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
 
   // Append a unicode cursor placeholder that we style via CSS when streaming.
   // This keeps the cursor inline with the last text rather than on a new line.
-  const displayContent = isStreaming ? `${normalizedContent}\u200B` : normalizedContent;
+  // If normalizedContent ends with $$ (display math), append a newline before \u200B
+  // so remark-math can close the display block properly during streaming.
+  const displayContent = useMemo(() => {
+    if (!isStreaming) return normalizedContent;
+    if (normalizedContent.trimEnd().endsWith("$$")) {
+      return `${normalizedContent}\n\u200B`;
+    }
+    return `${normalizedContent}\u200B`;
+  }, [isStreaming, normalizedContent]);
 
   return (
     <CitationContext.Provider value={{ citations, onCitationClick }}>
