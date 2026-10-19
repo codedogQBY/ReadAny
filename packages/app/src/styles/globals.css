@@ -617,3 +617,17 @@ div.driver-overlay {
 .textLayer.selecting .endOfContent {
   top: 0;
 }
+
+/* ── KaTeX Math Formula Styling ───────────────────────────── */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  padding-top: 0.25em;
+  padding-bottom: 0.25em;
+}
+
+.katex {
+  font-size: 1.05em;
+  text-rendering: auto;
+}

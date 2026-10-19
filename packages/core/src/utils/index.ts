@@ -65,3 +65,4 @@ export {
 } from "./book-metadata";
 export { getBookProgressPercent, normalizeBookProgress } from "./book-progress";
 export type { BookMetadataFormValues, ExtractedBookMetadata } from "./book-metadata";
+export { preprocessLaTeX } from "./latex";
