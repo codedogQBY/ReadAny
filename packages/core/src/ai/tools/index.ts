@@ -13,6 +13,7 @@
  * - Context Tools: getCurrentChapter, getSelection, getReadingProgress, getRecentHighlights, getSurroundingContext
  */
 import type { Skill } from "../../types";
+import type { WebSearchContext } from "../parallel-search";
 import {
   createAnalyzeArgumentsTool,
   createCompareSectionsTool,
@@ -48,6 +49,7 @@ import {
 } from "./rag-tools";
 import { createGetSkillsTool, skillToTool } from "./skill-tools";
 import type { ToolDefinition } from "./tool-types";
+import { getWebTools } from "./web-tools";
 
 // Re-export types and key functions for external consumers
 export type { ToolDefinition, ToolParameter } from "./tool-types";
@@ -75,6 +77,7 @@ export function getAvailableTools(options: {
   bookId?: string | null;
   isVectorized: boolean;
   enabledSkills: Skill[];
+  webSearch?: WebSearchContext;
 }): ToolDefinition[] {
   const tools: ToolDefinition[] = [];
 
@@ -115,6 +118,8 @@ export function getAvailableTools(options: {
     // can be validated against concrete reader segments.
     tools.push(createGetAnnotationsTool(options.bookId), createAddCitationTool(options.bookId));
   }
+
+  if (options.webSearch) tools.push(...getWebTools(options.webSearch));
 
   // Add custom skills
   for (const skill of options.enabledSkills) {

@@ -351,6 +351,7 @@ export function useStreamingChat(options?: StreamingChatOptions) {
         const streamIsVectorized = streamBook?.isVectorized ?? false;
 
         await stream.stream({
+          webSearchRequest: content.trim(),
           thread: threadForStream,
           book: streamBook,
           bookId,

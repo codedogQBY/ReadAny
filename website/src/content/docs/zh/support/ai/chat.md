@@ -35,3 +35,21 @@ AI 自动接收以下上下文：
 ## 配置 AI 提供商
 
 请参阅 [AI 提供商](/ReadAny/support/zh/ai/providers/) 了解设置方法。
+
+
+## 桌面端联网搜索
+
+输入“联网搜索这位作者的背景”或“阅读 https://example.org/article”，即可通过
+[Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) 搜索或读取网页。
+搜索使用 Fast 模式，无需 Parallel 账号或 API Key。请先配置平常使用的 AI 模型；
+网页结果会交给该模型生成回答，外部来源使用 Markdown 链接，与书籍引用标记分开。
+
+Parallel 是桌面端明确联网请求的内置搜索服务。普通书籍问题继续使用本地工具。
+可以在**设置 → AI → 联网搜索（Parallel）**中关闭；已有模型和接口设置不变。
+移动端暂不支持联网搜索。
+
+联网工具的查询词、网址、匿名会话 ID 和已配置的模型名称会发送给 Parallel。
+工具指令要求模型使用简短的公开主题查询，避免发送私人书籍段落、高亮和笔记。
+请避免对敏感文本请求联网搜索。详见 [Parallel 隐私政策](https://parallel.ai/privacy-policy)。
+免费服务有用量限制；请求失败时会报告错误，不会自动切换搜索服务。
+点击停止可取消请求，单次联网请求在 25 秒后超时。

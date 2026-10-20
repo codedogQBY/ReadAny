@@ -11,6 +11,7 @@ import type { Book, SemanticContext, Skill } from "../types";
 import { getBookProgressPercent } from "../utils/book-progress";
 
 type ReadingQuestionCategory =
+  | "web_request"
   | "general_chat"
   | "library_request"
   | "current_selection"

@@ -739,6 +739,19 @@ export function AISettings() {
         )}
       </section>
 
+      <section className="rounded-lg bg-muted/60 p-4 space-y-2">
+        <label htmlFor="web-search" className="flex items-center justify-between gap-4">
+          <span>{t("settings.webSearch")}</span>
+          <Switch
+            id="web-search"
+            checked={aiConfig.webSearchEnabled !== false}
+            onCheckedChange={(webSearchEnabled) => updateAIConfig({ webSearchEnabled })}
+            aria-label={t("settings.webSearch")}
+          />
+        </label>
+        <p className="text-xs text-muted-foreground">{t("settings.webSearchHint")}</p>
+      </section>
+
       {/* Parameters */}
       <section className="rounded-lg bg-muted/60 p-4 space-y-5">
         <h2 className="text-sm font-medium text-foreground">{t("settings.parameters")}</h2>

@@ -25,7 +25,7 @@ export interface SettingsState {
   updateReadSettings: (updates: Partial<ReadSettings>) => void;
   updateTranslationConfig: (updates: Partial<TranslationConfig>) => void;
   updateAIConfig: (
-    updates: Partial<Pick<AIConfig, "temperature" | "maxTokens" | "slidingWindowSize">>,
+    updates: Partial<Pick<AIConfig, "temperature" | "maxTokens" | "slidingWindowSize" | "webSearchEnabled">>,
   ) => void;
 
   // Endpoint management

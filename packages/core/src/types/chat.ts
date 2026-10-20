@@ -160,6 +160,8 @@ export interface AIEndpoint {
 }
 
 export interface AIConfig {
+  /** Allow explicit web requests via Parallel; omitted settings default to enabled. */
+  webSearchEnabled?: boolean;
   endpoints: AIEndpoint[];
   activeEndpointId: string;
   activeModel: string;

@@ -596,5 +596,7 @@
         }
       }
     }
-  }
+  },
+  "webSearch": "Web search (Parallel)",
+  "webSearchHint": "Used only when you explicitly ask to search the web or read a URL. Public topic queries and URLs are sent to Parallel. No account or API key required. Turn off here to disable."
 }

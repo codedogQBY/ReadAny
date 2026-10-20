@@ -68,7 +68,8 @@
     "react-i18next": "^16.5.4",
     "tailwind-merge": "^3.0.0",
     "zod": "^4.3.6",
-    "zustand": "^5.0.5"
+    "zustand": "^5.0.5",
+    "@modelcontextprotocol/sdk": "^1.32.1"
   },
   "devDependencies": {
     "@types/node": "^25.5.2",

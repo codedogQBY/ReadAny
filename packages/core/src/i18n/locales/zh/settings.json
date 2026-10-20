@@ -598,5 +598,7 @@
         }
       }
     }
-  }
+  },
+  "webSearch": "联网搜索（Parallel）",
+  "webSearchHint": "仅在你明确要求联网搜索或读取网址时使用。公开主题查询和网址会发送给 Parallel。无需账号或 API Key，可在此关闭。"
 }
