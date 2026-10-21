@@ -617,3 +617,31 @@ div.driver-overlay {
 .textLayer.selecting .endOfContent {
   top: 0;
 }
+
+/* ── KaTeX Math Formula Styling ───────────────────────────── */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  padding-top: 0.25em;
+  padding-bottom: 0.25em;
+  -webkit-overflow-scrolling: touch;
+}
+
+.katex-display::-webkit-scrollbar {
+  height: 4px;
+}
+
+.katex-display::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+}
+
+.katex-display::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5);
+}
+
+.katex {
+  font-size: 1.05em;
+  text-rendering: auto;
+}

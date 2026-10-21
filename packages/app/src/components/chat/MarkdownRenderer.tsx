@@ -1,6 +1,6 @@
 import { getPlatformService } from "@readany/core/services";
-import { cn } from "@readany/core/utils";
 import type { CitationPart } from "@readany/core/types/message";
+import { cn } from "@readany/core/utils";
 /**
  * MarkdownRenderer — renders AI markdown responses with:
  * - GitHub Flavored Markdown (tables, strikethrough, task lists, autolinks)
@@ -22,10 +22,15 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
+import "katex/dist/katex.min.css";
+import { preprocessLaTeX } from "@readany/core/utils";
 import Markdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import { toast } from "sonner";
+import type { PluggableList } from "unified";
 
 const CitationContext = createContext<{
   citations?: CitationPart[];
@@ -580,8 +585,8 @@ interface MarkdownRendererProps {
   onCitationClick?: (citation: CitationPart) => void;
 }
 
-const remarkPlugins = [remarkGfm];
-const rehypePlugins = [rehypeHighlight];
+const remarkPlugins: PluggableList = [remarkGfm, remarkMath];
+const rehypePlugins: PluggableList = [rehypeHighlight, [rehypeKatex, { throwOnError: false }]];
 
 /** Process text children to find and replace [1], [2] citations with clickable links */
 function processCitationText(
@@ -641,13 +646,26 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
   // Stable unique id per instance so the streaming cursor CSS is scoped
   const scopeId = useMemo(() => `md-stream-${++mdStreamIdCounter}`, []);
 
+  const normalizedContent = useMemo(() => preprocessLaTeX(content), [content]);
+
   // Append a unicode cursor placeholder that we style via CSS when streaming.
   // This keeps the cursor inline with the last text rather than on a new line.
-  const displayContent = isStreaming ? `${content}\u200B` : content;
+  // If normalizedContent ends with $$ (display math), append a newline before \u200B
+  // so remark-math can close the display block properly during streaming.
+  const displayContent = useMemo(() => {
+    if (!isStreaming) return normalizedContent;
+    if (normalizedContent.trimEnd().endsWith("$$")) {
+      return `${normalizedContent}\n\u200B`;
+    }
+    return `${normalizedContent}\u200B`;
+  }, [isStreaming, normalizedContent]);
 
   return (
     <CitationContext.Provider value={{ citations, onCitationClick }}>
-      <div className={cn("select-text", className)} data-md-scope={isStreaming ? scopeId : undefined}>
+      <div
+        className={cn("select-text", className)}
+        data-md-scope={isStreaming ? scopeId : undefined}
+      >
         <Markdown
           remarkPlugins={remarkPlugins}
           rehypePlugins={rehypePlugins}

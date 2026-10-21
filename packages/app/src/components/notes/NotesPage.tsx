@@ -14,6 +14,7 @@ import { sortAnnotationsByPosition } from "@readany/core/reader";
 import type { Highlight, Note } from "@readany/core/types";
 import { HIGHLIGHT_COLOR_HEX } from "@readany/core/types";
 import { cn } from "@readany/core/utils";
+import { preprocessLaTeX } from "@readany/core/utils";
 import { eventBus } from "@readany/core/utils/event-bus";
 import {
   BookOpen,
@@ -34,7 +35,9 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import { toast } from "sonner";
 import { ExportDropdown } from "./ExportDropdown";
 
@@ -691,7 +694,12 @@ function NoteDetailCard({
         ) : (
           <div className="mt-2 cursor-pointer" onClick={onStartEdit}>
             <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed break-words overflow-hidden [overflow-wrap:anywhere]">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{highlight.note || ""}</ReactMarkdown>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}
+              >
+                {preprocessLaTeX(highlight.note || "")}
+              </ReactMarkdown>
             </div>
           </div>
         )}
