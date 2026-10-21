@@ -4,7 +4,7 @@
   "version": "1.3.7",
   "identifier": "com.readany.app",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "pnpm --filter @readany/cli build && pnpm dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "pnpm --filter @readany/cli build && pnpm build",
     "frontendDist": "../dist"
