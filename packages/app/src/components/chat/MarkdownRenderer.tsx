@@ -24,7 +24,9 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import { toast } from "sonner";
 
 const CitationContext = createContext<{
@@ -580,8 +582,8 @@ interface MarkdownRendererProps {
   onCitationClick?: (citation: CitationPart) => void;
 }
 
-const remarkPlugins = [remarkGfm];
-const rehypePlugins = [rehypeHighlight];
+const remarkPlugins = [remarkGfm, remarkMath];
+const rehypePlugins = [rehypeKatex, rehypeHighlight];
 
 /** Process text children to find and replace [1], [2] citations with clickable links */
 function processCitationText(
@@ -647,7 +649,10 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
 
   return (
     <CitationContext.Provider value={{ citations, onCitationClick }}>
-      <div className={cn("select-text", className)} data-md-scope={isStreaming ? scopeId : undefined}>
+      <div
+        className={cn("select-text", className)}
+        data-md-scope={isStreaming ? scopeId : undefined}
+      >
         <Markdown
           remarkPlugins={remarkPlugins}
           rehypePlugins={rehypePlugins}

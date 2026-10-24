@@ -8,6 +8,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./styles/globals.css";
+import "katex/dist/katex.min.css";
 import { setEmbeddingWorkerFactory, setStreamingFetch } from "@readany/core/ai";
 import { onLibraryChanged } from "@readany/core/events/library-events";
 import { installFeedbackLogCapture, setFeedbackWorkerUrl } from "@readany/core/feedback";

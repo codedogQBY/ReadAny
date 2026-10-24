@@ -25,7 +25,9 @@ import {
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 
 interface NotebookPanelProps {
   bookId: string;
@@ -111,11 +113,7 @@ export function NotebookPanel({
       });
       if (mutation.kind === "update") {
         updateHighlight(mutation.id, mutation.updates);
-        onAddAnnotation?.(
-          editingHighlight.cfi,
-          editingHighlight.color,
-          mutation.updates.note,
-        );
+        onAddAnnotation?.(editingHighlight.cfi, editingHighlight.color, mutation.updates.note);
       }
       clearPending();
     }
@@ -384,7 +382,9 @@ function HighlightNoteItem({
           <p className="text-sm text-foreground line-clamp-2">"{highlight.text}"</p>
           {highlight.note && (
             <div className="mt-1.5 text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1.5 prose prose-xs dark:prose-invert max-w-none break-words overflow-hidden [overflow-wrap:anywhere]">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{highlight.note}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                {highlight.note}
+              </ReactMarkdown>
             </div>
           )}
           {highlight.chapterTitle && (
