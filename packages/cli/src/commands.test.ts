@@ -17,6 +17,7 @@ import { buildStoreOnlyZip, type ZipEntry } from "@readany/core/utils/store-only
 import { describe, expect, it } from "vitest";
 import { parseCommand, runCommand } from "./commands.js";
 import { ensureCoreInitialized, resetCoreForTests } from "./data.js";
+import { getReadAnyHome } from "./paths.js";
 import { createSkillContent } from "./skill.js";
 
 const encoder = new TextEncoder();
@@ -2222,6 +2223,40 @@ describe("commands", () => {
     }
     await expect(readFile(outputPath)).rejects.toThrow();
   });
+
+  it.skipIf(process.platform === "darwin")(
+    "lists books through the configured desktop root without READANY_HOME",
+    async () => {
+      const workspace = await createWorkspace();
+      await seedLibrary(workspace.dataRoot);
+      await resetCoreForTests();
+      const env: NodeJS.ProcessEnv = {
+        ...workspace.env,
+        APPDATA: join(workspace.root, "Roaming"),
+        XDG_DATA_HOME: join(workspace.root, "xdg-data"),
+        READANY_HOME: undefined,
+      };
+      const desktopHome = getReadAnyHome(env);
+      await mkdir(desktopHome, { recursive: true });
+      await writeFile(
+        join(desktopHome, "desktop-data-root.json"),
+        JSON.stringify({ dataRoot: workspace.dataRoot }),
+        "utf8",
+      );
+      try {
+        const result = await runCommand(["books", "list"], env);
+        expect(result).toMatchObject({
+          ok: true,
+          data: { books: [{ id: "book-1", meta: { title: "Agent Systems" } }] },
+        });
+        if (result.ok) {
+          expect((result.data as { books: unknown[] }).books).toHaveLength(1);
+        }
+      } finally {
+        await resetCoreForTests();
+      }
+    },
+  );
 
   it("reads seeded books, notes, and highlights through core queries", async () => {
     const workspace = await createWorkspace();
