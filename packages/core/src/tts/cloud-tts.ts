@@ -1,5 +1,10 @@
 import { getPlatformService } from "../services/platform";
 import {
+  buildVoxCPMInput,
+  DEFAULT_VOXCPM_BASE_URL,
+  DEFAULT_VOXCPM_FORMAT,
+  DEFAULT_VOXCPM_MODEL,
+  DEFAULT_VOXCPM_VOICE,
   DEFAULT_XIAOMI_TTS_BASE_URL,
   normalizeXiaomiTTSVoice,
   type TTSConfig,
@@ -111,7 +116,11 @@ export async function fetchXiaomiTTSWav(text: string, config: TTSConfig): Promis
   return base64ToBytes(audioData);
 }
 
-export async function fetchOpenAITTSAudio(text: string, config: TTSConfig): Promise<Uint8Array> {
+export async function fetchOpenAITTSAudio(
+  text: string,
+  config: TTSConfig,
+  signal?: AbortSignal,
+): Promise<Uint8Array> {
   if (!config.openaiTtsApiKey) throw new Error("OpenAI-compatible TTS API key is required");
 
   const platform = getPlatformService();
@@ -127,6 +136,7 @@ export async function fetchOpenAITTSAudio(text: string, config: TTSConfig): Prom
           voice: config.openaiTtsVoice,
         },
       }),
+      signal,
     });
 
     if (!response.ok) {
@@ -150,10 +160,53 @@ export async function fetchOpenAITTSAudio(text: string, config: TTSConfig): Prom
       voice: config.openaiTtsVoice,
       response_format: config.openaiTtsFormat,
     }),
+    signal,
   });
 
   if (!response.ok) {
     throw new Error(`OpenAI-compatible audio speech failed: ${response.status}`);
+  }
+
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+export function buildVoxCPMTTSUrl(config: Pick<TTSConfig, "voxcpmBaseUrl">): string {
+  return joinUrl(config.voxcpmBaseUrl || DEFAULT_VOXCPM_BASE_URL, "/audio/speech");
+}
+
+/**
+ * VoxCPM synthesis over the OpenAI-compatible `/v1/audio/speech` shape, as
+ * served by vLLM-Omni (`vllm serve openbmb/VoxCPM2 --omni`) or Nano-vLLM-VoxCPM.
+ *
+ * Unlike the other cloud providers, the API key is optional: a self-hosted
+ * server normally has no auth, so the Authorization header is only sent when a
+ * key is actually configured.
+ */
+export async function fetchVoxCPMAudio(
+  text: string,
+  config: TTSConfig,
+  signal?: AbortSignal,
+): Promise<Uint8Array> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (config.voxcpmApiKey) {
+    headers.Authorization = `Bearer ${config.voxcpmApiKey}`;
+  }
+
+  const platform = getPlatformService();
+  const response = await platform.fetch(buildVoxCPMTTSUrl(config), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model: config.voxcpmModel || DEFAULT_VOXCPM_MODEL,
+      input: buildVoxCPMInput(text, config.voxcpmVoiceDesign),
+      voice: config.voxcpmVoice || DEFAULT_VOXCPM_VOICE,
+      response_format: config.voxcpmFormat || DEFAULT_VOXCPM_FORMAT,
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    throw await buildTTSHttpError("VoxCPM TTS", response);
   }
 
   return new Uint8Array(await response.arrayBuffer());

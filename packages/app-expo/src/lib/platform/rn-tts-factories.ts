@@ -28,4 +28,5 @@ export const rnTTSPlayerFactories: TTSPlayerFactories = {
   createDashScopeTTS: () => new TrackPlayerDashScopeTTSPlayer(),
   createXiaomiTTS: () => new TrackPlayerCloudTTSPlayer(),
   createOpenAICompatibleTTS: () => new TrackPlayerCloudTTSPlayer(),
+  createVoxCPMTTS: () => new TrackPlayerCloudTTSPlayer(),
 };

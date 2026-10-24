@@ -32,6 +32,10 @@
       "openai-compatible": {
         "label": "OpenAI 호환",
         "description": "OpenAI audio/speech 또는 채팅 오디오 호환 엔드포인트."
+      },
+      "voxcpm": {
+        "label": "VoxCPM",
+        "description": "OpenBMB VoxCPM. 직접 운영하는 OpenAI 호환 서버에 연결합니다."
       }
     },
     "providerCategory": {
@@ -138,7 +142,12 @@
     "engineDescDashscope": "알리바바클라우드 통의 · 중국어 최적화",
     "engineDescSystem": "시스템 내장 · 무료",
     "player": "TTS 플레이어",
-    "listeningToBook": "오디오북 재생 중"
+    "listeningToBook": "오디오북 재생 중",
+    "voiceDesign": "음색 설명",
+    "voiceDesignPlaceholder": "젊은 여성 목소리, 부드럽고 따뜻하게",
+    "voiceDesignHint": "원하는 음색을 문장으로 설명하세요. 비워 두면 모델 기본 음색을 사용합니다.",
+    "apiKeyOptional": "API 키 (선택)",
+    "voxcpmBaseUrlHint": "직접 운영하는 VoxCPM 서버 주소를 입력하세요. 예: vllm serve openbmb/VoxCPM2 --omni --port 8000"
   },
   "fonts": {
     "title": "글꼴",

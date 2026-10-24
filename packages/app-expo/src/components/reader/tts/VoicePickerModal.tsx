@@ -91,7 +91,9 @@ export function VoicePickerModal({
 
           {/* Engine selector */}
           <View style={s.engineSection}>
-            {(["edge", "dashscope", "xiaomi", "openai-compatible", "system"] as const).map((eng) => {
+            {(
+              ["edge", "dashscope", "xiaomi", "openai-compatible", "voxcpm", "system"] as const
+            ).map((eng) => {
               const isActive = config.engine === eng;
               const label =
                 eng === "edge"

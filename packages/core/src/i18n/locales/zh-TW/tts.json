@@ -32,6 +32,10 @@
       "openai-compatible": {
         "label": "OpenAI 相容",
         "description": "自訂 OpenAI audio/speech 或聊天音訊介面"
+      },
+      "voxcpm": {
+        "label": "VoxCPM",
+        "description": "OpenBMB VoxCPM，連接你自建的 OpenAI 相容服務。"
       }
     },
     "providerCategory": {
@@ -138,7 +142,12 @@
     "nextChapter": "下一章",
     "systemVoiceNote": "系統音色請在裝置系統設定中選擇",
     "browserVoiceNote": "系統音色請在裝置系統設定中選擇",
-    "stop": "停止"
+    "stop": "停止",
+    "voiceDesign": "音色描述",
+    "voiceDesignPlaceholder": "年輕女聲，溫柔親切",
+    "voiceDesignHint": "用一句話描述想要的音色。留空則使用模型預設音色。",
+    "apiKeyOptional": "API 金鑰（選填）",
+    "voxcpmBaseUrlHint": "填寫你自行部署的 VoxCPM 服務位址，例如先執行 vllm serve openbmb/VoxCPM2 --omni --port 8000。"
   },
   "fonts": {
     "title": "字型",

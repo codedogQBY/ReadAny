@@ -32,6 +32,10 @@
       "openai-compatible": {
         "label": "OpenAI互換",
         "description": "OpenAI audio/speech またはチャット音声互換エンドポイント。"
+      },
+      "voxcpm": {
+        "label": "VoxCPM",
+        "description": "OpenBMB の VoxCPM。自分で立てた OpenAI 互換サーバーに接続します。"
       }
     },
     "providerCategory": {
@@ -138,7 +142,12 @@
     "engineDescDashscope": "アリババクラウド通義 · 中国語最適化",
     "engineDescSystem": "システム内蔵 · 無料",
     "player": "TTSプレーヤー",
-    "listeningToBook": "オーディオブック再生中"
+    "listeningToBook": "オーディオブック再生中",
+    "voiceDesign": "声のデザイン",
+    "voiceDesignPlaceholder": "若い女性の声、優しく穏やか",
+    "voiceDesignHint": "希望する声を言葉で説明してください。空欄の場合はモデルの既定の声を使います。",
+    "apiKeyOptional": "API キー（任意）",
+    "voxcpmBaseUrlHint": "自分で立てた VoxCPM サーバーのアドレスを入力します。例: vllm serve openbmb/VoxCPM2 --omni --port 8000"
   },
   "fonts": {
     "title": "フォント",

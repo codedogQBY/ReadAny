@@ -2,7 +2,13 @@
  * TTS types and constants — shared across all platforms.
  */
 
-export type TTSEngine = "system" | "edge" | "dashscope" | "xiaomi" | "openai-compatible";
+export type TTSEngine =
+  | "system"
+  | "edge"
+  | "dashscope"
+  | "xiaomi"
+  | "openai-compatible"
+  | "voxcpm";
 export type LegacyTTSEngine = TTSEngine | "browser";
 export type TTSProviderType = TTSEngine;
 export type TTSAudioFormat = "pcm16" | "wav" | "mp3";
@@ -50,6 +56,21 @@ export interface TTSConfig {
   openaiTtsFormat: TTSAudioFormat;
   /** Optional style/system prompt for chat-completions audio providers */
   openaiTtsStylePrompt: string;
+  /** VoxCPM OpenAI-compatible base URL (e.g. a local vLLM-Omni server) */
+  voxcpmBaseUrl: string;
+  /** VoxCPM API key. Optional — self-hosted servers usually need none. */
+  voxcpmApiKey: string;
+  /** VoxCPM model id (e.g. "openbmb/VoxCPM2") */
+  voxcpmModel: string;
+  /** VoxCPM voice id, or a precomputed custom voice name */
+  voxcpmVoice: string;
+  /** VoxCPM audio format */
+  voxcpmFormat: TTSAudioFormat;
+  /**
+   * VoxCPM Voice Design: a natural-language voice description. Sent as a
+   * parenthesized prefix on the synthesis text, per the VoxCPM2 convention.
+   */
+  voxcpmVoiceDesign: string;
   /** Saved voice profiles for scalable provider UI. */
   profiles: TTSProfile[];
 }
@@ -135,6 +156,17 @@ export const TTS_PROVIDER_DEFINITIONS: TTSProviderDefinition[] = [
     supportsBaseUrl: true,
     supportsStreaming: true,
   },
+  {
+    id: "voxcpm",
+    label: "VoxCPM",
+    description: "OpenBMB VoxCPM on a self-hosted OpenAI-compatible endpoint.",
+    category: "custom",
+    requiresApiKey: false,
+    supportsVoice: true,
+    supportsStylePrompt: true,
+    supportsBaseUrl: true,
+    supportsStreaming: false,
+  },
 ] as const;
 
 export const XIAOMI_TTS_VOICES = [
@@ -152,6 +184,24 @@ export const XIAOMI_TTS_VOICES = [
 export const DEFAULT_XIAOMI_TTS_VOICE = "mimo_default";
 export const DEFAULT_XIAOMI_TTS_BASE_URL = "https://api.xiaomimimo.com/v1";
 export const DEFAULT_XIAOMI_STYLE_PROMPT = "自然、平稳、适合长时间听书。";
+
+/** Default endpoint for a locally served VoxCPM (e.g. `vllm serve openbmb/VoxCPM2 --omni`). */
+export const DEFAULT_VOXCPM_BASE_URL = "http://localhost:8000/v1";
+export const DEFAULT_VOXCPM_MODEL = "openbmb/VoxCPM2";
+export const DEFAULT_VOXCPM_VOICE = "default";
+/** VoxCPM emits 48kHz WAV; WAV avoids depending on server-side transcoding. */
+export const DEFAULT_VOXCPM_FORMAT: TTSAudioFormat = "wav";
+
+/**
+ * Wrap a Voice Design description in the parentheses VoxCPM2 expects, and
+ * prepend it to the text. An already-parenthesized description is left as-is.
+ */
+export function buildVoxCPMInput(text: string, voiceDesign: string | null | undefined): string {
+  const design = voiceDesign?.trim();
+  if (!design) return text;
+  const wrapped = /^\(.*\)$/su.test(design) ? design : `(${design})`;
+  return `${wrapped}${text}`;
+}
 
 export function normalizeXiaomiTTSVoice(voice: string | null | undefined): string {
   if (voice && XIAOMI_TTS_VOICES.some((item) => item.id === voice)) return voice;
@@ -179,6 +229,12 @@ export const DEFAULT_TTS_CONFIG: TTSConfig = {
   openaiTtsVoice: "alloy",
   openaiTtsFormat: "mp3",
   openaiTtsStylePrompt: DEFAULT_XIAOMI_STYLE_PROMPT,
+  voxcpmBaseUrl: DEFAULT_VOXCPM_BASE_URL,
+  voxcpmApiKey: "",
+  voxcpmModel: DEFAULT_VOXCPM_MODEL,
+  voxcpmVoice: DEFAULT_VOXCPM_VOICE,
+  voxcpmFormat: DEFAULT_VOXCPM_FORMAT,
+  voxcpmVoiceDesign: "",
   profiles: [],
 };
 
@@ -192,7 +248,8 @@ export function normalizeTTSEngine(engine: LegacyTTSEngine | string | null | und
     engine === "edge" ||
     engine === "dashscope" ||
     engine === "xiaomi" ||
-    engine === "openai-compatible"
+    engine === "openai-compatible" ||
+    engine === "voxcpm"
   ) {
     return engine;
   }
@@ -254,6 +311,17 @@ export function createDefaultTTSProfiles(config: Partial<TTSConfig> = {}): TTSPr
       voice: config.openaiTtsVoice ?? DEFAULT_TTS_CONFIG.openaiTtsVoice,
       format: config.openaiTtsFormat ?? DEFAULT_TTS_CONFIG.openaiTtsFormat,
       stylePrompt: config.openaiTtsStylePrompt ?? DEFAULT_XIAOMI_STYLE_PROMPT,
+    },
+    {
+      id: "voxcpm-default",
+      name: "VoxCPM",
+      provider: "voxcpm",
+      baseUrl: config.voxcpmBaseUrl ?? DEFAULT_TTS_CONFIG.voxcpmBaseUrl,
+      apiKey: config.voxcpmApiKey ?? "",
+      model: config.voxcpmModel ?? DEFAULT_TTS_CONFIG.voxcpmModel,
+      voice: config.voxcpmVoice ?? DEFAULT_TTS_CONFIG.voxcpmVoice,
+      format: config.voxcpmFormat ?? DEFAULT_TTS_CONFIG.voxcpmFormat,
+      stylePrompt: config.voxcpmVoiceDesign ?? "",
     },
   ];
 }
@@ -322,6 +390,13 @@ export function syncConfigFromActiveProfile(config: TTSConfig): TTSConfig {
     next.openaiTtsVoice = activeProfile.voice ?? next.openaiTtsVoice;
     next.openaiTtsFormat = activeProfile.format ?? next.openaiTtsFormat;
     next.openaiTtsStylePrompt = activeProfile.stylePrompt ?? next.openaiTtsStylePrompt;
+  } else if (engine === "voxcpm") {
+    next.voxcpmBaseUrl = activeProfile.baseUrl ?? next.voxcpmBaseUrl;
+    next.voxcpmApiKey = activeProfile.apiKey ?? next.voxcpmApiKey;
+    next.voxcpmModel = activeProfile.model ?? next.voxcpmModel;
+    next.voxcpmVoice = activeProfile.voice ?? next.voxcpmVoice;
+    next.voxcpmFormat = activeProfile.format ?? next.voxcpmFormat;
+    next.voxcpmVoiceDesign = activeProfile.stylePrompt ?? next.voxcpmVoiceDesign;
   }
 
   return next;
@@ -361,6 +436,12 @@ export function normalizeTTSConfig(config: PersistedTTSConfig | null | undefined
     openaiTtsFormat: config?.openaiTtsFormat ?? DEFAULT_TTS_CONFIG.openaiTtsFormat,
     openaiTtsStylePrompt:
       config?.openaiTtsStylePrompt ?? DEFAULT_TTS_CONFIG.openaiTtsStylePrompt,
+    voxcpmBaseUrl: config?.voxcpmBaseUrl ?? DEFAULT_TTS_CONFIG.voxcpmBaseUrl,
+    voxcpmApiKey: config?.voxcpmApiKey ?? DEFAULT_TTS_CONFIG.voxcpmApiKey,
+    voxcpmModel: config?.voxcpmModel ?? DEFAULT_TTS_CONFIG.voxcpmModel,
+    voxcpmVoice: config?.voxcpmVoice ?? DEFAULT_TTS_CONFIG.voxcpmVoice,
+    voxcpmFormat: config?.voxcpmFormat ?? DEFAULT_TTS_CONFIG.voxcpmFormat,
+    voxcpmVoiceDesign: config?.voxcpmVoiceDesign ?? DEFAULT_TTS_CONFIG.voxcpmVoiceDesign,
     profiles: normalizeProfiles(profileSource),
   };
 
