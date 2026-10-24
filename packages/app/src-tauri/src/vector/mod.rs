@@ -242,11 +242,15 @@ impl VectorDB {
     ) -> Result<Vec<VectorSearchResult>> {
         let query_bytes: Vec<u8> = query.iter().flat_map(|f| f.to_le_bytes()).collect();
 
+        // Note: `+m.book_id` disables index lookup on id_mapping(book_id), forcing SQLite
+        // to use vec_embeddings as the driving table and push the LIMIT down to vec0.
+        // Without this, SQLite scans id_mapping first and vec0 fails with:
+        // "A LIMIT or 'k = ?' constraint is required on vec0 knn queries."
         let mut stmt = self.conn.prepare(
             "SELECT m.chunk_id, m.book_id, v.distance 
              FROM vec_embeddings v
              JOIN id_mapping m ON v.rowid = m.rowid
-             WHERE v.embedding MATCH ? AND m.book_id = ?
+             WHERE v.embedding MATCH ? AND +m.book_id = ?
              ORDER BY v.distance LIMIT ?",
         )?;
 
