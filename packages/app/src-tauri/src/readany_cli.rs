@@ -5,6 +5,8 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
@@ -674,11 +676,11 @@ pub async fn readany_cli_run(
     let action_for_result = action.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let command = command_display(&cli_command);
-        let output = match Command::new(&cli_command.program)
-            .args(&cli_command.prefix_args)
-            .args(&args)
-            .output()
-        {
+        let mut cmd = Command::new(&cli_command.program);
+        cmd.args(&cli_command.prefix_args).args(&args);
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        let output = match cmd.output() {
             Ok(output) => output,
             Err(error) => {
                 if let Some(path) = temp_patch.as_deref() {
