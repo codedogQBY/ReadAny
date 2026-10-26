@@ -89,6 +89,14 @@ export const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
     placeholder: "https://openrouter.ai/api/v1",
     keyPlaceholder: "sk-or-...",
   },
+  cheaperinference: {
+    id: "cheaperinference",
+    name: "Cheaper Inference",
+    defaultBaseUrl: "https://api.cheaperinference.com/v1",
+    needsV1Suffix: false,
+    placeholder: "https://api.cheaperinference.com/v1",
+    keyPlaceholder: "ci_live_...",
+  },
   siliconflow: {
     id: "siliconflow",
     name: "SiliconFlow",
@@ -552,6 +560,7 @@ export function detectProviderFromUrl(url: string): string {
   if (urlLower.includes("localhost:11434")) return "ollama";
   if (urlLower.includes("localhost:1234")) return "lmstudio";
   if (urlLower.includes("openrouter.ai")) return "openrouter";
+  if (urlLower.includes("api.cheaperinference.com")) return "cheaperinference";
   if (urlLower.includes("siliconflow.cn")) return "siliconflow";
   if (urlLower.includes("moonshot.cn")) return "moonshot";
   if (urlLower.includes("bigmodel.cn")) return "zhipu";
