@@ -81,6 +81,13 @@
     "statusOpen": "진행 중",
     "statusClosed": "종료됨",
     "newReply": "새 답변",
-    "openIssue": "이슈 열기"
+    "openIssue": "이슈 열기",
+    "hasNewReply": "새 답글이 있습니다",
+    "openInBrowser": "브라우저에서 열기",
+    "detailLoadFailed": "불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    "replies": "답글",
+    "noReplies": "아직 답글이 없습니다. 최대한 빨리 확인하겠습니다.",
+    "dailyLimitReached": "오늘의 피드백 제출 횟수를 모두 사용했습니다. 내일 다시 시도해 주세요.",
+    "submitFailedStatus": "제출 실패: {{status}} {{text}}"
   }
 }

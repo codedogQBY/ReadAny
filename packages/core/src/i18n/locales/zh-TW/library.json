@@ -146,7 +146,22 @@
     "detailsSelectedTags": "已選 {{count}} 個標籤",
     "detailsNoTagsSelected": "未選擇標籤",
     "detailsManagedMetadataNote": "ReadAny 會維護這份元資訊，用於書架顯示、搜尋和同步命名，不會修改原始書籍檔案。",
-    "bookNotFound": "書籍不存在"
+    "bookNotFound": "書籍不存在",
+    "detailsDraftTabTitle": "精排草稿",
+    "downloadInProgress": "書籍仍在下載中，請稍後再開啟。",
+    "detailsTabDraft": "精排草稿",
+    "detailsDraftTitle": "建立精排草稿",
+    "detailsDraftDesc": "從這裡進入 EPUB 精排流程。AI 修改和使用者編輯共用同一套 draft、history、diff、validate 和 export 路徑。",
+    "detailsDraftCreate": "建立草稿",
+    "detailsDraftCreating": "建立中...",
+    "detailsDraftCreated": "草稿已建立",
+    "detailsDraftCreateFailed": "草稿建立失敗",
+    "detailsDraftStep1": "檢查結構",
+    "detailsDraftStep1Desc": "讀取 EPUB 結構、manifest、spine、中繼資料和目錄。",
+    "detailsDraftStep2": "編輯草稿",
+    "detailsDraftStep2Desc": "在受控的草稿工作區中修改章節或中繼資料。",
+    "detailsDraftStep3": "驗證匯出",
+    "detailsDraftStep3Desc": "先驗證，再匯出新的 EPUB，不動到原始檔案。"
   },
   "home": {
     "library": "書庫",
@@ -172,6 +187,11 @@
     "vec_queued": "排隊中",
     "manageTags": "管理標籤",
     "remote": "需下載",
-    "downloading": "下載中"
+    "downloading": "下載中",
+    "vec_reindexConfirm": "這本書已完成索引，重新索引將重設現有資料，確定要繼續嗎？"
+  },
+  "epubDraft": {
+    "missingDraftId": "請輸入 draft id",
+    "title": "EPUB 精排工作區"
   }
 }

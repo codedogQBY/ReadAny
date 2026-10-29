@@ -200,6 +200,14 @@
     "vm_modeRemoteDesc": "外部の埋め込みAPIサービスを使用",
     "vm_builtinModels": "組み込みモデル",
     "vm_builtinDesc": "軽量モデルをダウンロードしてアプリ内でローカル実行します。初回ダウンロードは自動的にキャッシュされます。",
+    "vm_localModels": "ローカルモデル",
+    "vm_localModelsDesc": "モデルは端末にダウンロードされオフラインで動作し、本の内容は送信されません。BGE は中国語向き、MiniLM は英語向きです。モデルごとに再ベクトル化が必要です。",
+    "vm_downloadAndUse": "ダウンロードして使用",
+    "vm_downloadProgress": "ダウンロード中 {{progress}}%",
+    "vm_deleteLocalModel": "ローカルモデルを削除",
+    "vm_dimensionSize": "{{dimension}} 次元 · {{size}}",
+    "vm_dimensionSizeEnglish": "{{dimension}} 次元 · {{size}} · 英語",
+    "vm_downloadConnectFailed": "モデルのダウンロードサーバーに接続できません。スマートフォンのネットワークを確認するか、Hugging Face にアクセスできる VPN を有効にして再試行してください。",
     "vm_download": "ダウンロード",
     "vm_loaded": "読み込み済み",
     "vm_clearCache": "クリア",
@@ -260,6 +268,10 @@
     "syncNever": "未同期",
     "syncSuccess": "同期完了",
     "syncFailed": "同期に失敗しました: {{error}}",
+    "syncConnectFailed": "同期サーバーに接続できません。ネットワークと認証情報を確認してください。",
+    "syncFailedGeneric": "同期に失敗しました",
+    "syncRemoteDirFailed": "リモートの同期フォルダーを作成できません。ストレージサービスの設定と権限を確認してください：{{error}}",
+    "syncUploadFailed": "ローカルの変更をアップロードできませんでした。ネットワーク接続またはストレージサービスの権限を確認してください：{{error}}",
     "syncRecordsUp": "{{count}}件のレコードをアップロード",
     "syncRecordsDown": "{{count}}件のレコードをダウンロード",
     "syncFilesUp": "{{count}}件のファイルをアップロード",
@@ -597,6 +609,8 @@
           "fail": "ReadAny スキルは {{path}} にインストールされていません。"
         }
       }
-    }
+    },
+    "ai_searchModelPlaceholder": "モデルを検索...",
+    "ai_modelsCount": "合計 {{count}} 個のモデル"
   }
 }

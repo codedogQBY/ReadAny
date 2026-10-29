@@ -60,7 +60,15 @@
     "selectAndCopy": "Long-press text to select and copy",
     "selectBooks": "Select book context",
     "threads": "Conversations",
-    "untitled": "Untitled"
+    "untitled": "Untitled",
+    "citationBookNotFound": "Couldn't find the book for this citation",
+    "citationOpenFailed": "Couldn't open this citation",
+    "dismissKeyboard": "Dismiss keyboard",
+    "quotePrefix": "About the following text:",
+    "quoteDefaultRequest": "Please help me analyze this text.",
+    "inputTooLong": "Message is too long. Please split your question into smaller parts.",
+    "chapterNotFoundNotice": "Couldn't reliably locate the chapter. Please give a more exact chapter title.",
+    "searchStepsExceeded": "Too many search steps this round, so it didn't finish reliably. Try a more specific question, or just retry."
   },
   "streaming": {
     "thinking": "Thinking...",
@@ -73,7 +81,10 @@
     "loadingMindmap": "Loading mindmap...",
     "toolFailed": "Call failed",
     "toolFailedDetail": "Tool call failed",
-    "aborted": "Generation stopped by user"
+    "aborted": "Generation stopped by user",
+    "toolNotice": "Search stopped",
+    "toolNoticeDetail": "Chapter search stopped",
+    "toolNoResult": "The tool returned no result"
   },
   "toolLabels": {
     "ragSearch": "Searching book content",

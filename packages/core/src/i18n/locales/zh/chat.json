@@ -60,7 +60,15 @@
     "selectAndCopy": "长按选中文字复制",
     "selectBooks": "选择书籍上下文",
     "threads": "对话列表",
-    "untitled": "新对话"
+    "untitled": "新对话",
+    "citationBookNotFound": "找不到这条引用对应的书籍",
+    "citationOpenFailed": "无法打开这条引用",
+    "dismissKeyboard": "收起键盘",
+    "quotePrefix": "关于以下文本：",
+    "quoteDefaultRequest": "请帮我分析这段文本。",
+    "inputTooLong": "内容过长，请分段提问。",
+    "chapterNotFoundNotice": "未能可靠定位章节，请补充更准确的章节名",
+    "searchStepsExceeded": "本轮检索步骤过多，没有稳定完成。请换个更具体的问法，或直接重试一次。"
   },
   "streaming": {
     "thinking": "正在思考...",
@@ -75,7 +83,8 @@
     "toolNoticeDetail": "章节搜索已停止",
     "toolFailed": "调用失败",
     "toolFailedDetail": "工具调用失败",
-    "aborted": "用户取消了生成"
+    "aborted": "用户取消了生成",
+    "toolNoResult": "工具没有返回结果"
   },
   "toolLabels": {
     "ragSearch": "搜索书籍内容",

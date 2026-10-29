@@ -42,6 +42,7 @@
     "engineDescEdge": "Microsoft · 多語言",
     "engineDescDashscope": "阿里雲通義 · 中文最佳化",
     "engineDescSystem": "系統內建 · 免費",
+    "engineDescOpenaiCompatible": "自訂 OpenAI 格式",
     "voice": "語音",
     "voiceProfile": "朗讀方案",
     "defaultVoice": "預設語音",
@@ -138,7 +139,8 @@
     "nextChapter": "下一章",
     "systemVoiceNote": "系統音色請在裝置系統設定中選擇",
     "browserVoiceNote": "系統音色請在裝置系統設定中選擇",
-    "stop": "停止"
+    "stop": "停止",
+    "noTextFound": "目前頁面未找到可朗讀的文字"
   },
   "fonts": {
     "title": "字型",

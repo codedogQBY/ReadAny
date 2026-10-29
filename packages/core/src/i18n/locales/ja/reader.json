@@ -75,7 +75,11 @@
     "returnToOriginal": "検索前の位置に戻りますか？",
     "searchComplete": "検索完了",
     "unknownBook": "無題の本",
-    "viewNote": "ノートを表示"
+    "viewNote": "ノートを表示",
+    "pdfZoom": "PDF ズーム",
+    "zoomIn": "拡大",
+    "zoomOut": "縮小",
+    "resetZoom": "ズームをリセット"
   },
   "bookmarks": {
     "title": "ブックマーク",

@@ -198,6 +198,14 @@
     "vm_modeRemoteDesc": "Utiliser un service d'API d'embedding externe",
     "vm_builtinModels": "Modèles intégrés",
     "vm_builtinDesc": "Téléchargez des modèles légers pour une exécution locale dans l'appli. Le premier téléchargement est automatiquement mis en cache.",
+    "vm_localModels": "Modèles locaux",
+    "vm_localModelsDesc": "Les modèles sont téléchargés sur l'appareil et fonctionnent hors ligne ; le contenu des livres n'est jamais envoyé. BGE convient au chinois et MiniLM à l'anglais ; chaque modèle doit être revectorisé séparément.",
+    "vm_downloadAndUse": "Télécharger et utiliser",
+    "vm_downloadProgress": "Téléchargement {{progress}} %",
+    "vm_deleteLocalModel": "Supprimer le modèle local",
+    "vm_dimensionSize": "{{dimension}} dim. · {{size}}",
+    "vm_dimensionSizeEnglish": "{{dimension}} dim. · {{size}} · anglais",
+    "vm_downloadConnectFailed": "Impossible de joindre le serveur de téléchargement des modèles. Vérifiez le réseau de votre téléphone ou activez un VPN donnant accès à Hugging Face, puis réessayez.",
     "vm_download": "Télécharger",
     "vm_loaded": "Chargé",
     "vm_clearCache": "Effacer",
@@ -258,6 +266,10 @@
     "syncNever": "Jamais synchronisé",
     "syncSuccess": "Synchronisation terminée",
     "syncFailed": "Échec de la synchronisation : {{error}}",
+    "syncConnectFailed": "Impossible de joindre le serveur de synchronisation. Vérifiez votre réseau et vos identifiants.",
+    "syncFailedGeneric": "Échec de la synchronisation",
+    "syncRemoteDirFailed": "Impossible de créer le dossier de synchronisation distant. Vérifiez la configuration et les autorisations du service de stockage : {{error}}",
+    "syncUploadFailed": "Échec de l'envoi des modifications locales. Vérifiez votre connexion réseau ou les autorisations du service de stockage : {{error}}",
     "syncRecordsUp": "{{count}} enregistrements envoyés",
     "syncRecordsDown": "{{count}} enregistrements téléchargés",
     "syncFilesUp": "{{count}} fichiers envoyés",
@@ -595,6 +607,10 @@
           "fail": "ReadAny Skill n’est pas installé dans {{path}}."
         }
       }
-    }
+    },
+    "ai_searchModelPlaceholder": "Rechercher un modèle...",
+    "ai_modelsCount": "{{count}} modèles au total",
+    "vm_autoVectorizeOnImport": "Vectoriser automatiquement les nouveaux livres",
+    "vm_autoVectorizeOnImportDesc": "Si activé, les livres importés ou téléchargés par synchronisation sont mis en file d'attente pour l'indexation automatique. Désactivé par défaut pour éviter une consommation inattendue du modèle."
   }
 }

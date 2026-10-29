@@ -75,7 +75,11 @@
     "returnToOriginal": "검색 전 위치로 돌아갈까요?",
     "searchComplete": "검색 완료",
     "unknownBook": "제목 없는 책",
-    "viewNote": "노트 보기"
+    "viewNote": "노트 보기",
+    "pdfZoom": "PDF 확대/축소",
+    "zoomIn": "확대",
+    "zoomOut": "축소",
+    "resetZoom": "확대/축소 초기화"
   },
   "bookmarks": {
     "title": "북마크",

@@ -192,7 +192,7 @@
     "skillUsageCharacter": "Characters",
     "skillUsageCharacterDesc": "Ask 'who are the characters' or 'analyze the protagonist'",
     "skillUsageQuote": "Quotes",
-    "skillUsageQuoteDesc": "Request 'find quotes' or '精彩的段落'",
+    "skillUsageQuoteDesc": "Request 'find quotes' or 'memorable passages'",
     "skillUsageAnalysis": "Analysis",
     "skillUsageAnalysisDesc": "Ask 'what is the author's argument' or 'analyze the logic'",
     "vectorModel": "Vector Model",
@@ -207,6 +207,14 @@
     "vm_modeRemoteDesc": "Use external embedding API service",
     "vm_builtinModels": "Built-in Models",
     "vm_builtinDesc": "Download lightweight models to run locally within the app. First download is automatically cached.",
+    "vm_localModels": "Local Models",
+    "vm_localModelsDesc": "Models are downloaded to this device and run offline; book content is never sent anywhere. BGE suits Chinese and MiniLM suits English; each model must be re-vectorized separately.",
+    "vm_downloadAndUse": "Download & use",
+    "vm_downloadProgress": "Downloading {{progress}}%",
+    "vm_deleteLocalModel": "Delete local model",
+    "vm_dimensionSize": "{{dimension}}-dim · {{size}}",
+    "vm_dimensionSizeEnglish": "{{dimension}}-dim · {{size}} · English",
+    "vm_downloadConnectFailed": "Can't reach the model download server. Check your phone's network, or turn on a VPN that can access Hugging Face, then try again.",
     "vm_download": "Download",
     "vm_loaded": "Loaded",
     "vm_clearCache": "Clear",
@@ -267,13 +275,17 @@
     "syncNever": "Never synced",
     "syncSuccess": "Sync completed",
     "syncFailed": "Sync failed: {{error}}",
+    "syncConnectFailed": "Can't reach the sync server. Check your network and credentials.",
+    "syncFailedGeneric": "Sync failed",
+    "syncRemoteDirFailed": "Couldn't create the remote sync folder. Check your storage service configuration and permissions: {{error}}",
+    "syncUploadFailed": "Failed to upload local changes. Check your network connection or storage service permissions: {{error}}",
     "syncRecordsUp": "Uploaded {{count}} records",
     "syncRecordsDown": "Downloaded {{count}} records",
     "syncFilesUp": "Uploaded {{count}} files",
     "syncFilesDown": "Downloaded {{count}} files",
     "syncFilesPartialFailed": "⚠️ Some files didn't sync ({{uploadFailed}} upload failures, {{downloadFailed}} download failures). Likely causes: remote refused to create a new folder, network blip, or permission denied. The next sync will retry automatically.",
-    "syncAutoSync": "自动同步",
-    "syncAutoSyncDesc": "在后台自动同步数据",
+    "syncAutoSync": "Auto sync",
+    "syncAutoSyncDesc": "Sync data automatically in the background",
     "syncInterval": "Sync Interval",
     "syncConcurrency": "Concurrent transfers",
     "syncConcurrencyDesc": "Files transferred at once. Lower to 1-2 for weak gateways/NAS",
@@ -597,6 +609,8 @@
           "fail": "ReadAny Skill is not installed at {{path}}."
         }
       }
-    }
+    },
+    "ai_searchModelPlaceholder": "Search models...",
+    "ai_modelsCount": "{{count}} models in total"
   }
 }

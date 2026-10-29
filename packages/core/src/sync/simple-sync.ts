@@ -16,6 +16,7 @@ import {
   getDeviceId as getLocalDeviceId,
 } from "../db/database";
 import { runSerializedDbTask } from "../db/write-retry";
+import i18n from "../i18n";
 import { getPlatformService } from "../services/platform";
 import { canonicalBookCoverPath, canonicalBookFilePath } from "./local-book-paths";
 import type { ISyncBackend } from "./sync-backend";
@@ -771,7 +772,13 @@ export async function runSimpleSync(
       await backend.ensureDirectories();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      throw new Error(`无法创建远程同步目录，请检查存储服务配置和权限：${msg}`);
+      throw new Error(
+        i18n.t(
+          "settings.syncRemoteDirFailed",
+          "Couldn't create the remote sync folder. Check your storage service configuration and permissions: {{error}}",
+          { error: msg },
+        ),
+      );
     }
 
     // 2. Pull and apply all other devices' changesets
@@ -878,7 +885,13 @@ export async function runSimpleSync(
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        throw new Error(`上传本地变更失败，请检查网络连接或存储服务权限：${msg}`);
+        throw new Error(
+          i18n.t(
+            "settings.syncUploadFailed",
+            "Failed to upload local changes. Check your network connection or storage service permissions: {{error}}",
+            { error: msg },
+          ),
+        );
       }
     } else if (totalApplied > 0) {
       // receiveOnly mode: still upload merged snapshot so other devices see the result

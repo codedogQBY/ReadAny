@@ -200,6 +200,14 @@
     "vm_modeRemoteDesc": "외부 임베딩 API 서비스를 사용해요",
     "vm_builtinModels": "내장 모델",
     "vm_builtinDesc": "앱 내에서 로컬로 실행할 경량 모델을 다운로드해요. 첫 다운로드 시 자동으로 캐시돼요.",
+    "vm_localModels": "로컬 모델",
+    "vm_localModelsDesc": "모델은 기기에 다운로드되어 오프라인으로 실행되며 책 내용은 전송되지 않습니다. BGE는 중국어에, MiniLM은 영어에 적합하며, 모델마다 따로 다시 벡터화해야 합니다.",
+    "vm_downloadAndUse": "다운로드 후 사용",
+    "vm_downloadProgress": "다운로드 중 {{progress}}%",
+    "vm_deleteLocalModel": "로컬 모델 삭제",
+    "vm_dimensionSize": "{{dimension}}차원 · {{size}}",
+    "vm_dimensionSizeEnglish": "{{dimension}}차원 · {{size}} · 영어",
+    "vm_downloadConnectFailed": "모델 다운로드 서버에 연결할 수 없습니다. 휴대폰 네트워크를 확인하거나 Hugging Face에 접속할 수 있는 VPN을 켠 뒤 다시 시도해 주세요.",
     "vm_download": "다운로드",
     "vm_loaded": "로드됨",
     "vm_clearCache": "삭제",
@@ -260,6 +268,10 @@
     "syncNever": "동기화한 적 없음",
     "syncSuccess": "동기화 완료",
     "syncFailed": "동기화 실패: {{error}}",
+    "syncConnectFailed": "동기화 서버에 연결할 수 없습니다. 네트워크와 자격 증명을 확인해 주세요.",
+    "syncFailedGeneric": "동기화 실패",
+    "syncRemoteDirFailed": "원격 동기화 폴더를 만들 수 없습니다. 저장소 서비스 설정과 권한을 확인해 주세요: {{error}}",
+    "syncUploadFailed": "로컬 변경 사항을 업로드하지 못했습니다. 네트워크 연결 또는 저장소 서비스 권한을 확인해 주세요: {{error}}",
     "syncRecordsUp": "{{count}}개 레코드 업로드됨",
     "syncRecordsDown": "{{count}}개 레코드 다운로드됨",
     "syncFilesUp": "{{count}}개 파일 업로드됨",
@@ -422,12 +434,12 @@
     "importFailed": "가져오기 실패",
     "invalidConfig": "유효하지 않은 설정 형식",
     "pasteConfig": "설정 토큰 붙여넣기...",
-    "simplifiedChinese": "简体中文",
+    "simplifiedChinese": "중국어 간체",
     "syncConfig": "동기화 설정",
     "transferConfig": "설정 전송",
     "vectorConfig": "벡터 설정",
     "webdavAllowInsecure": "비보안 연결 허용",
-    "ai_provider_zhipu": "智谱 GLM",
+    "ai_provider_zhipu": "Zhipu GLM",
     "ai_provider_aliyun": "알리바바클라우드 통의",
     "ai_provider_custom": "커스텀 (OpenAI 호환)",
     "ai_currentLabel": "현재:",
@@ -597,6 +609,8 @@
           "fail": "ReadAny 스킬이 {{path}}에 설치되어 있지 않아요."
         }
       }
-    }
+    },
+    "ai_searchModelPlaceholder": "모델 검색...",
+    "ai_modelsCount": "총 {{count}}개 모델"
   }
 }

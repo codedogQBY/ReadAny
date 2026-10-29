@@ -81,6 +81,13 @@
     "statusOpen": "Open",
     "statusClosed": "Closed",
     "newReply": "New reply",
-    "openIssue": "Open issue"
+    "openIssue": "Open issue",
+    "hasNewReply": "New reply",
+    "openInBrowser": "Open in browser",
+    "detailLoadFailed": "Failed to load. Please try again later.",
+    "replies": "Replies",
+    "noReplies": "No replies yet. We'll look into it soon.",
+    "dailyLimitReached": "Daily feedback limit reached. Please try again tomorrow.",
+    "submitFailedStatus": "Submission failed: {{status}} {{text}}"
   }
 }

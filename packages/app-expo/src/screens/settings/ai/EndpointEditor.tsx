@@ -308,7 +308,11 @@ export function EndpointEditor({
               activeOpacity={0.7}
             >
               <Text style={[styles.providerBtnText, ep.provider === p.id && styles.providerBtnTextActive]}>
-                {p.label}
+                {p.id === "zhipu"
+                  ? t("settings.ai_provider_zhipu", "Zhipu GLM")
+                  : p.id === "aliyun"
+                    ? t("settings.ai_provider_aliyun", "Alibaba Cloud Tongyi")
+                    : p.label}
               </Text>
             </TouchableOpacity>
           ))}

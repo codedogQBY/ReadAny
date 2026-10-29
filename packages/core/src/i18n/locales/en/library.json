@@ -138,6 +138,7 @@
     "detailsTabBasic": "Basic info",
     "detailsTabReviews": "Reviews",
     "detailsTabDraft": "Draft",
+    "detailsDraftTabTitle": "Refinement draft",
     "detailsDraftTitle": "Create draft workspace",
     "detailsDraftDesc": "Start the EPUB refinement flow from here. AI and user edits share the same draft, history, diff, validate, and export path.",
     "detailsDraftCreate": "Create draft",
@@ -159,7 +160,8 @@
     "detailsSelectedTags": "{{count}} selected",
     "detailsNoTagsSelected": "No tags selected",
     "detailsManagedMetadataNote": "ReadAny maintains this metadata for library display, search, and sync naming. The original book file is not modified.",
-    "bookNotFound": "Book not found"
+    "bookNotFound": "Book not found",
+    "downloadInProgress": "This book is still downloading. Please try again shortly."
   },
   "home": {
     "library": "Library",
@@ -187,5 +189,9 @@
     "manageTags": "Manage Tags",
     "remote": "Download required",
     "downloading": "Downloading"
+  },
+  "epubDraft": {
+    "missingDraftId": "Enter a draft ID",
+    "title": "EPUB Refinement Workspace"
   }
 }

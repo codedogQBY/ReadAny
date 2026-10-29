@@ -138,11 +138,11 @@ export const TTS_PROVIDER_DEFINITIONS: TTSProviderDefinition[] = [
 ] as const;
 
 export const XIAOMI_TTS_VOICES = [
-  { id: "mimo_default", label: "MiMo 默认" },
-  { id: "冰糖", label: "冰糖 · 中文女声" },
-  { id: "茉莉", label: "茉莉 · 中文女声" },
-  { id: "苏打", label: "苏打 · 中文男声" },
-  { id: "白桦", label: "白桦 · 中文男声" },
+  { id: "mimo_default", label: "MiMo Default" },
+  { id: "冰糖", label: "冰糖 · Chinese female" },
+  { id: "茉莉", label: "茉莉 · Chinese female" },
+  { id: "苏打", label: "苏打 · Chinese male" },
+  { id: "白桦", label: "白桦 · Chinese male" },
   { id: "Mia", label: "Mia · English female" },
   { id: "Chloe", label: "Chloe" },
   { id: "Milo", label: "Milo · English male" },

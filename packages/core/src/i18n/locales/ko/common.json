@@ -47,7 +47,12 @@
     "selectAll": "모두 선택",
     "rename": "이름 변경",
     "reset": "초기화",
-    "writeYourThoughts": "생각을 적어보세요..."
+    "writeYourThoughts": "생각을 적어보세요...",
+    "refresh": "새로고침",
+    "ok": "확인",
+    "warning": "알림",
+    "noResults": "일치하는 결과가 없습니다",
+    "saving": "저장 중"
   },
   "sidebar": {
     "library": "서재",

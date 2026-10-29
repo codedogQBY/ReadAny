@@ -6,6 +6,7 @@
 
 import { create } from "zustand";
 import { emitLibraryChanged } from "../events/library-events";
+import i18n from "../i18n";
 import { getPlatformService } from "../services/platform";
 import { sanitizeS3RemoteRoot } from "../sync/s3-paths";
 import type { S3Config, SyncConfig, WebDavConfig } from "../sync/sync-backend";
@@ -484,7 +485,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
         const connected = await backend.testConnection();
         if (!connected) {
-          const connectionError = "无法连接到同步服务器，请检查网络和凭据";
+          const connectionError = i18n.t("settings.syncConnectFailed", "Can't reach the sync server. Check your network and credentials.");
           const result: SyncResult = {
             success: false,
             direction: "none",
@@ -673,9 +674,9 @@ export const useSyncStore = create<SyncState>((set, get) => ({
             filesUploadFailed: 0,
             filesDownloadFailed: 0,
             durationMs: 0,
-            error: result.error || "同步失败",
+            error: result.error || i18n.t("settings.syncFailedGeneric", "Sync failed"),
           },
-          error: result.error || "同步失败",
+          error: result.error || i18n.t("settings.syncFailedGeneric", "Sync failed"),
           progress: null,
         });
         await persistSyncRuntimeState({
@@ -688,7 +689,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
             filesUploadFailed: 0,
             filesDownloadFailed: 0,
             durationMs: 0,
-            error: result.error || "同步失败",
+            error: result.error || i18n.t("settings.syncFailedGeneric", "Sync failed"),
           },
         });
       }
@@ -786,7 +787,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         const connected = await backend.testConnection();
 
         if (!connected) {
-          const connectionError = "无法连接到同步服务器，请检查网络和凭据";
+          const connectionError = i18n.t("settings.syncConnectFailed", "Can't reach the sync server. Check your network and credentials.");
           const result: SyncResult = {
             success: false,
             direction: "none",
@@ -880,7 +881,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
           set({
             status: "error",
             lastResult: result,
-            error: result.error || "同步失败",
+            error: result.error || i18n.t("settings.syncFailedGeneric", "Sync failed"),
             progress: null,
             pendingDirection: null,
           });

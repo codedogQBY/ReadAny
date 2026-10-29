@@ -146,7 +146,22 @@
     "detailsSelectedTags": "{{count}} seleccionadas",
     "detailsNoTagsSelected": "Sin etiquetas seleccionadas",
     "detailsManagedMetadataNote": "ReadAny mantiene estos metadatos para mostrar, buscar y nombrar en la sincronización. El archivo original del libro no se modifica.",
-    "bookNotFound": "Libro no encontrado"
+    "bookNotFound": "Libro no encontrado",
+    "detailsDraftTabTitle": "Borrador de refinamiento",
+    "downloadInProgress": "Este libro aún se está descargando. Inténtalo de nuevo en un momento.",
+    "detailsTabDraft": "Borrador",
+    "detailsDraftTitle": "Crear espacio de borrador",
+    "detailsDraftDesc": "Inicia aquí el flujo de refinamiento de EPUB. Las ediciones de la IA y del usuario comparten el mismo borrador, historial, diff, validación y ruta de exportación.",
+    "detailsDraftCreate": "Crear borrador",
+    "detailsDraftCreating": "Creando...",
+    "detailsDraftCreated": "Borrador creado",
+    "detailsDraftCreateFailed": "Error al crear el borrador",
+    "detailsDraftStep1": "Inspeccionar",
+    "detailsDraftStep1Desc": "Lee la estructura del EPUB, el manifiesto, el spine, los metadatos y el índice.",
+    "detailsDraftStep2": "Editar",
+    "detailsDraftStep2Desc": "Modifica capítulos o metadatos en el espacio de borrador controlado.",
+    "detailsDraftStep3": "Exportar",
+    "detailsDraftStep3Desc": "Valida primero y luego exporta un nuevo EPUB sin tocar el archivo original."
   },
   "home": {
     "library": "Biblioteca",
@@ -172,6 +187,11 @@
     "vec_queued": "En cola",
     "manageTags": "Administrar etiquetas",
     "remote": "Requiere descarga",
-    "downloading": "Descargando"
+    "downloading": "Descargando",
+    "vec_reindexConfirm": "Este libro ya está indexado. Reindexar restablecerá los datos existentes. ¿Continuar?"
+  },
+  "epubDraft": {
+    "missingDraftId": "Introduce un ID de borrador",
+    "title": "Espacio de refinamiento EPUB"
   }
 }

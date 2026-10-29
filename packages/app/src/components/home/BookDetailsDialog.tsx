@@ -890,7 +890,7 @@ export function BookDetailsDialog({ book, open, onOpenChange }: BookDetailsDialo
                           <p className="mt-2 max-w-2xl text-xs leading-relaxed text-muted-foreground">
                             {t(
                               "library.detailsDraftDesc",
-                              "Start the EPUB精排 flow from here. AI and user edits will share the same draft, history, diff, validate, and export path.",
+                              "Start the EPUB refinement flow from here. AI and user edits will share the same draft, history, diff, validate, and export path.",
                             )}
                           </p>
                         </div>

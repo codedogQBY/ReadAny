@@ -531,10 +531,12 @@ describe("useSyncStore", () => {
       filesUploadFailed: 0,
       filesDownloadFailed: 0,
       durationMs: 0,
-      error: "无法连接到同步服务器，请检查网络和凭据",
+      error: "Can't reach the sync server. Check your network and credentials.",
     });
     expect(useSyncStore.getState().status).toBe("error");
-    expect(useSyncStore.getState().error).toBe("无法连接到同步服务器，请检查网络和凭据");
+    expect(useSyncStore.getState().error).toBe(
+      "Can't reach the sync server. Check your network and credentials.",
+    );
   });
 
   it("syncNow preserves backend connection failure details", async () => {

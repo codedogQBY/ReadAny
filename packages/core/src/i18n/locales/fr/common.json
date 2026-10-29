@@ -47,7 +47,12 @@
     "selectAll": "Tout sélectionner",
     "rename": "Renommer",
     "reset": "Réinitialiser",
-    "writeYourThoughts": "Écrivez vos réflexions..."
+    "writeYourThoughts": "Écrivez vos réflexions...",
+    "refresh": "Actualiser",
+    "ok": "OK",
+    "warning": "Information",
+    "noResults": "Aucun résultat",
+    "saving": "Enregistrement"
   },
   "sidebar": {
     "library": "Bibliothèque",

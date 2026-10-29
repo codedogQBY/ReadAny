@@ -1,6 +1,7 @@
 import * as FileSystem from "expo-file-system/legacy";
 import { InferenceSession, Tensor } from "onnxruntime-react-native";
 import type { ILocalEmbeddingEngine } from "@readany/core/ai/local-embedding-service";
+import i18n from "@readany/core/i18n";
 
 const MAX_TOKENS = 128;
 const DOWNLOAD_TIMEOUT_MS = 30_000;
@@ -107,7 +108,14 @@ export class NativeOnnxEmbeddingEngine implements ILocalEmbeddingEngine {
     const timeout = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => {
         timedOut = true;
-        reject(new Error("无法连接模型下载服务器。请检查手机网络或开启可访问 Hugging Face 的 VPN 后重试。"));
+        reject(
+          new Error(
+            i18n.t(
+              "settings.vm_downloadConnectFailed",
+              "Can't reach the model download server. Check your phone's network, or turn on a VPN that can access Hugging Face, then try again.",
+            ),
+          ),
+        );
       }, DOWNLOAD_TIMEOUT_MS);
     });
     try {

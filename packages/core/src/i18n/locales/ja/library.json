@@ -146,7 +146,22 @@
     "detailsSelectedTags": "{{count}}件選択中",
     "detailsNoTagsSelected": "タグ未選択",
     "detailsManagedMetadataNote": "ReadAny はこのメタデータをライブラリ表示、検索、同期時の命名に使用します。元の書籍ファイルは変更しません。",
-    "bookNotFound": "書籍が見つかりません"
+    "bookNotFound": "書籍が見つかりません",
+    "detailsDraftTabTitle": "精排ドラフト",
+    "downloadInProgress": "この本はまだダウンロード中です。しばらくしてから開いてください。",
+    "detailsTabDraft": "ドラフト",
+    "detailsDraftTitle": "ドラフトワークスペースを作成",
+    "detailsDraftDesc": "ここから EPUB 精排フローを開始します。AI の変更とユーザーの編集は、同じドラフト・履歴・差分・検証・エクスポートの経路を共有します。",
+    "detailsDraftCreate": "ドラフトを作成",
+    "detailsDraftCreating": "作成中...",
+    "detailsDraftCreated": "ドラフトを作成しました",
+    "detailsDraftCreateFailed": "ドラフトの作成に失敗しました",
+    "detailsDraftStep1": "検査",
+    "detailsDraftStep1Desc": "EPUB の構造、マニフェスト、スパイン、メタデータ、目次を読み取ります。",
+    "detailsDraftStep2": "編集",
+    "detailsDraftStep2Desc": "管理されたドラフトワークスペースで章やメタデータを修正します。",
+    "detailsDraftStep3": "エクスポート",
+    "detailsDraftStep3Desc": "まず検証し、元のファイルには触れずに新しい EPUB をエクスポートします。"
   },
   "home": {
     "library": "ライブラリ",
@@ -172,6 +187,11 @@
     "vec_queued": "キュー待ち",
     "manageTags": "タグを管理",
     "remote": "ダウンロードが必要",
-    "downloading": "ダウンロード中"
+    "downloading": "ダウンロード中",
+    "vec_reindexConfirm": "この本は既にインデックス済みです。再インデックスすると既存のデータがリセットされます。続行しますか？"
+  },
+  "epubDraft": {
+    "missingDraftId": "ドラフト ID を入力してください",
+    "title": "EPUB 精排ワークスペース"
   }
 }

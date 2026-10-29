@@ -81,6 +81,13 @@
     "statusOpen": "オープン",
     "statusClosed": "クローズ",
     "newReply": "新しい返信",
-    "openIssue": "Issueを開く"
+    "openIssue": "Issueを開く",
+    "hasNewReply": "新しい返信があります",
+    "openInBrowser": "ブラウザで開く",
+    "detailLoadFailed": "読み込みに失敗しました。しばらくしてからもう一度お試しください。",
+    "replies": "返信",
+    "noReplies": "まだ返信はありません。できるだけ早く対応します。",
+    "dailyLimitReached": "本日のフィードバック送信回数の上限に達しました。明日もう一度お試しください。",
+    "submitFailedStatus": "送信に失敗しました: {{status}} {{text}}"
   }
 }

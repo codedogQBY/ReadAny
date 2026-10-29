@@ -146,7 +146,22 @@
     "detailsSelectedTags": "{{count}} sélectionné(s)",
     "detailsNoTagsSelected": "Aucun tag sélectionné",
     "detailsManagedMetadataNote": "ReadAny conserve ces métadonnées pour l'affichage, la recherche et le nommage de synchronisation. Le fichier original du livre n'est pas modifié.",
-    "bookNotFound": "Livre introuvable"
+    "bookNotFound": "Livre introuvable",
+    "detailsDraftTabTitle": "Brouillon de raffinement",
+    "downloadInProgress": "Ce livre est encore en cours de téléchargement. Réessayez dans un instant.",
+    "detailsTabDraft": "Brouillon",
+    "detailsDraftTitle": "Créer un espace de brouillon",
+    "detailsDraftDesc": "Démarrez ici le flux de raffinement EPUB. Les modifications de l'IA et de l'utilisateur partagent le même brouillon, historique, diff, validation et chemin d'export.",
+    "detailsDraftCreate": "Créer un brouillon",
+    "detailsDraftCreating": "Création...",
+    "detailsDraftCreated": "Brouillon créé",
+    "detailsDraftCreateFailed": "Échec de la création du brouillon",
+    "detailsDraftStep1": "Inspecter",
+    "detailsDraftStep1Desc": "Lit la structure EPUB, le manifeste, le spine, les métadonnées et la table des matières.",
+    "detailsDraftStep2": "Modifier",
+    "detailsDraftStep2Desc": "Modifie les chapitres ou les métadonnées dans l'espace de brouillon contrôlé.",
+    "detailsDraftStep3": "Exporter",
+    "detailsDraftStep3Desc": "Valide d'abord, puis exporte un nouvel EPUB sans toucher au fichier source."
   },
   "home": {
     "library": "Bibliothèque",
@@ -172,6 +187,11 @@
     "vec_queued": "En file d'attente",
     "manageTags": "Gérer les tags",
     "remote": "Téléchargement requis",
-    "downloading": "Téléchargement"
+    "downloading": "Téléchargement",
+    "vec_reindexConfirm": "Ce livre est déjà indexé. Réindexer réinitialisera les données existantes. Continuer ?"
+  },
+  "epubDraft": {
+    "missingDraftId": "Saisissez un identifiant de brouillon",
+    "title": "Espace de raffinement EPUB"
   }
 }

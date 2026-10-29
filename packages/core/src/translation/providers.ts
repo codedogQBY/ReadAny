@@ -501,7 +501,7 @@ interface InternalTranslationProvider {
 
 /** Available translators list */
 export const TRANSLATOR_PROVIDERS: InternalTranslationProvider[] = [
-  { name: "ai", label: "AI 翻译" },
+  { name: "ai", label: "AI Translation" },
   { name: "deepl", label: "DeepL" },
 ];
 
@@ -644,7 +644,7 @@ export async function microsoftTranslate(
 
 export const microsoftProvider: TranslationProvider = {
   name: "microsoft",
-  label: "微软翻译 (免费)",
+  label: "Microsoft Translate (Free)",
   translate: async (texts, sourceLang, targetLang) => {
     return microsoftTranslate(texts, sourceLang, targetLang);
   },

@@ -81,6 +81,13 @@
     "statusOpen": "處理中",
     "statusClosed": "已關閉",
     "newReply": "有新回覆",
-    "openIssue": "開啟 Issue"
+    "openIssue": "開啟 Issue",
+    "hasNewReply": "有新回覆",
+    "openInBrowser": "在瀏覽器開啟",
+    "detailLoadFailed": "載入失敗，請稍後重試",
+    "replies": "回覆",
+    "noReplies": "尚無回覆，我們會盡快處理。",
+    "dailyLimitReached": "今日回饋次數已用完，請明天再試",
+    "submitFailedStatus": "提交失敗: {{status}} {{text}}"
   }
 }

@@ -10,6 +10,7 @@
  */
 
 import { getDB } from "../db/database";
+import i18n from "../i18n";
 import { canonicalBookFilePath } from "./local-book-paths";
 import { getSyncAdapter } from "./sync-adapter";
 import { DEFAULT_SYNC_CONFIG, type ISyncBackend, type RemoteFile } from "./sync-backend";
@@ -1107,7 +1108,7 @@ async function migrateBookRemoteState(
 }
 
 function buildUploadFileTask(backend: ISyncBackend, info: BookInfo): FileTask {
-  const bookTitle = info.book.title || "未知书籍";
+  const bookTitle = info.book.title || i18n.t("reader.unknownBook", "Untitled book");
   return {
     label: bookTitle,
     run: async (onProgress) => {
@@ -1136,7 +1137,7 @@ function buildDownloadFileTask(
   info: BookInfo,
   setBookSyncStatus: (id: string, status: "local" | "remote") => Promise<void>,
 ): FileTask {
-  const bookTitle = info.book.title || "未知书籍";
+  const bookTitle = info.book.title || i18n.t("reader.unknownBook", "Untitled book");
   return {
     label: bookTitle,
     run: async (onProgress) => {
@@ -1162,7 +1163,7 @@ function buildDownloadFileTask(
 }
 
 function buildUploadCoverTask(backend: ISyncBackend, info: BookInfo): FileTask {
-  const bookTitle = info.book.title || "未知书籍";
+  const bookTitle = info.book.title || i18n.t("reader.unknownBook", "Untitled book");
   return {
     label: `${bookTitle} cover`,
     run: async (onProgress) => {
@@ -1187,7 +1188,7 @@ function buildUploadCoverTask(backend: ISyncBackend, info: BookInfo): FileTask {
 }
 
 function buildDownloadCoverTask(backend: ISyncBackend, info: BookInfo): FileTask {
-  const bookTitle = info.book.title || "未知书籍";
+  const bookTitle = info.book.title || i18n.t("reader.unknownBook", "Untitled book");
   return {
     label: `${bookTitle} cover`,
     run: async (onProgress) => {

@@ -81,6 +81,13 @@
     "statusOpen": "Abierto",
     "statusClosed": "Cerrado",
     "newReply": "Nueva respuesta",
-    "openIssue": "Abrir issue"
+    "openIssue": "Abrir issue",
+    "hasNewReply": "Nueva respuesta",
+    "openInBrowser": "Abrir en el navegador",
+    "detailLoadFailed": "Error al cargar. Inténtalo de nuevo más tarde.",
+    "replies": "Respuestas",
+    "noReplies": "Aún no hay respuestas. Lo revisaremos pronto.",
+    "dailyLimitReached": "Se alcanzó el límite diario de comentarios. Inténtalo de nuevo mañana.",
+    "submitFailedStatus": "Error al enviar: {{status}} {{text}}"
   }
 }

@@ -59,7 +59,16 @@
     "selectAndCopy": "長按選取文字複製",
     "selectBooks": "選擇書籍上下文",
     "threads": "對話列表",
-    "untitled": "新對話"
+    "untitled": "新對話",
+    "citationBookNotFound": "找不到這則引用對應的書籍",
+    "citationOpenFailed": "無法開啟這則引用",
+    "dismissKeyboard": "收起鍵盤",
+    "quotePrefix": "關於以下文字：",
+    "quoteDefaultRequest": "請幫我分析這段文字。",
+    "inputTooLong": "內容過長，請分段提問。",
+    "chapterNotFoundNotice": "未能可靠定位章節，請補充更準確的章節名",
+    "searchStepsExceeded": "本輪檢索步驟過多，沒有穩定完成。請換個更具體的問法，或直接重試一次。",
+    "selectedText": "選中文字"
   },
   "streaming": {
     "thinking": "正在思考...",
@@ -72,7 +81,10 @@
     "loadingMindmap": "載入心智圖...",
     "toolFailed": "呼叫失敗",
     "toolFailedDetail": "工具呼叫失敗",
-    "aborted": "使用者取消了產生"
+    "aborted": "使用者取消了產生",
+    "toolNotice": "已停止搜尋",
+    "toolNoticeDetail": "章節搜尋已停止",
+    "toolNoResult": "工具沒有返回結果"
   },
   "toolLabels": {
     "ragSearch": "搜尋書籍內容",

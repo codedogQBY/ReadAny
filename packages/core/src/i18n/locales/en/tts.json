@@ -42,6 +42,7 @@
     "engineDescEdge": "Microsoft · Multilingual",
     "engineDescDashscope": "Alibaba Cloud Tongyi · Chinese optimized",
     "engineDescSystem": "Built-in · Free",
+    "engineDescOpenaiCompatible": "Custom OpenAI format",
     "voice": "Voice",
     "voiceProfile": "Voice Profile",
     "defaultVoice": "Default Voice",

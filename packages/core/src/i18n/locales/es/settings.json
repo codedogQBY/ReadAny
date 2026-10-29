@@ -198,6 +198,14 @@
     "vm_modeRemoteDesc": "Usa un servicio externo de API de embeddings",
     "vm_builtinModels": "Modelos integrados",
     "vm_builtinDesc": "Descarga modelos ligeros para ejecutar localmente dentro de la app. La primera descarga se almacena en caché automáticamente.",
+    "vm_localModels": "Modelos locales",
+    "vm_localModelsDesc": "Los modelos se descargan en el dispositivo y funcionan sin conexión; el contenido de los libros nunca se envía. BGE es adecuado para chino y MiniLM para inglés; cada modelo debe volver a vectorizarse por separado.",
+    "vm_downloadAndUse": "Descargar y usar",
+    "vm_downloadProgress": "Descargando {{progress}}%",
+    "vm_deleteLocalModel": "Eliminar modelo local",
+    "vm_dimensionSize": "{{dimension}} dim. · {{size}}",
+    "vm_dimensionSizeEnglish": "{{dimension}} dim. · {{size}} · inglés",
+    "vm_downloadConnectFailed": "No se puede conectar con el servidor de descarga de modelos. Revisa la red del teléfono o activa una VPN que pueda acceder a Hugging Face y vuelve a intentarlo.",
     "vm_download": "Descargar",
     "vm_loaded": "Cargado",
     "vm_clearCache": "Limpiar",
@@ -258,6 +266,10 @@
     "syncNever": "Nunca sincronizado",
     "syncSuccess": "Sincronización completada",
     "syncFailed": "Sincronización fallida: {{error}}",
+    "syncConnectFailed": "No se puede conectar con el servidor de sincronización. Revisa tu red y tus credenciales.",
+    "syncFailedGeneric": "Error de sincronización",
+    "syncRemoteDirFailed": "No se pudo crear la carpeta de sincronización remota. Revisa la configuración y los permisos del servicio de almacenamiento: {{error}}",
+    "syncUploadFailed": "No se pudieron subir los cambios locales. Revisa tu conexión de red o los permisos del servicio de almacenamiento: {{error}}",
     "syncRecordsUp": "{{count}} registros subidos",
     "syncRecordsDown": "{{count}} registros descargados",
     "syncFilesUp": "{{count}} archivos subidos",
@@ -595,6 +607,10 @@
           "fail": "ReadAny Skill no está instalada en {{path}}."
         }
       }
-    }
+    },
+    "ai_searchModelPlaceholder": "Buscar modelos...",
+    "ai_modelsCount": "{{count}} modelos en total",
+    "vm_autoVectorizeOnImport": "Vectorizar automáticamente los libros nuevos",
+    "vm_autoVectorizeOnImportDesc": "Si está activado, los libros importados o descargados por sincronización se ponen en cola para indexarse automáticamente. Desactivado por defecto para evitar un uso inesperado del modelo."
   }
 }

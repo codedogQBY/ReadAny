@@ -138,6 +138,7 @@
     "detailsTabBasic": "基本信息",
     "detailsTabReviews": "书评",
     "detailsTabDraft": "精排草稿",
+    "detailsDraftTabTitle": "精排草稿",
     "detailsDraftTitle": "创建精排草稿",
     "detailsDraftDesc": "从这里进入 EPUB 精排流程。AI 修改和用户编辑共用同一套 draft、history、diff、validate 和 export 路径。",
     "detailsDraftCreate": "创建草稿",
@@ -159,7 +160,8 @@
     "detailsSelectedTags": "已选 {{count}} 个标签",
     "detailsNoTagsSelected": "未选择标签",
     "detailsManagedMetadataNote": "ReadAny 会维护这份元信息，用于书架展示、搜索和同步命名，不会修改原始书籍文件。",
-    "bookNotFound": "书籍不存在"
+    "bookNotFound": "书籍不存在",
+    "downloadInProgress": "书籍还在下载中，请稍后再打开。"
   },
   "home": {
     "library": "书库",
@@ -187,5 +189,9 @@
     "manageTags": "管理标签",
     "remote": "需下载",
     "downloading": "下载中"
+  },
+  "epubDraft": {
+    "missingDraftId": "请输入 draft id",
+    "title": "EPUB 精排工作区"
   }
 }

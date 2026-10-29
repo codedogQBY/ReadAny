@@ -203,6 +203,14 @@
     "vm_modeRemoteDesc": "使用外部嵌入 API 服务",
     "vm_builtinModels": "内置模型",
     "vm_builtinDesc": "下载轻量模型在应用内本地运行，首次下载后自动缓存。",
+    "vm_localModels": "本地模型",
+    "vm_localModelsDesc": "模型下载到本机后离线运行，不会发送书籍内容。BGE 适合中文，MiniLM 适合英文；不同模型需要分别重新向量化。",
+    "vm_downloadAndUse": "下载并使用",
+    "vm_downloadProgress": "下载 {{progress}}%",
+    "vm_deleteLocalModel": "删除本地模型",
+    "vm_dimensionSize": "{{dimension}} 维 · {{size}}",
+    "vm_dimensionSizeEnglish": "{{dimension}} 维 · {{size}} · 英文",
+    "vm_downloadConnectFailed": "无法连接模型下载服务器。请检查手机网络或开启可访问 Hugging Face 的 VPN 后重试。",
     "vm_download": "下载",
     "vm_loaded": "已加载",
     "vm_clearCache": "清除",
@@ -263,6 +271,10 @@
     "syncNever": "从未同步",
     "syncSuccess": "同步完成",
     "syncFailed": "同步失败：{{error}}",
+    "syncConnectFailed": "无法连接到同步服务器，请检查网络和凭据",
+    "syncFailedGeneric": "同步失败",
+    "syncRemoteDirFailed": "无法创建远程同步目录，请检查存储服务配置和权限：{{error}}",
+    "syncUploadFailed": "上传本地变更失败，请检查网络连接或存储服务权限：{{error}}",
     "syncRecordsUp": "上传 {{count}} 条记录",
     "syncRecordsDown": "下载 {{count}} 条记录",
     "syncFilesUp": "上传 {{count}} 个文件",
@@ -597,6 +609,8 @@
           "fail": "ReadAny Skill 未安装：{{path}}。"
         }
       }
-    }
+    },
+    "ai_searchModelPlaceholder": "搜索模型...",
+    "ai_modelsCount": "共 {{count}} 个模型"
   }
 }

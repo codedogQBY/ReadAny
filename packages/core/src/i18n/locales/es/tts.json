@@ -137,8 +137,10 @@
     "engineDescEdge": "Microsoft · Multilingüe",
     "engineDescDashscope": "Alibaba Tongyi · Chino optimizado",
     "engineDescSystem": "Sistema integrado · Gratis",
+    "engineDescOpenaiCompatible": "Formato OpenAI personalizado",
     "player": "Reproductor TTS",
-    "listeningToBook": "Reproduciendo audiolibro"
+    "listeningToBook": "Reproduciendo audiolibro",
+    "noTextFound": "No se encontró texto legible en esta página"
   },
   "fonts": {
     "title": "Fuentes",

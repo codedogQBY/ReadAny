@@ -33,6 +33,7 @@
     "translation": "译文",
     "providerMicrosoft": "微软翻译（免费）",
     "providerAI": "AI 翻译",
-    "providerDeepL": "DeepL"
+    "providerDeepL": "DeepL",
+    "microsoftHint": "免费，无需配置"
   }
 }

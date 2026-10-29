@@ -75,7 +75,11 @@
     "returnToOriginal": "Revenir à la position d'avant la recherche ?",
     "searchComplete": "Recherche terminée",
     "unknownBook": "Livre sans titre",
-    "viewNote": "Voir la note"
+    "viewNote": "Voir la note",
+    "pdfZoom": "Zoom PDF",
+    "zoomIn": "Zoom avant",
+    "zoomOut": "Zoom arrière",
+    "resetZoom": "Réinitialiser le zoom"
   },
   "bookmarks": {
     "title": "Signets",

@@ -63,7 +63,7 @@ const defaultReadSettings: ReadSettings = {
 };
 
 const defaultTranslationConfig: TranslationConfig = {
-  provider: { id: "microsoft", name: "微软翻译 (免费)" },
+  provider: { id: "microsoft", name: "Microsoft Translate (Free)" },
   targetLang: "zh-CN",
 };
 

@@ -75,7 +75,11 @@
     "returnToOriginal": "¿Volver a la posición anterior a la búsqueda?",
     "searchComplete": "Búsqueda completa",
     "unknownBook": "Libro sin título",
-    "viewNote": "Ver nota"
+    "viewNote": "Ver nota",
+    "pdfZoom": "Zoom del PDF",
+    "zoomIn": "Acercar",
+    "zoomOut": "Alejar",
+    "resetZoom": "Restablecer zoom"
   },
   "bookmarks": {
     "title": "Marcadores",

@@ -137,8 +137,10 @@
     "engineDescEdge": "Microsoft · 다국어",
     "engineDescDashscope": "알리바바클라우드 통의 · 중국어 최적화",
     "engineDescSystem": "시스템 내장 · 무료",
+    "engineDescOpenaiCompatible": "사용자 지정 OpenAI 형식",
     "player": "TTS 플레이어",
-    "listeningToBook": "오디오북 재생 중"
+    "listeningToBook": "오디오북 재생 중",
+    "noTextFound": "이 페이지에서 읽을 수 있는 텍스트를 찾지 못했습니다"
   },
   "fonts": {
     "title": "글꼴",

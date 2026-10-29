@@ -59,7 +59,16 @@
     "selectAndCopy": "テキストを長押しして選択・コピー",
     "selectBooks": "本のコンテキストを選択",
     "threads": "会話一覧",
-    "untitled": "無題"
+    "untitled": "無題",
+    "citationBookNotFound": "この引用に対応する本が見つかりません",
+    "citationOpenFailed": "この引用を開けません",
+    "dismissKeyboard": "キーボードを閉じる",
+    "quotePrefix": "次のテキストについて：",
+    "quoteDefaultRequest": "このテキストを分析してください。",
+    "inputTooLong": "内容が長すぎます。質問を分けて送ってください。",
+    "chapterNotFoundNotice": "章を確実に特定できませんでした。より正確な章タイトルを入力してください。",
+    "searchStepsExceeded": "今回は検索ステップが多すぎて安定して完了しませんでした。より具体的な質問に変えるか、もう一度お試しください。",
+    "selectedText": "選択したテキスト"
   },
   "streaming": {
     "thinking": "考え中...",
@@ -72,7 +81,10 @@
     "loadingMindmap": "マインドマップを読み込み中...",
     "toolFailed": "呼び出し失敗",
     "toolFailedDetail": "ツール呼び出しに失敗しました",
-    "aborted": "ユーザーにより生成を停止しました"
+    "aborted": "ユーザーにより生成を停止しました",
+    "toolNotice": "検索を停止しました",
+    "toolNoticeDetail": "章の検索を停止しました",
+    "toolNoResult": "ツールから結果が返されませんでした"
   },
   "toolLabels": {
     "ragSearch": "書籍内容を検索中",

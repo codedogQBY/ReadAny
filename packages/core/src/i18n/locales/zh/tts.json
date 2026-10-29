@@ -42,6 +42,7 @@
     "engineDescEdge": "Microsoft · 多语言",
     "engineDescDashscope": "阿里云通义 · 中文优化",
     "engineDescSystem": "系统内置 · 免费",
+    "engineDescOpenaiCompatible": "自定义 OpenAI 格式",
     "voice": "语音",
     "voiceProfile": "朗读方案",
     "defaultVoice": "默认语音",

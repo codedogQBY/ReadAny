@@ -6,6 +6,7 @@
  */
 
 import { getDB } from "../db/db-core";
+import i18n from "../i18n";
 import { getPlatformService } from "../services/platform";
 import type {
   DeviceInfo,
@@ -394,7 +395,9 @@ export async function submitFeedback(
   submission: FeedbackSubmission,
 ): Promise<FeedbackSubmitResult> {
   if (getRemainingSubmissions() <= 0) {
-    throw new Error("今日反馈次数已用完，请明天再试");
+    throw new Error(
+      i18n.t("feedback.dailyLimitReached", "Daily feedback limit reached. Please try again tomorrow."),
+    );
   }
 
   let result: FeedbackSubmitResult;
@@ -426,7 +429,12 @@ export async function submitFeedback(
 
       if (!response.ok) {
         const text = await response.text().catch(() => "");
-        throw new Error(`提交失败: ${response.status} ${text}`);
+        throw new Error(
+          i18n.t("feedback.submitFailedStatus", "Submission failed: {{status}} {{text}}", {
+            status: response.status,
+            text,
+          }),
+        );
       }
 
       result = (await response.json()) as FeedbackSubmitResult;

@@ -33,6 +33,7 @@
     "translation": "Translation",
     "providerMicrosoft": "Microsoft Translate (Free)",
     "providerAI": "AI Translation",
-    "providerDeepL": "DeepL"
+    "providerDeepL": "DeepL",
+    "microsoftHint": "Free, no setup required"
   }
 }

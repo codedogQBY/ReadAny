@@ -59,7 +59,16 @@
     "selectAndCopy": "Appui long sur le texte pour sélectionner et copier",
     "selectBooks": "Sélectionner le contexte de livres",
     "threads": "Conversations",
-    "untitled": "Sans titre"
+    "untitled": "Sans titre",
+    "citationBookNotFound": "Impossible de trouver le livre correspondant à cette citation",
+    "citationOpenFailed": "Impossible d'ouvrir cette citation",
+    "dismissKeyboard": "Masquer le clavier",
+    "quotePrefix": "À propos du texte suivant :",
+    "quoteDefaultRequest": "Aide-moi à analyser ce texte.",
+    "inputTooLong": "Le message est trop long. Veuillez diviser votre question en plusieurs parties.",
+    "chapterNotFoundNotice": "Impossible de localiser le chapitre de manière fiable. Indiquez un titre de chapitre plus précis.",
+    "searchStepsExceeded": "Trop d'étapes de recherche ont été nécessaires et la requête ne s'est pas terminée de façon fiable. Essayez une question plus précise ou réessayez.",
+    "selectedText": "Texte sélectionné"
   },
   "streaming": {
     "thinking": "Réflexion...",
@@ -72,7 +81,10 @@
     "loadingMindmap": "Chargement de la carte mentale...",
     "toolFailed": "Appel échoué",
     "toolFailedDetail": "L'appel de l'outil a échoué",
-    "aborted": "Génération arrêtée par l'utilisateur"
+    "aborted": "Génération arrêtée par l'utilisateur",
+    "toolNotice": "Recherche arrêtée",
+    "toolNoticeDetail": "Recherche de chapitre arrêtée",
+    "toolNoResult": "L'outil n'a renvoyé aucun résultat"
   },
   "toolLabels": {
     "ragSearch": "Recherche dans le contenu du livre",

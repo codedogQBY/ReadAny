@@ -1236,6 +1236,18 @@ export function ReaderScreen({ route, navigation }: Props) {
     });
   }, [themeMode, webViewReady]);
 
+  // Localize the pull-to-bookmark hint rendered inside the WebView
+  useEffect(() => {
+    if (!webViewReady) return;
+    bridge.setBookmarkPullState({
+      bookmarked: isBookmarked,
+      pullToAdd: t("bookmarks.pullToAdd", "Pull down to add bookmark"),
+      releaseToAdd: t("bookmarks.releaseToAdd", "Release to add bookmark"),
+      pullToRemove: t("bookmarks.pullToRemove", "Pull down to remove bookmark"),
+      releaseToRemove: t("bookmarks.releaseToRemove", "Release to remove bookmark"),
+    });
+  }, [isBookmarked, webViewReady, t, bridge.setBookmarkPullState]);
+
   // Re-apply font settings when custom fonts or selected font changes
   useEffect(() => {
     if (!webViewReady) return;

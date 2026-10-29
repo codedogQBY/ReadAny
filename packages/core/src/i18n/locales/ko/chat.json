@@ -59,7 +59,16 @@
     "selectAndCopy": "텍스트를 길게 눌러 선택하고 복사하세요",
     "selectBooks": "책 컨텍스트 선택",
     "threads": "대화 목록",
-    "untitled": "제목 없음"
+    "untitled": "제목 없음",
+    "citationBookNotFound": "이 인용에 해당하는 책을 찾을 수 없습니다",
+    "citationOpenFailed": "이 인용을 열 수 없습니다",
+    "dismissKeyboard": "키보드 닫기",
+    "quotePrefix": "다음 텍스트에 대해:",
+    "quoteDefaultRequest": "이 텍스트를 분석해 주세요.",
+    "inputTooLong": "내용이 너무 깁니다. 질문을 나누어 보내 주세요.",
+    "chapterNotFoundNotice": "챕터를 정확히 찾지 못했습니다. 더 정확한 챕터 제목을 알려 주세요.",
+    "searchStepsExceeded": "이번 검색은 단계가 너무 많아 안정적으로 완료되지 않았습니다. 더 구체적으로 질문하거나 다시 시도해 주세요.",
+    "selectedText": "선택한 텍스트"
   },
   "streaming": {
     "thinking": "생각 중...",
@@ -72,7 +81,10 @@
     "loadingMindmap": "마인드맵 로딩 중...",
     "toolFailed": "호출 실패",
     "toolFailedDetail": "도구 호출 실패",
-    "aborted": "사용자가 생성을 중단했어요"
+    "aborted": "사용자가 생성을 중단했어요",
+    "toolNotice": "검색이 중지되었습니다",
+    "toolNoticeDetail": "챕터 검색이 중지되었습니다",
+    "toolNoResult": "도구가 결과를 반환하지 않았습니다"
   },
   "toolLabels": {
     "ragSearch": "책 내용 검색 중",

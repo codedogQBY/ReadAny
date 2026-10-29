@@ -105,14 +105,14 @@ export function VoicePickerModal({
                         : t("tts.system");
               const desc =
                 eng === "edge"
-                  ? "Microsoft · 多语言"
+                  ? t("tts.engineDescEdge", "Microsoft · Multilingual")
                   : eng === "dashscope"
-                    ? "阿里云通义 · 中文优化"
+                    ? t("tts.engineDescDashscope", "Alibaba Cloud Tongyi · Chinese optimized")
                     : eng === "xiaomi"
                       ? "MiMo-V2.5-TTS"
                       : eng === "openai-compatible"
-                        ? "自定义 OpenAI 格式"
-                        : "系统内置 · 免费";
+                        ? t("tts.engineDescOpenaiCompatible", "Custom OpenAI format")
+                        : t("tts.engineDescSystem", "Built-in · Free");
               return (
                 <TouchableOpacity
                   key={eng}

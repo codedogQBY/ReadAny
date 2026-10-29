@@ -137,8 +137,10 @@
     "engineDescEdge": "Microsoft · 多言語",
     "engineDescDashscope": "アリババクラウド通義 · 中国語最適化",
     "engineDescSystem": "システム内蔵 · 無料",
+    "engineDescOpenaiCompatible": "カスタム OpenAI 形式",
     "player": "TTSプレーヤー",
-    "listeningToBook": "オーディオブック再生中"
+    "listeningToBook": "オーディオブック再生中",
+    "noTextFound": "このページには読み上げ可能なテキストが見つかりません"
   },
   "fonts": {
     "title": "フォント",

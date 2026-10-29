@@ -47,7 +47,12 @@
     "selectAll": "全选",
     "rename": "重命名",
     "reset": "复原",
-    "writeYourThoughts": "写下你的想法..."
+    "writeYourThoughts": "写下你的想法...",
+    "refresh": "刷新",
+    "ok": "好的",
+    "warning": "提示",
+    "noResults": "无匹配结果",
+    "saving": "保存中"
   },
   "sidebar": {
     "library": "书库",

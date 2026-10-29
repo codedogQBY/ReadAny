@@ -81,6 +81,13 @@
     "statusOpen": "Ouvert",
     "statusClosed": "Fermé",
     "newReply": "Nouvelle réponse",
-    "openIssue": "Ouvrir le ticket"
+    "openIssue": "Ouvrir le ticket",
+    "hasNewReply": "Nouvelle réponse",
+    "openInBrowser": "Ouvrir dans le navigateur",
+    "detailLoadFailed": "Échec du chargement. Réessayez plus tard.",
+    "replies": "Réponses",
+    "noReplies": "Pas encore de réponse. Nous nous en occuperons bientôt.",
+    "dailyLimitReached": "Limite quotidienne de retours atteinte. Réessayez demain.",
+    "submitFailedStatus": "Échec de l'envoi : {{status}} {{text}}"
   }
 }

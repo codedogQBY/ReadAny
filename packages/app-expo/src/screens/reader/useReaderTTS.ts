@@ -11,6 +11,7 @@
 
 import type { VisibleTTSSegment } from "@/hooks/use-reader-bridge";
 import { useTTSStore } from "@/stores";
+import i18n from "@readany/core/i18n";
 import { getPlatformService } from "@readany/core/services";
 import { type TTSConfig, normalizeTTSConfig, splitNarrationText } from "@readany/core/tts";
 import { eventBus } from "@readany/core/utils/event-bus";
@@ -413,7 +414,10 @@ export function useReaderTTS({
     return ttsCurrentLocationCfi || null;
   }, [bookId, currentTTSSegment?.cfi, ttsCurrentBookId, ttsCurrentLocationCfi]);
 
-  const ttsSourceLabel = ttsSourceKind === "selection" ? "来自选中文本" : "从当前页开始";
+  const ttsSourceLabel =
+    ttsSourceKind === "selection"
+      ? i18n.t("tts.fromSelection", "From selection")
+      : i18n.t("tts.fromCurrentPage", "From current page");
 
   // ─── Utility callbacks ──────────────────────────────────────────────────────
   const syncTTSChunkOffset = useCallback((nextOffset: number) => {

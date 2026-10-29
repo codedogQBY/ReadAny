@@ -203,6 +203,14 @@
     "vm_modeRemoteDesc": "使用外部嵌入 API 服務",
     "vm_builtinModels": "內建模型",
     "vm_builtinDesc": "下載輕量模型在應用程式內本機執行，首次下載後自動快取。",
+    "vm_localModels": "本機模型",
+    "vm_localModelsDesc": "模型下載到本機後離線執行，不會傳送書籍內容。BGE 適合中文，MiniLM 適合英文；不同模型需要分別重新向量化。",
+    "vm_downloadAndUse": "下載並使用",
+    "vm_downloadProgress": "下載 {{progress}}%",
+    "vm_deleteLocalModel": "刪除本機模型",
+    "vm_dimensionSize": "{{dimension}} 維 · {{size}}",
+    "vm_dimensionSizeEnglish": "{{dimension}} 維 · {{size}} · 英文",
+    "vm_downloadConnectFailed": "無法連線到模型下載伺服器。請檢查手機網路，或開啟可存取 Hugging Face 的 VPN 後重試。",
     "vm_download": "下載",
     "vm_loaded": "已載入",
     "vm_clearCache": "清除",
@@ -263,6 +271,10 @@
     "syncNever": "從未同步",
     "syncSuccess": "同步完成",
     "syncFailed": "同步失敗：{{error}}",
+    "syncConnectFailed": "無法連線到同步伺服器，請檢查網路和憑證",
+    "syncFailedGeneric": "同步失敗",
+    "syncRemoteDirFailed": "無法建立遠端同步目錄，請檢查儲存服務設定和權限：{{error}}",
+    "syncUploadFailed": "上傳本機變更失敗，請檢查網路連線或儲存服務權限：{{error}}",
     "syncRecordsUp": "上傳 {{count}} 條紀錄",
     "syncRecordsDown": "下載 {{count}} 條紀錄",
     "syncFilesUp": "上傳 {{count}} 個檔案",
@@ -597,6 +609,8 @@
           "fail": "ReadAny Skill 未安裝：{{path}}。"
         }
       }
-    }
+    },
+    "ai_searchModelPlaceholder": "搜尋模型...",
+    "ai_modelsCount": "共 {{count}} 個模型"
   }
 }

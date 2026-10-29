@@ -137,8 +137,10 @@
     "engineDescEdge": "Microsoft · Multilingue",
     "engineDescDashscope": "Alibaba Tongyi · Chinois optimisé",
     "engineDescSystem": "Système intégré · Gratuit",
+    "engineDescOpenaiCompatible": "Format OpenAI personnalisé",
     "player": "Lecteur TTS",
-    "listeningToBook": "Lecture audio en cours"
+    "listeningToBook": "Lecture audio en cours",
+    "noTextFound": "Aucun texte lisible trouvé sur cette page"
   },
   "fonts": {
     "title": "Polices",

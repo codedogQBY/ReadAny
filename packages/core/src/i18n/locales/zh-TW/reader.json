@@ -75,7 +75,11 @@
     "returnToOriginal": "是否返回搜尋前的位置？",
     "searchComplete": "搜尋完成",
     "unknownBook": "未命名書籍",
-    "viewNote": "查看筆記"
+    "viewNote": "查看筆記",
+    "pdfZoom": "PDF 縮放",
+    "zoomIn": "放大",
+    "zoomOut": "縮小",
+    "resetZoom": "重置縮放"
   },
   "bookmarks": {
     "title": "書籤",
