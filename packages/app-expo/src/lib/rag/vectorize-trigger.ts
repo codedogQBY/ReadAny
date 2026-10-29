@@ -1,5 +1,7 @@
+import { yieldToUiUnlessBackground } from "@/lib/rag/background-timers";
 import { useLibraryStore } from "@/stores/library-store";
 import { useVectorModelStore } from "@/stores/vector-model-store";
+import { useVectorStatusStore } from "@/stores/vector-status-store";
 import { triggerVectorizeBook as coreTriggerVectorizeBook } from "@readany/core/rag";
 import type {
   ChapterData,
@@ -36,6 +38,10 @@ export async function triggerVectorizeBook(
   // 2. Build callbacks for state updates
   const callbacks = {
     onBookUpdate: useLibraryStore.getState().updateBook,
+    onCheckpoint: (bookId: string, state: { doneChunks: number; totalChunks: number } | null) =>
+      useVectorStatusStore.getState().setCheckpoint(bookId, state),
+    // setTimeout never fires with the screen off (timers wait for display frames).
+    yieldToUI: yieldToUiUnlessBackground,
   };
 
   // 3. Delegate to core vectorization pipeline which does the chunking & embedding

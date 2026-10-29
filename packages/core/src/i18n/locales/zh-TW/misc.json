@@ -1,5 +1,14 @@
 {
   "vectorize": {
+    "bgTitle": "正在為書籍建立索引",
+    "bgChannel": "索引結果",
+    "bgProgress": "{{title}} · {{percent}}%（{{current}}/{{total}}）",
+    "bgDoneTitle": "索引完成",
+    "bgDoneBody": "已完成 {{done}}/{{total}} 本書",
+    "bgPartialBody": "已完成 {{done}} 本，{{failed}} 本中斷。開啟 ReadAny 點擊向量化即可從斷點繼續。",
+    "stoppedTitle": "向量化已中斷",
+    "stoppedResumable": "{{title}}\n\n{{reason}}\n\n已儲存 {{percent}}%，再次向量化即可從該進度繼續。",
+    "stoppedNoProgress": "{{title}}\n\n{{reason}}",
     "title": "向量測試",
     "chunks": "分塊",
     "vector": "向量",

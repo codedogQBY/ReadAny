@@ -1,4 +1,5 @@
 import { CheckIcon, ClockIcon, Loader2Icon, MoreVerticalIcon } from "@/components/ui/Icon";
+import { checkpointPercent, useVectorStatusStore } from "@/stores/vector-status-store";
 import { useColors } from "@/styles/theme";
 import { getPlatformService } from "@readany/core/services";
 /**
@@ -118,6 +119,8 @@ export const BookCard = memo(function BookCard({
   }, [book.meta.coverUrl]);
 
   const progressPct = getBookProgressPercent(book.progress);
+  const checkpoint = useVectorStatusStore((state) => state.checkpoints[book.id]);
+  const partialPct = !book.isVectorized ? checkpointPercent(checkpoint) : 0;
 
   const vecPct = vectorProgress
     ? vectorProgress.totalChunks > 0
@@ -337,7 +340,19 @@ export const BookCard = memo(function BookCard({
           {/* Vectorized badge */}
           {book.isVectorized && !isVectorizing && (
             <View style={s.vecBadge}>
-              <Text style={s.vecBadgeText}>{t("home.vec_indexed", "已索引")}</Text>
+              <Text style={s.vecBadgeText}>{t("home.vec_indexed", "Indexed")}</Text>
+            </View>
+          )}
+
+          {/* Unfinished vectorization: already computed work is kept and resumed */}
+          {!book.isVectorized && !isVectorizing && !isQueued && partialPct > 0 && (
+            <View style={[s.vecBadge, s.vecBadgePartial]}>
+              <Text style={s.vecBadgeText}>
+                {t("home.vec_partial", {
+                  percent: partialPct,
+                  defaultValue: "{{percent}}% indexed",
+                })}
+              </Text>
             </View>
           )}
 

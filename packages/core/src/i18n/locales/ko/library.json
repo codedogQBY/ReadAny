@@ -166,6 +166,8 @@
     "vec_vectorize": "벡터화",
     "vec_reindex": "재벡터화",
     "vec_indexed": "인덱싱 완료",
+    "vec_partial": "{{percent}}% 인덱싱됨",
+    "vec_continue": "벡터화 계속하기 ({{percent}}%)",
     "vec_chunking": "청킹 중...",
     "vec_indexing": "인덱싱 중...",
     "vec_processing": "처리 중...",

@@ -4342,6 +4342,8 @@ html, body {
     }
 
     async function handleExtractBookChapters(msg) {
+      // Echoed back so the app can tell which book an answer belongs to.
+      const requestId = msg.requestId;
       try {
         if (isPDFBookMessage(msg)) {
           if (typeof window._extractPDFChapters !== 'function') {
@@ -4371,21 +4373,25 @@ html, body {
             })}`
           });
 
-          postToRN('chaptersExtracted', { chapters });
+          postToRN('chaptersExtracted', { chapters, requestId });
           return;
         }
 
-        currentBook = await makeBook(await createBookFileFromMessage(msg));
-        await handleExtractChapters();
+        // Parse the book without rendering it: a rendered reader needs display frames, which
+        // a WebView does not get while the app is in the background.
+        const book = await makeBook(await createBookFileFromMessage(msg));
+        attachBookTransformHandler(book);
+        currentBook = book;
+        await handleExtractChapters(requestId);
       } catch (err) {
         console.error('[WebView] Error extracting book chapters:', err);
-        postToRN('chaptersExtracted', { error: String(err) });
+        postToRN('chaptersExtracted', { error: String(err), requestId });
       }
     }
 
-    async function handleExtractChapters() {
+    async function handleExtractChapters(requestId) {
       if (!currentBook) {
-        postToRN('chaptersExtracted', { error: 'No book loaded' });
+        postToRN('chaptersExtracted', { error: 'No book loaded', requestId });
         return;
       }
 
@@ -4457,10 +4463,10 @@ html, body {
           skippedNoCreateDocument
         });
 
-        postToRN('chaptersExtracted', { chapters });
+        postToRN('chaptersExtracted', { chapters, requestId });
       } catch (err) {
         console.error('[WebView] Error extracting chapters:', err);
-        postToRN('chaptersExtracted', { error: String(err) });
+        postToRN('chaptersExtracted', { error: String(err), requestId });
       }
     }
 

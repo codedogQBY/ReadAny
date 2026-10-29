@@ -27,6 +27,7 @@ import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { WebDavConnectSheet } from "@/screens/library/WebDavConnectSheet";
 import { WebDavImportSourceSheet } from "@/screens/library/WebDavImportSourceSheet";
 import { useLibraryStore } from "@/stores/library-store";
+import { useVectorStatusStore } from "@/stores/vector-status-store";
 import {
   type ThemeColors,
   fontSize,
@@ -253,6 +254,10 @@ export function LibraryScreen() {
   useEffect(() => {
     loadBooks();
   }, [loadBooks]);
+  // Unfinished vectorizations survive app restarts; show them on the cards.
+  useEffect(() => {
+    void useVectorStatusStore.getState().refresh();
+  }, []);
   useEffect(() => {
     void loadSyncConfig();
   }, [loadSyncConfig]);

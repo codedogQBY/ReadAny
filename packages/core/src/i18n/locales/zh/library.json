@@ -180,6 +180,8 @@
     "vec_reindex": "重新向量化",
     "vec_reindexConfirm": "该书已完成索引，重新索引将重置现有数据，确定继续吗？",
     "vec_indexed": "已索引",
+    "vec_partial": "已索引 {{percent}}%",
+    "vec_continue": "继续向量化（{{percent}}%）",
     "vec_chunking": "分块中...",
     "vec_indexing": "入库中...",
     "vec_processing": "处理中...",

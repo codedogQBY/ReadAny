@@ -63,6 +63,12 @@ export { vectorizeBook } from "./vectorize";
 export type { VectorizeCallback } from "./vectorize";
 
 export { triggerVectorizeBook } from "./vectorize-trigger";
+export {
+  applyCheckpoint,
+  checkpointEntries,
+  chunkCheckpointKey,
+  embeddingModelKey,
+} from "./checkpoint";
 export type {
   VectorizeStatusCallback,
   VectorizeTriggerConfig,

@@ -1,5 +1,6 @@
 import type { Book } from "../types";
 import { eventBus } from "../utils/event-bus";
+import { clearVectorCheckpoint } from "./checkpoint-queries";
 import { deleteChunks } from "./chunk-queries";
 import {
   getDB,
@@ -353,6 +354,8 @@ export async function deleteBook(id: string, options: DeleteBookOptions = {}): P
     // threads and vector chunks tied to the deleted book payload.
     await deleteThreadsByBookId(id);
     await deleteChunks(id);
+    await clearVectorCheckpoint(id);
+    await clearVectorCheckpoint(id);
 
     const deviceId = await getDeviceId();
     const syncVersion = await nextSyncVersion(database, "books");
@@ -389,6 +392,7 @@ export async function deleteBook(id: string, options: DeleteBookOptions = {}): P
   await database.execute("DELETE FROM reading_sessions WHERE book_id = ?", [id]);
   await deleteThreadsByBookId(id);
   await deleteChunks(id);
+  await clearVectorCheckpoint(id);
   await insertTombstone(database, id, "books");
   await database.execute("DELETE FROM books WHERE id = ?", [id]);
 }

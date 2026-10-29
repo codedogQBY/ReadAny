@@ -1,8 +1,14 @@
+import {
+  type RequestTracker,
+  createRequestTracker,
+  sendScript,
+} from "@/lib/rag/extractor-requests-core";
 import type { ChapterData } from "@readany/core/rag";
 import { Asset } from "expo-asset";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { AppState, StyleSheet, View, findNodeHandle } from "react-native";
 import { WebView } from "react-native-webview";
+import { evaluateInWebView } from "../../../modules/webview-eval";
 
 const READER_HTML_ASSET = Asset.fromModule(require("../../../assets/reader/reader.html"));
 const EXTRACTION_TIMEOUT_MS = 45_000;
@@ -23,37 +29,30 @@ function getExtractorFileName(mimeType: string) {
   return `book.${EXTRACTOR_EXTENSIONS_BY_MIME[normalized] || "epub"}`;
 }
 
-function isPDFMimeType(mimeType: string) {
-  return mimeType.split(";")[0]?.trim().toLowerCase() === "application/pdf";
-}
-
 export interface ExtractorRef {
   extractChapters: (base64BookData: string, mimeType?: string) => Promise<ChapterData[]>;
 }
 
-interface PendingExtraction {
-  resolve: (chapters: ChapterData[]) => void;
-  reject: (err: Error) => void;
-  timeoutId: ReturnType<typeof setTimeout>;
-}
-
 export const ExtractorWebView = forwardRef<ExtractorRef>((_, ref) => {
   const webViewRef = useRef<WebView>(null);
+  const containerRef = useRef<View>(null);
   const [htmlUri, setHtmlUri] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
-  // Pending extraction requests
-  const pendingRequests = useRef<PendingExtraction[]>([]);
+  const trackerRef = useRef<RequestTracker<ChapterData[]> | null>(null);
+  if (!trackerRef.current) {
+    trackerRef.current = createRequestTracker<ChapterData[]>({
+      timeoutMs: EXTRACTION_TIMEOUT_MS,
+      timeoutMessage: "Timed out extracting book content",
+    });
+  }
+  const tracker = trackerRef.current;
 
   useEffect(() => {
     return () => {
-      for (const pending of pendingRequests.current) {
-        clearTimeout(pending.timeoutId);
-        pending.reject(new Error("Extractor WebView unmounted"));
-      }
-      pendingRequests.current = [];
+      tracker.rejectAll(new Error("Extractor WebView unmounted"));
     };
-  }, []);
+  }, [tracker]);
 
   useEffect(() => {
     const loadAsset = async () => {
@@ -69,83 +68,101 @@ export const ExtractorWebView = forwardRef<ExtractorRef>((_, ref) => {
     loadAsset();
   }, []);
 
-  // biome-ignore lint/suspicious/noExplicitAny: Required for React Native WebView events
-  const handleMessage = useCallback((event: any) => {
-    try {
-      const msg = JSON.parse(event.nativeEvent.data);
-      if (msg.type === "ready") {
-        setReady(true);
-      } else if (msg.type === "loaded") {
-        // Trigger extraction once the book is fully loaded
-        webViewRef.current?.injectJavaScript(`
-          if (window.handleExtractChapters) {
-             window.handleExtractChapters();
-          } else {
-             window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'chaptersExtracted', error: 'Extraction not supported' }));
+  const handleMessage = useCallback(
+    // biome-ignore lint/suspicious/noExplicitAny: Required for React Native WebView events
+    (event: any) => {
+      try {
+        const msg = JSON.parse(event.nativeEvent.data);
+        if (msg.type === "ready") {
+          setReady(true);
+        } else if (msg.type === "chaptersExtracted") {
+          const requestId: string | undefined = msg.requestId;
+          const settled = msg.error
+            ? tracker.reject(requestId, new Error(msg.error))
+            : tracker.resolve(requestId, msg.chapters ?? []);
+          if (!settled) {
+            console.warn(`[ExtractorWebView] Ignored an answer nobody waits for (${requestId})`);
           }
-          true;
-        `);
-      } else if (msg.type === "chaptersExtracted") {
-        const pending = pendingRequests.current.shift();
-        if (!pending) return;
-
-        clearTimeout(pending.timeoutId);
-        if (msg.error) {
-          pending.reject(new Error(msg.error));
-        } else if (msg.chapters) {
-          pending.resolve(msg.chapters);
+        } else if (msg.type === "debug") {
+          console.log("[ExtractorWebView]", msg.message);
+        } else if (msg.type === "error") {
+          console.error("[ExtractorWebView] WebView error:", msg.message);
+          tracker.reject(undefined, new Error(msg.message));
         }
-      } else if (msg.type === "debug") {
-        console.log("[ExtractorWebView]", msg.message);
-      } else if (msg.type === "error") {
-        console.error("[ExtractorWebView] WebView error:", msg.message);
-        const pending = pendingRequests.current.shift();
-        if (pending) {
-          clearTimeout(pending.timeoutId);
-          pending.reject(new Error(msg.message));
-        }
+      } catch (err) {
+        console.warn("[ExtractorWebView] Failed to parse message:", err);
       }
-    } catch (err) {
-      console.warn("[ExtractorWebView] Failed to parse message:", err);
-    }
-  }, []);
+    },
+    [tracker],
+  );
 
   useImperativeHandle(ref, () => ({
     extractChapters: (base64BookData: string, mimeType = "application/epub+zip") => {
-      return new Promise<ChapterData[]>((resolve, reject) => {
-        if (!ready || !webViewRef.current) {
-          return reject(new Error("Extractor WebView not ready"));
-        }
+      if (!ready || !webViewRef.current) {
+        return Promise.reject(new Error("Extractor WebView not ready"));
+      }
 
-        const timeoutId = setTimeout(() => {
-          const index = pendingRequests.current.findIndex((pending) => pending.reject === reject);
-          if (index >= 0) pendingRequests.current.splice(index, 1);
-          reject(new Error("Timed out extracting book content"));
-        }, EXTRACTION_TIMEOUT_MS);
+      const { id, promise } = tracker.begin();
+      const startedAt = Date.now();
+      const appState = AppState.currentState;
 
-        pendingRequests.current.push({ resolve, reject, timeoutId });
+      // The book is parsed without being rendered; see `extractBookChapters` in the reader.
+      const cmd = {
+        type: "extractBookChapters",
+        requestId: id,
+        base64: base64BookData,
+        mimeType,
+        fileName: getExtractorFileName(mimeType),
+      };
+      const script = `
+        window.postMessage(${JSON.stringify(JSON.stringify(cmd))}, "*");
+        true;
+      `;
 
-        // Command the webview to open the book first.
-        // It will reply with "loaded" when it finishes rendering.
-        const cmd = {
-          type: isPDFMimeType(mimeType) ? "extractBookChapters" : "openBook",
-          base64: base64BookData,
-          mimeType,
-          fileName: getExtractorFileName(mimeType),
-        };
+      const viewTag = findNodeHandle(containerRef.current);
+      const evaluate = evaluateInWebView;
+      sendScript(
+        {
+          native: evaluate && viewTag != null ? (source) => evaluate(viewTag, source) : null,
+          command: (source) => webViewRef.current?.injectJavaScript(source),
+          isAppActive: () => AppState.currentState === "active",
+          warn: (message, error) => console.warn(`[ExtractorWebView] ${message}:`, error),
+        },
+        script,
+      )
+        .then((transport) => {
+          console.log(
+            `[ExtractorWebView] ${id} sent via ${transport} (app ${appState}, ${base64BookData.length} base64 chars)`,
+          );
+        })
+        .catch((err) => {
+          tracker.reject(id, err instanceof Error ? err : new Error(String(err)));
+        });
 
-        webViewRef.current.injectJavaScript(`
-          window.postMessage(${JSON.stringify(JSON.stringify(cmd))}, "*");
-          true;
-        `);
-      });
+      return promise.then(
+        (chapters) => {
+          console.log(
+            `[ExtractorWebView] ${id} answered in ${Date.now() - startedAt} ms (${chapters.length} chapters)`,
+          );
+          return chapters;
+        },
+        (err) => {
+          console.warn(`[ExtractorWebView] ${id} failed after ${Date.now() - startedAt} ms:`, err);
+          throw err;
+        },
+      );
     },
   }));
 
   if (!htmlUri) return null;
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+    <View
+      ref={containerRef}
+      collapsable={false}
+      style={StyleSheet.absoluteFill}
+      pointerEvents="none"
+    >
       <WebView
         ref={webViewRef}
         source={{ uri: htmlUri }}

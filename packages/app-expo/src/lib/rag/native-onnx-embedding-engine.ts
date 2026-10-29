@@ -1,30 +1,53 @@
 import * as FileSystem from "expo-file-system/legacy";
 import { InferenceSession, Tensor } from "onnxruntime-react-native";
 import type { ILocalEmbeddingEngine } from "@readany/core/ai/local-embedding-service";
+import { clsPoolAndNormalize, meanPoolAndNormalize } from "./embedding-pooling";
+import { UnigramTokenizer } from "./unigram-tokenizer";
 
 const MAX_TOKENS = 128;
-const DOWNLOAD_TIMEOUT_MS = 30_000;
+/** A download is abandoned after this long without any bytes arriving. */
+const DOWNLOAD_STALL_TIMEOUT_MS = 30_000;
 
 type PoolingStrategy = "cls" | "mean";
-type MobileModel = { hfModelId: string; pooling: PoolingStrategy };
+type TokenizerKind = "wordpiece" | "unigram";
+type MobileModel = {
+  hfModelId: string;
+  pooling: PoolingStrategy;
+  tokenizer: TokenizerKind;
+  maxTokens: number;
+};
 
 const MOBILE_MODELS: Record<string, MobileModel> = {
   "bge-small-zh-v1.5": {
     hfModelId: "Xenova/bge-small-zh-v1.5",
     pooling: "cls",
+    tokenizer: "wordpiece",
+    maxTokens: MAX_TOKENS,
   },
   "all-MiniLM-L6-v2": {
     hfModelId: "Xenova/all-MiniLM-L6-v2",
     pooling: "mean",
+    tokenizer: "wordpiece",
+    maxTokens: MAX_TOKENS,
+  },
+  // XLM-R SentencePiece vocabulary: covers Russian and ~100 other languages.
+  // Desktop runs the same model through Transformers.js without E5's
+  // "query: " / "passage: " prefixes, so none are added here either.
+  "multilingual-e5-small": {
+    hfModelId: "Xenova/multilingual-e5-small",
+    pooling: "mean",
+    tokenizer: "unigram",
+    maxTokens: 256,
   },
 };
 
 type TokenizerFile = { model?: { vocab?: Record<string, number>; unk_token?: string } };
 
-/** Native Android/iOS implementation for the compact Chinese BGE model. */
+/** Native Android/iOS implementation of the built-in local embedding models. */
 export class NativeOnnxEmbeddingEngine implements ILocalEmbeddingEngine {
   private session: InferenceSession | null = null;
   private vocab: Record<string, number> | null = null;
+  private unigram: UnigramTokenizer | null = null;
   private loadedModelId: string | null = null;
 
   init(): void {}
@@ -32,7 +55,7 @@ export class NativeOnnxEmbeddingEngine implements ILocalEmbeddingEngine {
   async load(modelId: string, _hfModelId: string, onProgress?: (p: number) => void): Promise<void> {
     const model = MOBILE_MODELS[modelId];
     if (!model) throw new Error(`Unsupported mobile local embedding model: ${modelId}`);
-    if (this.session && this.vocab && this.loadedModelId === modelId) return;
+    if (this.session && (this.vocab || this.unigram) && this.loadedModelId === modelId) return;
     await this.dispose();
     const directory = `${FileSystem.documentDirectory}readany-models/${modelId}`;
     await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
@@ -49,9 +72,14 @@ export class NativeOnnxEmbeddingEngine implements ILocalEmbeddingEngine {
     const modelBase = `https://huggingface.co/${model.hfModelId}/resolve/main`;
     await this.download(`${modelBase}/onnx/model_quantized.onnx`, modelPath, 0, 88, onProgress);
     await this.download(`${modelBase}/tokenizer.json`, tokenizerPath, 88, 100, onProgress);
-    const tokenizer = JSON.parse(await FileSystem.readAsStringAsync(tokenizerPath)) as TokenizerFile;
-    if (!tokenizer.model?.vocab) throw new Error("Downloaded tokenizer is missing its vocabulary.");
-    this.vocab = tokenizer.model.vocab;
+    const tokenizer = JSON.parse(await FileSystem.readAsStringAsync(tokenizerPath));
+    if (model.tokenizer === "unigram") {
+      this.unigram = new UnigramTokenizer(tokenizer);
+    } else {
+      const vocab = (tokenizer as TokenizerFile).model?.vocab;
+      if (!vocab) throw new Error("Downloaded tokenizer is missing its vocabulary.");
+      this.vocab = vocab;
+    }
     this.session = await InferenceSession.create(modelPath, {
       executionProviders: ["nnapi", "cpu"],
       graphOptimizationLevel: "all",
@@ -63,33 +91,39 @@ export class NativeOnnxEmbeddingEngine implements ILocalEmbeddingEngine {
 
   async generate(modelId: string, texts: string[], onItemProgress?: (done: number, total: number) => void): Promise<number[][]> {
     await this.load(modelId, "");
-    if (!this.session || !this.vocab) throw new Error("Local embedding model did not initialize.");
+    const model = MOBILE_MODELS[modelId];
+    if (!this.session || !(this.vocab || this.unigram)) throw new Error("Local embedding model did not initialize.");
     const output: number[][] = [];
     for (let index = 0; index < texts.length; index++) {
-      const tokens = encodeWordPiece(texts[index], this.vocab);
-      const ids = new BigInt64Array(MAX_TOKENS);
-      const mask = new BigInt64Array(MAX_TOKENS);
-      const types = new BigInt64Array(MAX_TOKENS);
+      const tokens = this.unigram
+        ? this.unigram.encode(texts[index], model.maxTokens)
+        : encodeWordPiece(texts[index], this.vocab as Record<string, number>);
+      // WordPiece models keep their fixed 128-token padding; the Unigram model
+      // runs on the exact sequence length.
+      const seqLength = this.unigram ? tokens.length : MAX_TOKENS;
+      const ids = new BigInt64Array(seqLength);
+      const mask = new BigInt64Array(seqLength);
+      const types = new BigInt64Array(seqLength);
       for (let i = 0; i < tokens.length; i++) { ids[i] = BigInt(tokens[i]); mask[i] = 1n; }
       const feeds: Record<string, Tensor> = {
-        input_ids: new Tensor(ids, [1, MAX_TOKENS]),
-        attention_mask: new Tensor(mask, [1, MAX_TOKENS]),
+        input_ids: new Tensor(ids, [1, seqLength]),
+        attention_mask: new Tensor(mask, [1, seqLength]),
       };
-      if (this.session.inputNames.includes("token_type_ids")) feeds.token_type_ids = new Tensor(types, [1, MAX_TOKENS]);
+      if (this.session.inputNames.includes("token_type_ids")) feeds.token_type_ids = new Tensor(types, [1, seqLength]);
       const result = await this.session.run(feeds);
       const tensor = result.last_hidden_state ?? result[Object.keys(result)[0]];
       if (!tensor || !(tensor.data instanceof Float32Array)) throw new Error("Local model returned no float embedding output.");
       output.push(
-        MOBILE_MODELS[modelId].pooling === "cls"
-          ? clsPoolAndNormalize(tensor.data)
-          : meanPoolAndNormalize(tensor.data, tokens.length),
+        model.pooling === "cls"
+          ? clsPoolAndNormalize(tensor.data, seqLength)
+          : meanPoolAndNormalize(tensor.data, tokens.length, seqLength),
       );
       onItemProgress?.(index + 1, texts.length);
     }
     return output;
   }
 
-  async dispose(): Promise<void> { this.session = null; this.vocab = null; this.loadedModelId = null; }
+  async dispose(): Promise<void> { this.session = null; this.vocab = null; this.unigram = null; this.loadedModelId = null; }
 
   async clearCache(hfModelId: string): Promise<void> {
     await this.dispose();
@@ -99,26 +133,33 @@ export class NativeOnnxEmbeddingEngine implements ILocalEmbeddingEngine {
 
   private async download(url: string, target: string, start: number, end: number, progress?: (p: number) => void) {
     if ((await FileSystem.getInfoAsync(target)).exists) { progress?.(end); return; }
-    const job = FileSystem.createDownloadResumable(url, target, {}, ({ totalBytesWritten, totalBytesExpectedToWrite }) => {
-      if (totalBytesExpectedToWrite > 0) progress?.(Math.round(start + ((end - start) * totalBytesWritten) / totalBytesExpectedToWrite));
-    });
     let timedOut = false;
-    let timeoutId: ReturnType<typeof setTimeout>;
-    const timeout = new Promise<never>((_, reject) => {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let rejectStalled: (error: Error) => void = () => undefined;
+    // Restarted on every progress callback: large models may take minutes, but a
+    // transfer that receives no bytes for DOWNLOAD_STALL_TIMEOUT_MS is abandoned.
+    const armTimeout = () => {
+      clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
         timedOut = true;
-        reject(new Error("无法连接模型下载服务器。请检查手机网络或开启可访问 Hugging Face 的 VPN 后重试。"));
-      }, DOWNLOAD_TIMEOUT_MS);
+        rejectStalled(new Error("Could not reach the model download server. Check the phone's network connection or use a VPN that can reach Hugging Face, then try again."));
+      }, DOWNLOAD_STALL_TIMEOUT_MS);
+    };
+    const job = FileSystem.createDownloadResumable(url, target, {}, ({ totalBytesWritten, totalBytesExpectedToWrite }) => {
+      armTimeout();
+      if (totalBytesExpectedToWrite > 0) progress?.(Math.round(start + ((end - start) * totalBytesWritten) / totalBytesExpectedToWrite));
     });
+    const stalled = new Promise<never>((_, reject) => { rejectStalled = reject; });
+    armTimeout();
     try {
-      const result = await Promise.race([job.downloadAsync(), timeout]);
+      const result = await Promise.race([job.downloadAsync(), stalled]);
       if (!result) throw new Error("Model download was cancelled.");
     } catch (error) {
       if (timedOut) await job.pauseAsync().catch(() => undefined);
       await FileSystem.deleteAsync(target, { idempotent: true });
       throw error;
     } finally {
-      clearTimeout(timeoutId!);
+      clearTimeout(timeoutId);
     }
   }
 }
@@ -154,28 +195,4 @@ function isCjk(char: string): boolean {
     (code >= 0x20000 && code <= 0x2fa1f) ||
     (code >= 0xf900 && code <= 0xfaff)
   );
-}
-
-function clsPoolAndNormalize(data: Float32Array): number[] {
-  const dimension = data.length / MAX_TOKENS;
-  if (!Number.isInteger(dimension) || dimension <= 0) throw new Error("Local model returned an invalid embedding shape.");
-  const output = Array.from(data.subarray(0, dimension));
-  let norm = 0; for (let d = 0; d < dimension; d++) norm += output[d] ** 2;
-  norm = Math.sqrt(norm) || 1; return output.map((value) => value / norm);
-}
-
-function meanPoolAndNormalize(data: Float32Array, tokenCount: number): number[] {
-  const dimension = data.length / MAX_TOKENS;
-  if (!Number.isInteger(dimension) || dimension <= 0) throw new Error("Local model returned an invalid embedding shape.");
-  const output = new Array<number>(dimension).fill(0);
-  for (let token = 0; token < tokenCount; token++) {
-    for (let d = 0; d < dimension; d++) output[d] += data[token * dimension + d];
-  }
-  let norm = 0;
-  for (let d = 0; d < dimension; d++) {
-    output[d] /= tokenCount;
-    norm += output[d] ** 2;
-  }
-  norm = Math.sqrt(norm) || 1;
-  return output.map((value) => value / norm);
 }

@@ -8,6 +8,7 @@ import {
   Trash2Icon,
 } from "@/components/ui/Icon";
 import { useLibraryStore } from "@/stores/library-store";
+import { checkpointPercent, useVectorStatusStore } from "@/stores/vector-status-store";
 import { type ThemeColors, fontSize, fontWeight, radius, spacing, useColors } from "@/styles/theme";
 import type { Book } from "@readany/core/types";
 import { type ReactNode, useMemo, useState } from "react";
@@ -56,6 +57,8 @@ export function BookCardActionSheet({
   const moveBookToGroup = useLibraryStore((state) => state.moveBookToGroup);
   const removeBookFromGroup = useLibraryStore((state) => state.removeBookFromGroup);
   const addGroup = useLibraryStore((state) => state.addGroup);
+  const checkpoint = useVectorStatusStore((state) => state.checkpoints[book.id]);
+  const partialPct = !book.isVectorized ? checkpointPercent(checkpoint) : 0;
 
   const handleMoveGroup = () => {
     onClose();
@@ -98,8 +101,13 @@ export function BookCardActionSheet({
           key: "vectorize",
           icon: <DatabaseIcon size={18} color={colors.foreground} />,
           label: book.isVectorized
-            ? t("home.vec_reindex", "重新索引")
-            : t("home.vec_vectorize", "向量化"),
+            ? t("home.vec_reindex", "Re-vectorize")
+            : partialPct > 0
+              ? t("home.vec_continue", {
+                  percent: partialPct,
+                  defaultValue: "Continue vectorization ({{percent}}%)",
+                })
+              : t("home.vec_vectorize", "Vectorize"),
           onPress: () => {
             onClose();
             if (book.isVectorized) {

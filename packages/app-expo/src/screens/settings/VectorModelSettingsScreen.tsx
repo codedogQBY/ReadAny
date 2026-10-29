@@ -221,15 +221,18 @@ function BuiltinModelsSection() {
         {ready && <TouchableOpacity style={s.clearBtn} disabled={clearing} onPress={clear}><Text style={s.clearBtnText}>{clearing ? "正在清理…" : "删除本地模型"}</Text></TouchableOpacity>}
         {state?.error ? <Text style={[s.testResult, s.testError]}>{state.error}</Text> : null}
       </View>
-      <BuiltinEnglishModelCard />
+      <BuiltinModelCard modelId="all-MiniLM-L6-v2" />
+      <BuiltinModelCard modelId="multilingual-e5-small" />
     </View>
   );
 }
 
-function BuiltinEnglishModelCard() {
+/** Card for a built-in local model other than the Chinese BGE one rendered above. */
+function BuiltinModelCard({ modelId }: { modelId: string }) {
   const colors = useColors();
   const s = makeStyles(colors);
-  const model = BUILTIN_EMBEDDING_MODELS.find((candidate) => candidate.id === "all-MiniLM-L6-v2");
+  const { t } = useTranslation();
+  const model = BUILTIN_EMBEDDING_MODELS.find((candidate) => candidate.id === modelId);
   const {
     selectedBuiltinModelId, builtinModelStates, vectorModelMode, setSelectedBuiltinModelId,
     setVectorModelMode, updateBuiltinModelState,
@@ -276,17 +279,25 @@ function BuiltinEnglishModelCard() {
       <View style={s.modelCardTop}>
         <View style={s.modelInfo}>
           <Text style={s.modelName}>{model.name}</Text>
-          <Text style={s.modelSize}>{model.dimension} 维 · {model.size} · 英文</Text>
+          <Text style={s.modelSize}>
+            {t("settings.vm_dimension", { dim: model.dimension })} · {model.size} · {t(model.languagesKey)}
+          </Text>
         </View>
         {ready ? (
           <Switch value={selected} onValueChange={(value) => value ? select() : setSelectedBuiltinModelId(null)} trackColor={{ false: colors.muted, true: colors.primary }} thumbColor={colors.card} />
         ) : (
           <TouchableOpacity style={s.downloadBtn} disabled={downloading} onPress={select}>
-            <Text style={s.downloadBtnText}>{downloading ? `下载 ${state?.progress ?? 0}%` : "下载并使用"}</Text>
+            <Text style={s.downloadBtnText}>
+              {downloading ? `${t("settings.vm_download")} ${state?.progress ?? 0}%` : t("settings.vm_download")}
+            </Text>
           </TouchableOpacity>
         )}
       </View>
-      {ready && <TouchableOpacity style={s.clearBtn} disabled={clearing} onPress={clear}><Text style={s.clearBtnText}>{clearing ? "正在清理…" : "删除本地模型"}</Text></TouchableOpacity>}
+      {ready && (
+        <TouchableOpacity style={s.clearBtn} disabled={clearing} onPress={clear}>
+          <Text style={s.clearBtnText}>{clearing ? t("settings.vm_clearing") : t("settings.vm_clearCache")}</Text>
+        </TouchableOpacity>
+      )}
       {state?.error ? <Text style={[s.testResult, s.testError]}>{state.error}</Text> : null}
     </View>
   );

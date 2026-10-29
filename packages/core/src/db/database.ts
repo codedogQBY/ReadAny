@@ -110,6 +110,14 @@ export {
 } from "./chunk-queries";
 
 export {
+  clearVectorCheckpoint,
+  listVectorCheckpoints,
+  loadVectorCheckpoint,
+  saveVectorCheckpointBatch,
+} from "./checkpoint-queries";
+export type { VectorCheckpointSummary } from "./checkpoint-queries";
+
+export {
   getSkills,
   insertSkill,
   upsertSkill,

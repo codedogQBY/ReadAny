@@ -785,6 +785,26 @@ export async function initLocalDatabase(): Promise<void> {
     )
   `);
 
+      // Embeddings of an unfinished vectorization, so an interrupted run can resume.
+      // Separate from `chunks`: search must never see a half-built index.
+      await database.execute(`
+    CREATE TABLE IF NOT EXISTS vector_checkpoints (
+      book_id TEXT NOT NULL,
+      chunk_key TEXT NOT NULL,
+      model_key TEXT NOT NULL,
+      embedding BLOB NOT NULL,
+      PRIMARY KEY (book_id, chunk_key)
+    )
+  `);
+      await database.execute(`
+    CREATE TABLE IF NOT EXISTS vector_checkpoint_meta (
+      book_id TEXT PRIMARY KEY,
+      model_key TEXT NOT NULL,
+      total_chunks INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+
       try {
         await database.execute(
           "ALTER TABLE chunks ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0",

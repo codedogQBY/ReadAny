@@ -46,12 +46,17 @@ async function processQueue() {
   processing = true;
 
   const { triggerVectorizeBook } = await import("./vectorize-trigger");
+  const { acquireBackgroundVectorize } = await import("./vectorize-background");
+  const background = await acquireBackgroundVectorize();
+  let processed = 0;
 
   while (queue.length > 0) {
     const item = queue.shift();
     if (!item) break;
 
     const { book, base64Data, mimeType } = item;
+    background.bookStarted(book.meta.title, processed, processed + 1 + queue.length);
+    processed++;
 
     try {
       callback?.(book.id, { status: "extracting", progress: 0 });
@@ -72,14 +77,18 @@ async function processQueue() {
       await triggerVectorizeBook(book.id, book.filePath, chapters, (progress) => {
         const pct = progress.totalChunks > 0 ? progress.processedChunks / progress.totalChunks : 0;
         callback?.(book.id, { status: "vectorizing", progress: pct });
+        if (progress.status === "embedding") background.bookProgress(pct);
       });
 
       callback?.(book.id, { status: "completed", progress: 1 });
+      background.bookFinished(true);
     } catch (err) {
       console.error(`[AutoVectorize] Failed for ${book.meta.title}:`, err);
       callback?.(book.id, { status: "error", progress: 0 });
+      background.bookFinished(false);
     }
   }
 
+  await background.release();
   processing = false;
 }

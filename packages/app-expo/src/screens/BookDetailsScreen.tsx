@@ -12,6 +12,7 @@ import { extractLocalBookMetadata } from "@/lib/book/auto-metadata";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { SettingsHeader } from "@/screens/settings/SettingsHeader";
 import { useLibraryStore } from "@/stores/library-store";
+import { checkpointPercent, useVectorStatusStore } from "@/stores/vector-status-store";
 import {
   type ThemeColors,
   fontSize,
@@ -286,6 +287,7 @@ export function BookDetailsScreen({ route }: Props) {
   const loadBooks = useLibraryStore((state) => state.loadBooks);
   const updateBook = useLibraryStore((state) => state.updateBook);
   const book = books.find((item) => item.id === bookId) ?? null;
+  const vectorCheckpoint = useVectorStatusStore((state) => state.checkpoints[bookId]);
   const [values, setValues] = useState<BookMetadataFormValues | null>(null);
   const [coverSrc, setCoverSrc] = useState<string | undefined>();
   const [newTag, setNewTag] = useState("");
@@ -618,8 +620,13 @@ export function BookDetailsScreen({ route }: Props) {
               label={t("library.detailsVector", "向量")}
               value={
                 book.isVectorized
-                  ? t("home.vec_indexed", "已索引")
-                  : t("home.notVectorized", "未索引")
+                  ? t("home.vec_indexed", "Indexed")
+                  : checkpointPercent(vectorCheckpoint) > 0
+                    ? t("home.vec_partial", {
+                        percent: checkpointPercent(vectorCheckpoint),
+                        defaultValue: "{{percent}}% indexed",
+                      })
+                    : t("home.notVectorized", "Not vectorized")
               }
               styles={styles}
             />

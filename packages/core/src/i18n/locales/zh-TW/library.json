@@ -166,6 +166,8 @@
     "vec_vectorize": "向量化",
     "vec_reindex": "重新向量化",
     "vec_indexed": "已索引",
+    "vec_partial": "已索引 {{percent}}%",
+    "vec_continue": "繼續向量化（{{percent}}%）",
     "vec_chunking": "分塊中...",
     "vec_indexing": "入庫中...",
     "vec_processing": "處理中...",

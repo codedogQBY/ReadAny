@@ -73,6 +73,11 @@ export {
   insertChunks,
   deleteChunks,
   clearVectorizationFlagsWithoutLocalChunks,
+  // Vectorization checkpoints
+  clearVectorCheckpoint,
+  listVectorCheckpoints,
+  loadVectorCheckpoint,
+  saveVectorCheckpointBatch,
   // Skill queries
   getSkills,
   insertSkill,
@@ -81,4 +86,4 @@ export {
   deleteSkill,
 } from "./database";
 
-export type { HighlightWithBook } from "./database";
+export type { HighlightWithBook, VectorCheckpointSummary } from "./database";

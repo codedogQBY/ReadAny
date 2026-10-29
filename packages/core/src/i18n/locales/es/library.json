@@ -166,6 +166,8 @@
     "vec_vectorize": "Vectorizar",
     "vec_reindex": "Re-vectorizar",
     "vec_indexed": "Indexado",
+    "vec_partial": "{{percent}}% indexado",
+    "vec_continue": "Continuar vectorización ({{percent}}%)",
     "vec_chunking": "Fragmentando...",
     "vec_indexing": "Indexando...",
     "vec_processing": "Procesando...",

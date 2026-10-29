@@ -1,5 +1,14 @@
 {
   "vectorize": {
+    "bgTitle": "書籍をインデックス中",
+    "bgChannel": "インデックス結果",
+    "bgProgress": "{{title}} · {{percent}}%（{{current}}/{{total}}）",
+    "bgDoneTitle": "インデックス完了",
+    "bgDoneBody": "{{total}} 冊中 {{done}} 冊を完了",
+    "bgPartialBody": "{{done}} 冊完了、{{failed}} 冊が停止しました。ReadAny を開いてベクトル化をタップすると続きから再開します。",
+    "stoppedTitle": "ベクトル化が停止しました",
+    "stoppedResumable": "{{title}}\n\n{{reason}}\n\n{{percent}}% を保存済みです。もう一度ベクトル化すると、そこから再開します。",
+    "stoppedNoProgress": "{{title}}\n\n{{reason}}",
     "title": "ベクトルテスト",
     "chunks": "チャンク",
     "vector": "ベクトル",

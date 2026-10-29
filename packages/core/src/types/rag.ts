@@ -71,4 +71,6 @@ export interface VectorizeProgress {
   processedChunks: number;
   status: "idle" | "chunking" | "embedding" | "indexing" | "completed" | "error";
   error?: string;
+  /** Chunks restored from an earlier, interrupted run (already counted in processedChunks). */
+  resumedChunks?: number;
 }

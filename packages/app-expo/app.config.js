@@ -41,6 +41,12 @@ module.exports = {
         "android.permission.RECORD_AUDIO",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "android.permission.MODIFY_AUDIO_SETTINGS",
+        // Background vectorization: a foreground service of type dataSync, a wake lock and
+        // progress / result notifications.
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
+        "android.permission.WAKE_LOCK",
+        "android.permission.POST_NOTIFICATIONS",
       ],
     },
     plugins: [
@@ -81,6 +87,8 @@ module.exports = {
       "./plugins/withOnnxruntimePackage",
       "onnxruntime-react-native",
       "./plugins/withVolumeKeyPaging",
+      "./plugins/withBackgroundActionsService",
+      "expo-notifications",
       [
         "expo-camera",
         {

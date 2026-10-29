@@ -97,6 +97,7 @@ export const makeStyles = (colors: ThemeColors, cardWidth: number) => {
       backgroundColor: "rgba(22,163,74,0.8)",
       borderRadius: radius.sm, paddingHorizontal: 4, paddingVertical: 2,
     },
+    vecBadgePartial: { backgroundColor: "rgba(217,119,6,0.9)" },
     vecBadgeText: { fontSize: 7, fontWeight: fontWeight.medium, color: "#fff" },
     moreButtonWrap: {
       position: "absolute",

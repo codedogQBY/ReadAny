@@ -6,6 +6,9 @@ import { queueBook as queueAutoVectorize } from "./auto-vectorize-service";
 const MIME_TYPES: Record<string, string> = {
   epub: "application/epub+zip",
   pdf: "application/pdf",
+  // FB2/FBZ are text formats foliate-js parses in the hidden reader WebView, same as EPUB.
+  fb2: "application/x-fictionbook+xml",
+  fbz: "application/x-zip-compressed-fb2",
   txt: "text/plain",
   // Mobile UMD imports are converted and stored as EPUB before vectorization.
   umd: "application/epub+zip",

@@ -166,6 +166,8 @@
     "vec_vectorize": "ベクトル化",
     "vec_reindex": "再ベクトル化",
     "vec_indexed": "インデックス済み",
+    "vec_partial": "{{percent}}% インデックス済み",
+    "vec_continue": "ベクトル化を続行（{{percent}}%）",
     "vec_chunking": "チャンク分割中...",
     "vec_indexing": "インデックス作成中...",
     "vec_processing": "処理中...",

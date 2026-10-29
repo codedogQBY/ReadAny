@@ -180,6 +180,8 @@
     "vec_reindex": "Re-vectorize",
     "vec_reindexConfirm": "This book is already indexed. Re-indexing will reset the existing data. Continue?",
     "vec_indexed": "Indexed",
+    "vec_partial": "{{percent}}% indexed",
+    "vec_continue": "Continue vectorization ({{percent}}%)",
     "vec_chunking": "Chunking...",
     "vec_indexing": "Indexing...",
     "vec_processing": "Processing...",

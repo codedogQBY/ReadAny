@@ -1,5 +1,14 @@
 {
   "vectorize": {
+    "bgTitle": "Indexation des livres",
+    "bgChannel": "Résultats d'indexation",
+    "bgProgress": "{{title}} · {{percent}}% ({{current}}/{{total}})",
+    "bgDoneTitle": "Indexation terminée",
+    "bgDoneBody": "{{done}} livre(s) sur {{total}} indexé(s)",
+    "bgPartialBody": "{{done}} indexé(s), {{failed}} interrompu(s). Ouvrez ReadAny et touchez Vectoriser pour reprendre là où il s'est arrêté.",
+    "stoppedTitle": "Vectorisation interrompue",
+    "stoppedResumable": "{{title}}\n\n{{reason}}\n\n{{percent}}% sont enregistrés. Relancez la vectorisation du livre pour reprendre à partir de là.",
+    "stoppedNoProgress": "{{title}}\n\n{{reason}}",
     "title": "Test vectoriel",
     "chunks": "Fragments",
     "vector": "Vecteur",

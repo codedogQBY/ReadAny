@@ -1,5 +1,14 @@
 {
   "vectorize": {
+    "bgTitle": "Indexing books",
+    "bgChannel": "Indexing results",
+    "bgProgress": "{{title}} · {{percent}}% ({{current}}/{{total}})",
+    "bgDoneTitle": "Indexing finished",
+    "bgDoneBody": "{{done}} of {{total}} book(s) indexed",
+    "bgPartialBody": "{{done}} indexed, {{failed}} stopped. Open ReadAny and tap Vectorize to continue where it left off.",
+    "stoppedTitle": "Vectorization stopped",
+    "stoppedResumable": "{{title}}\n\n{{reason}}\n\n{{percent}}% is saved. Vectorize the book again to continue from there.",
+    "stoppedNoProgress": "{{title}}\n\n{{reason}}",
     "title": "Vector Test",
     "chunks": "Chunks",
     "vector": "Vector",
