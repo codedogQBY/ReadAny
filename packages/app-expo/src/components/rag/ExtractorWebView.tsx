@@ -27,8 +27,20 @@ function isPDFMimeType(mimeType: string) {
   return mimeType.split(";")[0]?.trim().toLowerCase() === "application/pdf";
 }
 
+export interface WebViewExtractedMetadata {
+  title: string;
+  author: string;
+  publisher: string;
+  language: string;
+  description: string;
+  subjects: string[];
+  coverBase64: string;
+  coverMimeType: string;
+}
+
 export interface ExtractorRef {
   extractChapters: (base64BookData: string, mimeType?: string) => Promise<ChapterData[]>;
+  extractMetadata: (base64BookData: string, mimeType: string) => Promise<WebViewExtractedMetadata>;
 }
 
 interface PendingExtraction {
@@ -37,13 +49,27 @@ interface PendingExtraction {
   timeoutId: ReturnType<typeof setTimeout>;
 }
 
+interface PendingMetadataExtraction {
+  resolve: (metadata: WebViewExtractedMetadata) => void;
+  reject: (err: Error) => void;
+  timeoutId: ReturnType<typeof setTimeout>;
+}
+
+const METADATA_EXTRACTION_TIMEOUT_MS = 30_000;
+const READY_WAIT_TIMEOUT_MS = 8_000;
+const READY_POLL_INTERVAL_MS = 100;
+
 export const ExtractorWebView = forwardRef<ExtractorRef>((_, ref) => {
   const webViewRef = useRef<WebView>(null);
   const [htmlUri, setHtmlUri] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const readyRef = useRef(false);
 
   // Pending extraction requests
   const pendingRequests = useRef<PendingExtraction[]>([]);
+  // Metadata requests are matched by id so they never interleave with chapter extraction.
+  const pendingMetadata = useRef<Map<number, PendingMetadataExtraction>>(new Map());
+  const nextMetadataId = useRef(1);
 
   useEffect(() => {
     return () => {
@@ -52,6 +78,11 @@ export const ExtractorWebView = forwardRef<ExtractorRef>((_, ref) => {
         pending.reject(new Error("Extractor WebView unmounted"));
       }
       pendingRequests.current = [];
+      for (const pending of pendingMetadata.current.values()) {
+        clearTimeout(pending.timeoutId);
+        pending.reject(new Error("Extractor WebView unmounted"));
+      }
+      pendingMetadata.current.clear();
     };
   }, []);
 
@@ -74,7 +105,19 @@ export const ExtractorWebView = forwardRef<ExtractorRef>((_, ref) => {
     try {
       const msg = JSON.parse(event.nativeEvent.data);
       if (msg.type === "ready") {
+        readyRef.current = true;
         setReady(true);
+      } else if (msg.type === "metadataExtracted") {
+        const pending = pendingMetadata.current.get(msg.id);
+        if (!pending) return;
+
+        pendingMetadata.current.delete(msg.id);
+        clearTimeout(pending.timeoutId);
+        if (msg.error || !msg.metadata) {
+          pending.reject(new Error(msg.error || "No metadata returned"));
+        } else {
+          pending.resolve(msg.metadata);
+        }
       } else if (msg.type === "loaded") {
         // Trigger extraction once the book is fully loaded
         webViewRef.current?.injectJavaScript(`
@@ -135,6 +178,37 @@ export const ExtractorWebView = forwardRef<ExtractorRef>((_, ref) => {
         };
 
         webViewRef.current.injectJavaScript(`
+          window.postMessage(${JSON.stringify(JSON.stringify(cmd))}, "*");
+          true;
+        `);
+      });
+    },
+    extractMetadata: async (base64BookData: string, mimeType: string) => {
+      // Import can start before the hidden WebView has finished loading the reader.
+      const readyDeadline = Date.now() + READY_WAIT_TIMEOUT_MS;
+      while (!readyRef.current && Date.now() < readyDeadline) {
+        await new Promise((r) => setTimeout(r, READY_POLL_INTERVAL_MS));
+      }
+      if (!readyRef.current || !webViewRef.current) {
+        throw new Error("Extractor WebView not ready");
+      }
+
+      const id = nextMetadataId.current++;
+      return new Promise<WebViewExtractedMetadata>((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          pendingMetadata.current.delete(id);
+          reject(new Error("Timed out extracting book metadata"));
+        }, METADATA_EXTRACTION_TIMEOUT_MS);
+        pendingMetadata.current.set(id, { resolve, reject, timeoutId });
+
+        const cmd = {
+          type: "extractMetadata",
+          id,
+          base64: base64BookData,
+          mimeType,
+          fileName: getExtractorFileName(mimeType),
+        };
+        webViewRef.current?.injectJavaScript(`
           window.postMessage(${JSON.stringify(JSON.stringify(cmd))}, "*");
           true;
         `);

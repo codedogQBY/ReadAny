@@ -1399,6 +1399,9 @@
         case 'extractBookChapters':
           await handleExtractBookChapters(msg);
           break;
+        case 'extractMetadata':
+          await handleExtractMetadata(msg);
+          break;
         case 'getChapterParagraphs':
           handleGetChapterParagraphs();
           break;
@@ -4380,6 +4383,109 @@ html, body {
       } catch (err) {
         console.error('[WebView] Error extracting book chapters:', err);
         postToRN('chaptersExtracted', { error: String(err) });
+      }
+    }
+
+    // ─── Metadata + cover extraction for import (FB2/FBZ/CBZ/PDF/...) ───
+    // foliate-js already parses these formats for reading; reuse it so the
+    // library gets the same title/author/cover as the desktop import does.
+    const METADATA_COVER_MAX_HEIGHT = 800;
+
+    function metadataText(value) {
+      if (value == null) return '';
+      if (typeof value === 'string') return value.trim();
+      if (Array.isArray(value)) return value.map(metadataText).filter(Boolean).join(', ');
+      if (typeof value === 'object') {
+        if ('name' in value) return metadataText(value.name);
+        const first = Object.values(value)[0];
+        return first == null ? '' : metadataText(first);
+      }
+      return String(value).trim();
+    }
+
+    function metadataPlainText(value) {
+      const text = metadataText(value);
+      if (!text) return '';
+      const el = document.createElement('div');
+      el.innerHTML = text;
+      return (el.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function blobToBase64(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error || new Error('Failed to read cover'));
+        reader.onload = () => {
+          const result = String(reader.result || '');
+          resolve(result.slice(result.indexOf(',') + 1));
+        };
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    // Shrink the cover (a rendered PDF page can be several MB) and normalise it
+    // to JPEG so it survives the RN bridge and is stored with a correct extension.
+    async function encodeCoverForImport(blob) {
+      try {
+        const bitmap = await createImageBitmap(blob);
+        const scale = Math.min(1, METADATA_COVER_MAX_HEIGHT / bitmap.height);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        if (bitmap.close) bitmap.close();
+        const jpeg = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+        if (jpeg) return { base64: await blobToBase64(jpeg), mimeType: 'image/jpeg' };
+      } catch (err) {
+        console.warn('[WebView] Cover re-encode failed, using original bytes:', err);
+      }
+      return { base64: await blobToBase64(blob), mimeType: blob.type || 'image/jpeg' };
+    }
+
+    async function handleExtractMetadata(msg) {
+      let book = null;
+      try {
+        book = await makeBook(await createBookFileFromMessage(msg));
+        const meta = book.metadata || {};
+
+        let coverBase64 = '';
+        let coverMimeType = '';
+        try {
+          const coverBlob = book.getCover ? await book.getCover() : null;
+          if (coverBlob && coverBlob.size > 0) {
+            const encoded = await encodeCoverForImport(coverBlob);
+            coverBase64 = encoded.base64;
+            coverMimeType = encoded.mimeType;
+          }
+        } catch (coverErr) {
+          console.warn('[WebView] getCover failed:', coverErr);
+        }
+
+        postToRN('metadataExtracted', {
+          id: msg.id,
+          metadata: {
+            title: metadataText(meta.title),
+            author: metadataText(meta.author),
+            publisher: metadataText(meta.publisher),
+            language: metadataText(meta.language),
+            description: metadataPlainText(meta.description),
+            subjects: Array.isArray(meta.subject)
+              ? meta.subject.map(metadataText).filter(Boolean)
+              : [],
+            coverBase64,
+            coverMimeType
+          }
+        });
+      } catch (err) {
+        console.error('[WebView] Error extracting metadata:', err);
+        postToRN('metadataExtracted', { id: msg.id, error: String(err) });
+      } finally {
+        try {
+          if (book && typeof book.destroy === 'function') book.destroy();
+        } catch (e) {}
       }
     }
 

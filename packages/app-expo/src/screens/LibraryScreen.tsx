@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/Icon";
 import { SyncButton } from "@/components/ui/SyncButton";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
+import { setWebViewMetadataExtractor } from "@/lib/book/webview-metadata";
 import { openMobileBook } from "@/lib/library/open-mobile-book";
 import { setCallback, setExtractorRef } from "@/lib/rag/auto-vectorize-service";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
@@ -259,6 +260,7 @@ export function LibraryScreen() {
 
   useEffect(() => {
     setExtractorRef(extractorRef.current);
+    setWebViewMetadataExtractor(extractorRef.current);
     setFallbackContentProvider({
       async getChapters(book) {
         if (!extractorRef.current) throw new Error("Mobile fallback extractor is not ready");
@@ -304,6 +306,7 @@ export function LibraryScreen() {
     });
     return () => {
       setExtractorRef(null);
+      setWebViewMetadataExtractor(null);
       setFallbackContentProvider(null);
       setCallback(null);
     };

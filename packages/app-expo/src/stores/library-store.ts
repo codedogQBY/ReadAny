@@ -3,6 +3,7 @@ import {
   extractBookMetadata,
   extractBookMetadataFromFile,
 } from "@/lib/book/metadata-extractor";
+import { extractMetadataViaWebView, supportsWebViewMetadata } from "@/lib/book/webview-metadata";
 import { queueBook as queueAutoVectorize } from "@/lib/rag/auto-vectorize-service";
 import {
   type ImportBooksResult,
@@ -192,12 +193,23 @@ async function extractMobileImportMetadata(params: {
     return extractBookMetadataFromFile(rangeReadable, format, fileName);
   }
 
-  return {
+  const fallback = {
     title: fileName.replace(/\.\w+$/i, "") || "Untitled",
     author: "",
     coverBytes: null,
     coverMimeType: null,
   };
+
+  if (supportsWebViewMetadata(format)) {
+    try {
+      const meta = await extractMetadataViaWebView({ filePath, format, fileName, fileSize });
+      if (meta) return { ...meta, title: meta.title || fallback.title };
+    } catch (err) {
+      console.warn(`[importBooks] WebView metadata extraction failed for ${fileName}:`, err);
+    }
+  }
+
+  return fallback;
 }
 
 function shouldAutoVectorizeMobile(format: Book["format"]): boolean {
