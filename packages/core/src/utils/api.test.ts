@@ -90,6 +90,13 @@ describe("AI API URL helpers", () => {
     expect(detectProviderFromUrl("https://api.atlascloud.ai/v1")).toBe("atlascloud");
   });
 
+  it("configures the Runcrate endpoint without an extra /v1", () => {
+    expect(getDefaultBaseUrl("runcrate")).toBe("https://api.runcrate.ai/v1");
+    expect(resolveProviderBaseUrl("runcrate")).toBe("https://api.runcrate.ai/v1");
+    expect(buildProviderModelsUrl("runcrate")).toBe("https://api.runcrate.ai/v1/models");
+    expect(detectProviderFromUrl("https://api.runcrate.ai/v1")).toBe("runcrate");
+  });
+
   describe("ensureUrlProtocol / scheme-less inputs", () => {
     it("prepends https:// when a remote URL has no scheme", () => {
       expect(ensureUrlProtocol("api.openai.com/v1")).toBe("https://api.openai.com/v1");

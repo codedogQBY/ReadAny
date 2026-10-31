@@ -145,6 +145,7 @@ export type AIProviderType =
   | "mistral"
   | "perplexity"
   | "aihubmix"
+  | "runcrate"
   | "custom";
 
 export interface AIEndpoint {
