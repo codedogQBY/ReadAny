@@ -36,6 +36,8 @@
 
 > 🚀 **v2.0 更新**: 移动端应用（iOS/Android）现已上线！详见下方 [移动端](#移动端应用) 章节。
 
+> **维护：** 维护者已批准两周作战计划。计划中的 **v1.3.7 尚未发布**（当前正式版为 v1.3.6），只修同步、导入、阅读进度和打开失败。Bug 首次回复 SLA 为 7 天（Asia/Shanghai）。维护窗口：待维护者确认。[公告草稿](docs/MAINTENANCE.md) · [贡献指南](CONTRIBUTING.md)
+
 ## AI 原生阅读工作流
 
 - **和书库对话** - 围绕当前书籍、选中文本和阅读位置提问，答案基于你的阅读上下文生成
@@ -309,6 +311,8 @@ iOS 的 Xcode 或 Android 的 Android Studio/SDK。
 ## 参与贡献
 
 欢迎贡献代码、报告 Bug、提出建议！
+
+开 Issue 或 PR 前请先读 [CONTRIBUTING.md](CONTRIBUTING.md)：小步改动并关联 Issue，手测冒烟为「导入一本书 → 翻页 → 进度保存 → 同步抽检」，新的 AI provider 或大功能必须先有 Issue 和设计。当前维护范围见 [公告草稿](docs/MAINTENANCE.md)。
 
 1. Fork → 2. Branch → 3. PR
 

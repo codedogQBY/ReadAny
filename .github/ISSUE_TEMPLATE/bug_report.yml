@@ -1,0 +1,78 @@
+name: Bug
+description: 同步、导入、进度、打开失败或其他缺陷。请写清平台、版本、复现、期望与实际。
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        维护版 v1.3.7 **尚未发布**。请填写你正在使用的版本（当前正式版为 v1.3.6）。
+        同步、导入、阅读进度、打开失败会优先处理；其他缺陷也会收下，但不承诺进入该维护版。
+        不要粘贴 API Key、WebDAV 密码、账号或私人笔记正文。
+
+        v1.3.7 is not released. Report the version you actually run (latest release: v1.3.6).
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 平台 / Platform
+      description: 出问题的客户端。多个平台都出现时选「多个平台」。
+      options:
+        - macOS
+        - Windows
+        - Linux
+        - iOS
+        - Android
+        - 多个平台 / Multiple
+        - 其他 / Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 应用版本 / App version
+      description: 关于页中的版本号。当前 GitHub Release 为 v1.3.6。若关于页显示 1.3.7，请注明是源码构建，并写上分支或提交。v1.3.7 尚未发布。
+      placeholder: 例如 1.3.6；源码构建请写 1.3.7（main @ 提交号）
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      description: 从导入或打开书籍写起，写到出错为止。
+      placeholder: |
+        1. 导入某本 EPUB
+        2. 翻到第 N 页
+        3. 退出后重新打开
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为 / Expected
+      placeholder: 重新打开后仍停在第 N 页。
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为 / Actual
+      placeholder: 重新打开后回到开头，或提示打开失败。
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充 / Extra context
+      description: 可选。系统版本、是否使用同步、报错原文。截图请在提交后拖进评论并打码。
+      placeholder: 例如 Windows 11，WebDAV 同步开启，错误提示为……
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 确认 / Checks
+      options:
+        - label: 我已搜索现有 Issue，这不是重复报告。 / I searched existing issues.
+          required: true
+        - label: 报告中没有密钥、密码或私人笔记正文。 / No secrets or private note text.
+          required: true

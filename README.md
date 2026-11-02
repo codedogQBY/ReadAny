@@ -36,6 +36,8 @@
 
 > 🚀 **v2.0 Update**: Mobile apps (iOS/Android) now available! See [Mobile](#mobile-apps) section below.
 
+> **Maintenance:** Maintainers approved a two-week maintenance push. Planned **v1.3.7 is not released** (latest release is v1.3.6) and only fixes sync, import, reading progress, and books that fail to open. Bug SLA: first reply within 7 days (Asia/Shanghai). Maintenance window: pending maintainer confirmation. [Draft notice](docs/MAINTENANCE.md) · [Contributing](CONTRIBUTING.md)
+
 ## AI-Native Reading Workflow
 
 - **Chat with your library** - Ask questions about the current book or selected passages, with answers grounded in your reading context
@@ -310,7 +312,9 @@ Android Studio/SDK for Android mobile development.
 
 ## Contributing
 
-Contributions welcome! Bug reports, feature requests, pull requests all appreciated.
+Contributions welcome! Bug reports, feature requests, and pull requests are appreciated.
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening an issue or pull request: small, issue-linked changes, a manual smoke test (import a book, turn pages, confirm progress is saved, spot-check sync), and a design note before any new AI provider or large feature. Current maintenance scope is in the [draft notice](docs/MAINTENANCE.md).
 
 1. Fork → 2. Branch → 3. PR
 
