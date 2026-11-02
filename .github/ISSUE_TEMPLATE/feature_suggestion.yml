@@ -1,0 +1,56 @@
+name: Feature / Suggestion
+description: 功能或体验建议。请写清动机和建议范围；新的 AI provider 与大功能需要先有设计。
+title: "[Suggestion] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        当前两周以维护为先。v1.3.7 **尚未发布**，只收同步、导入、阅读进度、打开失败的修复。
+        功能建议会记录，但不会因此进入该维护版。
+        新的 AI provider，或跨多个模块的大功能，请在本 Issue 写清动机和范围，并附上短设计后再实现。见 CONTRIBUTING.md。
+
+        Feature requests are collected during the maintenance push, but they are out of scope for unreleased v1.3.7.
+  - type: textarea
+    id: motivation
+    attributes:
+      label: 动机 / Motivation
+      description: 你在阅读、同步或整理笔记时遇到了什么问题？现有做法为什么不够。
+      placeholder: 例如换设备后想核对某一章的进度，但现在只能整库同步，失败时看不出是哪一本书。
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 范围 / Scope
+      description: 这次希望做的事，以及明确不做的事。范围越大，越需要单独的设计说明。
+      placeholder: |
+        包含：
+        - …
+
+        不包含：
+        - …
+    validations:
+      required: true
+  - type: textarea
+    id: design
+    attributes:
+      label: 设计说明 / Design note
+      description: 新的 AI provider 或大功能必填。写清问题、建议做法、非目标、会动到的包、已知风险。小建议可以留空。
+      placeholder: |
+        问题：
+        做法：
+        非目标：
+        影响的包：
+        风险：
+    validations:
+      required: false
+  - type: checkboxes
+    id: kind
+    attributes:
+      label: 规模 / Size
+      options:
+        - label: 这是新的 AI provider，或会跨多个模块。我知道实现前需要本 Issue 和一份设计，并可能被标为 status:needs-design。 / New AI provider or cross-cutting feature; design comes before code.
+          required: false
+        - label: 我已搜索现有 Issue，这不是重复建议。 / I searched existing issues.
+          required: true
