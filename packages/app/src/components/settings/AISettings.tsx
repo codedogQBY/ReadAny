@@ -35,6 +35,7 @@ function useProviderOptions(): { value: AIProviderType; label: string }[] {
   return useMemo(() => [
     { value: "openai", label: "OpenAI" },
     { value: "atlascloud", label: "Atlas Cloud" },
+    { value: "standardcompute", label: "Standard Compute" },
     { value: "anthropic", label: "Anthropic" },
     { value: "google", label: "Google Gemini" },
     { value: "deepseek", label: "DeepSeek" },
