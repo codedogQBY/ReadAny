@@ -1,5 +1,9 @@
 {
   "chat": {
+    "fontSize": "对话字号",
+    "decreaseFontSize": "减小字号",
+    "increaseFontSize": "增大字号",
+    "resetFontSize": "恢复默认",
     "history": "历史记录",
     "newChat": "新对话",
     "noConversations": "暂无对话",

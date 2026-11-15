@@ -1,5 +1,9 @@
 {
   "chat": {
+    "fontSize": "대화 글자 크기",
+    "decreaseFontSize": "글자 크기 줄이기",
+    "increaseFontSize": "글자 크기 늘리기",
+    "resetFontSize": "기본값으로 재설정",
     "history": "기록",
     "newChat": "새 대화",
     "noConversations": "대화가 없어요",

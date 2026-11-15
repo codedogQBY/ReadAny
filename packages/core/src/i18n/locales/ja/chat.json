@@ -1,5 +1,9 @@
 {
   "chat": {
+    "fontSize": "会話の文字サイズ",
+    "decreaseFontSize": "文字を小さくする",
+    "increaseFontSize": "文字を大きくする",
+    "resetFontSize": "初期設定に戻す",
     "history": "履歴",
     "newChat": "新しいチャット",
     "noConversations": "会話はまだありません",

@@ -1,5 +1,9 @@
 {
   "chat": {
+    "fontSize": "Conversation font size",
+    "decreaseFontSize": "Decrease font size",
+    "increaseFontSize": "Increase font size",
+    "resetFontSize": "Reset to default",
     "history": "History",
     "newChat": "New Chat",
     "noConversations": "No conversations yet",

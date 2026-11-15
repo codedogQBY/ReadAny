@@ -1,5 +1,9 @@
 {
   "chat": {
+    "fontSize": "Tamaño del texto de conversación",
+    "decreaseFontSize": "Reducir texto",
+    "increaseFontSize": "Ampliar texto",
+    "resetFontSize": "Restablecer tamaño",
     "history": "Historial",
     "newChat": "Nuevo chat",
     "noConversations": "Aún no hay conversaciones",

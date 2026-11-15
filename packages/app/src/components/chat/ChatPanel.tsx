@@ -31,6 +31,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { ChatFontSizeControl } from "./ChatFontSizeControl";
 import { type AttachedQuote, ChatInput } from "./ChatInput";
 import { MessageList } from "./MessageList";
 import { ModelSelector } from "./ModelSelector";
@@ -267,6 +268,7 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
         </button>
         <div className="flex items-center gap-1">
           <ModelSelector />
+          <ChatFontSizeControl />
           {allMessages.length > 0 && (
             <div className="relative" ref={exportMenuRef}>
               <button
