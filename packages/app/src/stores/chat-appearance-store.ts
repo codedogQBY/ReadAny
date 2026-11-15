@@ -15,20 +15,25 @@ function normalizeFontSize(value: unknown): number {
 /** Desktop-only presentation preferences. Kept outside the synced settings store. */
 export const useChatAppearanceStore = create<{
   fontSize: number;
+  outlineOpen: boolean;
+  setOutlineOpen: (open: boolean) => void;
   setFontSize: (fontSize: number) => void;
 }>()(
   persist(
     (set) => ({
       fontSize: DEFAULT_CHAT_FONT_SIZE,
+      outlineOpen: true,
+      setOutlineOpen: (outlineOpen) => set({ outlineOpen }),
       setFontSize: (fontSize) => set({ fontSize: normalizeFontSize(fontSize) }),
     }),
     {
       name: "readany-desktop-chat-appearance",
       storage: createJSONStorage(() => localStorage),
-      partialize: ({ fontSize }) => ({ fontSize }),
+      partialize: ({ fontSize, outlineOpen }) => ({ fontSize, outlineOpen }),
       merge: (saved, current) => ({
         ...current,
         fontSize: normalizeFontSize((saved as { fontSize?: unknown } | undefined)?.fontSize),
+        outlineOpen: (saved as { outlineOpen?: unknown } | undefined)?.outlineOpen !== false,
       }),
     },
   ),

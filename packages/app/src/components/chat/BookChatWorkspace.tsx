@@ -117,7 +117,11 @@ export function BookChatWorkspace({
       )}
       {book &&
         createPortal(
-          <ChatPanel book={book} onNavigateToCitation={navigateToCitation} />,
+          <ChatPanel
+            book={book}
+            onNavigateToCitation={navigateToCitation}
+            showOutline={detached}
+          />,
           container,
         )}
     </>

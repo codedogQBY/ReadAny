@@ -1,5 +1,12 @@
 {
   "chat": {
+    "collapseAllTurns": "Collapse all",
+    "outlineTurn": "Question {{number}}",
+    "collapseTurn": "Collapse: {{question}}",
+    "expandTurn": "Expand: {{question}}",
+    "answerOutline": "Answer outline",
+    "collapseOutline": "Collapse outline",
+    "noOutline": "No outline available",
     "openInTab": "Open in tab",
     "moveToSidebar": "Move to sidebar",
     "returnToBook": "Back to reading",

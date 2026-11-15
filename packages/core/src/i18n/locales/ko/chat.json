@@ -1,5 +1,12 @@
 {
   "chat": {
+    "collapseAllTurns": "모두 접기",
+    "outlineTurn": "질문 {{number}}",
+    "collapseTurn": "접기: {{question}}",
+    "expandTurn": "펼치기: {{question}}",
+    "answerOutline": "답변 목차",
+    "collapseOutline": "목차 접기",
+    "noOutline": "목차 없음",
     "openInTab": "탭에서 열기",
     "moveToSidebar": "사이드바로 이동",
     "returnToBook": "독서로 돌아가기",

@@ -120,7 +120,7 @@ function TextPartView({
   }
 
   return (
-    <div className="chat-markdown select-text max-w-none text-sm leading-relaxed">
+    <div data-answer-text className="chat-markdown select-text max-w-none text-sm leading-relaxed">
       <MarkdownRenderer
         content={throttledText}
         isStreaming={isStreaming}

@@ -289,7 +289,12 @@ function MessageBubble({ message, onCitationClick, isStreaming, currentStep }: M
     const hasQuotes = quoteParts.length > 0;
 
     return (
-      <div data-chat-message className="group mt-6 flex max-w-full select-text flex-col first:mt-0">
+      <div
+        data-chat-message
+        data-chat-role="user"
+        data-chat-id={message.id}
+        className="group mt-6 flex max-w-full select-text flex-col first:mt-0"
+      >
         <div className="min-w-0 max-w-[85%] self-end rounded-2xl bg-muted px-3 py-2 text-sm leading-relaxed">
           {hasQuotes && (
             <div className="mb-2 flex flex-col gap-1.5">
@@ -299,7 +304,7 @@ function MessageBubble({ message, onCitationClick, isStreaming, currentStep }: M
             </div>
           )}
           {textParts.length > 0 && (
-            <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+            <div data-user-text className="whitespace-pre-wrap [overflow-wrap:anywhere]">
               {textParts.map((part) => {
                 if (part.type === "text") {
                   return <span key={part.id}>{part.text}</span>;
@@ -340,7 +345,12 @@ function MessageBubble({ message, onCitationClick, isStreaming, currentStep }: M
     !isLastPartActiveToolCall;
 
   return (
-    <div data-chat-message className="group flex w-full min-w-0 select-text flex-col gap-1">
+    <div
+      data-chat-message
+      data-chat-role="assistant"
+      data-chat-id={message.id}
+      className="group flex w-full min-w-0 select-text flex-col gap-1"
+    >
       {message.parts.map((part) => (
         <PartRenderer
           key={part.id}

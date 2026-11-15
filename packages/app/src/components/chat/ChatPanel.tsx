@@ -3,6 +3,7 @@
  */
 import { ConfigGuideDialog, type ConfigGuideType } from "@/components/shared/ConfigGuideDialog";
 import { useStreamingChat } from "@/hooks/use-streaming-chat";
+import { useChatAppearanceStore } from "@/stores/chat-appearance-store";
 import { useChatStore } from "@/stores/chat-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { getPlatformService } from "@readany/core/services";
@@ -25,12 +26,14 @@ import {
   FileJson,
   FileText,
   History,
+  ListTree,
   MessageCirclePlus,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { AnswerOutline } from "./AnswerOutline";
 import { ChatFontSizeControl } from "./ChatFontSizeControl";
 import { type AttachedQuote, ChatInput } from "./ChatInput";
 import { MessageList } from "./MessageList";
@@ -39,11 +42,32 @@ import { ModelSelector } from "./ModelSelector";
 interface ChatPanelProps {
   book?: Book | null;
   onNavigateToCitation?: (citation: CitationPart) => void;
+  showOutline?: boolean;
 }
 
-export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
+export function ChatPanel({ book, onNavigateToCitation, showOutline = false }: ChatPanelProps) {
   const { t } = useTranslation();
   const bookId = book?.id;
+  const panelRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [wide, setWide] = useState(false);
+  const [narrowOpen, setNarrowOpen] = useState(false);
+  const outlineOpen = useChatAppearanceStore((state) => state.outlineOpen);
+  const setOutlineOpen = useChatAppearanceStore((state) => state.setOutlineOpen);
+  const outlineVisible = showOutline && (wide ? outlineOpen : narrowOpen);
+  const closeOutline = () => (wide ? setOutlineOpen(false) : setNarrowOpen(false));
+
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const isWide = entry.contentRect.width >= 1000;
+      setWide(isWide);
+      if (!isWide) setNarrowOpen(false);
+    });
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, []);
 
   const threads = useChatStore((s) => s.threads);
   const loadThreads = useChatStore((s) => s.loadThreads);
@@ -251,7 +275,7 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
   ];
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={panelRef} className="flex h-full min-h-0 flex-col">
       {/* Header with thread controls */}
       <div className="relative flex h-8 shrink-0 items-center justify-between px-3">
         <button
@@ -270,6 +294,18 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
         <div className="flex items-center gap-1">
           <ModelSelector />
           <ChatFontSizeControl />
+          {showOutline && (
+            <button
+              type="button"
+              aria-label={t("chat.answerOutline")}
+              title={t("chat.answerOutline")}
+              aria-expanded={outlineVisible}
+              onClick={() => (wide ? setOutlineOpen(!outlineOpen) : setNarrowOpen(!narrowOpen))}
+              className={`rounded-full p-1 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring ${outlineVisible ? "text-primary" : "text-muted-foreground"}`}
+            >
+              <ListTree className="size-3.5" />
+            </button>
+          )}
           {allMessages.length > 0 && (
             <div className="relative" ref={exportMenuRef}>
               <button
@@ -433,52 +469,66 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
       </div>
 
       {/* Messages or empty state */}
-      <div className="flex-1 overflow-hidden">
-        {allMessages.length > 0 ? (
-          <MessageList
-            messages={allMessages}
-            isStreaming={isStreaming}
-            currentStep={currentStep}
-            onStop={stopStream}
-            onCitationClick={onNavigateToCitation}
-          />
-        ) : (
-          <div className="flex h-full flex-col items-start justify-end gap-3 overflow-y-auto p-4 pb-6">
-            <div className="flex flex-col items-start gap-3 pl-1">
-              <img src="/think.svg" alt="" className="h-28 w-28 shrink-0 dark:invert" />
-              <div className="space-y-1">
-                <h3 className="text-lg font-semibold text-foreground">{t("chat.aiAssistant")}</h3>
-                <p className="max-w-sm text-sm text-muted-foreground">
-                  {t("chat.aiAssistantDesc")}
-                </p>
+      <div className="relative flex min-h-0 flex-1">
+        <div ref={contentRef} className="flex min-w-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-hidden">
+            {allMessages.length > 0 ? (
+              <MessageList
+                messages={allMessages}
+                isStreaming={isStreaming}
+                currentStep={currentStep}
+                onStop={stopStream}
+                onCitationClick={onNavigateToCitation}
+              />
+            ) : (
+              <div className="flex h-full flex-col items-start justify-end gap-3 overflow-y-auto p-4 pb-6">
+                <div className="flex flex-col items-start gap-3 pl-1">
+                  <img src="/think.svg" alt="" className="h-28 w-28 shrink-0 dark:invert" />
+                  <div className="space-y-1">
+                    <h3 className="text-lg font-semibold text-foreground">
+                      {t("chat.aiAssistant")}
+                    </h3>
+                    <p className="max-w-sm text-sm text-muted-foreground">
+                      {t("chat.aiAssistantDesc")}
+                    </p>
+                  </div>
+                </div>
+                <div className="w-full space-y-0.5">
+                  {SUGGESTIONS.map((text) => (
+                    <button
+                      key={text}
+                      type="button"
+                      onClick={() => handleSend(text)}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/70"
+                    >
+                      {text}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div className="w-full space-y-0.5">
-              {SUGGESTIONS.map((text) => (
-                <button
-                  key={text}
-                  type="button"
-                  onClick={() => handleSend(text)}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted/70"
-                >
-                  {text}
-                </button>
-              ))}
-            </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* Input */}
-      <div className="shrink-0 px-2 pb-2 pt-1">
-        <ChatInput
-          onSend={handleSend}
-          onStop={stopStream}
-          isStreaming={isStreaming}
-          placeholder={t("chat.askBookPlaceholder")}
-          quotes={attachedQuotes}
-          onRemoveQuote={handleRemoveQuote}
-        />
+          {/* Input */}
+          <div className="shrink-0 px-2 pb-2 pt-1">
+            <ChatInput
+              onSend={handleSend}
+              onStop={stopStream}
+              isStreaming={isStreaming}
+              placeholder={t("chat.askBookPlaceholder")}
+              quotes={attachedQuotes}
+              onRemoveQuote={handleRemoveQuote}
+            />
+          </div>
+        </div>
+        {outlineVisible && (
+          <AnswerOutline
+            key={activeThreadId}
+            contentRef={contentRef}
+            onClose={closeOutline}
+            overlay={!wide}
+          />
+        )}
       </div>
 
       <ConfigGuideDialog type={configGuide} onClose={() => setConfigGuide(null)} />

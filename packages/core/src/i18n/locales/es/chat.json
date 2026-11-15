@@ -1,5 +1,12 @@
 {
   "chat": {
+    "collapseAllTurns": "Contraer todo",
+    "outlineTurn": "Pregunta {{number}}",
+    "collapseTurn": "Contraer: {{question}}",
+    "expandTurn": "Expandir: {{question}}",
+    "answerOutline": "Índice de la respuesta",
+    "collapseOutline": "Contraer índice",
+    "noOutline": "Sin índice",
     "openInTab": "Abrir en una pestaña",
     "moveToSidebar": "Volver al panel lateral",
     "returnToBook": "Volver a la lectura",
