@@ -158,6 +158,7 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail?.bookId === bookId && detail?.selectedText) {
+        sessionStorage.removeItem(`pending-ai-quote-${bookId}`);
         const newQuote: AttachedQuote = {
           id: crypto.randomUUID(),
           text: detail.selectedText,

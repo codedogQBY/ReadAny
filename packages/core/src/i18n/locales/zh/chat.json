@@ -1,5 +1,8 @@
 {
   "chat": {
+    "openInTab": "在标签页中打开",
+    "moveToSidebar": "移回右侧",
+    "returnToBook": "返回阅读",
     "fontSize": "对话字号",
     "decreaseFontSize": "减小字号",
     "increaseFontSize": "增大字号",

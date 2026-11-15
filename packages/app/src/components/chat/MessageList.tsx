@@ -188,7 +188,11 @@ export function MessageList({
     isStreaming && !!lastMsg && lastMsg.role === "assistant" && lastMsg.parts.length > 0;
 
   return (
-    <div ref={containerRef} className="relative flex h-full flex-col overflow-y-auto py-4">
+    <div
+      data-chat-scroll
+      ref={containerRef}
+      className="relative flex h-full flex-col overflow-y-auto py-4"
+    >
       <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-4 px-4" style={typography}>
         {messages.map((msg, idx) => (
           <MessageBubble

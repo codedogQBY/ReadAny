@@ -67,4 +67,43 @@ describe("app-store tab initial location", () => {
     });
     expect(useAppStore.getState().activeTabId).toBe("epub-draft-draft-1");
   });
+
+  it("closes the book assistant with its reader while preserving unrelated tabs", () => {
+    const { addTab, removeTab } = useAppStore.getState();
+    addTab({ id: "reader-1", type: "reader", title: "Book", bookId: "book-1" });
+    addTab({ id: "chat", type: "chat", title: "General chat" });
+    addTab({ id: "reader-2", type: "reader", title: "Other book", bookId: "book-2" });
+    addTab({ id: "book-chat-1", type: "chat", title: "Book AI", bookId: "book-1" });
+    removeTab("reader-1");
+    expect(useAppStore.getState().tabs.map((tab) => tab.id)).toEqual(["home", "chat", "reader-2"]);
+    expect(useAppStore.getState().activeTabId).toBe("reader-2");
+  });
+
+  it("returns to the reader when closing its active assistant tab", () => {
+    const { addTab, removeTab } = useAppStore.getState();
+    addTab({ id: "reader-1", type: "reader", title: "Book", bookId: "book-1" });
+    addTab({ id: "reader-2", type: "reader", title: "Other book", bookId: "book-2" });
+    addTab({ id: "book-chat-1", type: "chat", title: "Book AI", bookId: "book-1" });
+    removeTab("book-chat-1");
+    expect(useAppStore.getState().activeTabId).toBe("reader-1");
+    expect(useAppStore.getState().tabs.some((tab) => tab.id === "reader-1")).toBe(true);
+  });
+
+  it("does not change the active page when closing another book and its assistant", () => {
+    const { addTab, removeTab } = useAppStore.getState();
+    addTab({ id: "reader-1", type: "reader", title: "Book", bookId: "book-1" });
+    addTab({ id: "book-chat-1", type: "chat", title: "Book AI", bookId: "book-1" });
+    addTab({ id: "chat", type: "chat", title: "General chat" });
+    removeTab("reader-1");
+    expect(useAppStore.getState().activeTabId).toBe("chat");
+  });
+
+  it("preserves a home sub-view when closing a background reader", () => {
+    useAppStore
+      .getState()
+      .addTab({ id: "reader-1", type: "reader", title: "Book", bookId: "book-1" });
+    useAppStore.getState().setActiveTab("stats");
+    useAppStore.getState().removeTab("reader-1");
+    expect(useAppStore.getState().activeTabId).toBe("stats");
+  });
 });

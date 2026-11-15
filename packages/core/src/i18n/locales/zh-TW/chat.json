@@ -1,5 +1,8 @@
 {
   "chat": {
+    "openInTab": "在分頁中開啟",
+    "moveToSidebar": "移回右側",
+    "returnToBook": "返回閱讀",
     "fontSize": "對話字級",
     "decreaseFontSize": "縮小字級",
     "increaseFontSize": "放大字級",

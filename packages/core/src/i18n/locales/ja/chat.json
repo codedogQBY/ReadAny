@@ -1,5 +1,8 @@
 {
   "chat": {
+    "openInTab": "タブで開く",
+    "moveToSidebar": "サイドバーに戻す",
+    "returnToBook": "読書に戻る",
     "fontSize": "会話の文字サイズ",
     "decreaseFontSize": "文字を小さくする",
     "increaseFontSize": "文字を大きくする",

@@ -83,6 +83,20 @@ export function ChatInput({
   // biome-ignore lint/correctness/useExhaustiveDependencies: font changes alter textarea wrapping.
   useLayoutEffect(() => handleInput(), [handleInput, typography]);
 
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    let previousWidth = el.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth > 0 && el.clientWidth !== previousWidth) {
+        previousWidth = el.clientWidth;
+        handleInput();
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [handleInput]);
+
   const toggleSpoilerFree = useCallback(() => {
     setSpoilerFree((prev) => !prev);
   }, []);

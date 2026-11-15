@@ -1,5 +1,8 @@
 {
   "chat": {
+    "openInTab": "탭에서 열기",
+    "moveToSidebar": "사이드바로 이동",
+    "returnToBook": "독서로 돌아가기",
     "fontSize": "대화 글자 크기",
     "decreaseFontSize": "글자 크기 줄이기",
     "increaseFontSize": "글자 크기 늘리기",

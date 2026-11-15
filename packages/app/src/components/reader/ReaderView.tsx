@@ -1,4 +1,8 @@
-import { ChatPanel } from "@/components/chat/ChatPanel";
+import {
+  openBookChatInTab,
+  showBookChatSidebar,
+  useBookChatLayoutStore,
+} from "@/stores/book-chat-layout-store";
 /**
  * ReaderView — main reader page component.
  *
@@ -38,7 +42,7 @@ import { splitNarrationText } from "@readany/core/tts";
 import type { CitationPart, HighlightColor } from "@readany/core/types";
 import { eventBus } from "@readany/core/utils/event-bus";
 import { throttle } from "@readany/core/utils/throttle";
-import { X } from "lucide-react";
+import { Expand, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -784,7 +788,19 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const [searchIndex, setSearchIndex] = useState<number>(0);
   const [totalPages, setTotalPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(0);
-  const [showChat, setShowChat] = useState(false);
+  const showChat = useBookChatLayoutStore((state) => state.openSidebars[bookId] ?? false);
+  const setShowChat = useCallback(
+    (open: boolean | ((previous: boolean) => boolean)) => {
+      useBookChatLayoutStore.getState().setSidebarOpen(bookId, open);
+    },
+    [bookId],
+  );
+  const setChatHost = useCallback(
+    (host: HTMLDivElement | null) => {
+      useBookChatLayoutStore.getState().setSidebarHost(bookId, host);
+    },
+    [bookId],
+  );
   const [showSettings, setShowSettings] = useState(false);
   const [showTTS, setShowTTS] = useState(false);
   const [isReimporting, setIsReimporting] = useState(false);
@@ -1808,7 +1824,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       );
 
       // Open chat panel
-      setShowChat(true);
+      showBookChatSidebar(bookId);
 
       // Also dispatch event for immediate handling if panel is already open
       window.dispatchEvent(
@@ -1827,7 +1843,10 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const handleCloseSelection = useCallback(() => setSelection(null), []);
   const handleToggleSearch = useCallback(() => setShowSearch((p) => !p), []);
   const handleToggleToc = useCallback(() => setShowToc((p) => !p), []);
-  const handleToggleChat = useCallback(() => setShowChat((p) => !p), []);
+  const handleToggleChat = useCallback(() => {
+    if (showChat) setShowChat(false);
+    else showBookChatSidebar(bookId);
+  }, [bookId, showChat, setShowChat]);
   const handleToggleSettings = useCallback(() => setShowSettings((p) => !p), []);
 
   useEffect(() => {
@@ -2818,6 +2837,11 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     [navigateToCfi, navigateToReaderLocation],
   );
 
+  useEffect(() => {
+    useBookChatLayoutStore.getState().setCitationNavigator(bookId, handleNavigateToCitation);
+    return () => useBookChatLayoutStore.getState().setCitationNavigator(bookId);
+  }, [bookId, handleNavigateToCitation]);
+
   if (!readerTab) {
     return <div className="flex h-full items-center justify-center">{t("common.loading")}</div>;
   }
@@ -3181,17 +3205,27 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           />
           <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/40 px-3">
             <span className="text-xs font-medium text-foreground">{t("chat.aiAssistant")}</span>
-            <button
-              type="button"
-              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              onClick={() => setShowChat(false)}
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                title={t("chat.openInTab")}
+                aria-label={t("chat.openInTab")}
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={() => book && openBookChatInTab(book)}
+              >
+                <Expand className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={() => setShowChat(false)}
+                aria-label={t("common.close")}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
-          <div className="flex-1 overflow-hidden">
-            <ChatPanel book={book} onNavigateToCitation={handleNavigateToCitation} />
-          </div>
+          <div ref={setChatHost} className="min-h-0 flex-1 overflow-hidden" />
         </div>
       )}
     </div>

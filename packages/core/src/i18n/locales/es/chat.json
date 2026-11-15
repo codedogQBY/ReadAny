@@ -1,5 +1,8 @@
 {
   "chat": {
+    "openInTab": "Abrir en una pestaña",
+    "moveToSidebar": "Volver al panel lateral",
+    "returnToBook": "Volver a la lectura",
     "fontSize": "Tamaño del texto de conversación",
     "decreaseFontSize": "Reducir texto",
     "increaseFontSize": "Ampliar texto",

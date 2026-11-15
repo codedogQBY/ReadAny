@@ -1,5 +1,8 @@
 {
   "chat": {
+    "openInTab": "Ouvrir dans un onglet",
+    "moveToSidebar": "Replacer à droite",
+    "returnToBook": "Reprendre la lecture",
     "fontSize": "Taille du texte des conversations",
     "decreaseFontSize": "Réduire le texte",
     "increaseFontSize": "Agrandir le texte",
