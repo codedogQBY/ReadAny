@@ -2,9 +2,10 @@
  * MessageList — scrollable message list with streaming support
  * Uses Part-based rendering for real-time updates
  */
+import { useChatAppearanceStore, useChatTypography } from "@/stores/chat-appearance-store";
 import type { CitationPart, MessageV2, QuotePart } from "@readany/core/types/message";
 import { ArrowDown, Check, Copy, Quote } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PartRenderer } from "./PartRenderer";
 import { StreamingIndicator } from "./StreamingIndicator";
@@ -41,7 +42,14 @@ export function MessageList({
   currentStep,
 }: MessageListProps) {
   const { t } = useTranslation();
+  const typography = useChatTypography();
   const containerRef = useRef<HTMLDivElement>(null);
+  const fontResizeAnchor = useRef<{
+    atBottom: boolean;
+    element?: HTMLElement;
+    offset: number;
+    clippedFraction: number;
+  } | null>(null);
   /** Whether the user has intentionally scrolled away from the bottom */
   const [showScrollDown, setShowScrollDown] = useState(false);
   /** Track whether we should auto-scroll (user is near bottom) */
@@ -80,7 +88,19 @@ export function MessageList({
     return () => el.removeEventListener("scroll", onScroll);
   }, [isNearBottom]);
 
+  // The input can resize after our layout effect, changing the viewport height.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      if (userAtBottomRef.current) scrollToBottom("instant");
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [scrollToBottom]);
+
   // Auto-scroll when new messages/parts arrive, but only if user is near bottom
+  // biome-ignore lint/correctness/useExhaustiveDependencies: message/part counts trigger scrolling.
   useEffect(() => {
     if (userAtBottomRef.current) {
       scrollToBottom("smooth");
@@ -104,6 +124,57 @@ export function MessageList({
     scrollToBottom("smooth");
   }, [scrollToBottom]);
 
+  // Capture the visible paragraph before React applies the new font size.
+  useLayoutEffect(
+    () =>
+      useChatAppearanceStore.subscribe((state, previous) => {
+        if (state.fontSize === previous.fontSize) return;
+        const el = containerRef.current;
+        if (!el) return;
+        const viewport = el.getBoundingClientRect();
+        const element = Array.from(
+          el.querySelectorAll<HTMLElement>("p, pre, li, [data-chat-message]"),
+        ).find((node) => {
+          const rect = node.getBoundingClientRect();
+          return (
+            rect.bottom > viewport.top &&
+            rect.top < viewport.bottom &&
+            // Prefer a paragraph over its containing message.
+            (!node.hasAttribute("data-chat-message") || !node.querySelector("p, pre, li"))
+          );
+        });
+        const rect = element?.getBoundingClientRect();
+        const offset = rect ? rect.top - viewport.top : 0;
+        fontResizeAnchor.current = {
+          atBottom: userAtBottomRef.current,
+          element,
+          offset: Math.max(0, offset),
+          clippedFraction: rect && rect.height > 0 ? Math.max(0, -offset / rect.height) : 0,
+        };
+      }),
+    [],
+  );
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: restore the anchor after font layout.
+  useLayoutEffect(() => {
+    const anchor = fontResizeAnchor.current;
+    const el = containerRef.current;
+    if (!anchor || !el) return;
+    fontResizeAnchor.current = null;
+    if (anchor.atBottom) {
+      scrollToBottom("instant");
+    } else if (anchor.element?.isConnected) {
+      const rect = anchor.element.getBoundingClientRect();
+      el.scrollTop +=
+        rect.top -
+        el.getBoundingClientRect().top -
+        anchor.offset +
+        anchor.clippedFraction * rect.height;
+    }
+    userAtBottomRef.current = isNearBottom();
+    setShowScrollDown(!userAtBottomRef.current);
+  }, [typography, isNearBottom, scrollToBottom]);
+
   // Show streaming indicator when streaming but the last assistant message has no visible parts yet
   const lastMsg = messages[messages.length - 1];
   const showStreamingIndicator =
@@ -117,8 +188,12 @@ export function MessageList({
     isStreaming && !!lastMsg && lastMsg.role === "assistant" && lastMsg.parts.length > 0;
 
   return (
-    <div ref={containerRef} className="relative flex h-full flex-col overflow-y-auto py-4">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4">
+    <div
+      data-chat-scroll
+      ref={containerRef}
+      className="relative flex h-full flex-col overflow-y-auto py-4"
+    >
+      <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-4 px-4" style={typography}>
         {messages.map((msg, idx) => (
           <MessageBubble
             key={msg.id}
@@ -128,7 +203,7 @@ export function MessageList({
             currentStep={currentStep}
           />
         ))}
-        {showStreamingIndicator && <StreamingIndicator step={currentStep!} />}
+        {showStreamingIndicator && currentStep && <StreamingIndicator step={currentStep} />}
       </div>
 
       {/* Sticky scroll-to-bottom button — stays at visible bottom of scroll container */}
@@ -164,7 +239,14 @@ function UserQuoteBlock({ part }: { part: QuotePart }) {
         <p className="text-xs leading-relaxed text-foreground/80">
           {part.text.length > 200 ? `${part.text.slice(0, 200)}...` : part.text}
         </p>
-        {part.source && <p className="mt-1 text-[10px] text-muted-foreground">— {part.source}</p>}
+        {part.source && (
+          <p
+            className="mt-1 text-muted-foreground"
+            style={{ fontSize: "calc(var(--chat-font-size) * 0.714286)" }}
+          >
+            — {part.source}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -207,7 +289,12 @@ function MessageBubble({ message, onCitationClick, isStreaming, currentStep }: M
     const hasQuotes = quoteParts.length > 0;
 
     return (
-      <div className="group mt-6 flex max-w-full select-text flex-col first:mt-0">
+      <div
+        data-chat-message
+        data-chat-role="user"
+        data-chat-id={message.id}
+        className="group mt-6 flex max-w-full select-text flex-col first:mt-0"
+      >
         <div className="min-w-0 max-w-[85%] self-end rounded-2xl bg-muted px-3 py-2 text-sm leading-relaxed">
           {hasQuotes && (
             <div className="mb-2 flex flex-col gap-1.5">
@@ -217,7 +304,7 @@ function MessageBubble({ message, onCitationClick, isStreaming, currentStep }: M
             </div>
           )}
           {textParts.length > 0 && (
-            <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+            <div data-user-text className="whitespace-pre-wrap [overflow-wrap:anywhere]">
               {textParts.map((part) => {
                 if (part.type === "text") {
                   return <span key={part.id}>{part.text}</span>;
@@ -258,7 +345,12 @@ function MessageBubble({ message, onCitationClick, isStreaming, currentStep }: M
     !isLastPartActiveToolCall;
 
   return (
-    <div className="group flex w-full select-text flex-col gap-1">
+    <div
+      data-chat-message
+      data-chat-role="assistant"
+      data-chat-id={message.id}
+      className="group flex w-full min-w-0 select-text flex-col gap-1"
+    >
       {message.parts.map((part) => (
         <PartRenderer
           key={part.id}

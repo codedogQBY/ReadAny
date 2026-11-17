@@ -40,6 +40,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { ChatFontSizeControl } from "./ChatFontSizeControl";
 import { ChatInput } from "./ChatInput";
 import { ContextPopover } from "./ContextPopover";
 import { MessageList } from "./MessageList";
@@ -389,6 +390,7 @@ export function ChatPage() {
         </div>
         <div className="flex items-center gap-0.5">
           <ModelSelector />
+          <ChatFontSizeControl />
           <ContextPopover />
           <div className="mx-1 h-4 w-px bg-border" />
           {allMessages.length > 0 && (

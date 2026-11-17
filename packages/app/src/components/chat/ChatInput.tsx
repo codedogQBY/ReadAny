@@ -3,9 +3,10 @@
  * Supports attached context quotes that display as chips above the textarea.
  */
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useChatTypography } from "@/stores/chat-appearance-store";
 import type { AttachedQuote } from "@readany/core/types";
 import { Brain, EyeOff, Quote, Send, Square, X } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 export type { AttachedQuote };
 
@@ -36,6 +37,7 @@ export function ChatInput({
   onRemoveQuote,
 }: ChatInputProps) {
   const { t } = useTranslation();
+  const typography = useChatTypography();
   const [value, setValue] = useState("");
   const [deepThinking, setDeepThinking] = useState(false);
   const [spoilerFree, setSpoilerFree] = useState(false);
@@ -77,6 +79,24 @@ export function ChatInput({
     setDeepThinking((prev) => !prev);
   }, []);
 
+  // Recalculate wrapping even when only the font size changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: font changes alter textarea wrapping.
+  useLayoutEffect(() => handleInput(), [handleInput, typography]);
+
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    let previousWidth = el.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth > 0 && el.clientWidth !== previousWidth) {
+        previousWidth = el.clientWidth;
+        handleInput();
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [handleInput]);
+
   const toggleSpoilerFree = useCallback(() => {
     setSpoilerFree((prev) => !prev);
   }, []);
@@ -86,7 +106,7 @@ export function ChatInput({
       <div className="relative rounded-2xl border bg-background shadow-around">
         {/* Attached quotes chips */}
         {quotes.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
+          <div className="flex flex-wrap gap-1.5 px-3 pt-2.5" style={typography}>
             <TooltipProvider delayDuration={300}>
               {quotes.map((q) => (
                 <Tooltip key={q.id}>
@@ -107,6 +127,7 @@ export function ChatInput({
                     </span>
                   </TooltipTrigger>
                   <TooltipContent
+                    style={typography}
                     side="top"
                     className="max-w-xs whitespace-pre-wrap bg-popover text-popover-foreground border shadow-md"
                   >
@@ -114,7 +135,12 @@ export function ChatInput({
                       {q.text.length > 300 ? `${q.text.slice(0, 300)}...` : q.text}
                     </p>
                     {q.source && (
-                      <p className="mt-1 text-[10px] text-muted-foreground">— {q.source}</p>
+                      <p
+                        className="mt-1 text-muted-foreground"
+                        style={{ fontSize: "calc(var(--chat-font-size) * 0.714286)" }}
+                      >
+                        — {q.source}
+                      </p>
                     )}
                   </TooltipContent>
                 </Tooltip>
@@ -135,7 +161,7 @@ export function ChatInput({
           disabled={disabled}
           rows={1}
           className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-sm leading-relaxed placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ minHeight: 36, maxHeight: 160 }}
+          style={{ ...typography, minHeight: 36, maxHeight: 160 }}
         />
         <div className="flex items-center justify-between px-3 pb-2">
           <div className="flex items-center gap-1">

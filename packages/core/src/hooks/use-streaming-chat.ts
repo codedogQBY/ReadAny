@@ -93,6 +93,15 @@ export interface StreamingState {
 }
 
 const activeStreams = new Map<string, StreamingChat>();
+const pendingStreamRequests = new Map<string, { cancelled: boolean }>();
+
+/** Stop a conversation without mounting its view (for example when closing its book). */
+export function stopChatStream(bookId?: string) {
+  const key = getChatStreamingKey(bookId);
+  const request = pendingStreamRequests.get(key);
+  if (request) request.cancelled = true;
+  activeStreams.get(key)?.abort();
+}
 const STREAMING_PUBLISH_INTERVAL_MS = 160;
 
 async function resolveFreshBook(
@@ -190,9 +199,15 @@ export function useStreamingChat(options?: StreamingChatOptions) {
       const bookId = overrideBookId ?? options?.bookId;
       const sessionKey = getChatStreamingKey(bookId);
       const activeSession = useChatStore.getState().streamingSessions[sessionKey];
-      if ((!content.trim() && (!quotes || quotes.length === 0)) || activeSession?.isStreaming) {
+      if (
+        (!content.trim() && (!quotes || quotes.length === 0)) ||
+        activeSession?.isStreaming ||
+        pendingStreamRequests.has(sessionKey)
+      ) {
         return;
       }
+      const request = { cancelled: false };
+      pendingStreamRequests.set(sessionKey, request);
 
       const messageId = createMessageId();
       const initialMessage: MessageV2 = {
@@ -206,6 +221,7 @@ export function useStreamingChat(options?: StreamingChatOptions) {
 
       try {
         const thread = await getOrCreateThread(bookId);
+        if (request.cancelled) return;
         initialMessage.threadId = thread.id;
 
         if (thread.messages.length === 0 && !thread.title) {
@@ -248,6 +264,7 @@ export function useStreamingChat(options?: StreamingChatOptions) {
 
         // Add user message to store FIRST so it renders immediately
         await addMessage(thread.id, userMessage as any);
+        if (request.cancelled) return;
 
         // Then set streaming state — user message is already visible
         startStreamingSession({
@@ -266,6 +283,7 @@ export function useStreamingChat(options?: StreamingChatOptions) {
         activeStreams.set(sessionKey, stream);
 
         const enabledSkills = await loadEnabledSkills();
+        if (request.cancelled) return;
 
         const updatedThread: Thread = {
           ...thread,
@@ -349,6 +367,7 @@ export function useStreamingChat(options?: StreamingChatOptions) {
 
         const streamBook = await resolveFreshBook(bookId, options?.book);
         const streamIsVectorized = streamBook?.isVectorized ?? false;
+        if (request.cancelled) return;
 
         await stream.stream({
           thread: threadForStream,
@@ -579,6 +598,15 @@ export function useStreamingChat(options?: StreamingChatOptions) {
           updatedAt: Date.now(),
         });
         activeStreams.delete(sessionKey);
+      } finally {
+        if (pendingStreamRequests.get(sessionKey) === request) {
+          pendingStreamRequests.delete(sessionKey);
+          if (request.cancelled) {
+            clearPendingPublish?.();
+            activeStreams.delete(sessionKey);
+            finishStreamingSession(sessionKey);
+          }
+        }
       }
     },
     [
@@ -597,8 +625,8 @@ export function useStreamingChat(options?: StreamingChatOptions) {
   );
 
   const stopStream = useCallback(() => {
-    activeStreams.get(streamingKey)?.abort();
-  }, [streamingKey]);
+    stopChatStream(options?.bookId);
+  }, [options?.bookId]);
 
   return {
     ...state,

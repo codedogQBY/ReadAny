@@ -1,5 +1,7 @@
 import { evictBlobCache } from "@/components/reader/ReaderView";
 import { DesktopWindowControls } from "@/components/layout/DesktopWindowControls";
+import { useBookChatLayoutStore } from "@/stores/book-chat-layout-store";
+import { stopChatStream } from "@readany/core/hooks/use-streaming-chat";
 /**
  * TabBar — draggable tab bar
  * macOS: native traffic lights (left), can optionally preview custom controls on the right
@@ -55,12 +57,18 @@ function useIsFullscreen() {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
         const w = getCurrentWindow();
         setFs(await w.isFullscreen());
-        const unlisten = await w.onResized(async () => { setFs(await w.isFullscreen()); });
+        const unlisten = await w.onResized(async () => {
+          setFs(await w.isFullscreen());
+        });
         return unlisten;
-      } catch { return undefined; }
+      } catch {
+        return undefined;
+      }
     };
     let unlisten: (() => void) | undefined;
-    check().then((u) => { unlisten = u; });
+    check().then((u) => {
+      unlisten = u;
+    });
     return () => unlisten?.();
   }, []);
   return fs;
@@ -78,14 +86,16 @@ export function TabBar() {
 
   const handleTabClose = (tabId: string) => {
     const closingTab = tabs.find((t) => t.id === tabId);
-    const isBookTab = !!closingTab?.bookId;
-    if (closingTab?.bookId) {
+    const isBookTab = closingTab?.type === "reader" && !!closingTab.bookId;
+    if (isBookTab && closingTab?.bookId) {
+      stopChatStream(closingTab.bookId);
+      useBookChatLayoutStore.getState().clearBook(closingTab.bookId);
       const book = books.find((b) => b.id === closingTab.bookId);
       if (book?.filePath) evictBlobCache(book.filePath);
     }
     removeTab(tabId);
     removeReaderTab(tabId);
-    const remainingNonHome = tabs.filter((t) => t.type !== "home" && t.id !== tabId);
+    const remainingNonHome = useAppStore.getState().tabs.filter((t) => t.type !== "home");
     if (remainingNonHome.length === 0) setActiveTab("home");
     if (isBookTab) {
       useSyncStore.getState().syncNow?.();
@@ -114,9 +124,7 @@ export function TabBar() {
       </div>
 
       {/* Tabs */}
-      <div
-        className="flex h-full flex-1 items-center gap-0.5 overflow-x-auto px-1"
-      >
+      <div className="flex h-full flex-1 items-center gap-0.5 overflow-x-auto px-1">
         {visibleTabs.map((tab) => (
           <TabItem
             key={tab.id}
@@ -164,7 +172,10 @@ function TabItem({
         type="button"
         className="ml-0.5 hidden h-4 w-4 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-neutral-200/80 hover:text-foreground group-hover:flex"
         data-no-window-drag
-        onClick={(e) => { e.stopPropagation(); onClose(); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
       >
         <X className="h-3 w-3" />
       </button>

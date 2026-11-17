@@ -16,6 +16,7 @@
  * Reader pages are full-width (no sidebar).
  */
 import { ChatPage as ChatPageComponent } from "@/components/chat/ChatPage";
+import { BookChatWorkspace } from "@/components/chat/BookChatWorkspace";
 import { CommandPalette } from "@/components/command-palette/CommandPalette";
 import { EpubDraftWorkspace } from "@/components/epub-draft/EpubDraftWorkspace";
 import { HomePage } from "@/components/home/HomePage";
@@ -131,6 +132,9 @@ export function AppLayout() {
   const draftTabs = tabs.filter((t) => t.type === "epubDraft" && t.draftId);
   const isReaderActive = readerTabs.some((t) => t.id === activeTabId);
   const isWorkspaceActive = draftTabs.some((t) => t.id === activeTabId);
+  const isBookChatActive = tabs.some(
+    (tab) => tab.type === "chat" && tab.bookId && tab.id === activeTabId,
+  );
   const [showTabBar, setShowTabBar] = useState(!isReaderActive);
   const hideTabBarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevIsReaderActiveRef = useRef(isReaderActive);
@@ -237,7 +241,8 @@ export function AppLayout() {
   }, [isReaderActive]);
 
   // Determine which home sub-view is active
-  const homeViewKey = isReaderActive || isWorkspaceActive ? null : (activeTabId ?? "home");
+  const homeViewKey =
+    isReaderActive || isWorkspaceActive || isBookChatActive ? null : (activeTabId ?? "home");
 
   // Track which reader tabs we've already initialized
   const initializedRef = useRef<Set<string>>(new Set());
@@ -348,11 +353,15 @@ export function AppLayout() {
         <TabBar />
       </div>
       <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        {!isReaderActive && !isWorkspaceActive && <div className="h-8 shrink-0" />}
+        {!isReaderActive && !isWorkspaceActive && !isBookChatActive && (
+          <div className="h-8 shrink-0" />
+        )}
         {/* === Home layer (sidebar + content card) === */}
         <div
           className="flex min-h-0 flex-1 w-full overflow-hidden"
-          style={{ display: !isReaderActive && !isWorkspaceActive ? "flex" : "none" }}
+          style={{
+            display: !isReaderActive && !isWorkspaceActive && !isBookChatActive ? "flex" : "none",
+          }}
         >
           <HomeSidebar />
           <div className="min-h-0 flex-1 overflow-hidden pr-1 pb-1">
@@ -397,6 +406,13 @@ export function AppLayout() {
             </div>
           );
         })}
+
+        {readerTabs.map(
+          (tab) =>
+            tab.bookId && (
+              <BookChatWorkspace key={`chat-${tab.id}`} bookId={tab.bookId} readerTabId={tab.id} />
+            ),
+        )}
 
         {draftTabs.map((tab) => (
           <div

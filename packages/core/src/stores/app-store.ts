@@ -9,7 +9,7 @@ export interface Tab {
   id: string;
   type: TabType;
   title: string;
-  bookId?: string; // for reader tabs
+  bookId?: string; // for reader tabs and book-scoped chat tabs
   draftId?: string; // for EPUB draft workspace tabs
   threadId?: string; // for chat tabs
   initialCfi?: string; // for reader tabs - initial location to navigate to
@@ -88,9 +88,28 @@ export const useAppStore = create<AppState>((set) => ({
 
   removeTab: (tabId) =>
     set((state) => {
-      const tabs = state.tabs.filter((t) => t.id !== tabId);
-      const activeTabId =
-        state.activeTabId === tabId ? (tabs[tabs.length - 1]?.id ?? null) : state.activeTabId;
+      const closing = state.tabs.find((tab) => tab.id === tabId);
+      if (!closing) return state;
+      const tabs = state.tabs.filter(
+        (tab) =>
+          tab.id !== tabId &&
+          !(
+            closing?.type === "reader" &&
+            closing.bookId &&
+            tab.type === "chat" &&
+            tab.bookId === closing.bookId
+          ),
+      );
+      const parentReader =
+        closing?.type === "chat" && closing.bookId
+          ? tabs.find((tab) => tab.type === "reader" && tab.bookId === closing.bookId)
+          : undefined;
+      const activeWasRemoved = state.tabs.some(
+        (tab) => tab.id === state.activeTabId && !tabs.includes(tab),
+      );
+      const activeTabId = activeWasRemoved
+        ? (parentReader?.id ?? tabs[tabs.length - 1]?.id ?? null)
+        : state.activeTabId;
       return { tabs, activeTabId };
     }),
 
