@@ -317,6 +317,25 @@ export function resolveProviderBaseUrl(
   return trimApiUrl(formatApiHost(sanitizeOpenAICompatibleBaseUrl(rawBaseUrl)));
 }
 
+/**
+ * Build an Anthropic API URL. The Anthropic SDK (used for chat) treats the base
+ * URL as the API host and requests `${baseURL}/v1/messages`, so other Anthropic
+ * requests must add the same `/v1` prefix. A base URL that already ends in `/v1`
+ * is not given a second one.
+ */
+export function buildAnthropicApiUrl(
+  path: string,
+  baseUrl?: string,
+  exactRequestUrl = false,
+): string {
+  const resolvedBaseUrl = resolveProviderBaseUrl("anthropic", baseUrl, exactRequestUrl);
+  if (!resolvedBaseUrl) return "";
+  const versionedBaseUrl = /\/v1$/i.test(resolvedBaseUrl)
+    ? resolvedBaseUrl
+    : `${resolvedBaseUrl}/v1`;
+  return `${versionedBaseUrl}${path}`;
+}
+
 export function buildProviderModelsUrl(
   providerId: string,
   baseUrl?: string,
@@ -336,6 +355,8 @@ export function buildProviderModelsUrl(
       const keyQuery = apiKey ? `?key=${encodeURIComponent(apiKey)}` : "";
       return `${resolvedBaseUrl}/v1beta/models${keyQuery}`;
     }
+    case "anthropic":
+      return buildAnthropicApiUrl("/models", baseUrl, exactRequestUrl);
     case "ollama":
       return `${trimApiUrl(rawBaseUrl)}/api/tags`;
     default: {
