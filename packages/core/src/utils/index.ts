@@ -35,6 +35,7 @@ export {
   providerSupportsExactRequestUrl,
   resolveProviderBaseUrl,
   buildProviderModelsUrl,
+  buildAnthropicApiUrl,
   buildOpenAICompatibleUrl,
   normalizeEmbeddingEndpointUrl,
   isOllamaEmbeddingEndpointUrl,

@@ -3,6 +3,7 @@ import { getDefaultBaseUrl, providerRequiresApiKey } from "../utils";
 import { logAIEndpointDebug, summarizeDebugText } from "./request-debug";
 import { getEndpointFetch } from "./llm-provider";
 import {
+  buildAnthropicApiUrl,
   buildOpenAICompatibleUrl,
   buildProviderModelsUrl,
   providerSupportsExactRequestUrl,
@@ -325,7 +326,7 @@ export function getAIEndpointRequestPreview(endpoint: AIEndpoint, preferredModel
 
   switch (endpoint.provider) {
     case "anthropic":
-      return `${resolveProviderBaseUrl("anthropic", baseUrl, endpoint.useExactRequestUrl)}/messages`;
+      return buildAnthropicApiUrl("/messages", baseUrl, endpoint.useExactRequestUrl);
     case "google":
       return `${resolveProviderBaseUrl("google", baseUrl, endpoint.useExactRequestUrl)}/v1beta/models/${normalizeGoogleModel(chosenModel)}:generateContent?key=***`;
     default:

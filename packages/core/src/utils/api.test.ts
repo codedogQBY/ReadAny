@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAnthropicApiUrl,
   buildOpenAICompatibleUrl,
   buildProviderModelsUrl,
   detectProviderFromUrl,
@@ -78,6 +79,13 @@ describe("AI API URL helpers", () => {
       "https://api.openai.com/v1/models",
     );
     expect(buildProviderModelsUrl("atlascloud")).toBe("https://api.atlascloud.ai/v1/models");
+    expect(buildProviderModelsUrl("anthropic")).toBe("https://api.anthropic.com/v1/models");
+    expect(buildProviderModelsUrl("anthropic", "https://proxy.example.com/")).toBe(
+      "https://proxy.example.com/v1/models",
+    );
+    expect(buildProviderModelsUrl("anthropic", "https://proxy.example.com/v1")).toBe(
+      "https://proxy.example.com/v1/models",
+    );
     expect(buildProviderModelsUrl("ollama", "http://localhost:11434")).toBe(
       "http://localhost:11434/api/tags",
     );
@@ -211,5 +219,23 @@ describe("AI API URL helpers", () => {
         status: 404,
       });
     });
+  });
+});
+
+describe("buildAnthropicApiUrl", () => {
+  it("adds /v1 like the Anthropic SDK does for chat", () => {
+    expect(buildAnthropicApiUrl("/messages")).toBe("https://api.anthropic.com/v1/messages");
+    expect(buildAnthropicApiUrl("/messages", "https://api.anthropic.com")).toBe(
+      "https://api.anthropic.com/v1/messages",
+    );
+    expect(buildAnthropicApiUrl("/models", "proxy.example.com")).toBe(
+      "https://proxy.example.com/v1/models",
+    );
+  });
+
+  it("does not add a second /v1", () => {
+    expect(buildAnthropicApiUrl("/messages", "https://proxy.example.com/v1/")).toBe(
+      "https://proxy.example.com/v1/messages",
+    );
   });
 });
