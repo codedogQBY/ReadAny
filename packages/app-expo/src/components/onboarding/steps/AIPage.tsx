@@ -30,6 +30,7 @@ const ONBOARDING_ENDPOINT_ID = "onboarding-ai-endpoint";
 const PROVIDER_OPTIONS: { id: AIProviderType; name: string }[] = [
   { id: "openai", name: "OpenAI" },
   { id: "atlascloud", name: "Atlas Cloud" },
+  { id: "openllm", name: "OpenLLM" },
   { id: "anthropic", name: "Anthropic" },
   { id: "google", name: "Google Gemini" },
   { id: "deepseek", name: "DeepSeek" },

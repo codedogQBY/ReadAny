@@ -65,6 +65,8 @@ describe("AI API URL helpers", () => {
   it("respects providers that should not auto-append /v1", () => {
     expect(getDefaultBaseUrl("atlascloud")).toBe("https://api.atlascloud.ai/v1");
     expect(resolveProviderBaseUrl("atlascloud")).toBe("https://api.atlascloud.ai/v1");
+    expect(getDefaultBaseUrl("openllm")).toBe("https://www.openllm.sh/v1");
+    expect(resolveProviderBaseUrl("openllm")).toBe("https://www.openllm.sh/v1");
     expect(resolveProviderBaseUrl("anthropic", "https://api.anthropic.com")).toBe(
       "https://api.anthropic.com",
     );
@@ -78,6 +80,7 @@ describe("AI API URL helpers", () => {
       "https://api.openai.com/v1/models",
     );
     expect(buildProviderModelsUrl("atlascloud")).toBe("https://api.atlascloud.ai/v1/models");
+    expect(buildProviderModelsUrl("openllm")).toBe("https://www.openllm.sh/v1/models");
     expect(buildProviderModelsUrl("ollama", "http://localhost:11434")).toBe(
       "http://localhost:11434/api/tags",
     );
@@ -88,6 +91,10 @@ describe("AI API URL helpers", () => {
 
   it("detects Atlas Cloud endpoints", () => {
     expect(detectProviderFromUrl("https://api.atlascloud.ai/v1")).toBe("atlascloud");
+  });
+
+  it("detects OpenLLM endpoints", () => {
+    expect(detectProviderFromUrl("https://www.openllm.sh/v1")).toBe("openllm");
   });
 
   describe("ensureUrlProtocol / scheme-less inputs", () => {
