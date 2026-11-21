@@ -41,6 +41,14 @@ export const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
     placeholder: "https://api.atlascloud.ai/v1",
     keyPlaceholder: "sk-...",
   },
+  openllm: {
+    id: "openllm",
+    name: "OpenLLM",
+    defaultBaseUrl: "https://www.openllm.sh/v1",
+    needsV1Suffix: false,
+    placeholder: "https://www.openllm.sh/v1",
+    keyPlaceholder: "sk-llm-...",
+  },
   deepseek: {
     id: "deepseek",
     name: "DeepSeek",
@@ -545,6 +553,7 @@ export function detectProviderFromUrl(url: string): string {
   const urlLower = url.toLowerCase();
 
   if (urlLower.includes("api.atlascloud.ai")) return "atlascloud";
+  if (urlLower.includes("openllm.sh")) return "openllm";
   if (urlLower.includes("openai.com")) return "openai";
   if (urlLower.includes("deepseek.com")) return "deepseek";
   if (urlLower.includes("anthropic.com")) return "anthropic";
