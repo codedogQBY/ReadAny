@@ -170,6 +170,50 @@ const getRangeTextWithoutRuby = (range) => {
 const rangeIsEmpty = (range) => !getRangeTextWithoutRuby(range).trim();
 const normalizeRangeText = (range) => getRangeTextWithoutRuby(range).replace(/\s+/g, " ").trim();
 
+// --- EPUB CFI positions ---------------------------------------------------
+// The same text position can be written as different CFI strings depending on
+// where the range is anchored:
+//   epubcfi(/6/12!/4/2[chapters]/4/140,/1:0,/1:16)   (anchored at the text node)
+//   epubcfi(/6/12!/4/2[chapters]/4,/140/1:0,/141:1)  (anchored at the block)
+// Both describe the same starting point, so compare the position they encode
+// rather than the strings.
+
+const cfiSteps = (part) =>
+  part
+    .split("/")
+    .filter(Boolean)
+    .map((step) => step.replace(/\[[^\]]*\]/g, ""))
+    .filter(Boolean)
+    .flatMap((step) => {
+      const match = /^(\d+)(?::(\d+))?!?$/.exec(step);
+      if (!match) return [];
+      const steps = [Number(match[1])];
+      if (match[2] != null) steps.push(Number(match[2]));
+      return steps;
+    });
+
+const cfiPosition = (cfi) => {
+  const body = String(cfi ?? "")
+    .replace(/^epubcfi\(/, "")
+    .replace(/\)$/, "");
+  const [path, start, end] = body.split(",");
+  const base = cfiSteps(path ?? "");
+  return {
+    start: start ? base.concat(cfiSteps(start)) : base,
+    end: end ? base.concat(cfiSteps(end)) : null,
+  };
+};
+
+const comparePositions = (a, b) => {
+  const length = Math.max(a.length, b.length);
+  for (let i = 0; i < length; i++) {
+    const left = a[i] ?? -1;
+    const right = b[i] ?? -1;
+    if (left !== right) return left < right ? -1 : 1;
+  }
+  return 0;
+};
+
 function* getDetailRanges(doc, textWalker, filterFunc) {
   for (const blockRange of getBlocks(doc)) {
     const { entries } = getFragmentWithMarks(blockRange, textWalker, "sentence", filterFunc);
@@ -308,6 +352,8 @@ export class TTS {
   #lastMark;
   #lastRange;
   #getCfi;
+  // Start of the sentence last aligned to, so collectDetails() never steps back.
+  #anchor = null;
   #serializer = new XMLSerializer();
   constructor(
     doc,
@@ -479,19 +525,48 @@ export class TTS {
     }
     const needed = count - details.length;
     if (needed <= 0) return details;
-    const entries = this.#detailList.peek(needed, offset);
+    // Ask for a few extra entries: some of them can be dropped below, and the
+    // caller expects roughly `count` items to keep reading.
+    const entries = this.#detailList.peek(needed + 12, offset);
     for (const entry of entries) {
+      if (details.length >= count) break;
       const detail = this.#detailResultFrom(entry);
-      if (detail) details.push(detail);
+      if (!detail) continue;
+      // Never return a sentence that starts before the last aligned position.
+      // Handing back an earlier sentence is what made playback loop: the queue
+      // was refilled from a stale cursor and repeated the same page forever.
+      if (
+        this.#anchor &&
+        detail.cfi &&
+        comparePositions(cfiPosition(detail.cfi).start, this.#anchor) < 0
+      ) {
+        continue;
+      }
+      details.push(detail);
     }
     return details;
   }
   #detailFromCfi(cfi, { highlight = false } = {}) {
     if (!cfi || !this.#getCfi) return null;
-    const entry = this.#detailList.find((range) => {
+    // A CFI for the same text position is not always spelled the same way: the
+    // reader anchors ranges at the text node (…/4/140,/1:0,/1:16) while this
+    // list anchors them at the block (…/4,/140/1:0,/141:1). Compare positions
+    // instead of strings, otherwise aligning silently fails and the player
+    // keeps its cursor on whatever it aligned last.
+    const target = cfiPosition(cfi);
+    const matches = (range) => {
       const candidate = this.#getCfi(range.cloneRange());
-      return candidate === cfi;
-    });
+      if (candidate === cfi) return true;
+      const found = cfiPosition(candidate);
+      if (comparePositions(found.start, target.start) === 0) return true;
+      return (
+        Boolean(found.end) &&
+        comparePositions(found.start, target.start) <= 0 &&
+        comparePositions(target.start, found.end) < 0
+      );
+    };
+    const entry = this.#detailList.find(matches);
+    if (entry) this.#anchor = target.start;
     return this.#detailResultFrom(entry, { highlight });
   }
   alignCfi(cfi) {
